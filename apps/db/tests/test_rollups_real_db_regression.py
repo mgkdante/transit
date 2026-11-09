@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -67,8 +66,10 @@ def _seed(connection, seed: _SeedData, seed_provider) -> None:  # noqa: ANN001
         display_name="STM capped ghost regression",
     )
     db_seed.feed_endpoints(
-        connection, {'endpoint_id': ENDPOINT_ID, 'provider_id': PROVIDER},
-        feed_endpoint_id=':endpoint_id', provider_id=':provider_id',
+        connection,
+        {"endpoint_id": ENDPOINT_ID, "provider_id": PROVIDER},
+        feed_endpoint_id=":endpoint_id",
+        provider_id=":provider_id",
     )
 
     for idx in range(12):
@@ -111,8 +112,11 @@ def _insert_snapshot(
 ) -> None:
     snapshot_id, run_id = seed.next_ids()
     db_seed.ingestion_runs(
-        connection, {'run_id': run_id, 'provider_id': PROVIDER, 'endpoint_id': ENDPOINT_ID},
-        ingestion_run_id=':run_id', provider_id=':provider_id', feed_endpoint_id=':endpoint_id',
+        connection,
+        {"run_id": run_id, "provider_id": PROVIDER, "endpoint_id": ENDPOINT_ID},
+        ingestion_run_id=":run_id",
+        provider_id=":provider_id",
+        feed_endpoint_id=":endpoint_id",
     )
     db_seed.realtime_snapshot_index(
         connection,
@@ -124,9 +128,13 @@ def _insert_snapshot(
             "captured_at": captured_at,
             "entity_count": entity_count,
         },
-        realtime_snapshot_id=':snapshot_id', ingestion_run_id=':run_id', provider_id=':provider_id',
-        feed_endpoint_id=':endpoint_id', feed_timestamp_utc=':captured_at',
-        entity_count=':entity_count', captured_at_utc=':captured_at',
+        realtime_snapshot_id=":snapshot_id",
+        ingestion_run_id=":run_id",
+        provider_id=":provider_id",
+        feed_endpoint_id=":endpoint_id",
+        feed_timestamp_utc=":captured_at",
+        entity_count=":entity_count",
+        captured_at_utc=":captured_at",
     )
 
 
@@ -402,7 +410,9 @@ def test_repeat_offender_window_matches_retained_facts_and_public_snapshot(
         assert row["severity_label"] == "critical"
         assert row["window_days"] == retention_days
 
-    snapshot = build_repeat_offenders(connection, PROVIDER, generated_utc=now.isoformat())
+    snapshot = build_repeat_offenders(
+        connection, provider_id=PROVIDER, generated_utc=now.isoformat()
+    )
     offenders = [o for o in snapshot.offenders if o.id in {"WINDOW", "WINDOW_VEHICLE"}]
     assert {o.type for o in offenders} == {"trip", "vehicle"}
     for offender in offenders:

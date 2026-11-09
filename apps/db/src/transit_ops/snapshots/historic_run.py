@@ -237,7 +237,7 @@ class _HistoricPublishRun:
     full_historic_rebuild: bool
     partition_upload_batch_size: int
     today_local: date | None = None
-    provider_id: str = "stm"
+    provider_id: str = field(kw_only=True)
     run_instant_utc: datetime = field(default_factory=lambda: datetime.now(UTC))
     plans: dict[str, object] = field(default_factory=dict)
     observations: dict[str, list[_HistoricPartitionObservation]] = field(
@@ -281,7 +281,7 @@ def _prepare_historic_run(
     plans: tuple[object, object, object],
     *,
     provider_timezone: str | None = None,
-    provider_id: str = "stm",
+    provider_id: str,
 ) -> None:
     if run is None:
         return
@@ -339,11 +339,14 @@ def _new_historic_publish_run(
     stamp: str,
     full_historic_rebuild: bool,
     partition_upload_batch_size: int,
+    *,
+    provider_id: str,
 ) -> _HistoricPublishRun | None:
     if ledger is None:
         return None
     return _HistoricPublishRun(
         ledger=ledger,
+        provider_id=provider_id,
         settings=settings,
         stamp=stamp,
         full_historic_rebuild=full_historic_rebuild,

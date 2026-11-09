@@ -27,7 +27,12 @@ OLDER, NEWER = (snapshot[0] for snapshot in SNAPSHOTS)
 class Registry:
     def get_provider(self, provider_id):
         return SimpleNamespace(
-            provider=SimpleNamespace(provider_id=provider_id, timezone=PROVIDER_TZ, bounds=None),
+            provider=SimpleNamespace(
+                provider_id=provider_id,
+                timezone=PROVIDER_TZ,
+                bounds=None,
+                max_vehicle_speed_kmh=100,
+            ),
             realtime_feed=lambda endpoint: SimpleNamespace(endpoint_key=endpoint),
         )
 
@@ -257,7 +262,7 @@ def test_identical_payloads_keep_distinct_capture_ids(
                     "source_url": "https://example.test/trips.pb",
                     "auth": {"auth_type": "none"},
                     "refresh_interval_seconds": 30,
-                }
+                },
             },
         }
     )

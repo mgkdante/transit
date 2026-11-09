@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
 	import { copy as MAP_COPY } from '#lib/features/map/map.copy.ts';
 	import { clock } from '@yesid/ui/state';
@@ -163,6 +165,9 @@
 			? ['vehicles', 'trips', 'alerts', 'network']
 			: ['vehicles', 'trips', 'network'],
 	});
+	const presentation = $derived(
+		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+	);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -171,8 +176,13 @@
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
 	const articleGeneratedUtc = $derived(
 		detailTabController.active === 'reliability'
-			? (reliability.data?.generated_utc ?? route.data?.generated_utc ?? live.generatedUtc)
-			: (live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null),
+			? (reliability.data?.generated_utc ??
+					route.data?.generated_utc ??
+					presentation.publicationUtc)
+			: (presentation.publicationUtc ??
+					route.data?.generated_utc ??
+					reliability.data?.generated_utc ??
+					null),
 	);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
 	const articleTimeText = $derived(
@@ -298,7 +308,7 @@
 		closeAria: articleNav.closeAria,
 	});
 
-	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
+	const showAbsenceNote = $derived(presentation.stamp.generatedUtc != null && roster.length === 0);
 
 	const tripHref = (tripId: string): string =>
 		localizeHref(routeFor({ kind: 'trip', id: tripId }), locale);
@@ -410,15 +420,9 @@
 								anchor="line-detail-directions"
 							>
 								<div class="route-section">
-									{#if live.generatedUtc != null || live.ageSeconds != null}
+									{#if presentation.stamp.generatedUtc != null || presentation.stamp.ageSeconds != null}
 										<div class="route-section-head route-section-head--meta">
-											<FreshnessStamp
-												variant="live"
-												generatedUtc={live.generatedUtc}
-												ageSeconds={live.ageSeconds}
-												isStale={live.isStale}
-												{locale}
-											/>
+											<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 										</div>
 									{/if}
 									{#if showAbsenceNote}

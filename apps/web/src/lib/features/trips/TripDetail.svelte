@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { breadcrumbCopy } from '#lib/components/surface/breadcrumb.copy.ts';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
@@ -39,9 +41,15 @@
 	]);
 	const manifest = getV1Context().manifest;
 	const { live, resource: trips } = createLiveResource(manifest, 'trips');
-	const reportHealth = $derived(live.familyStates.trips.health);
-	const reportFailed = $derived(reportHealth.notice === 'refresh-unavailable');
 
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'trip',
+		}),
+	);
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
 	const unknownStatusAndDelay = $derived(trip?.status === 'unknown' && trip.delay_min == null);
 	const stopsIndex = createResource<StopsIndex | null>(() => getStopsIndex());
@@ -67,7 +75,7 @@
 
 	const timeLabel = (iso: string): string =>
 		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
-	const generatedUtc = $derived(live.generatedUtc);
+	const generatedUtc = $derived(presentation.publicationUtc);
 	const cm = cornerMetaLabels[locale];
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
 	const cornerGeneratedStamp = $derived(
@@ -82,10 +90,7 @@
 {#snippet reportFreshness()}
 	<FreshnessStamp
 		variant="live"
-		{generatedUtc}
-		ageSeconds={reportHealth.ageSeconds}
-		isStale={reportHealth.isStale}
-		degraded={reportFailed}
+		presentation={presentation.stamp}
 		class="trip-report-stamp"
 		label={t.latestReport}
 		{locale}
@@ -99,11 +104,11 @@
 				items={trail.map((crumb) => ({ name: crumb.name, href: localizeHref(crumb.path, locale) }))}
 				label={breadcrumbCopy[locale].label}
 			/>
-			{#if reportHealth.notice}
+			{#if presentation.notice.kind !== 'none'}
 				<StateNotice
-					title={reportFailed ? t.refreshUnavailable : t.reportBehind}
-					body={t.retainedReport}
-					tone="warning"
+					title={presentation.notice.message}
+					body={presentation.notice.body}
+					tone={presentation.notice.tone}
 					presentation="silo"
 					role="status"
 					aria-live="polite"

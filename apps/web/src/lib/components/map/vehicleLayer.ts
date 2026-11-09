@@ -1,7 +1,7 @@
 import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import type { EntityKind, FilterState } from '#lib/filters/index.ts';
 import { bodyIconId, BUS_ICON, stateBadgeIconId } from './vehicleSprites';
-import { fixAgeS, isVehicleStale } from './vehicleProjection';
+import { notReporting } from './vehicleProjection';
 
 export const VEHICLE_BODY_LAYER = 'vehicle-body';
 
@@ -90,7 +90,6 @@ function iconFor(
 
 export interface VehicleSilenceContext {
 	serverNow: number;
-	ttlS?: number;
 }
 
 export function toVehicleFeatures(
@@ -105,10 +104,7 @@ export function toVehicleFeatures(
 		type: 'FeatureCollection',
 		features: vehicles.map((v) => {
 			const { body, mark, matched } = iconFor(v, filter, dim, alertVehicleIds);
-			const stale =
-				silence && isVehicleStale(fixAgeS(v.reported_utc, v.updated_utc, silence.serverNow))
-					? 1
-					: 0;
+			const stale = silence && notReporting(v, silence.serverNow) ? 1 : 0;
 			return {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [v.lon, v.lat] },

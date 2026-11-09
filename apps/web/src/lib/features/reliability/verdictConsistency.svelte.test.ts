@@ -59,6 +59,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 	}),
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: () => ({
 		vehicles: null,
 		trips: null,
@@ -73,11 +74,25 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 			tripsById: new Map(),
 			alertsById: new Map(),
 		},
+		familyStates: Object.fromEntries(
+			['vehicles', 'trips', 'departures', 'alerts', 'network'].map((family) => [
+				family,
+				{
+					phase: 'idle',
+					active: false,
+					retainedGeneration: null,
+					health: {
+						state: 'never-loaded',
+						ageSeconds: null,
+						isStale: false,
+						retained: false,
+						notice: null,
+					},
+				},
+			]),
+		),
 		loading: false,
 		error: null,
-		generatedUtc: null,
-		ageSeconds: null,
-		isStale: false,
 		start: vi.fn(),
 		stop: vi.fn(),
 		refresh: vi.fn(),

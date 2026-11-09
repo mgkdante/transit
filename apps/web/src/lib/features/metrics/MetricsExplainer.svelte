@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
+	import { publicationPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { Badge } from '@yesid/ui/badge';
 	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';
 	import { intl, getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
@@ -137,6 +139,7 @@
 		() => tocEntries,
 		(id) => id === CONFIDENCE_INTERVALS_ANCHOR,
 	);
+	$effect(() => clock.subscribe());
 </script>
 
 {#snippet statCards()}
@@ -191,7 +194,11 @@
 					<FreshnessStamp
 						class="metrics-freshness-stamp"
 						variant="updated"
-						generatedUtc={provenance.data.generated_utc}
+						presentation={publicationPresentation(
+							provenance.data.generated_utc,
+							clock.serverNow,
+							locale,
+						)}
 						{locale}
 					/>
 				</div>

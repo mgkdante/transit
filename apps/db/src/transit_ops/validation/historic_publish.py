@@ -677,7 +677,7 @@ def _read_alert_expectations(
         )
         legacy = builders.build_alert_history(
             connection,
-            provider_id,
+            provider_id=provider_id,
             generated_utc=generated_utc,
         )
     archive_alerts = [alert for _, page in archive.page_items for alert in page.alerts]
@@ -1109,8 +1109,10 @@ def _verify_point_history_family(
     if not index_is_valid or not path_sha256_matches:
         return [], index
 
-    refs = [HistoricPartitionRef.model_validate(edge.reference)
-            for edge in historic_tree.FAMILIES[family].edges(index)]
+    refs = [
+        HistoricPartitionRef.model_validate(edge.reference)
+        for edge in historic_tree.FAMILIES[family].edges(index)
+    ]
     partition_gate_binding = _bind_partition_refs_to_gate(
         refs,
         gate_digests=gate_digests,
@@ -1526,15 +1528,17 @@ def _verify_entity_history_family(
 
     children: list[HistoricCollectionIndex] = []
     candidates: list[_RangePartitionCandidate] = []
-    reader = historic_tree.PublicHttpTreeReader(lambda requests: _fetch_models_bounded(
-        requests,
-        public_root=public_root,
-        fetch_bytes=fetch_bytes,
-        artifacts=artifacts,
-        failures=failures,
-        query=query,
-        gate_digests=gate_digests,
-    ))
+    reader = historic_tree.PublicHttpTreeReader(
+        lambda requests: _fetch_models_bounded(
+            requests,
+            public_root=public_root,
+            fetch_bytes=fetch_bytes,
+            artifacts=artifacts,
+            failures=failures,
+            query=query,
+            gate_digests=gate_digests,
+        )
+    )
     for tree_edge, loaded_child in definition.walk(reader, directory):
         child_edge = HistoricEntityIndexRef.model_validate(tree_edge.reference)
         child = cast(HistoricCollectionIndex | None, loaded_child[0])
@@ -2057,8 +2061,10 @@ def _build_historic_publish_proof(
                     alerts_index_artifact,
                 )
 
-            refs = [AlertArchivePageRef.model_validate(edge.reference[1])
-                    for edge in historic_tree.FAMILIES["alerts"].edges(alerts_index)]
+            refs = [
+                AlertArchivePageRef.model_validate(edge.reference[1])
+                for edge in historic_tree.FAMILIES["alerts"].edges(alerts_index)
+            ]
             if expectations is not None:
                 if alerts_index.collection_generation_id != expectations.collection_generation_id:
                     _add_failure(

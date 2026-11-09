@@ -1,3 +1,4 @@
+import type { VehicleMotionFrame } from './vehicleMotion';
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import {
 	addRouteLineLayers,
@@ -13,8 +14,6 @@ import {
 	toVehicleFeatures,
 	type VehicleSpriteReceipt,
 	type NearTarget,
-	type FixResolver,
-	type ShapeResolver,
 	type VehicleMotionController,
 } from '#lib/components/map/index.ts';
 
@@ -23,21 +22,15 @@ export type MapLayerFeedContext = Readonly<{
 		items: Parameters<typeof setRouteLines>[1];
 		selected: Parameters<typeof setRouteLines>[2];
 	}>;
-	vehicles: Readonly<{
-		motion: VehicleMotionController | null;
-		items: Parameters<typeof toVehicleFeatures>[0];
-		filter: Parameters<typeof toVehicleFeatures>[1];
-		alertIds: Parameters<typeof toVehicleFeatures>[2];
-		selectedId: Parameters<typeof toVehicleFeatures>[3];
-		serverNow: number;
-		ttlS: number;
-		tickKey: string | null;
-		stale: boolean;
-		fixFor: FixResolver;
-		shapeFor: ShapeResolver | undefined;
-		serverNowFn: () => number;
-		animate: boolean;
-	}>;
+	vehicles: Readonly<
+		VehicleMotionFrame & {
+			motion: VehicleMotionController | null;
+			items: Parameters<typeof toVehicleFeatures>[0];
+			filter: Parameters<typeof toVehicleFeatures>[1];
+			alertIds: Parameters<typeof toVehicleFeatures>[2];
+			selectedId: Parameters<typeof toVehicleFeatures>[3];
+		}
+	>;
 	stops: Readonly<{
 		items: Parameters<typeof setStops>[1];
 		filter: Parameters<typeof setStops>[2];
@@ -121,28 +114,14 @@ const vehiclesModule: LayerModule = {
 			alertFilterActive,
 			alertFilterActive ? join(vehicles.alertIds ?? []) : '',
 			vehicles.selectedId,
-			vehicles.ttlS,
 			vehicles.stale,
-			vehicles.shapeFor,
-			vehicles.animate,
+			vehicles.motionKey,
 		];
 	},
 	feed(map, ctx) {
 		const vehicles = ctx.vehicles;
-		vehicles.motion?.set(
-			toVehicleFeatures(vehicles.items, vehicles.filter, vehicles.alertIds, vehicles.selectedId, {
-				serverNow: vehicles.serverNow,
-				ttlS: vehicles.ttlS,
-			}),
-			{
-				tickKey: vehicles.tickKey,
-				stale: vehicles.stale,
-				fixFor: vehicles.fixFor,
-				shapeFor: vehicles.shapeFor,
-				serverNowFn: vehicles.serverNowFn,
-				animate: vehicles.animate,
-			},
-		);
+		if (vehicles.motion)
+			vehicles.draw(vehicles.motion, vehicles.filter, vehicles.alertIds, vehicles.selectedId);
 	},
 };
 

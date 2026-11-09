@@ -227,6 +227,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: (manifest: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
@@ -248,7 +249,19 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 				return harness.liveClock.ageSeconds;
 			},
 			get familyStates() {
-				return { network: { health: { ageSeconds: harness.liveClock.ageSeconds } } };
+				return {
+					network: {
+						active: true,
+						retainedGeneration: currentNetwork.generated_utc,
+						health: {
+							state: 'live',
+							retained: true,
+							ageSeconds: harness.liveClock.ageSeconds,
+							isStale: false,
+							notice: null,
+						},
+					},
+				};
 			},
 			isStale: false,
 			loading: false,

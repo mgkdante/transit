@@ -159,8 +159,6 @@ _NETWORK_HISTORY_OCCUPANCY_SQL = named_query(
 )
 
 
-
-
 @dataclass(frozen=True)
 class NetworkHistoryBundle:
     """Bounded immutable month payloads plus their one stable collection pointer."""
@@ -211,8 +209,8 @@ class NetworkHistoryPlan:
                     month=partition_month,
                     days=days,
                 ),
-                lambda digest, partition_month: (
-                    historic_tree.FAMILIES["network"].leaf_path(digest, partition_month)
+                lambda digest, partition_month: historic_tree.FAMILIES["network"].leaf_path(
+                    digest, partition_month
                 ),
                 month=month,
                 dates=dates,
@@ -398,7 +396,7 @@ def build_network_history_plan_from_rows(
     cancellation_rows: Iterable[Mapping[str, Any]],
     occupancy_rows: Iterable[Mapping[str, Any]],
     generated_utc: str,
-    provider_id: str = "stm",
+    provider_id: str,
 ) -> NetworkHistoryPlan:
 
     delay_rows, fact_rows, cancellation_rows, occupancy_rows = (
@@ -444,6 +442,7 @@ def build_network_history_plan_from_rows(
 
 def build_network_history_from_rows(
     *,
+    provider_id: str,
     delay_rows: Iterable[Mapping[str, Any]],
     fact_rows: Iterable[Mapping[str, Any]],
     cancellation_rows: Iterable[Mapping[str, Any]],
@@ -457,13 +456,14 @@ def build_network_history_from_rows(
         cancellation_rows=cancellation_rows,
         occupancy_rows=occupancy_rows,
         generated_utc=generated_utc,
+        provider_id=provider_id,
     ).materialize()
 
 
 def build_network_history_plan(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     phase_context: HistoryPhaseContext | None = None,
 ) -> NetworkHistoryPlan:
@@ -500,7 +500,7 @@ def build_network_history_plan(
 def build_network_history(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
 ) -> NetworkHistoryBundle:
 

@@ -1,6 +1,6 @@
 import type { RouteFile } from '#lib/v1/schemas/index.ts';
 import { routeDirectionVariants } from './routeDirection';
-import { projectToPolyline, type Coord } from './polyline';
+import { projectToPolyline, walkAlong, type Coord } from './polyline';
 
 export type RouteShapes = readonly (readonly Coord[])[];
 
@@ -30,11 +30,16 @@ export function bestShapeForPoint(
 	shapes: RouteShapes,
 	point: Coord,
 	maxOffRouteM = 60,
+	bearing?: number | null,
 ): readonly Coord[] | null {
 	let best: readonly Coord[] | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
 	for (const coords of shapes) {
 		const proj = projectToPolyline(coords, point);
+		if (proj && bearing != null) {
+			const tangent = walkAlong(coords, proj.s)?.bearing;
+			if (tangent != null && Math.abs(((tangent - bearing + 540) % 360) - 180) > 90) continue;
+		}
 		if (proj && proj.distance < bestDistance) {
 			bestDistance = proj.distance;
 			best = coords;

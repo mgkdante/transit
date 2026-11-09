@@ -9,7 +9,8 @@
 	import { clock, desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { Button } from '@yesid/ui/button';
-	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES, createLiveStore } from '#lib/v1/live/store.svelte.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import { getBasemap } from '#lib/v1/repositories/basemap.ts';
 	import {
@@ -23,14 +24,8 @@
 	import { nearTargetFromSearchParams } from '#lib/search/mapNear.ts';
 	import { parseMapFocus } from '#lib/search/mapFocus.ts';
 	import { RightPanel } from '#lib/components/shell/index.ts';
-	import {
-		MapStage,
-		nearestStops,
-		liveTtlS,
-		type WithDistance,
-		type FixResolver,
-	} from '#lib/components/map/index.ts';
-	import { createShapeCacheManager } from './mapShapeCache';
+	import { MapStage, nearestStops, type WithDistance } from '#lib/components/map/index.ts';
+	import { createVehicleMotion } from './vehicleMotion';
 	import { motionMode } from '#lib/stores/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
@@ -47,7 +42,6 @@
 		clearNearTargetSearch,
 		buildFocusClearSearch,
 	} from './mapUrlSync';
-	import { motionFeedAnimate } from './motionFeed';
 	import { nearTargetKey } from './mapNearMe';
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
@@ -171,11 +165,12 @@
 		return () => releaseMapOwner(unsubscribe);
 	});
 
-	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
-
 	let mapFailure = $state<MapStageFailure | null>(null);
 	let hasFirstIdle = $state(false);
-	const shapeCache = createShapeCacheManager(getRoute);
+	const vehicleMotion = createVehicleMotion(getRoute, {
+		now: () => untrack(() => clock.serverNow),
+		continuous: () => untrack(() => clock.serverNowContinuousMs()),
+	});
 	const session = createMapSelectionSession({
 		live,
 		repositories: { getRoute, getStop, getStopsIndexSlim, getRoutesIndex },
@@ -210,14 +205,20 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
-	const liveEdgeState = $derived(session.liveEdgeState);
-	const liveEdgeMessage = $derived(session.liveEdgeMessage);
-	const liveDegraded = $derived(session.liveDegraded);
-	const selectedFamilyFailureMessage = $derived(session.failureMessage);
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'map',
+			selection: session.selected,
+			vehicleCount: live.vehicles?.vehicles.length ?? null,
+		}),
+	);
 	$effect(() => {
 		const routes = session.loadedRoutes;
 		untrack(() => {
-			for (const route of routes) if (route) shapeCache.remember(route);
+			for (const route of routes) if (route) vehicleMotion.remember(route);
 		});
 	});
 	function commitPickedSelection(next: MapSelection) {
@@ -343,51 +344,34 @@
 		onfailure?.(failure);
 	}
 
+	const motionFrame = $derived(
+		vehicleMotion.read(live.vehicles, {
+			preference: motionMode.current,
+			reducedMotion: $prefersReducedMotion,
+			ready: hasFirstIdle,
+			stale: live.familyStates.vehicles.health.isStale,
+			ttlS: manifest.files.live.ttl_s,
+			stops: stopList,
+		}),
+	);
+
+	// Read intent before the map exists so Estimated position can prefetch shapes.
 	$effect(() => {
-		const vehicles = live.vehicles?.vehicles ?? [];
-		if (motionMode.current !== 'smooth' || vehicles.length === 0) return;
-		untrack(() => shapeCache.prefetch(vehicles));
+		void motionFrame;
 	});
 
-	const shapeFor = shapeCache.shapeFor;
-
-	const fixFor: FixResolver = (id) => {
-		const v = live.index.byVehicleId.get(id);
-		if (!v) return null;
-		return {
-			reportedUtc: v.reported_utc,
-			updatedUtc: v.updated_utc,
-			speedMps: v.speed_kmh != null ? v.speed_kmh / 3.6 : null,
-		};
-	};
-
 	function readMapFeed(): MapRuntimeFeed {
-		const reduceMotion = $prefersReducedMotion;
-		const smoothMotion = motionMode.current === 'smooth';
-		const animate = hasFirstIdle && motionFeedAnimate({ smoothMotion, reduceMotion });
-		const serverNow = untrack(() => clock.serverNow);
 		const filter = filters.state;
-		const stale = live.vehiclesIsStale;
-		const vehicleItems = live.vehicles?.vehicles ?? [];
-		const vehicleTickKey = live.vehiclesGeneratedUtc;
 		return {
 			routes: {
 				items: routeLineRoutes,
 				selected: selectedRouteLine,
 			},
 			vehicles: {
-				items: vehicleItems,
+				...motionFrame,
 				filter,
 				alertIds: alertVehicleIds,
 				selectedId: selectedVehicleId,
-				serverNow,
-				ttlS: liveTtl,
-				tickKey: vehicleTickKey,
-				stale,
-				fixFor,
-				shapeFor: animate ? shapeFor : undefined,
-				serverNowFn: () => untrack(() => clock.serverNowContinuousMs()),
-				animate,
 			},
 			stops: {
 				items: stopList,
@@ -540,12 +524,7 @@
 			<MapOverlayChrome
 				{locale}
 				{t}
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				isPartialStale={live.isPartialStale}
-				degraded={liveDegraded}
-				{selectedFamilyFailureMessage}
+				{presentation}
 				bind:nearMeOpen={nearMeController.open}
 				bind:nearMeQuery={nearMeController.query}
 				nearMeLoading={nearMeController.loading}
@@ -560,8 +539,6 @@
 				isDesktop={desktop.current}
 				filtersStore={filters}
 				{detailOpen}
-				{liveEdgeState}
-				{liveEdgeMessage}
 				{hoverPeek}
 				controls={mapControls}
 			/>
@@ -573,7 +550,7 @@
 	class="map-hero"
 	data-selection-presence={selectionPresence}
 	data-selection-source-health={selectionSourceHealth}
-	data-motion-stale={live.vehiclesIsStale}
+	data-motion-stale={live.familyStates.vehicles.health.isStale}
 	data-motion-tick-key={runtime.processedMotion?.tickKey}
 	data-motion-vehicle-count={runtime.processedMotion?.vehicleCount}
 	bind:this={heroEl}

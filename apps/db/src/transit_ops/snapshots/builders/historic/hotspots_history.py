@@ -450,7 +450,9 @@ def _ladder_rows(
         total = grouped.get(entity_id)
         if total is None:
             grouped[entity_id] = [
-                value.in_clamp_observation_count, value.severe_count, value.sum_delay_seconds,
+                value.in_clamp_observation_count,
+                value.severe_count,
+                value.sum_delay_seconds,
             ]
         else:
             total[0] += value.in_clamp_observation_count
@@ -601,7 +603,8 @@ def build_hotspots_history_plan_from_rows(
 
 def build_hotspots_history_plan(
     conn: Connection,
-    provider_id: str = "stm",
+    *,
+    provider_id: str,
 ) -> HotspotsHistoryPlan:
 
     params = {"provider_id": provider_id}

@@ -4,7 +4,7 @@ import type { RouteFile } from '#lib/v1/index.ts';
 import { RouteFileSchema } from '#lib/v1/schemas/route.ts';
 import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import type { VehicleFeature } from '#lib/components/map/index.ts';
-import { createShapeCacheManager, MAX_CACHED_ROUTE_SHAPES } from './mapShapeCache';
+import { createShapeCacheManager } from './mapShapeCache';
 
 const EAST_LEG: [number, number][] = [
 	[-73.6, 45.5],
@@ -62,44 +62,6 @@ describe('createShapeCacheManager.prefetch', () => {
 		expect(mgr.shapeFor.revision?.()).toBe(2);
 	});
 
-	it.each(['resolve', 'reject'] as const)(
-		'ignores an evicted request that later %ss while its replacement is pending',
-		async (outcome) => {
-			let resolveFirst!: (route: RouteFile) => void;
-			let rejectFirst!: (error: Error) => void;
-			let resolveSecond!: (route: RouteFile) => void;
-			const first = new Promise<RouteFile>((resolve, reject) => {
-				resolveFirst = resolve;
-				rejectFirst = reject;
-			});
-			const second = new Promise<RouteFile>((resolve) => {
-				resolveSecond = resolve;
-			});
-			const getRoute = vi
-				.fn<(id: string) => Promise<RouteFile | null>>()
-				.mockResolvedValue(routeFile('24'))
-				.mockReturnValueOnce(first)
-				.mockReturnValueOnce(second);
-			const mgr = createShapeCacheManager(getRoute);
-			mgr.prefetch([vehicle('a', '24')]);
-			mgr.remember(routeFile('24'));
-			for (let i = 0; i < MAX_CACHED_ROUTE_SHAPES; i += 1) mgr.remember(routeFile(`r${i}`));
-			expect(mgr.shapeFor(feature('24'))).toBeNull();
-			mgr.prefetch([vehicle('a', '24')]);
-
-			if (outcome === 'resolve') resolveFirst(routeFile('24'));
-			else rejectFirst(new Error('evicted request failed'));
-			await flush();
-			mgr.prefetch([vehicle('a', '24')]);
-			expect(getRoute).toHaveBeenCalledTimes(2);
-			expect(mgr.shapeFor(feature('24'))).toBeNull();
-
-			resolveSecond(routeFile('24'));
-			await flush();
-			expect(mgr.shapeFor(feature('24'))).toEqual(EAST_LEG);
-		},
-	);
-
 	it('reuses geometry remembered from a route selection without another fetch', () => {
 		const getRoute = vi.fn(async (id: string) => routeFile(id));
 		const mgr = createShapeCacheManager(getRoute);
@@ -132,12 +94,12 @@ describe('createShapeCacheManager.prefetch', () => {
 		expect(getRoute).toHaveBeenCalledOnce();
 	});
 
-	it('bounds remembered routes with the same eviction policy as fetched routes', () => {
+	it('retains all remembered routes', () => {
 		const mgr = createShapeCacheManager(async (id) => routeFile(id));
-		for (let i = 0; i <= MAX_CACHED_ROUTE_SHAPES; i += 1) mgr.remember(routeFile(`r${i}`));
+		for (let i = 0; i <= 249; i += 1) mgr.remember(routeFile(`r${i}`));
 
-		expect(mgr.shapeFor(feature('r0'))).toBeNull();
-		expect(mgr.shapeFor(feature(`r${MAX_CACHED_ROUTE_SHAPES}`))).toEqual(EAST_LEG);
+		expect(mgr.shapeFor(feature('r0'))).toEqual(EAST_LEG);
+		expect(mgr.shapeFor(feature(`r249`))).toEqual(EAST_LEG);
 	});
 
 	it('fetches each route at most once across polls (deduped)', async () => {
@@ -217,19 +179,19 @@ describe('createShapeCacheManager.prefetch', () => {
 		expect(getRoute).toHaveBeenCalledTimes(2);
 	});
 
-	it('evicts the oldest cached route once the cap is exceeded', async () => {
+	it('retains every route for the active provider without refetching', async () => {
 		const getRoute = vi.fn(async (id: string) => routeFile(id));
 		const mgr = createShapeCacheManager(getRoute);
 
-		const ids = Array.from({ length: MAX_CACHED_ROUTE_SHAPES + 1 }, (_, i) => `r${i}`);
+		const ids = Array.from({ length: 250 }, (_, i) => `r${i}`);
 		mgr.prefetch(ids.map((id, i) => vehicle(String(i), id)));
 		await flush();
 
-		expect(mgr.shapeFor(feature('r0'))).toBeNull();
-		expect(mgr.shapeFor(feature(`r${MAX_CACHED_ROUTE_SHAPES}`))).toEqual(EAST_LEG);
+		expect(mgr.shapeFor(feature('r0'))).toEqual(EAST_LEG);
+		expect(mgr.shapeFor(feature(`r249`))).toEqual(EAST_LEG);
 
 		mgr.prefetch([vehicle('again', 'r0')]);
-		expect(getRoute).toHaveBeenCalledTimes(MAX_CACHED_ROUTE_SHAPES + 2);
+		expect(getRoute).toHaveBeenCalledTimes(250);
 		await flush();
 		expect(mgr.shapeFor(feature('r0'))).toEqual(EAST_LEG);
 	});

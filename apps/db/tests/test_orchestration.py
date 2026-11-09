@@ -23,6 +23,7 @@ from transit_ops.orchestration import (
     run_realtime_worker_loop,
     run_static_pipeline,
 )
+from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings
 from transit_ops.silver import I3SilverLoadResult, RealtimeSilverLoadResult, StaticSilverLoadResult
 from transit_ops.silver.gis import GisSilverLoadResult
@@ -67,7 +68,6 @@ def _static_already_applied(monkeypatch):
 
 
 class _FakeEngine:
-
     def connect(self):
         return self
 
@@ -379,7 +379,7 @@ def static_pipeline():
         run_static_pipeline,
         "stm",
         settings=_pipeline_settings(),
-        registry=object(),
+        registry=ProviderRegistry.from_project_root(settings=_pipeline_settings()),
         engine=_FakeEngine(),
     )
 
@@ -1570,7 +1570,7 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
         "_capture_i3_alerts",
         lambda provider_id, settings, registry, engine, bronze_storage_resolver: (
             call_order.append("capture:i3_alerts"),
-            _i3_ingestion_result(),
+            replace(_i3_ingestion_result(), provider_id=provider_id),
         )[1],
         raising=False,
     )
@@ -1579,7 +1579,7 @@ def _install_realtime_cycle_stubs(monkeypatch, call_order: list[str]) -> None:
         "load_i3_to_silver",
         lambda provider_id, settings, engine, snapshot_id, endpoint_key: (
             call_order.append("load:i3_alerts"),
-            _i3_silver_result(),
+            replace(_i3_silver_result(), provider_id=provider_id),
         )[1],
         raising=False,
     )
@@ -1719,7 +1719,8 @@ def test_worker_preserves_feed_cadence_after_failure_and_recovers(
 
     assert attempts[failed_endpoint] == (
         [preceding_work_seconds + offset for offset in [0, 300, 600]]
-        if interval == 300 else [0, 30, 300, 330, 600]
+        if interval == 300
+        else [0, 30, 300, 330, 600]
     )
     assert attempts[
         "trip_updates" if failed_endpoint != "trip_updates" else "vehicle_positions"
@@ -1854,7 +1855,6 @@ def test_run_realtime_cycle_does_not_prune_when_all_endpoints_fail(
 
 
 class _RecordingFailureEngine:
-
     def __init__(self, *, explode: bool = False) -> None:
         self.inserts: list[dict] = []
         self._explode = explode
@@ -2570,3 +2570,59 @@ def test_one_shot_scope_reuses_storage_and_closes_without_masking_outcome(
     assert len(storages) == (1 if fault in {"capture", "capture_identity"} else 2)
     assert "private-" not in caplog.text
     assert "private-" not in json.dumps(result.display_dict())
+
+
+@pytest.mark.parametrize("provider_id", ["stm", "oc_transpo"])
+@pytest.mark.parametrize("use_attempts", [False, True])
+@pytest.mark.parametrize(
+    "endpoint,elapsed,captured",
+    [
+        ("vehicle_positions", 29.9, True),
+        ("vehicle_positions", 15, False),
+        ("i3_alerts", 299, True),
+        ("i3_alerts", 200, False),
+    ],
+)
+def test_capture_cadence_tolerates_loop_jitter(
+    realtime_cycle, monkeypatch, provider_id, use_attempts, endpoint, elapsed, captured
+):
+    calls = []
+    _install_realtime_cycle_stubs(monkeypatch, calls)
+    now = datetime(2026, 5, 26, 22, tzinfo=UTC)
+    monkeypatch.setattr(orchestration, "utc_now", lambda: now)
+    history = {endpoint: now - timedelta(seconds=elapsed)}
+    result = orchestration._run_realtime_cycle(
+        provider_id,
+        **realtime_cycle.keywords,
+        bronze_storage_resolver=lambda backend: object(),
+        last_captures={} if use_attempts else history,
+        last_attempts=history if use_attempts else None,
+    )
+    assert (f"capture:{endpoint}" in calls) == captured
+    state = next(r.status for r in result.endpoint_results if r.endpoint_key == endpoint)
+    assert state == ("succeeded" if captured else "skipped")
+
+
+@pytest.mark.parametrize("already_applied", [False, True])
+def test_static_pipeline_without_gis_skips_both_gis_steps(monkeypatch, caplog, already_applied):
+    _patch_static_steps(monkeypatch)
+    if already_applied:
+        _static_already_applied(monkeypatch)
+    calls = []
+    monkeypatch.setattr(orchestration, "ingest_gis_feed", lambda *a, **kw: calls.append("ingest"))
+    monkeypatch.setattr(
+        orchestration, "load_latest_gis_to_silver", lambda *a, **kw: calls.append("silver")
+    )
+    result = run_static_pipeline(
+        "octranspo",
+        settings=_pipeline_settings(),
+        registry=ProviderRegistry.from_project_root(settings=_pipeline_settings()),
+        engine=_FakeEngine(),
+    )
+    assert result.status == "succeeded"
+    assert result.gis_status == "not-configured"
+    assert result.gis_error_message is None
+    assert result.gis_ingestion is None
+    assert result.gis_silver_load is None
+    assert calls == []
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]

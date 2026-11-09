@@ -10,6 +10,8 @@ const detail: Detail = { id: 'bus-1', label: 'Bus 1' };
 
 function health(overrides: Partial<FeedHealth> = {}): FeedHealth {
 	return {
+		ageSource: 'publication',
+		ageTimestamp: null,
 		state: 'live',
 		ageSeconds: 0,
 		isStale: false,

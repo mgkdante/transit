@@ -156,29 +156,8 @@ const harness = vi.hoisted(() => {
 	const getStop = vi.fn(() => null);
 	const focusCoordinate = vi.fn(() => true);
 	const fitRouteBounds = vi.fn(() => true);
-	const toVehicleFeatures = vi.fn(
-		(
-			items: unknown,
-			filter: { routes: ReadonlySet<string>; vehicles: ReadonlySet<string> },
-			_alertIds: unknown,
-			selectedId: string | null,
-		) => ({
-			type: 'FeatureCollection',
-			features:
-				Array.isArray(items) && items.length > 0
-					? [
-							{
-								type: 'Feature',
-								geometry: { type: 'Point', coordinates: [-73.57, 45.51] },
-								properties: {
-									id: 'bus-1',
-									selected: selectedId === 'bus-1' || filter.vehicles.has('bus-1') ? 1 : 0,
-								},
-							},
-						]
-					: [],
-		}),
-	);
+	const toVehicleFeatures =
+		vi.fn<typeof import('#lib/components/map/vehicleLayer.ts').toVehicleFeatures>();
 	const createVehicleMotionController = vi.fn(
 		(_runtime: unknown, publish: (features: unknown) => void) => {
 			publishMotionFrame = publish;
@@ -235,7 +214,15 @@ const harness = vi.hoisted(() => {
 				active: true,
 				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
 				retainedGeneration: '2026-06-20T12:00:00Z',
-				health: { state: 'live', ageSeconds: 30, isStale: false, retained: true, notice: null },
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: 'live',
+					ageSeconds: 30,
+					isStale: false,
+					retained: true,
+					notice: null,
+				},
 				error: null,
 				successRevision: 1,
 			},
@@ -245,6 +232,8 @@ const harness = vi.hoisted(() => {
 				lastGoodAt: null,
 				retainedGeneration: null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: 'never-loaded',
 					ageSeconds: null,
 					isStale: false,
@@ -260,6 +249,8 @@ const harness = vi.hoisted(() => {
 				lastGoodAt: null,
 				retainedGeneration: null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: 'never-loaded',
 					ageSeconds: null,
 					isStale: false,
@@ -274,7 +265,15 @@ const harness = vi.hoisted(() => {
 				active: true,
 				lastGoodAt: Date.parse('2026-06-20T12:00:30Z'),
 				retainedGeneration: '2026-06-20T12:00:00Z',
-				health: { state: 'live', ageSeconds: 30, isStale: false, retained: true, notice: null },
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: 'live',
+					ageSeconds: 30,
+					isStale: false,
+					retained: true,
+					notice: null,
+				},
 				error: null,
 				successRevision: 1,
 			},
@@ -284,6 +283,8 @@ const harness = vi.hoisted(() => {
 				lastGoodAt: null,
 				retainedGeneration: null,
 				health: {
+					ageSource: null,
+					ageTimestamp: null,
 					state: 'never-loaded',
 					ageSeconds: null,
 					isStale: false,
@@ -637,7 +638,10 @@ vi.mock('#lib/v1/live/store.svelte.ts', async () => {
 		configurable: true,
 		get: () => Number(signals.vehiclesGeneration.slice(17, 19)),
 	});
-	return { createLiveStore: harness.createLiveStore };
+	return {
+		LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
+		createLiveStore: harness.createLiveStore,
+	};
 });
 
 vi.mock('#lib/v1/resource.svelte.ts', async () => {
@@ -659,6 +663,7 @@ vi.mock('./MapSelectionDetail.svelte', async (importOriginal) => {
 });
 
 vi.mock('#lib/components/map/index.ts', async () => {
+	const actual = await import('#lib/components/map/vehicleLayer.ts');
 	const { default: MapStage } = await import('./__fixtures__/MapStageStub.svelte');
 	return {
 		MapStage,
@@ -675,7 +680,7 @@ vi.mock('#lib/components/map/index.ts', async () => {
 		addVehicleSource: harness.addVehicleSource,
 		addVehicleLayers: harness.addVehicleLayers,
 		setStale: harness.setStale,
-		toVehicleFeatures: harness.toVehicleFeatures,
+		toVehicleFeatures: harness.toVehicleFeatures.mockImplementation(actual.toVehicleFeatures),
 		createVehicleMotionController: harness.createVehicleMotionController,
 		addStopsSource: harness.addStopsSource,
 		addStopsLayer: harness.addStopsLayer,
@@ -688,12 +693,7 @@ vi.mock('#lib/components/map/index.ts', async () => {
 		setNearTarget: harness.setNearTarget,
 		nearestStops: () => [{ ...harness.stops[0], distanceM: 100 }],
 		centerFromProviderBbox: () => [-73.72, 45.52],
-		liveTtlS: (ttl: number | null | undefined) => Math.max(1, ttl ?? 30),
 		routeDirectionVariants: () => [],
-		routeShapes: () => [],
-		bestShapeForPoint: () => null,
-		fixAgeS: () => 0,
-		isVehicleStale: () => false,
 	};
 });
 

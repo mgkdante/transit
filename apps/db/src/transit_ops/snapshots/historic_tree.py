@@ -1079,7 +1079,7 @@ def _walk_reachable_graph(
     executor: ThreadPoolExecutor,
     initial_optional_roots: Mapping[str, StoredObjectVersion | None],
     manifest: Manifest | None,
-    provider_id: str | None = None,
+    provider_id: str | None,
 ) -> tuple[
     set[str],
     dict[str, StoredObjectVersion],
