@@ -16,7 +16,7 @@ export function checkRequiredJobs(needs) {
       !["true", "false"].includes(selected)) {
     throw new Error("Web path classification did not succeed");
   }
-  for (const job of ["ci-work", "unit", "e2e"]) {
+  for (const job of ["prerelease-guard", "ci-work", "unit", "e2e"]) {
     const result = needs[job]?.result;
     if (result !== "success" &&
         !(job === "e2e" && selected === "false" && result === "skipped")) {
