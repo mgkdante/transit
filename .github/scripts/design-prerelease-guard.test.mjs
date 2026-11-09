@@ -99,3 +99,41 @@ test("directory walk cycles fail closed", (t) => {
   symlinkSync(root, join(root, "loop"), "junction");
   assert.throws(() => checkManifests(root), /cannot walk manifests.*Directory cycle/);
 });
+test("object overrides validate stable dot and nested design leaves", (t) => {
+  const root = repository(t, {
+    "package.json": { overrides: { "@yesid/ui": {
+      ".": url(), "@yesid/tokens": url("0.38.1", "tokens"), other: "^1.2.3",
+    } } },
+  });
+  assert.doesNotThrow(() => checkManifests(root));
+});
+
+for (const value of [url("0.39.0-rc.1"), url("0.38.1", "tokens")]) {
+  test(`object override dot rejects ${value}`, (t) => {
+    rejects(t, { overrides: { "@yesid/ui": { ".": value } } }, "overrides", ".", value);
+  });
+}
+
+test("non-design override children do not inherit design identity", (t) => {
+  const root = repository(t, {
+    "package.json": { overrides: { "@yesid/ui": { other: "^1.2.3" } } },
+  });
+  assert.doesNotThrow(() => checkManifests(root));
+});
+
+test("non-design override children still detect candidate release URLs", (t) => {
+  const value = url("0.39.0-rc.1");
+  rejects(t, { overrides: { "@yesid/ui": { other: value } } }, "overrides", "other", value);
+});
+
+for (const key of ["@yesid/ui/@yesid/tokens", "@yesid/ui>@yesid/tokens"]) {
+  test(`selector ${key} accepts the last design target`, (t) => {
+    const root = repository(t, {
+      "package.json": { resolutions: { [key]: url("0.38.1", "tokens") } },
+    });
+    assert.doesNotThrow(() => checkManifests(root));
+  });
+  test(`selector ${key} rejects an ancestor tarball`, (t) => {
+    rejects(t, { resolutions: { [key]: url() } }, "resolutions", key, url());
+  });
+}

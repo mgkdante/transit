@@ -29,16 +29,18 @@ function manifests(root) {
   return [...files].sort();
 }
 
-function* references(entries, field) {
+function* references(entries, field, parentNames = []) {
   if (!entries || typeof entries !== "object" || Array.isArray(entries))
     throw new Error(`${field}: expected a dependency object`);
   for (const [key, value] of Object.entries(entries)) {
-    const names = [...key.matchAll(/@yesid\/([a-z0-9][a-z0-9._-]*)/g)].map((match) => match[1]);
+    const names = key === "." ? parentNames : [...key.matchAll(/@yesid\/([a-z0-9][a-z0-9._-]*)/g)].map((match) => match[1]).slice(-1);
     const alias = typeof value === "string" && value.startsWith("npm:@yesid/");
     const tarball = typeof value === "string" && value.includes("yesid.design/releases/download/");
-    if (names.length || alias || tarball) yield { field, key, value, names };
-    if (value && typeof value === "object" && !Array.isArray(value))
-      yield* references(value, `${field}[${JSON.stringify(key)}]`);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      yield* references(value, `${field}[${JSON.stringify(key)}]`, names);
+    } else if (names.length || alias || tarball) {
+      yield { field, key, value, names };
+    }
   }
 }
 
