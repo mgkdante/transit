@@ -464,7 +464,7 @@ const documents = {
 						'Les présentes conditions régissent le site hébergé et les points de terminaison publics. L’utilisation et la réutilisation du code du dépôt sont régies par ses fichiers LICENSE et NOTICE ainsi que par les conditions applicables de GitHub.',
 						'Le logiciel original de Transit est offert selon la licence MIT. Cette licence ne remet pas sous licence les données des sociétés de transport, le contenu cartographique, les polices, les marques de commerce ni les autres éléments de tiers.',
 						'Le fichier NOTICE du dépôt, les manifestes de fournisseur et les crédits visibles de carte ou de données indiquent les sources et conditions applicables. Ces conditions de tiers régissent la réutilisation de leur contenu.',
-						'Les données de la STM sont attribuées à la Société de transport de Montréal et utilisées selon CC BY 4.0. Le contenu d’OC Transpo conserve la mention « Contains information licensed under the Open Government Licence – City of Ottawa. » Les données OpenStreetMap sont offertes selon l’ODbL et attribuées par la mention © contributeurs OpenStreetMap; le crédit de fond de carte Protomaps demeure visible. Le fournisseur STO est inactif et aucune donnée STO n’est publiée.',
+						'Les données de la STM sont attribuées à la Société de transport de Montréal et utilisées selon CC BY 4.0. Le contenu d’OC Transpo conserve la mention « Contient de l’information visée par la Licence du gouvernement ouvert – Ville d’Ottawa. » Les données OpenStreetMap sont offertes selon l’ODbL et attribuées par la mention © contributeurs OpenStreetMap; le crédit de fond de carte Protomaps demeure visible. Le fournisseur STO est inactif et aucune donnée STO n’est publiée.',
 					],
 					links: [
 						{

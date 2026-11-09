@@ -10,7 +10,7 @@ const rows = [
 		title: 'Montagne / Sommet',
 		href: '/fr/lignes/11',
 		ariaLabel: 'Voir le détail de Montagne / Sommet',
-		typeId: 'Voyage · T1',
+		typeId: 'Trajet · T1',
 		severeRate: '62 %',
 		confidenceInterval: '56 %–70 %',
 		recurrence: 'Sujet aux retards 5 jours sur 7 observés',
