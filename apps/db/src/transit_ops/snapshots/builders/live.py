@@ -342,6 +342,7 @@ _NETWORK_VEHICLES_SQL = named_query(
         AND lvs.realtime_snapshot_id = cvm.realtime_snapshot_id
         AND lvs.entity_index         = cvm.entity_index
     WHERE cvm.provider_id = :provider_id
+      AND NULLIF(cvm.trip_id, '') IS NOT NULL
     """,
 )
 
@@ -437,7 +438,7 @@ def build_network(conn: Connection, *, provider_id: str, generated_utc: str) -> 
         OccupancyMix(**{k: v / occ_total for k, v in occ_counts.items()}) if occ_total else None
     )
 
-    # Coverage is the share of live vehicles with known punctuality status.
+    # Coverage is the share of in-service vehicles with known punctuality status.
     coverage_pct = _otp_pct(known, vehicles_in_service)
 
     delays_min = sorted(
