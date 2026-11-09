@@ -1,6 +1,5 @@
 import { CORS_HEADERS } from "./cors.js";
 
-const PROVIDER = "stm";
 export const LIVE_TTL_SECONDS = 20;
 export const LIVE_CADENCE_MS = LIVE_TTL_SECONDS * 1000;
 export const SNAPSHOT_STALE_S = LIVE_TTL_SECONDS * 3;
@@ -9,16 +8,24 @@ const ROUTES_INDEX_TTL_MS = 3_600_000;
 const FAILURE_TTL_MS = 10_000;
 const EDGE_CACHE_KEY = "https://transit.yesid.dev/__kpis/core-v3";
 
-let coreMemo = null;
-let coreInFlight = null;
-let routesTotalMemo = null;
-let lastBuildFailureAtMs = 0;
+const providerCaches = new Map();
+let catalogMemo = new WeakMap();
 
 export function __resetKpisCachesForTests() {
-  coreMemo = null;
-  coreInFlight = null;
-  routesTotalMemo = null;
-  lastBuildFailureAtMs = 0;
+  providerCaches.clear();
+  catalogMemo = new WeakMap();
+}
+
+function cacheFor(provider) {
+  if (!providerCaches.has(provider)) {
+    providerCaches.set(provider, {
+      coreMemo: null,
+      coreInFlight: null,
+      routesTotalMemo: null,
+      lastBuildFailureAtMs: 0,
+    });
+  }
+  return providerCaches.get(provider);
 }
 
 async function readJson(env, key) {
@@ -29,6 +36,15 @@ async function readJson(env, key) {
   } catch {
     return null;
   }
+}
+
+async function providerCatalog(env) {
+  const memo = catalogMemo.get(env.SNAPSHOTS);
+  const nowMs = Date.now();
+  if (memo && nowMs - memo.fetchedAtMs < LIVE_CADENCE_MS) return memo.promise;
+  const promise = readJson(env, "v1/providers.json").catch(() => null);
+  catalogMemo.set(env.SNAPSHOTS, { fetchedAtMs: nowMs, promise });
+  return promise;
 }
 
 function parseUtcMs(iso) {
@@ -63,26 +79,27 @@ function meanDelaySeconds(sum, count) {
   return Math.sign(mean) * Math.round(Math.abs(mean));
 }
 
-async function routesTotal(env, nowMs) {
+async function routesTotal(env, nowMs, provider, state) {
   if (
-    routesTotalMemo !== null &&
-    nowMs - routesTotalMemo.fetchedAtMs < ROUTES_INDEX_TTL_MS
+    state.routesTotalMemo !== null &&
+    nowMs - state.routesTotalMemo.fetchedAtMs < ROUTES_INDEX_TTL_MS
   ) {
-    return routesTotalMemo.value;
+    return state.routesTotalMemo.value;
   }
-  const index = await readJson(env, `v1/${PROVIDER}/static/routes_index.json`);
-  if (!Array.isArray(index?.routes)) return routesTotalMemo?.value ?? null;
+  const index = await readJson(env, `v1/${provider}/static/routes_index.json`);
+  if (!Array.isArray(index?.routes))
+    return state.routesTotalMemo?.value ?? null;
   const typed = index.routes.filter((route) => typeof route?.type === "number");
   const value =
     typed.length > 0
       ? typed.filter((route) => route.type === 3).length
       : index.routes.length;
-  routesTotalMemo = { fetchedAtMs: nowMs, value };
+  state.routesTotalMemo = { fetchedAtMs: nowMs, value };
   return value;
 }
 
-async function buildCore(env) {
-  const base = `v1/${PROVIDER}/live`;
+async function buildCore(env, provider, state) {
+  const base = `v1/${provider}/live`;
   const [vehiclesDoc, tripsDoc, networkDoc] = await Promise.all([
     readJson(env, `${base}/vehicles.json`),
     readJson(env, `${base}/trips.json`),
@@ -168,16 +185,16 @@ async function buildCore(env) {
     avgDelayS: meanDelaySeconds(delaySumS, delayCount),
     coverage: coveragePct === null ? null : coveragePct / 100,
     routesLive: vehiclesByRoute.size,
-    routesTotal: await routesTotal(env, nowMs),
+    routesTotal: await routesTotal(env, nowMs, provider, state),
     topRoutes,
   };
 }
 
-async function edgeCacheRead() {
+async function edgeCacheRead(provider) {
   const cache = globalThis.caches?.default;
   if (!cache) return null;
   try {
-    const hit = await cache.match(EDGE_CACHE_KEY);
+    const hit = await cache.match(`${EDGE_CACHE_KEY}/${provider}`);
     if (!hit) return null;
     const entry = await hit.json();
     return typeof entry?.fetchedAtMs === "number" && entry.core ? entry : null;
@@ -186,12 +203,12 @@ async function edgeCacheRead() {
   }
 }
 
-async function edgeCacheWrite(entry) {
+async function edgeCacheWrite(entry, provider) {
   const cache = globalThis.caches?.default;
   if (!cache) return;
   try {
     await cache.put(
-      EDGE_CACHE_KEY,
+      `${EDGE_CACHE_KEY}/${provider}`,
       new Response(JSON.stringify(entry), {
         headers: {
           "content-type": "application/json",
@@ -202,50 +219,52 @@ async function edgeCacheWrite(entry) {
   } catch {}
 }
 
-function refreshCore(env) {
-  if (coreInFlight === null) {
-    coreInFlight = (async () => {
+function refreshCore(env, provider, state) {
+  if (state.coreInFlight === null) {
+    state.coreInFlight = (async () => {
       try {
-        const core = await buildCore(env);
+        const core = await buildCore(env, provider, state);
         if (core === null) {
-          lastBuildFailureAtMs = Date.now();
+          state.lastBuildFailureAtMs = Date.now();
         } else {
-          lastBuildFailureAtMs = 0;
+          state.lastBuildFailureAtMs = 0;
           const entry = { fetchedAtMs: Date.now(), core };
-          coreMemo = entry;
-          await edgeCacheWrite(entry);
+          state.coreMemo = entry;
+          await edgeCacheWrite(entry, provider);
         }
         return core;
       } catch (error) {
-        lastBuildFailureAtMs = Date.now();
+        state.lastBuildFailureAtMs = Date.now();
         throw error;
       } finally {
-        coreInFlight = null;
+        state.coreInFlight = null;
       }
     })();
   }
-  return coreInFlight;
+  return state.coreInFlight;
 }
 
-async function getCore(env, waitUntil) {
-  let entry = coreMemo;
+async function getCore(env, waitUntil, provider) {
+  const state = cacheFor(provider);
+  let entry = state.coreMemo;
   if (entry === null) {
-    const fromEdge = await edgeCacheRead();
+    const fromEdge = await edgeCacheRead(provider);
     if (
       fromEdge !== null &&
-      (coreMemo === null || fromEdge.fetchedAtMs > coreMemo.fetchedAtMs)
+      (state.coreMemo === null ||
+        fromEdge.fetchedAtMs > state.coreMemo.fetchedAtMs)
     ) {
-      coreMemo = fromEdge;
+      state.coreMemo = fromEdge;
     }
-    entry = coreMemo;
+    entry = state.coreMemo;
   }
   const nowMs = Date.now();
   if (entry !== null && snapshotAgeS(entry.core, nowMs) < SNAPSHOT_STALE_S) {
     // A cached family's age is not evidence that storage has no fresh value.
     // Join the existing single-flight build before returning any newly null lane.
     if (cacheWouldNullLane(entry.core, nowMs)) {
-      if (nowMs - lastBuildFailureAtMs >= FAILURE_TTL_MS) {
-        const rebuild = refreshCore(env);
+      if (nowMs - state.lastBuildFailureAtMs >= FAILURE_TTL_MS) {
+        const rebuild = refreshCore(env, provider, state);
         waitUntil(rebuild.catch(() => {}));
         const core = await rebuild.catch(() => null);
         if (core !== null) return { core, cacheState: "miss" };
@@ -257,14 +276,14 @@ async function getCore(env, waitUntil) {
     if (nowMs - entry.fetchedAtMs < LIVE_CADENCE_MS) {
       return { core: entry.core, cacheState: "hit" };
     }
-    if (nowMs - lastBuildFailureAtMs >= FAILURE_TTL_MS) {
-      const revalidation = refreshCore(env);
+    if (nowMs - state.lastBuildFailureAtMs >= FAILURE_TTL_MS) {
+      const revalidation = refreshCore(env, provider, state);
       waitUntil(revalidation.catch(() => {}));
     }
     return { core: entry.core, cacheState: "stale" };
   }
-  if (nowMs - lastBuildFailureAtMs < FAILURE_TTL_MS) return null;
-  const rebuild = refreshCore(env);
+  if (nowMs - state.lastBuildFailureAtMs < FAILURE_TTL_MS) return null;
+  const rebuild = refreshCore(env, provider, state);
   waitUntil(rebuild.catch(() => {}));
   const core = await rebuild.catch(() => null);
   return core === null ? null : { core, cacheState: "miss" };
@@ -290,12 +309,26 @@ function unavailable() {
 }
 
 export async function serveKpis(request, env, ctx) {
+  const selected = new URL(request.url).searchParams.get("provider");
+  const provider = selected ?? "stm";
+  if (selected !== null) {
+    // The published catalog owns provider membership. Keep legacy requests
+    // independent of catalog availability, as they were before provider selection.
+    const catalog = await providerCatalog(env);
+    if (!Array.isArray(catalog?.providers)) return unavailable();
+    if (!catalog.providers.some((entry) => entry?.id === provider)) {
+      return new Response(null, {
+        status: 404,
+        headers: { ...CORS_HEADERS, "cache-control": "no-store" },
+      });
+    }
+  }
   const waitUntil = ctx?.waitUntil
     ? ctx.waitUntil.bind(ctx)
     : (promise) => {
         Promise.resolve(promise).catch(() => {});
       };
-  let result = await getCore(env, waitUntil);
+  let result = await getCore(env, waitUntil, provider);
   if (result === null) return unavailable();
   let nowMs = Date.now();
   // Cache lookup can itself take time. Recheck at the instant used for the
@@ -305,7 +338,7 @@ export async function serveKpis(request, env, ctx) {
     (!stampUsable(parseUtcMs(result.core.snapshotAt), nowMs) ||
       cacheWouldNullLane(result.core, nowMs))
   ) {
-    result = await getCore(env, waitUntil);
+    result = await getCore(env, waitUntil, provider);
     if (result === null) return unavailable();
     nowMs = Date.now();
   }
