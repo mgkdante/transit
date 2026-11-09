@@ -63,7 +63,7 @@ def test_gc_marks_valid_unreachable_family_indexes_without_deleting(family: str)
     orphan = f"{source.split('/generations/')[0]}/generations/{snapshot_sha256(payload)}/index.json"
     storage.put(orphan, payload)
     before = dict(storage.objects)
-    report = plan_historic_generation_gc(storage, now=NOW, mode="mark")
+    report = plan_historic_generation_gc(storage, now=NOW, mode="mark", provider_id=None)
     assert report.unreachable_keys == tuple(sorted((orphan, paths["orphan"])))
     assert report.eligible_keys == ()
     assert storage.objects == before
@@ -80,7 +80,7 @@ def test_gc_blocks_missing_reachable_family_object(family: str) -> None:
     storage.objects.pop(path)
     storage.versions.pop(path)
     with pytest.raises(HistoricGcBlockedError, match="missing_object"):
-        plan_historic_generation_gc(storage, now=NOW)
+        plan_historic_generation_gc(storage, now=NOW, provider_id=None)
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -106,4 +106,4 @@ def test_http_proof_rejects_missing_family_index(family: str) -> None:
 def test_complete_http_tree_passes_and_gc_apply_never_reads_storage() -> None:
     assert _build_report(_complete_public_fixture()).status == "pass"
     with pytest.raises(HistoricGcUnsupportedError, match="apply is disabled"):
-        plan_historic_generation_gc(object(), now=NOW, mode="apply")
+        plan_historic_generation_gc(object(), now=NOW, mode="apply", provider_id=None)

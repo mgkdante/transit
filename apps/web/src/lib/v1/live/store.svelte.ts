@@ -188,9 +188,9 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	const generatedUtc = $derived.by<string | null>(() => {
 		let oldest: string | null = null;
 		let oldestMs = Number.POSITIVE_INFINITY;
-		for (const family of LIVE_FAMILIES) {
+		for (const family of headlineFamilies()) {
 			const state = familyStatesValue[family];
-			if (!state.active || state.retainedGeneration == null) continue;
+			if (state.retainedGeneration == null) continue;
 			const generationMs = Date.parse(state.retainedGeneration);
 			if (!Number.isNaN(generationMs) && generationMs < oldestMs) {
 				oldest = state.retainedGeneration;
@@ -200,7 +200,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return oldest;
 	});
 	const ageSecondsValue = $derived.by<number | null>(() => {
-		const active = activeFamilies().filter((family) => {
+		const active = headlineFamilies().filter((family) => {
 			const health = familyStates[family].health;
 			return health.retained || health.state === 'failed-no-data';
 		});
@@ -213,10 +213,12 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		}
 		return oldestAge;
 	});
-	const isStale = $derived(activeFamilies().some((family) => familyStates[family].health.isStale));
+	const isStale = $derived(
+		headlineFamilies().some((family) => familyStates[family].health.isStale),
+	);
 	const isPartialStale = $derived(
 		// A family that has never loaded cannot certify a whole-feed outage either.
-		isStale && activeFamilies().some((family) => !familyStates[family].health.isStale),
+		isStale && headlineFamilies().some((family) => !familyStates[family].health.isStale),
 	);
 	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
 	const vehiclesAgeSecondsValue = $derived(familyStates.vehicles.health.ageSeconds);
@@ -272,6 +274,11 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 
 	function activeFamilies(): LiveFamily[] {
 		return LIVE_FAMILIES.filter((family) => familyStatesValue[family].active);
+	}
+
+	// Glossary: Live age excludes service alerts, which carry their own age.
+	function headlineFamilies(): LiveFamily[] {
+		return activeFamilies().filter((family) => family !== 'alerts');
 	}
 
 	function readFamily(family: LiveFamily, context: AdapterCtx): Promise<LiveFamilyPayload> {

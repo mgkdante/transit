@@ -53,7 +53,6 @@
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
-	import { selectVerdict, reliabilityVerdict } from '#lib/v1/verdict.ts';
 	import type { MetricKey } from '#lib/metrics.ts';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
 
@@ -219,6 +218,7 @@
 		},
 		grains: { keys: NETWORK_GRAINS, labels: () => grainLabels },
 		apply: (_current, retained) => retained,
+		verdict: { file: (data) => data, headline: (retained) => retained.headline },
 		locale: () => locale,
 	});
 	const explicitHistory = $derived(view.history.active);
@@ -254,22 +254,7 @@
 	const grain = $derived<NetworkGrain>(view.grain);
 	const grainKey = $derived(view.grain);
 	const historyAnnouncement = $derived(view.announcements.correction);
-	const networkHeadline = $derived(
-		reliabilityVerdict(selectedTrend, {
-			...view.verdictWindow,
-			...(explicitHistory && view.history.value?.headline
-				? { aggregate: view.history.value.headline }
-				: {}),
-		}),
-	);
-	const networkVerdict = $derived(
-		selectVerdict(
-			networkHeadline,
-			explicitHistory ? 'range' : networkHeadline.grain,
-			locale,
-			t.verdict,
-		),
-	);
+	const networkVerdict = $derived(view.verdict);
 	const isDailyGrain = $derived(grain === 'day');
 	const showGrainPicker = $derived(view.segments.filter((segment) => segment.available).length > 1);
 

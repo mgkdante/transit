@@ -458,6 +458,7 @@
 			<MapSelectionDetail
 				detail={selectedDetail}
 				alertsStale={live.familyStates.alerts.health.notice !== null}
+				alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}
 				locale={locale}
 				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}
@@ -608,6 +609,7 @@
 			onback={goBackDetail}
 			{selectedDetail}
 			alertsStale={live.familyStates.alerts.health.notice !== null}
+			alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}
 			notReporting={selectedVehicleAbsence}
 			{selectionPresence}
 			{selectionSourceHealth}
