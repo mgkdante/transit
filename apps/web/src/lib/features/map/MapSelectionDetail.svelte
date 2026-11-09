@@ -15,7 +15,7 @@
 		statusVar,
 	} from '#lib/components/dataviz/tokens.ts';
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
-	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { routeHasNoLiveData } from '#lib/v1/providers.ts';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelection, MapSelectionDetail } from './mapSelectionSession.svelte';
 	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
@@ -138,7 +138,7 @@
 				{@const absence = liveAbsenceReason('vehicle-delay', {
 					...absenceContext(),
 					notReporting: notReporting != null,
-					unsupported: detail.routeType === ROUTE_TYPE_METRO,
+					unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 				})}
 				<DetailAttributeGrid>
 					<div>
@@ -186,7 +186,7 @@
 								reason={liveAbsenceReason('next-stop', {
 									...absenceContext(),
 									notReporting: notReporting != null,
-									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+									unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 									scheduleMissing: detail.nextStopAbsence === 'not-in-schedule',
 								})}
 								{locale}>{detail.nextStop!.name}</MaybeValue
@@ -244,7 +244,7 @@
 								reason={liveAbsenceReason('occupancy', {
 									...absenceContext(),
 									notReporting: notReporting != null,
-									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+									unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 								})}
 								{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
@@ -278,7 +278,11 @@
 				<DetailAttributeGrid
 					><div>
 						<dt>{t.liveBuses}</dt>
-						<dd>{t.visibleBuses(detail.vehicles.length)}</dd>
+						<dd>
+							{#if detail.vehicles.length === 0 && routeHasNoLiveData(absenceContext().providerId, detail.route.type)}
+								<AbsentValue reason="metro-no-realtime" {locale} />
+							{:else}{t.visibleBuses(detail.vehicles.length)}{/if}
+						</dd>
 					</div></DetailAttributeGrid
 				>
 			{/if}
