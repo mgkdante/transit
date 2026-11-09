@@ -248,7 +248,7 @@ export const copy = defineCopy({
 		pipelineNotes: {
 			section: 'Comment on calcule',
 			note: 'De courtes notes sur les règles derrière les chiffres qui n’ont pas leur propre fiche.',
-			listLabel: 'Notes de méthode du pipeline',
+			listLabel: 'Notes de méthode de la chaîne de traitement',
 			labels: {
 				history_freeze: 'Gel des périodes closes',
 				service_time_conversion: 'Conversion des heures de service',

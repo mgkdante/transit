@@ -154,7 +154,7 @@ export const reliabilityCopy = defineCopy({
 			pts: 'pts',
 			ptOne: 'pt',
 			caption:
-				'Écart observé pour la même période dans la fenêtre précédente. La couverture des données et les voyages représentés peuvent différer.',
+				'Écart observé pour la même période dans la fenêtre précédente. La couverture des données et les trajets représentés peuvent différer.',
 		},
 		controls: {
 			viewLabel: 'Vue',

@@ -26,7 +26,7 @@
 			detail: (n, members) =>
 				`${n} champ${n > 1 ? 's' : ''} non modélisé${n > 1 ? 's' : ''} (${members})`,
 			conformantTitle:
-				'Le flux GTFS le plus récent ne contient que des champs que le pipeline modélise.',
+				'Le flux GTFS le plus récent ne contient que des champs que la chaîne de traitement modélise.',
 			outOfNormTitle: (rows, members) =>
 				`Le flux contient des champs hors du modèle standard (${members}) : ${intl.number('fr').format(rows)} ligne(s) conservée(s) telles quelles, jamais supprimées.`,
 		},

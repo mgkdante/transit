@@ -14,7 +14,7 @@ export const metricsCopy = defineCopy({
 			sql: 'Le SQL',
 			notReally: 'Ce que ce n’est PAS',
 			caveats: 'Limites',
-			pipelineNote: 'Note du pipeline (exécution actuelle)',
+			pipelineNote: 'Note de la chaîne de traitement (exécution actuelle)',
 		},
 		provenance: {
 			label: 'Sources et populations',

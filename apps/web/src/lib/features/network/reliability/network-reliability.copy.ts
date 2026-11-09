@@ -217,8 +217,8 @@ export const networkReliabilityCopy = defineCopy({
 		},
 		cancel: {
 			metric: 'Annulé (dernier jour)',
-			seriesLabel: '% de jours-voyages annulés',
-			summary: 'Part quotidienne des jours-voyages annulés à l’échelle du réseau.',
+			seriesLabel: '% de jours-trajets annulés',
+			summary: 'Part quotidienne des jours-trajets annulés à l’échelle du réseau.',
 		},
 		occupancyTrend: {
 			summary: 'Répartition des bandes d’achalandage par jour sur la tendance récente du réseau.',
@@ -236,11 +236,11 @@ export const networkReliabilityCopy = defineCopy({
 		},
 		delayHistogram: {
 			summary:
-				'Répartition des retards moyens par voyage à l’échelle du réseau, du plus tôt au plus tard.',
+				'Répartition des retards moyens par trajet à l’échelle du réseau, du plus tôt au plus tard.',
 			caption:
-				'La répartition actuelle des retards moyens par voyage, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
+				'La répartition actuelle des retards moyens par trajet, en minutes signées. Même base que le retard médian et les 10 % les plus lents ci-dessus : négatif signifie en avance, positif signifie en retard.',
 			xLabel: 'Retard (min)',
-			yLabel: 'Voyages',
+			yLabel: 'Trajets',
 		},
 		nonResponding: {
 			summary:
