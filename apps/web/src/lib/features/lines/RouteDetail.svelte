@@ -1,7 +1,10 @@
 <script lang="ts">
+	import '#lib/components/surface/compact-row.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
@@ -118,7 +121,10 @@
 	});
 	const articleTitle = $derived.by(() => {
 		const longName = route.data?.id === id ? route.data.long?.trim() : null;
-		return seed.name.trim() === id && longName ? `${id} ${longName}` : seed.name;
+		if (seed.name.trim() === id && longName) return `${line(id)} ${longName}`;
+		return line(id) !== id && seed.name.startsWith(id)
+			? line(id) + seed.name.slice(id.length)
+			: seed.name;
 	});
 	const reliability = createResource<RouteReliability | null>(
 		() => {
@@ -724,14 +730,6 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.375rem 0.5rem;
-		margin-inline: -0.5rem;
-		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.route-roster-link--static {
 		cursor: default;

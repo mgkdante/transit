@@ -1995,9 +1995,14 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						await control.dispose();
 					}
 				}
-				// Geometry checks scroll the page. Park the pointer outside its links
-				// so scrolling cannot start a hover preload for an unrelated fixture route.
+				// Geometry checks scroll the page. Park the pointer and switch hover preloading
+				// off: content pages scroll the document, so any link can pass under the
+				// parked pointer and start a preload for an unrelated fixture route.
 				await page.mouse.move(0, 0);
+				await page.evaluate(() => {
+					for (const element of document.querySelectorAll('[data-sveltekit-preload-data]'))
+						element.setAttribute('data-sveltekit-preload-data', 'off');
+				});
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
 				let actual;

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 
@@ -23,7 +25,7 @@
 	import {
 		ResourceBoundary,
 		EntityList,
-		EntityRow,
+		LineStopResult,
 		ReliabilityBadge,
 		SearchControls,
 		type SearchScopeKey,
@@ -48,8 +50,9 @@
 	import { routeColor } from '#lib/search/routeColor.ts';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
 	import VehicleResultRow from './VehicleResultRow.svelte';
-	import { copy } from './search.copy';
+	import { copy, searchExamples } from './search.copy';
 
+	const v1 = getV1Context();
 	const locale: Locale = getLocale();
 	const t = $derived(copy[locale]);
 	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
@@ -57,7 +60,10 @@
 	const routes = createResource(() => getRoutesIndex());
 	const stops = createResource(() => getStopsIndex());
 
-	const live = createLiveStore(getV1Context().manifest, liveReader, { families: ['vehicles'] });
+	const live = createLiveStore(v1.manifest, liveReader, { families: ['vehicles'] });
+	const occupancyAvailable = $derived(
+		hasOccupancy(v1.manifest.provider, live.vehicles?.vehicles ?? []),
+	);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -138,7 +144,7 @@
 
 	const stopNameById = $derived.by<SvelteMap<string, string>>(() => {
 		const m = new SvelteMap<string, string>();
-		for (const s of stops.data?.stops ?? []) m.set(s.id, s.name);
+		for (const s of stops.data?.stops ?? []) m.set(s.id, stopDisplayName(s.name));
 		return m;
 	});
 	function nextStopName(v: Vehicle): string | null {
@@ -211,7 +217,7 @@
 						<div class="search-census__examples">
 							<span class="search-census__examples-label">{t.census.examplesLabel}</span>
 							<div class="search-census__chips">
-								{#each t.census.examples as example (example)}
+								{#each searchExamples(v1.manifest.provider, locale) as example (example)}
 									<button
 										type="button"
 										class="search-census__chip"
@@ -245,7 +251,8 @@
 								{#snippet row(r)}
 									{@const hint = routeModeHint(r.type)}
 									<div use:observeRouteReliability={{ id: r.id, known: r.reliability }}>
-										<EntityRow
+										<LineStopResult
+											presentation="legacy-search"
 											target={{ kind: 'line', id: r.id }}
 											{locale}
 											glyph={hint.glyph}
@@ -254,10 +261,10 @@
 											title={routeTitle(r)}
 											subtitle={r.long ?? undefined}
 										>
-											{#snippet metaSlot()}
+											{#snippet status()}
 												<ReliabilityBadge snapshot={routeReliability.get(r.id)} {locale} />
 											{/snippet}
-										</EntityRow>
+										</LineStopResult>
 									</div>
 								{/snippet}
 							</EntityList>
@@ -280,19 +287,20 @@
 									{@const hint = stopModeHint(s)}
 									{@const tag = stopModeTag(s)}
 									<div use:observeStopReliability={s.id}>
-										<EntityRow
+										<LineStopResult
+											presentation="legacy-search"
 											target={{ kind: 'stop', id: s.id }}
 											{locale}
 											glyph={hint.glyph}
 											tag={tag ?? undefined}
-											title={s.name}
+											title={stopDisplayName(s.name)}
 											subtitle={s.code ?? undefined}
 											routes={s.routes}
 										>
-											{#snippet metaSlot()}
+											{#snippet status()}
 												<ReliabilityBadge snapshot={stopReliability.get(s.id)} {locale} />
 											{/snippet}
-										</EntityRow>
+										</LineStopResult>
 									</div>
 								{/snippet}
 							</EntityList>
@@ -304,12 +312,12 @@
 							<h2 class="search-group-head">
 								<span class="search-group-labelrow">
 									<span class="search-group-label">{t.vehiclesLabel}</span>
-									<MetricInfo
-										metricKey="occupancy"
-										{locale}
-										name={metricName('occupancy', locale)}
-										side="bottom"
-									/>
+									{#if occupancyAvailable}<MetricInfo
+											metricKey="occupancy"
+											{locale}
+											name={metricName('occupancy', locale)}
+											side="bottom"
+										/>{/if}
 									<MetricInfo
 										metricKey="avgDelay"
 										{locale}
@@ -322,6 +330,7 @@
 							<EntityList items={matchedVehicles} key={(v) => v.id}>
 								{#snippet row(v)}
 									<VehicleResultRow
+										{occupancyAvailable}
 										vehicle={v}
 										{locale}
 										nextStopName={nextStopName(v)}

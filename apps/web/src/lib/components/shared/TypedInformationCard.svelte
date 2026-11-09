@@ -132,7 +132,8 @@
 		border: 1px solid color-mix(in srgb, var(--information-accent) 50%, var(--border) 50%);
 		border-radius: var(--radius-pill);
 		background: color-mix(in srgb, var(--information-accent) 12%, var(--surface-2) 88%);
-		color: var(--information-accent);
+		/* Small text needs stronger contrast against the accent-tinted surface. */
+		color: color-mix(in srgb, var(--information-accent) 75%, var(--foreground) 25%);
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;

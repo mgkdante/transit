@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Snippet } from 'svelte';
 	import type { Chip } from '#lib/filters/index.ts';
@@ -14,6 +16,7 @@
 
 	interface Props {
 		open: boolean;
+		occupancyAvailable?: boolean;
 		locale: Locale;
 		timeZone?: string;
 		title?: string;
@@ -38,6 +41,7 @@
 
 	let {
 		open = $bindable(),
+		occupancyAvailable = true,
 		locale,
 		timeZone,
 		title,
@@ -60,7 +64,9 @@
 		footer,
 	}: Props = $props();
 
-	const sheetTitle = $derived(selectedDetail ? detailIdentity(selectedDetail, locale) : title);
+	const sheetTitle = $derived(
+		selectedDetail ? detailIdentity(selectedDetail, locale, line) : title,
+	);
 	const hasAction = $derived(
 		selectedDetail ? detailActions(selectedDetail, locale) != null : false,
 	);
@@ -68,13 +74,23 @@
 
 {#snippet resolvedIdentity()}
 	{#if selectedDetail}
-		<MapSelectionDetail detail={selectedDetail} {locale} presentation="identity" />
+		<MapSelectionDetail
+			{occupancyAvailable}
+			detail={selectedDetail}
+			{locale}
+			presentation="identity"
+		/>
 	{/if}
 {/snippet}
 
 {#snippet resolvedFooter()}
 	{#if selectedDetail}
-		<MapSelectionDetail detail={selectedDetail} {locale} presentation="action" />
+		<MapSelectionDetail
+			{occupancyAvailable}
+			detail={selectedDetail}
+			{locale}
+			presentation="action"
+		/>
 	{/if}
 {/snippet}
 
@@ -93,6 +109,7 @@
 	{#if selectedDetail}
 		<div class="mobile-detail-body" data-mobile-detail-body>
 			<MapSelectionDetail
+				{occupancyAvailable}
 				{alertsStale}
 				{alertsAgeSeconds}
 				detail={selectedDetail}
@@ -111,9 +128,3 @@
 		</div>
 	{/if}
 </BottomSheet>
-
-<style>
-	:global(.map-mobile-detail-sheet) {
-		max-height: 50svh;
-	}
-</style>
