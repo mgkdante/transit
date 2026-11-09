@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
+	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -37,7 +38,7 @@
 	import MapDetailOverlay from './MapDetailOverlay.svelte';
 	import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 	import { zoomForNearMePrecision } from './mapGeo';
-	import { focusCoordinate, fitRouteBounds } from './mapCamera';
+	import { focusCoordinate, fitRouteBounds, initialCamera, createMapCamera } from './mapCamera';
 	import {
 		buildNearTargetSearch,
 		clearNearTargetSearch,
@@ -47,7 +48,6 @@
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
-	import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
 	import { mapCopy } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
@@ -67,7 +67,7 @@
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
 	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
-	const framing = mapCameraFraming(v1);
+
 	const alertsAvailable = providerHasAlerts(v1.provider);
 	function readMapFilters(params: URLSearchParams) {
 		const state = fromSearchParams(params);
@@ -81,7 +81,7 @@
 	let heroEl = $state<HTMLDivElement | null>(null);
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
-	const mapFitPadding = $derived(deriveMapFitPadding(desktop.current, mapWidthPx));
+	const framing = $derived(initialCamera(v1, mapWidthPx, desktop.current));
 	const urlCoordinator = createMapUrlCoordinator(new URL(page.url.href), goto);
 	const filters = createFilterStore(
 		readMapFilters(new URLSearchParams(page.url.search)),
@@ -114,12 +114,9 @@
 			);
 		},
 	});
-	type RecoveryCameraIntent =
-		| { kind: 'point'; coord: [number, number]; minZoom: number }
-		| { kind: 'selection'; selection: MapSelection }
-		| { kind: 'url' };
 	let recovering = $state(false);
-	let recoveryCameraIntent: RecoveryCameraIntent | null = null;
+	const camera = createMapCamera<MapSelection>();
+	const cameraIntents = camera.intents;
 	let recoveryFocusTarget: HTMLElement | null = null;
 
 	let ingestedUrlIdentity = '';
@@ -138,8 +135,8 @@
 		const previousFocus = focusController.pending;
 		focusController.syncFromUrl(url.searchParams);
 		if (recovering && focusController.pending !== previousFocus) {
-			if (focusController.pending) recoveryCameraIntent = { kind: 'url' };
-			else if (recoveryCameraIntent?.kind === 'url') recoveryCameraIntent = null;
+			if (focusController.pending) cameraIntents.state({ kind: 'url' });
+			else if (cameraIntents.pending?.kind === 'url') cameraIntents.state(null);
 		}
 	});
 
@@ -245,7 +242,7 @@
 
 	function focusSelection(selection: MapSelection, target: MapLibreMap | null = map): boolean {
 		if (recovering) {
-			recoveryCameraIntent = { kind: 'selection', selection };
+			cameraIntents.state({ kind: 'selection', selection });
 			return true;
 		}
 		if (selection.kind === 'stop') return focusStop(selection.id, target);
@@ -281,7 +278,7 @@
 	function focusNearMeOrigin(origin: NearMeOrigin): void {
 		const coord: [number, number] = [origin.lon, origin.lat];
 		const minZoom = zoomForNearMePrecision(origin.precision);
-		if (recovering) recoveryCameraIntent = { kind: 'point', coord, minZoom };
+		if (recovering) cameraIntents.state({ kind: 'point', coord, minZoom });
 		else focusCoordinate(map, coord, minZoom);
 	}
 
@@ -289,7 +286,7 @@
 		commitPickedSelection({ kind: 'stop', id: stop.id });
 		detailCollapsed = false;
 		if (recovering)
-			recoveryCameraIntent = { kind: 'point', coord: [stop.lon, stop.lat], minZoom: 15 };
+			cameraIntents.state({ kind: 'point', coord: [stop.lon, stop.lat], minZoom: 15 });
 		else focusCoordinate(map, [stop.lon, stop.lat], 15);
 	}
 
@@ -299,13 +296,11 @@
 		runtime.ready(m, reportSetupFailure);
 		if (wasRecovering) {
 			recovering = false;
-			const intent = recoveryCameraIntent;
-			recoveryCameraIntent = null;
-			if (intent?.kind === 'point' || intent?.kind === 'selection') {
+			cameraIntents.replay((intent) => {
 				if (focusController.pending) focusController.consumeOnce(() => {});
 				if (intent.kind === 'point') focusCoordinate(m, intent.coord, intent.minZoom);
 				else focusSelection(intent.selection, m);
-			}
+			});
 		} else nearMeController.refocus();
 		onready?.();
 	}
@@ -317,7 +312,7 @@
 			ownedFocus && !ownedFocus.closest('[data-map-runtime]') ? ownedFocus : null;
 		ownedFocus?.blur();
 		recovering = true;
-		recoveryCameraIntent = focusController.pending ? { kind: 'url' } : null;
+		cameraIntents.state(focusController.pending ? { kind: 'url' } : null);
 		onrecovering?.();
 	}
 
@@ -395,6 +390,40 @@
 		return () => releaseMapOwner(dispose);
 	});
 
+	// Opening/resizing detail surfaces refits only while the camera is fit-owned.
+	$effect(() => {
+		const instance = map;
+		void detailOpen;
+		void detailWidthPx;
+		void detailCollapsed;
+		void desktop.current;
+		if (!instance) return;
+		let disposed = false;
+		const update = () => {
+			if (disposed) return;
+			if (!heroEl) return;
+			const inset = measureMapFocusInset({ getContainer: () => heroEl! });
+			if (!inset.containerWidth || !inset.containerHeight) return;
+			camera.update(instance, {
+				...framing,
+				size: { width: inset.containerWidth, height: inset.containerHeight },
+				fitPadding: inset.fitPadding,
+			});
+		};
+		const observer = new ResizeObserver(update);
+		void tick().then(() => {
+			if (disposed) return;
+			for (const el of document.querySelectorAll(
+				'.map-head, .map-filter-panel, .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
+			))
+				observer.observe(el);
+			update();
+		});
+		return () => {
+			disposed = true;
+			observer.disconnect();
+		};
+	});
 	function toggleDetailCollapsed(): void {
 		detailCollapsed = !detailCollapsed;
 	}
@@ -402,13 +431,14 @@
 
 {#snippet mapBody()}
 	<MapStage
+		{camera}
 		class="map-hero-stage"
 		basemapLoader={({ signal }) => getBasemap({ signal })}
 		theme={theme.current}
 		center={framing.center}
 		bounds={framing.bounds}
 		maxBounds={framing.maxBounds}
-		fitPadding={mapFitPadding}
+		fitPadding={framing.fitPadding}
 		onready={onMapReady}
 		onrecovering={onMapRecovering}
 		onidle={onMapIdle}

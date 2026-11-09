@@ -1,10 +1,12 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { tick } from 'svelte';
+import { coveredArea } from './mapCameraCoveredArea';
 
 export const MIN_VISIBLE_SPAN_PX = 240;
 
 export interface MapFocusMeasurementAdapter {
 	containerRect(container: HTMLElement): DOMRect;
+	chromeInsets?(container: HTMLElement): { left: number; bottom: number };
 	headingRect(hero: Element): DOMRect | null;
 	detailOffset(hero: Element): string;
 	rootFontSize(): number;
@@ -13,6 +15,7 @@ export interface MapFocusMeasurementAdapter {
 }
 
 export interface MapFocusInset {
+	fitPadding: { top: number; right: number; bottom: number; left: number };
 	containerWidth: number;
 	containerHeight: number;
 	topOcclusion: number;
@@ -25,6 +28,23 @@ export interface MapFocusInset {
 type FocusMap = Pick<MapLibreMap, 'getContainer'>;
 
 const DOM_MEASUREMENT: MapFocusMeasurementAdapter = {
+	chromeInsets: (container) => {
+		const box = container.getBoundingClientRect();
+		const hero = container.closest('.map-hero');
+		const rect = (selector: string) => {
+			const el = hero?.querySelector(selector);
+			const r = el?.getBoundingClientRect();
+			return r && r.width > 0 && r.height > 0 ? r : null;
+		};
+		const panel = rect('.map-filter-panel');
+		const controls = [rect('.map-filter-pill-container'), rect('.map-near')].filter(
+			(r) => r !== null,
+		);
+		return {
+			left: panel ? panel.right - box.left : 0,
+			bottom: Math.max(0, ...controls.map((r) => box.bottom - r.top)),
+		};
+	},
 	containerRect: (container) => container.getBoundingClientRect(),
 	headingRect: (hero) => hero.querySelector('.map-head')?.getBoundingClientRect() ?? null,
 	detailOffset: (hero) => getComputedStyle(hero).getPropertyValue('--map-detail-offset'),
@@ -67,6 +87,7 @@ export function measureMapFocusInset(
 	);
 	const rawRight = hero ? parseDetailOffset(adapter.detailOffset(hero), adapter.rootFontSize()) : 0;
 	const measuredSheetHeight = adapter.bottomSheetHeight();
+	const chrome = adapter.chromeInsets?.(container) ?? { left: 0, bottom: 0 };
 	const rawBottom =
 		measuredSheetHeight === null
 			? 0
@@ -76,22 +97,32 @@ export function measureMapFocusInset(
 	const rightOcclusion = clampOcclusion(rawRight, containerWidth);
 	const bottomOcclusion = clampOcclusion(rawBottom, containerHeight - topOcclusion);
 
+	const { pointOffset, routePadding } = coveredArea(
+		{
+			top: topOcclusion,
+			right: rightOcclusion,
+			bottom: bottomOcclusion,
+			left: 0,
+		},
+		64,
+	);
 	return {
+		fitPadding: coveredArea(
+			{
+				top: Math.max(0, heading ? heading.bottom - containerRect.top : 0),
+				right: Math.max(0, rawRight),
+				bottom: Math.max(0, rawBottom, chrome.bottom),
+				left: Math.max(0, chrome.left),
+			},
+			16,
+		).routePadding,
 		containerWidth,
 		containerHeight,
 		topOcclusion,
 		rightOcclusion,
 		bottomOcclusion,
-		pointOffset: [
-			rightOcclusion === 0 ? 0 : -rightOcclusion / 2,
-			(topOcclusion - bottomOcclusion) / 2,
-		],
-		routePadding: {
-			top: 64 + topOcclusion,
-			right: 64 + rightOcclusion,
-			bottom: 64 + bottomOcclusion,
-			left: 64,
-		},
+		pointOffset,
+		routePadding,
 	};
 }
 

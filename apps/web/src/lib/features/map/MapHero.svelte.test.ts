@@ -697,7 +697,8 @@ vi.mock('#lib/components/map/index.ts', async () => {
 	};
 });
 
-vi.mock('./mapCamera', () => ({
+vi.mock('./mapCamera', async (importOriginal) => ({
+	...(await importOriginal<typeof import('./mapCamera')>()),
 	focusCoordinate: harness.focusCoordinate,
 	fitRouteBounds: harness.fitRouteBounds,
 }));
