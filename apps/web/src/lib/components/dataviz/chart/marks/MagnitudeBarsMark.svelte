@@ -96,7 +96,11 @@
 			if (event.key !== 'Enter' && event.key !== ' ') return;
 			event.preventDefault();
 		}
-		if (!(event.currentTarget instanceof SVGElement) || !datum.tapPopover) return;
+		if (
+			!(event.currentTarget instanceof HTMLElement || event.currentTarget instanceof SVGElement) ||
+			!datum.tapPopover
+		)
+			return;
 		event.stopPropagation();
 		popover.openFromTrigger(event.currentTarget, datum.tapPopover);
 	}
@@ -114,93 +118,134 @@
 	data-slot="magnitude-bars-mark"
 	use:chartDatumPopoverBoundary={popover}
 >
-	<ChartFrame height={frameHeight} class="dv-barmark-plot">
-		{#key layerStructureKey}
-			<LcChart
-				data={reals}
-				x={xOf}
-				y={yOf}
-				xScale={scaleLinear().clamp(true)}
-				{xDomain}
-				yScale={scaleBand().padding(BAND_PADDING)}
-				yDomain={rowKeys}
-				{padding}
-				tooltipContext={{
-					mode: 'band',
-					onclick: onRowClick,
-					...(hasTapPopover ? { touchEvents: 'auto' as const } : {}),
-				}}
-			>
-				{#snippet children({ context })}
-					<Svg>
-						<Grid x class="dv-barmark-grid" />
-						<Axis
-							placement="bottom"
-							label={spec.xLabel}
-							labelPlacement="middle"
-							ticks={4}
-							format={(v) => `${v}`}
-							class="dv-barmark-axis"
-						/>
-						<Axis
-							placement="left"
-							rule={false}
-							format={(key: string) => gutter.truncate(labelsByKey.get(key) ?? key)}
-							class="dv-barmark-axis"
-						/>
-						<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
-						<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
-						<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
-						{#if spec.ciLabel}
-							<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
-						{/if}
-						{#each spec.rows as row (row.key)}
-							{@const rowY = context.yScale(row.key) as number | undefined}
-							{@const rowHeight =
-								(context.yScale as { bandwidth?: () => number }).bandwidth?.() ?? 0}
-							{#if Number.isFinite(rowY) && rowHeight > 0 && context.width > 0}
-								{#if row.tapPopover}
-									<g
-										role="button"
-										aria-label={row.label}
-										aria-haspopup="dialog"
-										aria-expanded="false"
-										tabindex="0"
-										class="dv-barmark-keyboard-row"
-										onkeydown={(event) => onRowButtonActivate(event, row)}
-										onclick={(event) => onRowButtonActivate(event, row)}
-									>
-										<rect x="0" y={rowY} width={context.width} height={rowHeight} />
-									</g>
-								{:else if row.href}
-									<a href={row.href} aria-label={row.label} class="dv-barmark-keyboard-row">
-										<rect x="0" y={rowY} width={context.width} height={rowHeight} />
-									</a>
-								{/if}
-							{/if}
-						{/each}
-					</Svg>
-					{#if !hasTapPopover || popover.showNativeTooltip}
-						<Tooltip.Root>
-							{#snippet children({ data }: { data: MagnitudeDatum })}
-								<Tooltip.Header>{data.label}</Tooltip.Header>
-								<Tooltip.List>
-									<Tooltip.Item label={spec.xLabel ?? spec.title} value={fmtWithUnit(data.value)} />
-									{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
-										<Tooltip.Item
-											label={spec.ciLabel}
-											value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
-										/>
-									{/if}
-									{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
-								</Tooltip.List>
-							{/snippet}
-						</Tooltip.Root>
+	<div class="mobile-rankings" data-slot="stacked-rankings" role="list" aria-label={spec.title}>
+		{#each spec.rows as row (row.key)}
+			<div role="listitem" class="mobile-ranking">
+				{#if row.tapPopover}
+					<button
+						class="ranking-name dv-barmark-keyboard-row"
+						title={row.label}
+						aria-label={row.label}
+						aria-haspopup="dialog"
+						onclick={(event) => onRowButtonActivate(event, row)}>{row.label}</button
+					>
+				{:else if row.href}
+					<a class="ranking-name" title={row.label} href={row.href}>{row.label}</a>
+				{:else}<span class="ranking-name" title={row.label}>{row.label}</span>{/if}
+				<div
+					class="ranking-track"
+					role="img"
+					aria-label={`${spec.xLabel ?? spec.title}: ${fmtWithUnit(row.value)}`}
+				>
+					<div
+						class="ranking-fill"
+						style:width={`${Math.max(0, Math.min(100, ((row.value ?? 0) / spec.domain[1]) * 100))}%`}
+						style:background={`var(--dataviz-severity-${row.severity ?? 'watch'})`}
+					></div>
+					{#if row.wilsonLo != null && row.wilsonHi != null}
+						<div
+							class="ranking-ci"
+							style:left={`${(row.wilsonLo / spec.domain[1]) * 100}%`}
+							style:width={`${((row.wilsonHi - row.wilsonLo) / spec.domain[1]) * 100}%`}
+						></div>
 					{/if}
-				{/snippet}
-			</LcChart>
-		{/key}
-	</ChartFrame>
+				</div>
+				<span class="ranking-value">{fmtWithUnit(row.value)}</span>
+			</div>
+		{/each}
+	</div>
+	<div class="desktop-rankings">
+		<ChartFrame height={frameHeight} class="dv-barmark-plot">
+			{#key layerStructureKey}
+				<LcChart
+					data={reals}
+					x={xOf}
+					y={yOf}
+					xScale={scaleLinear().clamp(true)}
+					{xDomain}
+					yScale={scaleBand().padding(BAND_PADDING)}
+					yDomain={rowKeys}
+					{padding}
+					tooltipContext={{
+						mode: 'band',
+						onclick: onRowClick,
+						...(hasTapPopover ? { touchEvents: 'auto' as const } : {}),
+					}}
+				>
+					{#snippet children({ context })}
+						<Svg>
+							<Grid x class="dv-barmark-grid" />
+							<Axis
+								placement="bottom"
+								label={spec.xLabel}
+								labelPlacement="middle"
+								ticks={4}
+								format={(v) => `${v}`}
+								class="dv-barmark-axis"
+							/>
+							<Axis
+								placement="left"
+								rule={false}
+								format={(key: string) => gutter.truncate(labelsByKey.get(key) ?? key)}
+								class="dv-barmark-axis"
+							/>
+							<Bars data={bySeverity('watch')} radius={3} class="dv-barmark-watch" />
+							<Bars data={bySeverity('high')} radius={3} class="dv-barmark-high" />
+							<Bars data={bySeverity('critical')} radius={3} class="dv-barmark-critical" />
+							{#if spec.ciLabel}
+								<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
+							{/if}
+							{#each spec.rows as row (row.key)}
+								{@const rowY = context.yScale(row.key) as number | undefined}
+								{@const rowHeight =
+									(context.yScale as { bandwidth?: () => number }).bandwidth?.() ?? 0}
+								{#if Number.isFinite(rowY) && rowHeight > 0 && context.width > 0}
+									{#if row.tapPopover}
+										<g
+											role="button"
+											aria-label={row.label}
+											aria-haspopup="dialog"
+											aria-expanded="false"
+											tabindex="0"
+											class="dv-barmark-keyboard-row"
+											onkeydown={(event) => onRowButtonActivate(event, row)}
+											onclick={(event) => onRowButtonActivate(event, row)}
+										>
+											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+										</g>
+									{:else if row.href}
+										<a href={row.href} aria-label={row.label} class="dv-barmark-keyboard-row">
+											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+										</a>
+									{/if}
+								{/if}
+							{/each}
+						</Svg>
+						{#if !hasTapPopover || popover.showNativeTooltip}
+							<Tooltip.Root>
+								{#snippet children({ data }: { data: MagnitudeDatum })}
+									<Tooltip.Header>{data.label}</Tooltip.Header>
+									<Tooltip.List>
+										<Tooltip.Item
+											label={spec.xLabel ?? spec.title}
+											value={fmtWithUnit(data.value)}
+										/>
+										{#if spec.ciLabel && data.wilsonLo != null && data.wilsonHi != null}
+											<Tooltip.Item
+												label={spec.ciLabel}
+												value={`${fmtWithUnit(data.wilsonLo)}–${fmtWithUnit(data.wilsonHi)}`}
+											/>
+										{/if}
+										{#if data.note}<Tooltip.Item label="" value={data.note} />{/if}
+									</Tooltip.List>
+								{/snippet}
+							</Tooltip.Root>
+						{/if}
+					{/snippet}
+				</LcChart>
+			{/key}
+		</ChartFrame>
+	</div>
 	<ChartDatumPopover controller={popover} />
 
 	<table class="sr-only">
@@ -227,6 +272,65 @@
 </figure>
 
 <style>
+	.mobile-rankings {
+		display: none;
+	}
+	@media (width < 600px) {
+		.desktop-rankings {
+			display: none;
+		}
+		.mobile-rankings {
+			display: grid;
+			gap: 1rem;
+		}
+	}
+	.mobile-ranking {
+		min-width: 0;
+		display: grid;
+		gap: 0.375rem;
+	}
+	.ranking-name {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
+		overflow-wrap: normal;
+		word-break: normal;
+		text-align: start;
+		color: inherit;
+		font: inherit;
+		line-height: 1.5;
+		background: none;
+		border: 0;
+		padding: 0;
+		text-decoration: none;
+	}
+	.ranking-name:focus-visible {
+		outline: 2px solid var(--ring);
+	}
+	.ranking-track {
+		position: relative;
+		width: 100%;
+		height: 1rem;
+		background: var(--muted);
+		border-radius: var(--radius-sm);
+	}
+	.ranking-fill {
+		height: 100%;
+		border-radius: inherit;
+	}
+	.ranking-ci {
+		position: absolute;
+		top: 40%;
+		height: 20%;
+		border-inline: 1px solid var(--foreground);
+		background: var(--foreground);
+	}
+	.ranking-value {
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+	}
 	.dv-barmark:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 2px;

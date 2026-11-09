@@ -82,3 +82,19 @@ it.each(['en', 'fr'] as const)(
 		).toHaveAccessibleDescription(copy[locale].nearMeCollectionNotice);
 	},
 );
+
+it.each(['en', 'fr'] as const)('keeps full nearby stop names available in %s', (locale) => {
+	const name = 'Boulevard Saint-Laurent et Avenue du Mont-Royal';
+	const { getByRole, getByTitle } = render(MapNearMeControl, {
+		props: {
+			locale,
+			copy: copy[locale],
+			...handlers(),
+			open: true,
+			origin: { lat: 45.5, lon: -73.6, label: 'Origin' },
+			stops: [{ id: 'S1', name, lat: 45.5, lon: -73.6, distanceM: 100 }],
+		},
+	});
+	expect(getByRole('button', { name: new RegExp(name) })).toHaveAccessibleName(name + ' 100 m');
+	expect(getByTitle(name)).toHaveTextContent(name);
+});

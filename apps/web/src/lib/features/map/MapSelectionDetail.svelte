@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
 	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	const absenceContext = readLiveAbsenceContext();
 	import { tick } from 'svelte';
@@ -14,7 +15,7 @@
 		statusVar,
 	} from '#lib/components/dataviz/tokens.ts';
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
-	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { routeHasNoLiveData } from '#lib/v1/providers.ts';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelection, MapSelectionDetail } from './mapSelectionSession.svelte';
 	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
@@ -137,43 +138,45 @@
 				{@const absence = liveAbsenceReason('vehicle-delay', {
 					...absenceContext(),
 					notReporting: notReporting != null,
-					unsupported: detail.routeType === ROUTE_TYPE_METRO,
+					unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 				})}
 				<DetailAttributeGrid>
 					<div>
 						<dt>{t.status}</dt>
-						<dd>
-							<span
-								class="detail-state-glyph"
-								data-m6d-glyph-kind="status"
-								data-m6d-glyph-code={detail.vehicle.status}
-								aria-hidden="true"
-								style={`--glyph: ${statusVar(detail.vehicle.status)}`}
-								>{STATUS_GLYPH[detail.vehicle.status]}</span
-							>
-							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
-								{STATUS_LABELS[locale][detail.vehicle.status]}
-							{/if}
-							{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
-								<span aria-hidden="true">·</span>
-							{/if}
-							<span class="detail-delay-measurement">
-								<MaybeValue
-									value={delayMeasurement(detail.vehicle.delay_min)}
-									reason={absence}
-									{locale}
-								/>
-							</span>
-						</dd>
-						<dd class="detail-attribute-action">
-							<button
-								type="button"
-								class="detail-fact-action"
-								aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
-								onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
-								>{t.filter}</button
-							>
-						</dd>
+						{#if !isInService(detail.vehicle)}<dd>{vehicleServiceCopy[locale].status}</dd>{:else}
+							<dd>
+								<span
+									class="detail-state-glyph"
+									data-m6d-glyph-kind="status"
+									data-m6d-glyph-code={detail.vehicle.status}
+									aria-hidden="true"
+									style={`--glyph: ${statusVar(detail.vehicle.status)}`}
+									>{STATUS_GLYPH[detail.vehicle.status]}</span
+								>
+								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+									{STATUS_LABELS[locale][detail.vehicle.status]}
+								{/if}
+								{#if detail.vehicle.delay_min != null || detail.vehicle.status !== 'unknown'}
+									<span aria-hidden="true">·</span>
+								{/if}
+								<span class="detail-delay-measurement">
+									<MaybeValue
+										value={delayMeasurement(detail.vehicle.delay_min)}
+										reason={absence}
+										{locale}
+									/>
+								</span>
+							</dd>
+							<dd class="detail-attribute-action">
+								<button
+									type="button"
+									class="detail-fact-action"
+									aria-label={t.filterStatus(STATUS_LABELS[locale][detail.vehicle.status])}
+									onclick={() => onfilter?.({ kind: 'status', value: detail.vehicle.status })}
+									>{t.filter}</button
+								>
+							</dd>
+						{/if}
 					</div>
 					<div>
 						<dt>{t.nextStop}</dt>
@@ -183,7 +186,7 @@
 								reason={liveAbsenceReason('next-stop', {
 									...absenceContext(),
 									notReporting: notReporting != null,
-									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+									unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 									scheduleMissing: detail.nextStopAbsence === 'not-in-schedule',
 								})}
 								{locale}>{detail.nextStop!.name}</MaybeValue
@@ -241,7 +244,7 @@
 								reason={liveAbsenceReason('occupancy', {
 									...absenceContext(),
 									notReporting: notReporting != null,
-									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+									unsupported: routeHasNoLiveData(absenceContext().providerId, detail.routeType),
 								})}
 								{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
@@ -275,7 +278,11 @@
 				<DetailAttributeGrid
 					><div>
 						<dt>{t.liveBuses}</dt>
-						<dd>{t.visibleBuses(detail.vehicles.length)}</dd>
+						<dd>
+							{#if detail.vehicles.length === 0 && routeHasNoLiveData(absenceContext().providerId, detail.route.type)}
+								<AbsentValue reason="metro-no-realtime" {locale} />
+							{:else}{t.visibleBuses(detail.vehicles.length)}{/if}
+						</dd>
 					</div></DetailAttributeGrid
 				>
 			{/if}

@@ -1,6 +1,8 @@
+import { createMemoryLiveReader } from './__fixtures__/reader';
+const reader = createMemoryLiveReader();
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import { adapter } from '#lib/v1/adapter/index.ts';
+
 import { ManifestSchema, AlertsFileSchema, VehiclesFileSchema } from '#lib/v1/schemas/index.ts';
 import { createLiveStore } from './store.svelte';
 import { livePresentation } from './livePresentation';
@@ -25,7 +27,7 @@ it.each(['en', 'fr'] as const)(
 	async (locale) => {
 		let live!: ReturnType<typeof createLiveStore>;
 		const dispose = $effect.root(() => {
-			live = createLiveStore(manifest, { families: ['vehicles', 'alerts'] });
+			live = createLiveStore(manifest, reader, { families: ['vehicles', 'alerts'] });
 			return () => live.stop();
 		});
 		const present = () =>
@@ -39,10 +41,10 @@ it.each(['en', 'fr'] as const)(
 			expect(present().notice.kind).toBe('none');
 			expect(present().stamp).toMatchObject({ ageSeconds: null, isStale: false });
 			const now = new Date();
-			vi.spyOn(adapter.live, 'vehicles').mockResolvedValue(
+			vi.spyOn(reader, 'vehicles').mockResolvedValue(
 				VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] }),
 			);
-			vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
+			vi.spyOn(reader, 'alerts').mockResolvedValue(
 				AlertsFileSchema.parse({
 					generated_utc: now.toISOString(),
 					feed_captured_utc: new Date(+now - 901000).toISOString(),
@@ -56,10 +58,10 @@ it.each(['en', 'fr'] as const)(
 			expect(present().stamp.isStale).toBe(false);
 			expect(present().stamp.ageSeconds).not.toBeNull();
 			const old = new Date(+now - 901000).toISOString();
-			vi.mocked(adapter.live.vehicles).mockResolvedValue(
+			vi.mocked(reader.vehicles).mockResolvedValue(
 				VehiclesFileSchema.parse({ generated_utc: old, vehicles: [] }),
 			);
-			vi.mocked(adapter.live.alerts).mockResolvedValue(
+			vi.mocked(reader.alerts).mockResolvedValue(
 				AlertsFileSchema.parse({ generated_utc: old, alerts: [] }),
 			);
 			await live.refresh();
@@ -77,18 +79,18 @@ it.each(['en', 'fr'] as const)(
 it('keeps the notice empty while vehicles are pending and alert capture is stale', async () => {
 	let live!: ReturnType<typeof createLiveStore>;
 	const dispose = $effect.root(() => {
-		live = createLiveStore(manifest, { families: ['vehicles', 'alerts'] });
+		live = createLiveStore(manifest, reader, { families: ['vehicles', 'alerts'] });
 		return () => live.stop();
 	});
 	let finish!: (value: ReturnType<typeof VehiclesFileSchema.parse>) => void;
 	const now = new Date();
 	const vehicle = VehiclesFileSchema.parse({ generated_utc: now.toISOString(), vehicles: [] });
-	vi.spyOn(adapter.live, 'vehicles').mockReturnValue(
+	vi.spyOn(reader, 'vehicles').mockReturnValue(
 		new Promise((resolve) => {
 			finish = resolve;
 		}),
 	);
-	vi.spyOn(adapter.live, 'alerts').mockResolvedValue(
+	vi.spyOn(reader, 'alerts').mockResolvedValue(
 		AlertsFileSchema.parse({
 			generated_utc: now.toISOString(),
 			feed_captured_utc: new Date(+now - 901000).toISOString(),

@@ -7,6 +7,7 @@
 	import { Button } from '@yesid/ui/button';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '#lib/i18n/index.ts';
 	import * as Sheet from '@yesid/ui/sheet';
+	import type { SheetDetent } from '@yesid/ui/sheet';
 	import { SectionLabel } from '@yesid/ui/brand';
 
 	interface BottomSheetProps {
@@ -44,13 +45,27 @@
 	const emptyLabel = $derived(sheetCopy[locale].empty);
 	const backAria = $derived(sheetCopy[locale].back);
 	const closeAria = $derived(sheetCopy[locale].closeDetails);
+
+	// Peek holds the 44 px handle, the header (44 px controls, 24 px padding, a border,
+	// with room for a two-line identity) and a 34 px home-indicator inset, so the
+	// back and close controls stay clear of it. The rider's last height survives reopening.
+	const detents = $derived<SheetDetent[]>([
+		{ id: 'peek', size: '168px', label: sheetCopy[locale].peek },
+		{ id: 'half', size: '50%', label: sheetCopy[locale].half },
+		{ id: 'full', size: '90%', label: sheetCopy[locale].full },
+	]);
+	let detent = $state('half');
 </script>
 
 <Sheet.Root bind:open>
 	<Sheet.Content
 		side="bottom"
+		modal={false}
+		{detents}
+		bind:detent
+		handleLabel={sheetCopy[locale].height}
 		showCloseButton={false}
-		class={cn('max-h-[85svh] gap-0 p-0', className)}
+		class={cn('gap-0 p-0', className)}
 		data-slot="bottom-sheet"
 		data-m6c2-detail-sheet=""
 	>

@@ -27,7 +27,7 @@ from transit_ops.settings import Settings
 from transit_ops.worker_watchdog import worker_watchdog
 settings = Settings(_env_file=None, REALTIME_POLL_SECONDS=1)
 orch._validate_realtime_worker_startup = lambda *a, **k: SimpleNamespace(
-    provider=SimpleNamespace(provider_id="test", display_name="Test"))
+    provider=SimpleNamespace(provider_id="test", display_name="Test"), feeds={})
 '''
 
 

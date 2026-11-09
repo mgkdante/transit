@@ -9,6 +9,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from transit_ops.core.models import ProviderLabel
+from transit_ops.snapshots.ttl import LIVE_TTL_SECONDS
 
 PAYLOAD_SCHEMA_VERSION = 1
 
@@ -236,13 +237,17 @@ class NetworkFile(PayloadEnvelope):
 
 
 class ManifestLiveFiles(BaseModel):
+    # Stable paths keep their last generation until the corresponding inputs change.
+    generations: dict[str, str] = Field(default_factory=dict)
+    input_captures: dict[str, str | None] = Field(default_factory=dict)
     vehicles: str = "live/vehicles.json"
     trips: str = "live/trips.json"
     alerts: str = "live/alerts.json"
     network: str = "live/network.json"
     stop_departures: str = "live/stop_departures.json"
     data_health: str = "status/data_health.json"
-    ttl_s: int = 30
+    source_lag_s: int = Field(default=0, ge=0)
+    ttl_s: int = LIVE_TTL_SECONDS
     generated_utc: str
 
 

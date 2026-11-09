@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { onMount, untrack } from 'svelte';
@@ -41,12 +43,7 @@
 		HistoryNavigator,
 		type GrainSegment,
 	} from '#lib/components/surface/index.ts';
-	import {
-		SurfaceRail,
-		type SurfaceRailContext,
-		ArticleHeader,
-		DetailFrame,
-	} from '@yesid/ui/layout';
+	import { SurfaceRail, type SurfaceRailContext, DetailFrame } from '@yesid/ui/layout';
 	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
 	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
@@ -74,7 +71,7 @@
 	import { selectCompleteness } from '../selectors/completeness';
 	import { selectOccupancyTrend } from '../selectors/occupancyTrend';
 	import { selectShiftRank } from '../selectors/shiftRank';
-	import { networkReliabilityCopy } from '../network-reliability.copy';
+	import { providerNetworkReliabilityCopy } from '../network-reliability.copy';
 
 	import SectionLiveHeadline from './SectionLiveHeadline.svelte';
 	import SectionReporting from './SectionReporting.svelte';
@@ -98,10 +95,11 @@
 	let { networkSeed, trendSeed, provenanceSeed }: Props = $props();
 
 	const locale: Locale = getLocale();
-	const t = $derived(networkReliabilityCopy[locale]);
+	const v1 = getV1Context();
+	const t = $derived(providerNetworkReliabilityCopy(locale, v1.manifest.provider));
 
 	const initialNetworkSeed = untrack(() => networkSeed);
-	const live = createLiveStore(getV1Context().manifest, {
+	const live = createLiveStore(v1.manifest, liveReader, {
 		families: ['network'],
 		...(initialNetworkSeed === undefined ? {} : { seed: { network: initialNetworkSeed } }),
 	});

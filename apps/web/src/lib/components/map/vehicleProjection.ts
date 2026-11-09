@@ -4,15 +4,19 @@ import { type Coord, projectToPolyline, walkAlong, cumulativeLengths } from './p
 export function notReporting(
 	vehicle: Pick<Vehicle, 'reported_utc' | 'updated_utc'>,
 	serverNow: number,
+	cutoff: number = STALE_CUTOFF_S,
 ): { ageS: number } | null {
 	const ageS = fixAgeS(vehicle.reported_utc, vehicle.updated_utc, serverNow);
-	return isVehicleStale(ageS) ? { ageS } : null;
+	return isVehicleStale(ageS, cutoff) ? { ageS } : null;
 }
 
 export const PROJECTION_HORIZON_S = 90;
 
-export function projectionHorizon(ttlS = 30): number {
-	return Math.min(STALE_CUTOFF_S, 2 * (Number.isFinite(ttlS) && ttlS > 0 ? ttlS : 30) + 30);
+export function projectionHorizon(ttlS = 30, lagS = 0): number {
+	return Math.min(
+		STALE_CUTOFF_S + lagS,
+		2 * (Number.isFinite(ttlS) && ttlS > 0 ? ttlS : 30) + 30 + lagS,
+	);
 }
 
 export const STALE_CUTOFF_S = 150;

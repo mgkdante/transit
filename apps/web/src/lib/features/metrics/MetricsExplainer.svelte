@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { clock } from '@yesid/ui/state';
 	import { publicationPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { Badge } from '@yesid/ui/badge';
@@ -9,7 +10,7 @@
 	import ConformanceBadge from '#lib/components/surface/ConformanceBadge.svelte';
 	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
 	import { ArticleKeywords, ArticleSectionStack } from '#lib/components/layout/index.ts';
-	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
+	import { DetailFrame } from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import {
 		SectionLabel,

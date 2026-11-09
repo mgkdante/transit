@@ -29,7 +29,20 @@ vi.mock('#lib/v1/boot.ts', () => ({
 		},
 	}),
 }));
-vi.mock('#lib/v1/adapter/index.ts', () => ({ adapter: { live: fixture } }));
+vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
+	const { createMemoryLiveReader } = await import('#lib/v1/live/__fixtures__/reader.ts');
+	const reader = createMemoryLiveReader();
+	Object.assign(fixture, reader);
+	return {
+		...actual,
+		createLiveStore: (
+			manifest: Parameters<typeof actual.createLiveStore>[0],
+			_reader: Parameters<typeof actual.createLiveStore>[1],
+			options: Parameters<typeof actual.createLiveStore>[2],
+		) => actual.createLiveStore(manifest, reader, options),
+	};
+});
 vi.mock('#lib/v1/repositories/static.ts', () => ({ getStopsIndex: fixture.stopNames }));
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),
@@ -146,7 +159,8 @@ describe('TripDetail with the shared live store', () => {
 			await advance(ttl * 2 - 1);
 			expect(stamp()).toHaveAttribute('data-stale', 'false');
 			await advance(1);
-			expect(stamp()).toHaveAttribute('data-stale', 'true');
+			expect(stamp()).toHaveAttribute('data-variant', 'updated');
+			expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 			expect(stamp()).toHaveAttribute('data-age-seconds', String(ttl * 3));
 			expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Report behind schedule');
 			expect(document.querySelectorAll('.trip-stop-link')).toHaveLength(1);
@@ -165,18 +179,20 @@ describe('TripDetail with the shared live store', () => {
 		await settle();
 		fixture.trips.mockRejectedValue(new Error('controlled outage'));
 		await advance(30);
-		expect(stamp()).toHaveAttribute('data-degraded', 'true');
-		expect(stamp()).toHaveAttribute('data-stale', 'false');
+		expect(stamp()).toHaveAttribute('data-variant', 'updated');
+		expect(stamp()).not.toHaveAttribute('data-stale');
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Refresh unavailable');
 		expect(document.querySelector('.trip-verdict [data-slot="status-badge"]')).toHaveTextContent(
 			'On time',
 		);
 		await advance(60);
-		expect(stamp()).toHaveAttribute('data-stale', 'true');
+		expect(stamp()).toHaveAttribute('data-variant', 'updated');
+		expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 		fixture.trips.mockResolvedValue(report());
 		await manualRefresh();
 		expect(stamp()).not.toHaveAttribute('data-degraded');
-		expect(stamp()).toHaveAttribute('data-stale', 'true');
+		expect(stamp()).toHaveAttribute('data-variant', 'updated');
+		expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Report behind schedule');
 		fixture.trips.mockResolvedValue(report(90));
 		await advance(30);
@@ -235,7 +251,8 @@ describe('TripDetail with the shared live store', () => {
 			}
 			await settle();
 			expect(fixture.trips).toHaveBeenCalledTimes(2);
-			expect(stamp()).toHaveAttribute('data-stale', 'true');
+			expect(stamp()).toHaveAttribute('data-variant', 'updated');
+			expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 			await advance(30);
 			expect(fixture.trips).toHaveBeenCalledTimes(3);
 			view.unmount();

@@ -1,3 +1,8 @@
+const testProvider = vi.hoisted(() => ({ id: 'stm' }));
+vi.mock('#lib/site/absence.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/site/absence.ts')>()),
+	readLiveAbsenceContext: () => () => ({ providerId: testProvider.id }),
+}));
 import { clock } from '@yesid/ui/state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -1213,7 +1218,7 @@ describe('MapSelectionDetail', () => {
 						status: 'unknown',
 						updated_utc: utc('2026-06-15T00:00:00Z'),
 						route: '24',
-						trip: null,
+						trip: 'trip-without-delay',
 						next_stop: 'stop-2',
 						bearing: null,
 						delay_min: null,
@@ -1279,7 +1284,17 @@ describe('MapSelectionDetail', () => {
 		expect(absent!.textContent).toContain('this vehicle is not reporting');
 	});
 
-	it('explains a metro vehicle null delay as metro-no-realtime ("No live data"), never not-reported or on-time', () => {
+	it.each([
+		['stm', 1, 'en'],
+		['stm', 1, 'fr'],
+		['octranspo', 0, 'en'],
+		['octranspo', 0, 'fr'],
+	] as const)('explains unpublished live data for %s in %s / %s', (provider, type, locale) => {
+		testProvider.id = provider;
+		const why =
+			locale === 'en'
+				? 'live positions are not published here'
+				: 'les positions en direct ne sont pas publiées ici';
 		const metroIndex = buildLiveIndex({
 			vehicles: {
 				generated_utc: utc('2026-06-15T00:00:00Z'),
@@ -1307,7 +1322,7 @@ describe('MapSelectionDetail', () => {
 				generated_utc: utc('2026-06-15T00:00:00Z'),
 				id: 'metro-1',
 				long: 'Green Line',
-				type: 1,
+				type,
 				directions: [],
 			},
 		];
@@ -1316,14 +1331,14 @@ describe('MapSelectionDetail', () => {
 			{ index: metroIndex, stops, alerts, routes: metroRoutes },
 		);
 		const { container, queryByText } = render(MapSelectionDetail, {
-			props: { detail, locale: 'en' },
+			props: { detail, locale },
 		});
 
 		const absent = [
 			...container.querySelectorAll('.map-detail-grid [data-slot="absent-value"]'),
-		].find((node) => node.textContent?.includes('live positions are not published here'));
+		].find((node) => node.textContent?.includes(why));
 		expect(absent).not.toBeNull();
-		expect(absent!.textContent).toContain('live positions are not published here');
+		expect(absent!.textContent).toContain(why);
 		expect(absent!.textContent).not.toContain('not reported');
 		expect(queryByText('On time')).not.toBeInTheDocument();
 	});
@@ -1526,3 +1541,50 @@ describe('vehicle attribute definition groups', () => {
 		},
 	);
 });
+
+it.each([
+	['stm', 1, 'en'],
+	['stm', 1, 'fr'],
+	['octranspo', 0, 'en'],
+	['octranspo', 0, 'fr'],
+] as const)('explains an empty declared line for %s type %s in %s', (provider, type, locale) => {
+	testProvider.id = provider;
+	const detail = resolveMapSelection(
+		{ kind: 'route', id: 'rail' },
+		{
+			index: buildLiveIndex({}),
+			stops,
+			alerts,
+			routes: [
+				{
+					generated_utc: utc('2026-06-15T00:00:00Z'),
+					id: 'rail',
+					type,
+					long: 'Rail',
+					directions: [],
+				},
+			],
+		},
+	);
+	const { container } = render(MapSelectionDetail, { props: { detail, locale } });
+	expect(container).toHaveTextContent(locale === 'en' ? 'No live data' : 'Aucune donnée en direct');
+});
+
+it.each(['en', 'fr'] as const)(
+	'shows out-of-service detail without punctuality in %s',
+	(locale) => {
+		const changedIndex = {
+			...index,
+			byVehicleId: new Map(index.byVehicleId).set('veh-1', { ...vehicles[0], trip: null }),
+		};
+		const detail = resolveMapSelection(
+			{ kind: 'vehicle', id: 'veh-1' },
+			{ index: changedIndex, stops, alerts, routes },
+		);
+		const view = render(MapSelectionDetail, { detail, locale });
+		const status = detailValue(view.container, MAP_SELECTION_DETAIL_COPY[locale].status);
+		expect(status).toHaveTextContent(locale === 'en' ? 'Out of service' : 'Hors service');
+		expect(status.querySelector('[data-m6d-glyph-kind="status"]')).toBeNull();
+		expect(status).not.toHaveTextContent(STATUS_LABELS[locale].late);
+	},
+);

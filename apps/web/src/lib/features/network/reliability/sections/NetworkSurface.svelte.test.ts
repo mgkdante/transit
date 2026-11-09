@@ -17,7 +17,7 @@ import { assertRailIndependence } from '../../../../../tests/railIndependence';
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
 
-const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
+const networkManifest = vi.hoisted(() => ({ provider: 'stm', files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const createResourceSpy = vi.hoisted(() => vi.fn());
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
@@ -172,7 +172,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 }));
 vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
-	createLiveStore: (manifest: unknown, options?: unknown) => {
+	createLiveStore: (manifest: unknown, _reader: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
 			vehicles: null,
@@ -1104,4 +1104,18 @@ describe('NetworkSurface daily comparison scope', () => {
 			'absent',
 		);
 	});
+});
+
+it.each([
+	['stm', 'en', 'Metro is excluded.'],
+	['stm', 'fr', 'Le métro est exclu.'],
+	['octranspo', 'en', 'O-Train is excluded.'],
+	['octranspo', 'fr', 'L’O-Train est exclu.'],
+] as const)('shows the provider exclusion for %s in %s', (provider, locale, expected) => {
+	networkManifest.provider = provider;
+	networkSurface.mount(NetworkSurface, {
+		context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+	});
+	expect(document.querySelector('[data-slot="reporting-caveat"]')).toHaveTextContent(expected);
+	networkManifest.provider = 'stm';
 });

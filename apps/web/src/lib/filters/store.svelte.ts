@@ -73,6 +73,7 @@ export interface FilterStore {
 	addVehicle(id: string): void;
 	removeVehicle(id: string): void;
 
+	toggleOutOfService(): void;
 	toggleStatus(code: StatusCode): void;
 	setStatus(codes: readonly StatusCode[]): void;
 	toggleOccupancy(code: OccupancyCode): void;
@@ -300,6 +301,9 @@ export function createFilterStore(init: FilterState, pushUrl: PushUrl = () => {}
 		},
 		get isEmpty() {
 			return isEmptyFilterState(current);
+		},
+		toggleOutOfService() {
+			commit({ ...current, showOutOfService: !current.showOutOfService });
 		},
 		get chips() {
 			const out: Chip[] = [];

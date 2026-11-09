@@ -1,5 +1,10 @@
+const testProvider = vi.hoisted(() => ({ id: 'stm' }));
+vi.mock('#lib/site/absence.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/site/absence.ts')>()),
+	readLiveAbsenceContext: () => () => ({ providerId: testProvider.id }),
+}));
 import { cleanup, render } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 import type { Alert } from '#lib/v1/schemas/index.ts';
 import MapHoverPeek from './MapHoverPeek.svelte';
@@ -146,19 +151,30 @@ describe('MapHoverPeek', () => {
 		}
 	});
 
-	it('renders fresh metro null fields as no live data, never not reported', () => {
+	it.each([
+		['stm', 1, 'en'],
+		['stm', 1, 'fr'],
+		['octranspo', 0, 'en'],
+		['octranspo', 0, 'fr'],
+	] as const)('explains unpublished live data for %s in %s / %s', (provider, type, locale) => {
+		testProvider.id = provider;
+		const why = locale === 'en' ? 'No live data' : 'Aucune donnée en direct';
 		const freshMetro: MapHoverPeekModel = {
 			...vehicleFresh,
-			route: { ...vehicleFresh.route!, type: 1 },
+			route: { ...vehicleFresh.route!, type },
 			delayMin: null,
 			occupancy: null,
 		};
 		const { container } = render(MapHoverPeek, {
-			props: { peek: freshMetro, locale: 'en' },
+			props: { peek: freshMetro, locale },
 		});
 
-		expect(definitionValue(container, 'Crowding')).toHaveTextContent('No live data');
-		expect(definitionValue(container, 'Status')).toHaveTextContent('No live data');
+		expect(
+			definitionValue(container, locale === 'en' ? 'Crowding' : 'Achalandage'),
+		).toHaveTextContent(why);
+		expect(definitionValue(container, locale === 'en' ? 'Status' : 'Statut')).toHaveTextContent(
+			why,
+		);
 		expect(container).not.toHaveTextContent('Not reported');
 	});
 
@@ -289,3 +305,26 @@ describe.each(['en', 'fr'] as const)('MapHoverPeek published status in %s', (loc
 		expectInert(container);
 	});
 });
+
+it.each([
+	['stm', 1, 'en'],
+	['stm', 1, 'fr'],
+	['octranspo', 0, 'en'],
+	['octranspo', 0, 'fr'],
+] as const)('explains an empty declared line for %s type %s in %s', (provider, type, locale) => {
+	testProvider.id = provider;
+	const peek: MapHoverPeekModel = { ...route, type, visibleVehicleCount: 0 };
+	const { container } = render(MapHoverPeek, { props: { peek, locale } });
+	expect(container).toHaveTextContent(locale === 'en' ? 'No live data' : 'Aucune donnée en direct');
+});
+
+it.each(['en', 'fr'] as const)(
+	'labels an untripped vehicle without punctuality in %s',
+	(locale) => {
+		const view = render(MapHoverPeek, { peek: { ...vehicleFresh, tripId: null }, locale });
+		const status = definitionValue(view.container, locale === 'en' ? 'Status' : 'Statut');
+		expect(status).toHaveTextContent(locale === 'en' ? 'Out of service' : 'Hors service');
+		expect(status).not.toHaveTextContent(STATUS_LABELS[locale].late);
+		expect(status.querySelector('.map-peek-delay')).toBeNull();
+	},
+);

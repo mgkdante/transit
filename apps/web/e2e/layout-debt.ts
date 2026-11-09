@@ -9,39 +9,46 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 	const { kind, selector, text } = finding;
 	if (
 		kind === 'broken-word' &&
+		text === 'Positions' &&
+		selector ===
+			'#map-filter-controls-desktop > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > span:nth-child(1)'
+	)
+		return 'LAYOUT-MOTION-LABEL: desktop Positions heading shrinks to a single-character column';
+	if (
+		[
+			'Estimated positions are unavailable with reduced motion enabled.',
+			'Les positions estimées sont indisponibles avec les animations réduites.',
+		].includes(text) &&
+		((kind === 'inaccessible-ellipsis' &&
+			selector ===
+				'#map-filter-controls-desktop > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1)') ||
+			(kind === 'clipped' &&
+				selector ===
+					'#main > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(5) > div:nth-child(1)'))
+	)
+		return 'LAYOUT-MOTION-HINT: reduced-motion explanation truncates in desktop map controls';
+	if (
+		kind === 'broken-word' &&
 		text === 'SOURCE' &&
 		selector ===
 			'[data-slot="terminal-panel"] > div:nth-child(4) > div:nth-child(1) > span:nth-child(1)'
 	)
 		return 'LAYOUT-TERMINAL-SOURCE: network source label breaks inside a word on narrow screens';
-	if (
-		kind === 'clipped' &&
-		selector.startsWith('[data-slot="article-header"]') &&
-		/^(Network|Hotspots|Alerts|Status|Receipt|Repeat|Réseau|Points chauds|Alertes|Avis|15 juin 2026|État|Reçu|Récidivistes|Récidive|Fixture stop|24|Sherbrooke|Line|Stop)/i.test(
-			text,
-		)
-	)
-		return 'LAYOUT-HEADER: detail headline exceeds its clipped header stage';
-	if (kind === 'inaccessible-ellipsis' && selector.startsWith('[data-slot="entity-row"]'))
-		return 'LAYOUT-LINES: route names truncate without an accessible full name';
-	if (
-		kind === 'clipped' &&
-		/^#c\d+-content > div:nth-child\(1\)$/.test(selector) &&
-		/^(\d|Slowest|10 %|Daily|Jour|Recent|Récent)/.test(text)
-	)
-		return 'LAYOUT-CHART: network chart axis exceeds its clipped container';
-	if (
-		kind === 'clipped' &&
-		selector === '[data-slot="blueprint-listing-header"]' &&
-		/^(\d+\.\d m|PLAN DE VOIE|ÉCH\.|DWG |CATÉNAIRE)/.test(text)
-	)
-		return 'LAYOUT-BLUEPRINT: decorative drawing labels clip without an explicit allowance';
+	if (kind === 'broken-word' && selector.includes('detail') && /achalandage/i.test(text))
+		return 'LAYOUT-OCCUPANCY: French vehicle occupancy label breaks inside a word';
 	if (
 		kind === 'inaccessible-ellipsis' &&
 		selector.startsWith('[data-slot="terminal-panel"]') &&
 		text === 'salle-de-contrôle'
 	)
 		return 'LAYOUT-TERMINAL: French control-room title truncates without an accessible full title';
+	if (
+		(kind === 'broken-word' &&
+			selector.startsWith('[data-slot="freshness-stamp"]') &&
+			text === 'obsolète') ||
+		(kind === 'clipped' && selector.startsWith('#main >') && text === '· obsolète')
+	)
+		return 'LAYOUT-STALE: French stale stamp breaks or clips in narrow live surfaces';
 	return null;
 }
 export async function expectLayout(page: Page, info: TestInfo, overlaps: string[]) {
@@ -61,7 +68,7 @@ export async function expectLayout(page: Page, info: TestInfo, overlaps: string[
 				.filter((reason): reason is NonNullable<typeof reason> => reason !== null),
 		),
 	];
-	if (overlaps.length) reasons.push('LAYOUT-AXES: network chart axis labels overlap');
+	expect(overlaps, 'chart axis labels overlap').toEqual([]);
 	for (const description of reasons)
 		info.annotations.push({ type: 'defect', description: description! });
 	if (reasons.length) test.fail(true, reasons.join('; '));
