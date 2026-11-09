@@ -66,6 +66,7 @@
 </script>
 
 <script lang="ts">
+	import { measureMapFocusInset } from '#lib/features/map/mapFocusInset.ts';
 	import { browser } from '$app/env';
 	import { onMount, tick } from 'svelte';
 	import { cn } from '#lib/utils/index.ts';
@@ -133,6 +134,20 @@
 	let container = $state<HTMLDivElement | null>(null);
 	let map = $state.raw<MapLibreMap | null>(null);
 
+	function cameraInputs() {
+		if (!container) return { center, zoom, bounds, maxBounds, fitPadding };
+		const inset = measureMapFocusInset({ getContainer: () => container! });
+		if (!inset.containerWidth || !inset.containerHeight)
+			return { center, zoom, bounds, maxBounds, fitPadding };
+		return {
+			center,
+			zoom,
+			bounds,
+			maxBounds,
+			size: { width: inset.containerWidth, height: inset.containerHeight },
+			fitPadding: container.closest('.map-hero') ? inset.fitPadding : fitPadding,
+		};
+	}
 	let styleInited = false;
 	let activeStyleKey: string | null = null;
 	let activeTheme: BasemapTheme | null = null;
@@ -408,7 +423,7 @@
 	async function recoverAttempt(attempt: BootAttempt, instance: MapLibreMap): Promise<void> {
 		if (!isCurrentAttempt(attempt) || attempt.map !== instance) return;
 		const view: RecoveryView = {
-			...camera.capture(instance, { center, zoom, bounds, maxBounds, fitPadding }),
+			...camera.capture(instance, cameraInputs()),
 			focus: captureRecoveryFocus(attempt, instance),
 		};
 		activeRecoveryView = view;
@@ -525,7 +540,7 @@
 
 			failureKind = 'construct';
 			preflightWebgl();
-			const viewport = camera.initial({ center, zoom, bounds, maxBounds, fitPadding });
+			const viewport = camera.initial(cameraInputs());
 			const runtimeContainer = document.createElement('div');
 			runtimeContainer.style.width = '100%';
 			runtimeContainer.style.height = '100%';
@@ -551,7 +566,7 @@
 				throw error;
 			}
 			attempt.map = instance;
-			camera.attach(instance, { center, zoom, bounds, maxBounds, fitPadding }, recoveryView);
+			camera.attach(instance, cameraInputs(), recoveryView);
 			ownMapControl(
 				attempt,
 				instance,
@@ -613,7 +628,10 @@
 			ownMapListener(attempt, instance, 'movestart', claimCamera);
 			ownMapListener(attempt, instance, 'boxzoomend', claimBoxZoom);
 			attempt.observer = new ResizeObserver(() => {
-				if (isCurrentAttempt(attempt)) instance.resize();
+				if (isCurrentAttempt(attempt)) {
+					instance.resize();
+					camera.update(instance, cameraInputs());
+				}
 			});
 			attempt.observer.observe(attempt.container);
 			attempt.initializing = false;
@@ -635,7 +653,7 @@
 	});
 
 	$effect(() => {
-		if (map) camera.update(map, { center, zoom, bounds, maxBounds, fitPadding });
+		if (map) camera.update(map, cameraInputs());
 	});
 
 	$effect(() => {
