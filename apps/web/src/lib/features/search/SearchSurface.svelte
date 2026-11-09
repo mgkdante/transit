@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
@@ -56,7 +57,7 @@
 	const routes = createResource(() => getRoutesIndex());
 	const stops = createResource(() => getStopsIndex());
 
-	const live = createLiveStore(getV1Context().manifest, { families: ['vehicles'] });
+	const live = createLiveStore(getV1Context().manifest, liveReader, { families: ['vehicles'] });
 	onMount(() => {
 		live.start();
 		return () => live.stop();

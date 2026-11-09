@@ -48,7 +48,7 @@
 	import { errorDocumentHead } from '#lib/site/errorPage.ts';
 	import { setV1Context } from '#lib/v1/boot.ts';
 	import { v1Provider } from '#lib/v1/config.ts';
-	import { getVehicles } from '#lib/v1/repositories/live.ts';
+	import { adapter } from '#lib/v1/adapter/index.ts';
 	import { getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import { dataPulse } from '#lib/stores/index.ts';
@@ -220,7 +220,7 @@
 	const searchStops = createResource(() => getStopsIndex(), {
 		enabled: () => chromeSearchEnabled,
 	});
-	const searchVehicles = createResource(() => getVehicles(), {
+	const searchVehicles = createResource(() => adapter.live.vehicles(), {
 		enabled: () => chromeSearchEnabled,
 	});
 	const topSearchResults = $derived(

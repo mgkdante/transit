@@ -1,6 +1,5 @@
 import { browser } from '$app/env';
 import { DEFAULT_LIVE_TTL_S, freshnessAgeSeconds } from '#lib/v1/freshness.ts';
-import { adapter, type AdapterCtx } from '#lib/v1/adapter/index.ts';
 import { getV1Runtime } from '#lib/v1/runtime.ts';
 import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -12,7 +11,6 @@ import type {
 	TripsFile,
 	VehiclesFile,
 } from '#lib/v1/schemas/index.ts';
-import { livePollDelayMs } from './polling';
 import { buildLiveIndex, type LiveIndex } from './index';
 
 const STALE_TTL_MULTIPLIER = 3;
@@ -55,6 +53,20 @@ export interface LiveFamilyState extends Omit<FamilyState, 'consecutiveFailures'
 	readonly health: FeedHealth;
 }
 
+export interface LiveReadContext {
+	readonly manifest: Manifest;
+	readonly signal?: AbortSignal;
+	readonly onPollDelayMs?: (delayMs: number) => void;
+}
+
+export interface LiveReader {
+	vehicles(context: LiveReadContext): Promise<VehiclesFile>;
+	trips(context: LiveReadContext): Promise<TripsFile>;
+	stopDepartures(context: LiveReadContext): Promise<StopDeparturesFile>;
+	alerts(context: LiveReadContext): Promise<AlertsFile>;
+	network(context: LiveReadContext): Promise<NetworkFile>;
+}
+
 export interface LiveStoreOptions {
 	readonly families?: readonly LiveFamily[];
 	readonly seed?: {
@@ -83,11 +95,15 @@ function liveTtlMs(manifest: Manifest): number {
 	return Math.max(1, ttlS) * 1000;
 }
 
-export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = {}): LiveStore {
+export function createLiveStore(
+	manifest: Manifest,
+	reader: LiveReader,
+	options: LiveStoreOptions = {},
+): LiveStore {
 	const runtime = getV1Runtime();
 	const ttlMs = liveTtlMs(manifest);
 	const staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
-	const adapterCtx: AdapterCtx = { manifest };
+	const adapterCtx: LiveReadContext = { manifest };
 	const baselineFamilies = new SvelteSet<LiveFamily>(options.families ?? LIVE_FAMILIES);
 	const initialNetwork = baselineFamilies.has('network') ? (options.seed?.network ?? null) : null;
 
@@ -248,18 +264,18 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		return LIVE_FAMILIES.filter((family) => familyStatesValue[family].active);
 	}
 
-	function readFamily(family: LiveFamily, context: AdapterCtx): Promise<LiveFamilyPayload> {
+	function readFamily(family: LiveFamily, context: LiveReadContext): Promise<LiveFamilyPayload> {
 		switch (family) {
 			case 'vehicles':
-				return adapter.live.vehicles(context);
+				return reader.vehicles(context);
 			case 'trips':
-				return adapter.live.trips(context);
+				return reader.trips(context);
 			case 'departures':
-				return adapter.live.stopDepartures(context);
+				return reader.stopDepartures(context);
 			case 'alerts':
-				return adapter.live.alerts(context);
+				return reader.alerts(context);
 			case 'network':
-				return adapter.live.network(context);
+				return reader.network(context);
 		}
 	}
 
@@ -332,7 +348,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 
 	async function settleFamily(
 		family: LiveFamily,
-		context: AdapterCtx,
+		context: LiveReadContext,
 		controller: AbortController,
 		generation: number,
 		token: number,
@@ -351,8 +367,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			let delayMs = ttlMs;
 			const payload = await readFamily(family, {
 				...context,
-				onResponseHeaders: (headers) => {
-					delayMs = livePollDelayMs(headers, ttlMs);
+				onPollDelayMs: (nextDelayMs) => {
+					delayMs = nextDelayMs;
 				},
 			});
 			if (requestIsCurrent(family, token, generation, controller)) {
@@ -413,7 +429,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 
 		const generation = refreshGeneration;
 		const controller = new AbortController();
-		const batchContext: AdapterCtx = { ...adapterCtx, signal: controller.signal };
+		const batchContext: LiveReadContext = { ...adapterCtx, signal: controller.signal };
 		const pendingFamilies = new SvelteSet(selectedFamilies);
 		const batchTokens = new SvelteMap<LiveFamily, number>();
 		let deadlineTimer: ReturnType<typeof setTimeout> | null = null;

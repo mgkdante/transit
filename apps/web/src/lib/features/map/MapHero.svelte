@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
@@ -140,7 +141,7 @@
 		}
 	});
 
-	const live = createLiveStore(manifest, {
+	const live = createLiveStore(manifest, liveReader, {
 		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
 	});
 	function reportMapCleanupFailure(error: unknown): void {
