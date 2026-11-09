@@ -130,7 +130,8 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
     assert v.delay_min == 2
 
 
-def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
+@pytest.mark.parametrize("provider_id", ["stm", "octranspo"])
+def test_build_vehicles_unknown_status_and_null_occupancy(provider_id: str) -> None:
     conn = FakeConn(
         {
             "current_vehicle_map_with_status": [
@@ -153,10 +154,12 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
         }
     )
 
-    out = build_vehicles(conn, generated_utc="2026-05-31T12:00:05Z", provider_id="stm")
+    out = build_vehicles(conn, generated_utc="2026-05-31T12:00:05Z", provider_id=provider_id)
     v = out.vehicles[0]
     assert v.id == "7777"
     assert v.status == "unknown"
+    assert v.trip is None
+    assert v.next_stop is None
     assert v.occupancy is None
     assert v.bearing is None
     assert v.speed_kmh is None

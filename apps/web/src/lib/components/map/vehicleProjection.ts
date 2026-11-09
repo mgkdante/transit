@@ -17,6 +17,9 @@ export function projectionHorizon(ttlS = 30): number {
 
 export const STALE_CUTOFF_S = 150;
 
+/** A reported next stop counts as ahead only beyond this distance along the shape. */
+export const NEXT_STOP_AHEAD_TOLERANCE_M = 5;
+
 export function fixAgeS(
 	reportedUtc: string | null | undefined,
 	updatedUtc: string,
@@ -99,10 +102,11 @@ export function projectVehicle(input: ProjectVehicleInput): ProjectVehicleResult
 	const stopS =
 		input.invariants?.stopS ??
 		(input.nextStop ? projectToPolyline(shape, input.nextStop, lengths)?.s : undefined);
-	const end = Math.min(
-		lengths[lengths.length - 1],
-		stopS == null ? Infinity : Math.max(proj.s, stopS),
-	);
+	// Only a stop ahead of the vehicle bounds the estimate. A reported stop at or
+	// behind it (the stop just served, or GPS jitter while dwelling) must not freeze
+	// it; a dwelling vehicle already holds still because its reported speed is ~0.
+	const stopAhead = stopS != null && stopS > proj.s + NEXT_STOP_AHEAD_TOLERANCE_M;
+	const end = Math.min(lengths[lengths.length - 1], stopAhead ? stopS : Infinity);
 	const sample = walkAlong(shape, Math.min(proj.s + d, end), lengths);
 	if (!sample) {
 		return { coord, bearing, frozen: true, stale };
