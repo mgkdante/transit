@@ -191,6 +191,15 @@ def _expected_calls() -> list[list[str]]:
             "postgresql-16-repack",
         ],
         ["run", "--rm", "--entrypoint", "caddy", CADDY_IMAGE, "version"],
+        [
+            "run",
+            "--rm",
+            "--entrypoint",
+            "python",
+            WORKER_TAG,
+            "-c",
+            "import platform, ssl; print(platform.machine(), ssl.OPENSSL_VERSION)",
+        ],
         ["image", "rm", "--force", WORKER_TAG, HEALTH_TAG, POSTGRES_TAG],
     ]
 
