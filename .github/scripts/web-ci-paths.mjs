@@ -11,12 +11,17 @@ export function classifyPaths(paths) {
 }
 
 export function checkRequiredJobs(needs) {
+  for (const [job, need] of Object.entries(needs ?? {})) {
+    if (["failure", "cancelled"].includes(need?.result)) {
+      throw new Error(`${job}: unexpected result ${need.result}`);
+    }
+  }
   const selected = needs?.classify?.outputs?.run_e2e;
   if (needs?.classify?.result !== "success" ||
       !["true", "false"].includes(selected)) {
     throw new Error("Web path classification did not succeed");
   }
-  for (const job of ["ci-work", "unit", "e2e", "layout"]) {
+  for (const job of ["prerelease-guard", "ci-work", "unit", "e2e", "layout"]) {
     const result = needs[job]?.result;
     if (result !== "success" &&
         !(["e2e", "layout"].includes(job) && selected === "false" && result === "skipped")) {

@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
+	import { clock } from '@yesid/ui/state';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
-	import { absenceSentence } from '#lib/site/absence.ts';
+	import { absenceSentence, liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
 	import { timeLabel } from '../mapSelectionDetail.logic';
@@ -21,6 +23,13 @@
 	}
 
 	let { vehicle, locale, timeZone, etaUtc = null, t, onselect, onpreview }: Props = $props();
+	const absenceContext = readLiveAbsenceContext();
+	const absence = $derived(
+		liveAbsenceReason('vehicle-delay', {
+			...absenceContext(),
+			notReporting: notReporting(vehicle, clock.serverNow) != null,
+		}),
+	);
 	let pointerPreview = $state(false);
 	let focusPreview = $state(false);
 	const previewing = $derived(pointerPreview || focusPreview);
@@ -32,7 +41,7 @@
 	}
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const accessibleName = $derived(
-		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence('not-reported', locale)}`,
+		`${t.selectBus(vehicle.id)}, ${vehicle.route ? `${t.route} ${vehicle.route}, ` : ''}${etaUtc ? `${timeLabel(etaUtc, locale, timeZone)}, ` : ''}${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][vehicle.status]}, `}${t.delay}: ${delayMeasurement(vehicle.delay_min) ?? absenceSentence(absence, locale)}`,
 	);
 </script>
 
@@ -59,7 +68,7 @@
 		/>
 		<MaybeValue
 			value={delayMeasurement(vehicle.delay_min)}
-			reason="not-reported"
+			reason={absence}
 			variant={unknownStatusAndDelay ? 'row' : 'inline'}
 			{locale}
 		/>
