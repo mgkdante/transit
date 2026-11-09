@@ -1,3 +1,4 @@
+import { stopDisplayName, lineLabel } from '#lib/site/transitDisplay.ts';
 import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '#lib/v1/schemas/index.ts';
 import { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchString } from '#lib/filters/index.ts';
 import type { GeocodePrecision, GeocodeSuggestion } from '#lib/geocode/types.ts';
@@ -91,7 +92,7 @@ export function chromeSearchResults(
 			({ stop, score }): ChromeSearchResult => ({
 				kind: 'stop',
 				id: stop.id,
-				label: stop.name,
+				label: stopDisplayName(stop.name),
 				meta: stop.code ?? 'Stop',
 				priority: 4 + score,
 			}),
@@ -105,7 +106,9 @@ export function chromeSearchResults(
 				kind: 'vehicle',
 				id: vehicle.id,
 				label: vehicle.id,
-				meta: vehicle.route ? `Route ${vehicle.route}` : 'Live bus',
+				meta: vehicle.route
+					? `Route ${lineLabel(vehicle.route, sources.routes ?? [])}`
+					: 'Live bus',
 				priority: 20,
 			}),
 		)

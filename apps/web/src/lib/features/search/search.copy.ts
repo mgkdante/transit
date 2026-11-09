@@ -77,3 +77,9 @@ export const copy = defineCopy({
 
 export type SearchCopy = (typeof copy)[Locale];
 export type VehicleResultCopy = SearchCopy['vehicle'];
+
+export function searchExamples(provider: string | undefined, locale: Locale): readonly string[] {
+	if (provider === 'stm') return copy[locale].census.examples;
+	if (provider === 'octranspo') return ['1', 'Rideau', "Tunney's Pasture"];
+	return locale === 'fr' ? ['Numéro de ligne', 'Nom d’arrêt'] : ['Line number', 'Stop name'];
+}
