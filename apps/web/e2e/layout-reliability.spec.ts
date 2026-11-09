@@ -11,9 +11,11 @@ for (const locale of ['en', 'fr'] as const)
 		await page.route('**/v1/**', (route) =>
 			forwardRoute(async () => {
 				const url = new URL(route.request().url());
-				const state = url.pathname.endsWith('/historic/route_reliability/24.json')
-					? 'hedged'
-					: 'fresh';
+				const state =
+					url.pathname.endsWith('/historic/route_reliability/24.json') ||
+					url.pathname.endsWith('/static/routes_index.json')
+						? 'hedged'
+						: 'fresh';
 				url.pathname = `/__layout/${state}${url.pathname}`;
 				await route.fulfill({ response: await route.fetch({ url: url.href }) });
 			}),

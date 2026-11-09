@@ -91,6 +91,9 @@ hedgedReliability.periods = [
 ];
 files['/__layout/hedged/v1/stm/historic/route_reliability/24.json'] =
 	JSON.stringify(hedgedReliability);
+const hedgedRoutes = JSON.parse(files['/v1/stm/static/routes_index.json']);
+hedgedRoutes.routes.push({ id: '25', short: '25', long: 'Ontario', type: 3 });
+files['/__layout/hedged/v1/stm/static/routes_index.json'] = JSON.stringify(hedgedRoutes);
 layoutFiles['/v1/stm/historic/receipts/2026-08-29.json'] = JSON.stringify({
 	generated_utc: generated,
 	date: '2026-08-29',
