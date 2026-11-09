@@ -315,3 +315,37 @@ describe('vehicle motion snapshot interface', () => {
 		h.controller.destroy();
 	});
 });
+
+describe.each(['stm', 'octranspo'])('%s next stop coordinates', () => {
+	it.each([
+		{
+			title: 'published coordinates without a stops list',
+			coordinates: { next_stop_lat: 45.5, next_stop_lon: -73.5895 },
+			stops: undefined,
+		},
+		{
+			title: 'published coordinates ahead of a conflicting lookup',
+			coordinates: { next_stop_lat: 45.5, next_stop_lon: -73.5895 },
+			stops: [{ id: 'stop', lat: 45.5, lon: -73.588 }],
+		},
+		{
+			title: 'legacy stops lookup',
+			coordinates: {},
+			stops: [{ id: 'stop', lat: 45.5, lon: -73.5895 }],
+		},
+		{
+			title: 'lookup with partial published coordinates',
+			coordinates: { next_stop_lat: 45.4 },
+			stops: [{ id: 'stop', lat: 45.5, lon: -73.5895 }],
+		},
+	])('clamps Estimated position using $title', ({ coordinates, stops }) => {
+		const h = harness();
+		h.motion.remember(route);
+		h.feed(60, { ...intent, stops }, -73.59, 'tick', { next_stop: 'stop', ...coordinates });
+		h.frame(1500);
+		expect(h.last().geometry.coordinates[0]).toBeCloseTo(-73.5895, 6);
+		h.frame(10000);
+		expect(h.last().geometry.coordinates[0]).toBeCloseTo(-73.5895, 6);
+		h.controller.destroy();
+	});
+});

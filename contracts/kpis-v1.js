@@ -13,6 +13,13 @@ function delay(value) {
   );
 }
 
+/** Live snapshot TTL behind the KPI endpoint; must equal apps/data-proxy LIVE_TTL_SECONDS. */
+export const KPI_LIVE_TTL_S = 20;
+/** A cold response asks clients to retry after one live TTL. */
+export const KPI_COLD_RETRY_AFTER = String(KPI_LIVE_TTL_S);
+/** A live reading is fresh while younger than three live TTLs. */
+export const KPI_FRESHNESS_LIMIT_S = KPI_LIVE_TTL_S * 3;
+
 // Additive v1: all existing fields retain their types; extra fields are allowed.
 // This is a response-shape check and a stateless count of hero-eligible samples,
 // not the browser's two-poll hold state machine.
@@ -22,7 +29,7 @@ export function kpiSampleState(body, status, retryAfter) {
   if (status === 503) {
     return body.error === "pipeline_cold" &&
       typeof body.detail === "string" &&
-      retryAfter === "30"
+      retryAfter === KPI_COLD_RETRY_AFTER
       ? "demo"
       : null;
   }
@@ -32,7 +39,7 @@ export function kpiSampleState(body, status, retryAfter) {
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(body.snapshotAt) ||
     !Number.isFinite(Date.parse(body.snapshotAt)) ||
     !count(body.freshnessS) ||
-    body.freshnessS >= 90 ||
+    body.freshnessS >= KPI_FRESHNESS_LIMIT_S ||
     !count(body.vehicles) ||
     !count(body.routesLive) ||
     !(body.routesTotal === null || count(body.routesTotal)) ||

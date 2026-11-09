@@ -86,9 +86,20 @@ def _feed_captured_utc(conn: Connection, provider_id: str, endpoint_key: str) ->
     return _opt_iso(row["captured_utc"]) if row else None
 
 
+# Use the departure view's Silver source, but compare predictions to each
+# vehicle's capture clock. Resolve the latest feed once for the whole fleet.
 _VEHICLES_SQL = named_query(
     "live.vehicles",
     """
+    WITH latest_trip_feed AS MATERIALIZED (
+        SELECT rt_feed_snapshot_id
+        FROM silver.rt_feed_snapshots
+        WHERE provider_id = :provider_id
+          AND endpoint_key = 'trip_updates'
+          AND source_realtime_snapshot_id IS NOT NULL
+        ORDER BY captured_at_utc DESC, source_realtime_snapshot_id DESC
+        LIMIT 1
+    )
     SELECT cvm.vehicle_id                AS id,
            cvm.route_id                  AS route,
            cvm.trip_id                   AS trip,
@@ -98,7 +109,9 @@ _VEHICLES_SQL = named_query(
            lvs.speed                     AS speed_ms,
            cvm.status_band               AS status_band,
            lvs.occupancy_status          AS occupancy_status,
-           cvm.stop_id                   AS next_stop,
+           COALESCE(cvm.stop_id, upcoming.stop_id) AS next_stop,
+           ds.stop_lat                  AS next_stop_lat,
+           ds.stop_lon                  AS next_stop_lon,
            cvm.captured_at_utc           AS updated_utc,
            lvs.position_timestamp_utc    AS reported_utc,
            cvm.trip_avg_delay_seconds    AS delay_seconds
@@ -107,6 +120,27 @@ _VEHICLES_SQL = named_query(
         ON  lvs.provider_id          = cvm.provider_id
         AND lvs.realtime_snapshot_id = cvm.realtime_snapshot_id
         AND lvs.entity_index         = cvm.entity_index
+    LEFT JOIN LATERAL (
+        SELECT stu.stop_id
+        FROM latest_trip_feed AS latest
+        JOIN silver.rt_trip_updates AS rtu
+          ON rtu.rt_feed_snapshot_id = latest.rt_feed_snapshot_id
+         AND rtu.provider_id = cvm.provider_id
+         AND rtu.trip_id = cvm.trip_id
+        JOIN silver.rt_trip_update_stop_times AS stu
+          ON stu.rt_feed_snapshot_id = rtu.rt_feed_snapshot_id
+         AND stu.entity_index = rtu.entity_index
+         AND stu.provider_id = rtu.provider_id
+        WHERE cvm.stop_id IS NULL
+          AND cvm.trip_id IS NOT NULL
+          AND stu.stop_id IS NOT NULL
+          AND COALESCE(stu.departure_time_utc, stu.arrival_time_utc) >= cvm.captured_at_utc
+        ORDER BY stu.stop_sequence, stu.stop_time_update_index, rtu.entity_index
+        LIMIT 1
+    ) AS upcoming ON true
+    LEFT JOIN gold.dim_stop AS ds
+        ON ds.provider_id = cvm.provider_id
+       AND ds.stop_id = COALESCE(cvm.stop_id, upcoming.stop_id)
     WHERE cvm.provider_id = :provider_id
     """,
 )
@@ -121,6 +155,8 @@ def build_vehicles(
     vehicles: list[Vehicle] = []
     for r in conn.execute(_VEHICLES_SQL, {"provider_id": provider_id}).mappings():
         occ_raw = r["occupancy_status"]
+        stop_lat, stop_lon = r["next_stop_lat"], r["next_stop_lon"]
+        has_stop_coords = stop_lat is not None and stop_lon is not None
         vehicles.append(
             Vehicle(
                 id=str(r["id"]),
@@ -133,6 +169,8 @@ def build_vehicles(
                 status=_status_from_band(r["status_band"]),
                 occupancy=(_OCCUPANCY_MAP.get(int(occ_raw)) if occ_raw is not None else None),
                 next_stop=r["next_stop"],
+                next_stop_lat=_round5(stop_lat) if has_stop_coords else None,
+                next_stop_lon=_round5(stop_lon) if has_stop_coords else None,
                 updated_utc=_iso(r["updated_utc"]),
                 reported_utc=_opt_iso(r["reported_utc"]),
                 delay_min=_delay_min(r["delay_seconds"]),
