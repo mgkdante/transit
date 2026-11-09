@@ -221,7 +221,9 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		const view = renderReadyMark(initial);
 		await rowOverlay(view.container);
 		const figure = view.container.querySelector('figure') as HTMLElement;
-		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		const target = within(figure.querySelector('.desktop-rankings')!).getByRole('button', {
+			name: 'Stop One',
+		});
 		target.focus();
 		expect(target).toHaveFocus();
 
@@ -235,7 +237,9 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		const view = renderReadyMark(initial);
 		await rowOverlay(view.container);
 		const figure = view.container.querySelector('figure') as HTMLElement;
-		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		const target = within(figure.querySelector('.desktop-rankings')!).getByRole('button', {
+			name: 'Stop One',
+		});
 		target.focus();
 		await fireEvent.keyDown(target, { key: 'Enter' });
 		const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
@@ -255,7 +259,9 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		const view = renderReadyMark(initial);
 		await rowOverlay(view.container);
 		const figure = view.container.querySelector('figure') as HTMLElement;
-		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		const target = within(figure.querySelector('.desktop-rankings')!).getByRole('button', {
+			name: 'Stop One',
+		});
 		target.focus();
 		await fireEvent.keyDown(target, { key: 'Enter' });
 		const dialog = await screen.findByRole('dialog', { name: 'Stop One' });
@@ -278,7 +284,9 @@ describe('MagnitudeBarsMark — localized semantic AT table', () => {
 		const view = renderReadyMark(initial);
 		await rowOverlay(view.container);
 		const figure = view.container.querySelector('figure') as HTMLElement;
-		const target = within(figure).getByRole('button', { name: 'Stop One' });
+		const target = within(figure.querySelector('.desktop-rankings')!).getByRole('button', {
+			name: 'Stop One',
+		});
 		target.focus();
 		await fireEvent.keyDown(target, { key: 'Enter' });
 		expect(await screen.findByRole('dialog', { name: 'Stop One' })).toBeInTheDocument();
@@ -362,7 +370,9 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 			const { container } = renderReadyMark(baseSpec('95% CI', true));
 			await rowOverlay(container);
 			const figure = container.querySelector('figure') as HTMLElement;
-			const target = within(figure).getByRole('button', { name: 'Stop One' });
+			const target = within(figure.querySelector('.desktop-rankings')!).getByRole('button', {
+				name: 'Stop One',
+			});
 			const row = target.querySelector('rect') as SVGRectElement;
 			expect(target.closest('svg')).toBeInTheDocument();
 			expect(Number(row.getAttribute('width'))).toBeGreaterThan(0);
@@ -401,7 +411,7 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 		});
 		await waitFor(() => expect(document.querySelector('.lc-tooltip-root')).toBeInTheDocument());
 
-		const target = within(container.querySelector('figure')!).getByRole('button', {
+		const target = within(container.querySelector('.desktop-rankings')!).getByRole('button', {
 			name: 'Stop One',
 		});
 		expect(target).toHaveAttribute('aria-haspopup', 'dialog');
@@ -421,7 +431,7 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 	it('opens row evidence when the plotted button itself receives a direct click', async () => {
 		const { container } = renderReadyMark(baseSpec('95% CI', true));
 		await rowOverlay(container);
-		const target = within(container.querySelector('figure')!).getByRole('button', {
+		const target = within(container.querySelector('.desktop-rankings')!).getByRole('button', {
 			name: 'Stop One',
 		});
 
@@ -600,5 +610,31 @@ describe('MagnitudeBarsMark — touch datum popover integration', () => {
 		expect(navigate).toHaveBeenCalledOnce();
 		expect(navigate).toHaveBeenCalledWith('/stop/s1');
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+});
+
+describe('phone ranking content', () => {
+	it('keeps a complete name reachable alongside each bar and value', () => {
+		const label = 'Station avec un nom très long composé de plusieurs mots';
+		render(MagnitudeBarsMark, {
+			spec: {
+				kind: 'magnitude-bars',
+				mark: 'bar',
+				title: 'Ranking',
+				locale: 'fr',
+				domain: [0, 100],
+				unit: '%',
+				rowLabel: 'Station',
+				sort: 'given',
+				scale: 'severity',
+				rows: [{ key: 's', label, value: 12, href: '/stop/s' }],
+			},
+		});
+		const list = screen.getByRole('list', { name: 'Ranking', hidden: true });
+		expect(within(list).getByTitle(label)).toHaveAttribute('href', '/stop/s');
+		expect(within(list).getByRole('img', { hidden: true })).toHaveAttribute(
+			'aria-label',
+			'Ranking: 12%',
+		);
 	});
 });

@@ -1,4 +1,4 @@
-import { CANCEL_RATE_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import { scaleLinear } from 'd3-scale';
 import type { ChartSpec, TrendDatum } from '#lib/components/dataviz/chart/index.ts';
 import type { Locale } from '#lib/i18n/config.ts';
 import type { TrendPoint } from '#lib/v1/index.ts';
@@ -41,7 +41,13 @@ export function selectCancelTrend(
 					title: opts.title,
 					locale: opts.locale,
 					xScale: 'band',
-					domain: [CANCEL_RATE_DOMAIN[0], CANCEL_RATE_DOMAIN[1]],
+					domain: [
+						0,
+						scaleLinear()
+							.domain([0, Math.max(...series.map((v) => v ?? 0), 0.01) * 1.05])
+							.nice(5)
+							.domain()[1],
+					],
 					unit: opts.pctUnit,
 					label: opts.seriesLabel,
 					points: specPoints,

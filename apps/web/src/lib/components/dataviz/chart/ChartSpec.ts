@@ -39,14 +39,14 @@ const SELF_MANAGED_VIEWPORT = {
 const NO_VIEWPORT = { layout: 'none' } as const satisfies ChartViewportPolicy;
 
 const CHART_VIEWPORT_POLICIES = {
-	'magnitude-bars': DENSE_VIEWPORT,
+	'magnitude-bars': FLUID_VIEWPORT,
 	'dot-strip': DENSE_VIEWPORT,
 	dumbbell: DENSE_VIEWPORT,
 	line: DENSE_VIEWPORT,
-	trend: DENSE_VIEWPORT,
+	trend: FLUID_VIEWPORT,
 	sparkline: FLUID_VIEWPORT,
 	cycle: NO_VIEWPORT,
-	histogram: DENSE_VIEWPORT,
+	histogram: FLUID_VIEWPORT,
 	bullet: FLUID_VIEWPORT,
 	metric: NO_VIEWPORT,
 	'stacked-share': FLUID_VIEWPORT,

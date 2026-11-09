@@ -208,7 +208,7 @@ describe('HotspotSection evidence presentation', () => {
 		expect(zeroRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 	});
 
-	it('uses the shared dense chart viewport and keeps fitting output out of the tab order', () => {
+	it('uses the shared fluid chart viewport and keeps fitting output out of the tab order', () => {
 		const { container } = renderSection();
 		const viewport = container.querySelector<HTMLElement>(
 			'[data-slot="chart-viewport"]',
@@ -220,7 +220,7 @@ describe('HotspotSection evidence presentation', () => {
 		expect(viewport).not.toHaveAttribute('tabindex');
 		expect(viewport.children).toHaveLength(1);
 		expect(viewport.firstElementChild).toHaveAttribute('data-slot', 'chart-canvas');
-		expect(output).toHaveAttribute('data-chart-layout', 'dense');
+		expect(output).toHaveAttribute('data-chart-layout', 'fluid');
 		expect(output?.querySelector('[data-slot="hotspot-window"]')).toBeNull();
 		expect(
 			within(output as HTMLElement).queryByRole('table', { name: COPY.fr.tray.listLabel }),
@@ -238,7 +238,7 @@ describe('HotspotSection evidence presentation', () => {
 		expect(output).toHaveAttribute('data-card-interactive');
 	});
 
-	it('adds keyboard semantics only for real overflow and hides the cue at the right edge', async () => {
+	it('keeps responsive rankings out of horizontal scroll navigation', async () => {
 		const view = renderSection();
 		const viewport = view.container.querySelector<HTMLElement>(
 			'[data-slot="chart-viewport"]',
@@ -246,13 +246,13 @@ describe('HotspotSection evidence presentation', () => {
 		const output = view.container.querySelector('[data-slot="chart-output"]');
 		const layout = mockHorizontalLayout(viewport, { clientWidth: 320, scrollWidth: 768 });
 		const observer = observerFor(viewport);
-		expect(observer).toBeDefined();
+		expect(observer).toBeUndefined();
 		observer?.trigger();
 		await tick();
 
-		expect(within(view.container).getByRole('region', { name: chartScrollLabel })).toBe(viewport);
-		expect(viewport).toHaveAttribute('tabindex', '0');
-		expect(output).toHaveAttribute('data-more-end', 'true');
+		expect(within(view.container).queryByRole('region', { name: chartScrollLabel })).toBeNull();
+		expect(viewport).not.toHaveAttribute('tabindex');
+		expect(output).toHaveAttribute('data-more-end', 'false');
 
 		layout.scrollTo(448);
 		await fireEvent.scroll(viewport);
@@ -268,6 +268,6 @@ describe('HotspotSection evidence presentation', () => {
 		expect(output).toHaveAttribute('data-more-end', 'false');
 
 		await view.unmount();
-		expect(observer?.disconnect).toHaveBeenCalledTimes(1);
+		expect(observer).toBeUndefined();
 	});
 });
