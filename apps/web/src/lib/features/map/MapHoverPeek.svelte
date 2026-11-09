@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
 	import { routeModeHint } from '#lib/search/stopMode.ts';
@@ -77,18 +78,24 @@
 			<div>
 				<dt>{t.status}</dt>
 				<dd class="map-peek-status">
-					{#if peek.delayMin != null || peek.status !== 'unknown'}
-						<StatusBadge
-							status={peek.status}
-							label={STATUS_LABELS[locale][peek.status]}
-							mode="legend"
-							size="sm"
-						/>
-						<span aria-hidden="true">·</span>
+					{#if !isInService({ trip: peek.tripId })}{vehicleServiceCopy[locale].status}{:else}
+						{#if peek.delayMin != null || peek.status !== 'unknown'}
+							<StatusBadge
+								status={peek.status}
+								label={STATUS_LABELS[locale][peek.status]}
+								mode="legend"
+								size="sm"
+							/>
+							<span aria-hidden="true">·</span>
+						{/if}
+						<span class="map-peek-delay">
+							<MaybeValue
+								value={delayMeasurement(peek.delayMin)}
+								reason={vehicleAbsence}
+								{locale}
+							/>
+						</span>
 					{/if}
-					<span class="map-peek-delay">
-						<MaybeValue value={delayMeasurement(peek.delayMin)} reason={vehicleAbsence} {locale} />
-					</span>
 				</dd>
 			</div>
 			<div>

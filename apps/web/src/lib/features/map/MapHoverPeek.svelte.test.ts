@@ -317,3 +317,14 @@ it.each([
 	const { container } = render(MapHoverPeek, { props: { peek, locale } });
 	expect(container).toHaveTextContent(locale === 'en' ? 'No live data' : 'Aucune donnée en direct');
 });
+
+it.each(['en', 'fr'] as const)(
+	'labels an untripped vehicle without punctuality in %s',
+	(locale) => {
+		const view = render(MapHoverPeek, { peek: { ...vehicleFresh, tripId: null }, locale });
+		const status = definitionValue(view.container, locale === 'en' ? 'Status' : 'Statut');
+		expect(status).toHaveTextContent(locale === 'en' ? 'Out of service' : 'Hors service');
+		expect(status).not.toHaveTextContent(STATUS_LABELS[locale].late);
+		expect(status.querySelector('.map-peek-delay')).toBeNull();
+	},
+);

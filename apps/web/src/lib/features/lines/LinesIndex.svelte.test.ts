@@ -3,6 +3,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 import LinesIndex from './LinesIndex.svelte';
+import * as i18n from '#lib/i18n/index.ts';
 
 const snapshots = new SvelteMap<string, ReliabilitySnapshot>();
 const requested: string[] = [];
@@ -158,7 +159,7 @@ describe('LinesIndex listing system', () => {
 		reset();
 		render(LinesIndex);
 
-		expect(screen.getByText('Route name · Van Horne')).toBeInTheDocument();
+		expect(screen.getByText('Van Horne')).toBeInTheDocument();
 		expect(
 			screen.getByText('Open a line to see every published direction and destination together.'),
 		).toBeInTheDocument();
@@ -363,3 +364,13 @@ it.each(['tentative', 'absent'] as const)(
 		expect(screen.getByRole('link', { name: /99.*Villeray/i })).toBeInTheDocument();
 	},
 );
+
+it.each(['en', 'fr'] as const)('shows names without a route-name prefix in %s', async (locale) => {
+	reset();
+	const localeMock = vi.spyOn(i18n, 'getLocale').mockReturnValue(locale);
+	render(LinesIndex);
+	localeMock.mockRestore();
+	const name = await screen.findByTitle('Sherbrooke');
+	expect(name).toHaveTextContent('Sherbrooke');
+	expect(screen.queryByText(/Route name ·|Nom du parcours ·/)).toBeNull();
+});
