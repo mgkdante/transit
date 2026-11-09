@@ -79,6 +79,10 @@
 	}
 	.compact-absence button {
 		min-inline-size: 0;
+		/* A full-size tap target that keeps the stat cell's line height:
+		   the negative block margins cancel the extra height in layout. */
+		min-block-size: 2.75rem;
+		margin-block: calc((1lh - 2.75rem) / 2);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		padding: 0;
