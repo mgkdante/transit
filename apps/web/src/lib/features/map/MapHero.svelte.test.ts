@@ -1316,7 +1316,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 			return {
 				url: new URL(committed),
 				filtersPreserved: false,
-				focus: harness.isDesktop ? ('body' as const) : ('close' as const),
+				// Both detail surfaces are non-modal, so a committed navigation resets focus.
+				focus: 'body' as const,
 				publications: harness.acceptedPublications.slice(publicationStart),
 			};
 		}
@@ -1346,7 +1347,8 @@ describe('MapHero base-parity navigation and isolated teardown (M6H)', () => {
 		return {
 			url: winner,
 			filtersPreserved,
-			focus: harness.isDesktop ? ('body' as const) : ('close' as const),
+			// Both detail surfaces are non-modal, so a committed navigation resets focus.
+			focus: 'body' as const,
 			publications: harness.acceptedPublications.slice(publicationStart),
 		};
 	}
