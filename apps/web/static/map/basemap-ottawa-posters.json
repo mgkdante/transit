@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "provider_id": "octranspo",
-  "rendered_utc": "2026-11-09T22:29:57.233Z",
+  "rendered_utc": "2026-11-09T23:22:15.647Z",
   "source": {
     "pmtiles_url": "/data/v1/octranspo/static/basemap/ottawa.pmtiles",
     "sha256": "45ae63071c10619e0500654ff5fd66f320fe8e01e72be7fd0cda965945a4e21d",
@@ -36,7 +36,7 @@
     },
     {
       "path": "src/lib/components/map/viewport.ts",
-      "sha256": "0a13e4a67a8237765a22542af75f8b27244cd5a09d361e5955f132373305f37a"
+      "sha256": "12c594eb14ea8c324f2f2f63c0208b08dbc12e59281a28c2867f945f6f0a0145"
     },
     {
       "path": "src/lib/features/map/mapCameraFraming.ts",
@@ -63,8 +63,8 @@
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 86125,
-      "sha256": "0faa53e658089c7b0c7356b86334588a38e7e59be435d3aa4c9bcffa619d08cd"
+      "bytes": 85919,
+      "sha256": "92952a0c6a670279041c531cc563d4e773d089f2dbfe3670179a2c50b011c1e2"
     },
     {
       "filename": "basemap-ottawa-light-mobile-45ae63071c10.avif",
@@ -81,8 +81,8 @@
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 101391,
-      "sha256": "42e698963d2ceade53e2819792bb12c26f5024ba85f8ea9491c4963abc97bf3c"
+      "bytes": 100301,
+      "sha256": "3967f857ea3cfdac26a965b0a084c337cd43215baa108b095c970f6ba737864c"
     }
   ]
 }

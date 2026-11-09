@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "provider_id": "stm",
-  "rendered_utc": "2026-11-09T22:28:41.567Z",
+  "rendered_utc": "2026-11-09T23:21:40.231Z",
   "source": {
     "pmtiles_url": "/data/v1/stm/static/basemap/montreal.pmtiles",
     "sha256": "acd31096ae3d0666ffe8d806483bc1a336b2323fda57978f8563a25615c0c482",
@@ -36,7 +36,7 @@
     },
     {
       "path": "src/lib/components/map/viewport.ts",
-      "sha256": "0a13e4a67a8237765a22542af75f8b27244cd5a09d361e5955f132373305f37a"
+      "sha256": "12c594eb14ea8c324f2f2f63c0208b08dbc12e59281a28c2867f945f6f0a0145"
     },
     {
       "path": "src/lib/features/map/mapCameraFraming.ts",
@@ -63,8 +63,8 @@
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 100292,
-      "sha256": "ce09f9e9224a25ba4152d304f97feb92deb7f1406fdde47d7906921bd022a5ab"
+      "bytes": 98102,
+      "sha256": "c329217659236f5422e305eb1c0659059a0f958dea090287ecd163f89df2a614"
     },
     {
       "filename": "basemap-montreal-light-mobile-acd31096ae3d.avif",
@@ -81,8 +81,8 @@
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 118138,
-      "sha256": "8ef6511788c0e17d70257d8a26efd28d86eaec855691e86838caf028246a0419"
+      "bytes": 117637,
+      "sha256": "add87d62cf60a06ba3d4f32d1062f9876aecd8c3800d11b75c67505d1f99c2c6"
     }
   ]
 }
