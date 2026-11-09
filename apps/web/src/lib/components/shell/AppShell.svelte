@@ -11,6 +11,7 @@
 
 	interface AppShellProps {
 		navigation: NavigationLifecycle;
+		fullViewport?: boolean;
 		locale?: Locale;
 		url?: URL;
 		providerId?: string;
@@ -30,6 +31,7 @@
 
 	let {
 		navigation,
+		fullViewport = false,
 		locale: localeProp,
 		url,
 		providerId,
@@ -51,9 +53,11 @@
 
 <div
 	class={cn(
-		'app-shell-root circuit-grid flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground',
+		'app-shell-root circuit-grid flex w-full flex-col bg-background text-foreground',
+		fullViewport ? 'h-dvh overflow-hidden' : 'min-h-dvh',
 		className,
 	)}
+	data-full-viewport={fullViewport}
 	data-slot="app-shell"
 >
 	<div class="app-shell-chrome" data-slot="app-shell-chrome">
@@ -73,11 +77,8 @@
 		/>
 	</div>
 
-	<div class="app-shell-row min-h-0 flex-1 overflow-hidden" data-slot="app-shell-row">
-		<div
-			class="app-shell-main relative min-w-0 flex-1 overflow-hidden bg-transparent"
-			data-slot="map-stage"
-		>
+	<div class="app-shell-row min-h-0 flex-1" data-slot="app-shell-row">
+		<div class="app-shell-main relative min-w-0 flex-1 bg-transparent" data-slot="map-stage">
 			{#if main}{@render main()}{/if}
 		</div>
 	</div>
@@ -91,7 +92,7 @@
 	}
 
 	.app-shell-chrome {
-		position: absolute;
+		position: fixed;
 		inset-block-start: 0;
 		inset-inline: 0;
 		z-index: var(--z-nav);
@@ -111,7 +112,12 @@
 		pointer-events: none;
 	}
 
-	.app-shell-main {
+	.app-shell-root[data-full-viewport='true'] .app-shell-row {
+		overflow: hidden;
+	}
+
+	.app-shell-root[data-full-viewport='true'] .app-shell-main {
+		overflow: hidden;
 		position: absolute;
 		inset: 0;
 	}

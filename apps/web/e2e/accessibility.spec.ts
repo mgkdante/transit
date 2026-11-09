@@ -122,7 +122,7 @@ for (const locale of PUBLISHED_LOCALES) {
 			await expect(page.getByRole('main')).toHaveAttribute('id', 'main');
 			// The map is full-bleed and has no footer.
 			await expect(page.getByRole('contentinfo')).toHaveCount(path === '/map' ? 0 : 1);
-			await expectNoHorizontalOverflow(page, ['#page-scroller']);
+			await expectNoHorizontalOverflow(page, ['#main-flow']);
 			await expectTapTargets(page, { exclude: TAP_EXEMPT });
 		});
 	}
