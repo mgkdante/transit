@@ -33,18 +33,55 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
+      # This standalone policy imports only Node built-ins, with no load-time assets.
+      # Extend the materialized closure for new imports/assets. Interface changes
+      # need a two-step migration: land compatible base support, then use it.
+      - name: Materialize trusted web policy
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $base = $env:GITHUB_SHA
+          }
+          if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
+          git merge-base --is-ancestor $base refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $policy | Out-Null
+          foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
+            $content = git show "${base}:$path"
+            if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
+            [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+          }
+          $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+          if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+          "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Set up pinned Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ env.WEB_CI_NODE }}
           package-manager-cache: false
-
-      - name: Test web path selection and required jobs
-        run: node --test .github/scripts/web-ci-paths.test.mjs
 
       - name: Classify web paths
         id: classify
-        run: node .github/scripts/web-ci-paths.mjs classify
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "run_e2e=true`n")
+            exit 0
+          }
+          node "$env:WEB_CI_POLICY/web-ci-paths.mjs" classify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   prerelease-guard:
     runs-on: ubuntu-24.04
@@ -94,6 +131,10 @@ jobs:
       - name: Data proxy Wrangler dry run
         working-directory: apps/data-proxy
         run: ../../node_modules/.bin/wrangler deploy --dry-run
+
+      - name: Web CI policy contract
+        working-directory: ${{ github.workspace }}
+        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
@@ -294,18 +335,62 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
+      # This standalone policy imports only Node built-ins, with no load-time assets.
+      # Extend the materialized closure for new imports/assets. Interface changes
+      # need a two-step migration: land compatible base support, then use it.
+      - name: Materialize trusted web policy
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $base = $env:GITHUB_SHA
+          }
+          if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
+          git merge-base --is-ancestor $base refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $policy | Out-Null
+          foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
+            $content = git show "${base}:$path"
+            if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
+            [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+          }
+          $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+          if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+          "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up pinned Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ env.WEB_CI_NODE }}
           package-manager-cache: false
 
       - name: Require selected jobs to succeed
         working-directory: ${{ github.workspace }}
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: node .github/scripts/web-ci-paths.mjs required
+        shell: pwsh
+        run: |
+          $needs = $env:NEEDS_JSON | ConvertFrom-Json -AsHashtable
+          foreach ($job in $needs.Keys) {
+            if ($needs[$job].result -in @('failure', 'cancelled')) {
+              throw "${job}: $($needs[$job].result)"
+            }
+          }
+          node "$env:WEB_CI_POLICY/web-ci-paths.mjs" required
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   deploy_scope:
     if: ${{ github.event_name != 'pull_request' }}
