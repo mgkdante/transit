@@ -459,13 +459,17 @@ if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node 
 """  # noqa: E501 - preserve the exact reviewed workflow body
 
 
-def _node_setup_uses_selected_pin(steps: list[dict[str, object]], index: int) -> bool:
+def _node_setup_uses_selected_pin(
+    steps: list[dict[str, object]], index: int, job_env: dict[str, object] | None = None
+) -> bool:
     with_values = steps[index].get("with", {})
     if "node-version" not in with_values:
         return with_values.get("node-version-file") == ".nvmrc"
     if (
         with_values.get("node-version") != "${{ env.WEB_CI_NODE }}"
         or "node-version-file" in with_values
+        or "WEB_CI_NODE" in steps[index].get("env", {})
+        or "WEB_CI_NODE" in (job_env or {})
         or index == 0
     ):
         return False
@@ -489,6 +493,22 @@ def test_node_setup_accepts_verified_base_pin(job_name: str) -> None:
         if str(step.get("uses", "")).startswith("actions/setup-node@")
     )
     assert _node_setup_uses_selected_pin(steps, index)
+
+
+@pytest.mark.parametrize("scope", ["step", "job"])
+def test_node_setup_rejects_env_override_of_verified_base_pin(scope: str) -> None:
+    job = _yaml(WORKFLOWS / "web.yml")["jobs"]["classify"]
+    steps = job["steps"]
+    index = next(
+        i
+        for i, step in enumerate(steps)
+        if str(step.get("uses", "")).startswith("actions/setup-node@")
+    )
+    target = steps[index] if scope == "step" else job
+    target["env"] = {"OTHER_VAR": "allowed"}
+    assert _node_setup_uses_selected_pin(steps, index, job.get("env"))
+    target["env"]["WEB_CI_NODE"] = "20.0.0"
+    assert not _node_setup_uses_selected_pin(steps, index, job.get("env"))
 
 
 @pytest.mark.parametrize("version", ["${{ env.OTHER_NODE }}", NODE_VERSION])
@@ -569,7 +589,7 @@ def test_every_javascript_workflow_lane_installs_the_selected_node() -> None:
                     "actions/setup-node@"
                 ):
                     continue
-                if not _node_setup_uses_selected_pin(steps, index):
+                if not _node_setup_uses_selected_pin(steps, index, job.get("env")):
                     literal_node_versions.append(label)
 
     assert consumers
