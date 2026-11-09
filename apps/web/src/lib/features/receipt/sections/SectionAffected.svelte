@@ -25,7 +25,7 @@
 			<div class="receipt-count">
 				<dt>{cell.label}</dt>
 				<dd>
-					<MaybeValue value={cell.value} reason="no-observations" {locale} />
+					<MaybeValue variant="compact" value={cell.value} reason="no-observations" {locale} />
 				</dd>
 			</div>
 		{/each}

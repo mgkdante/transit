@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from transit_ops.core.models import ProviderPublicConfig
@@ -99,6 +102,8 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
                     "status_band": "En retard / Late",
                     "occupancy_status": 2,
                     "next_stop": "S-900",
+                    "next_stop_lat": 45.501234,
+                    "next_stop_lon": -73.601234,
                     "updated_utc": "2026-05-31T12:00:00Z",
                     "reported_utc": "2026-05-31T11:59:30Z",
                     "delay_seconds": 120,
@@ -122,12 +127,14 @@ def test_build_vehicles_maps_status_occupancy_and_rounds_coords() -> None:
     assert v.bearing == 182
     assert v.speed_kmh == 36
     assert v.next_stop == "S-900"
+    assert (v.next_stop_lat, v.next_stop_lon) == (45.50123, -73.60123)
     assert v.updated_utc == "2026-05-31T12:00:00Z"
     assert v.reported_utc == "2026-05-31T11:59:30Z"
     assert v.delay_min == 2
 
 
-def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
+@pytest.mark.parametrize("provider_id", ["stm", "octranspo"])
+def test_build_vehicles_unknown_status_and_null_occupancy(provider_id: str) -> None:
     conn = FakeConn(
         {
             "current_vehicle_map_with_status": [
@@ -142,6 +149,8 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
                     "status_band": "Inconnu / Unknown",
                     "occupancy_status": None,
                     "next_stop": None,
+                    "next_stop_lat": None,
+                    "next_stop_lon": None,
                     "updated_utc": "2026-05-31T12:00:00Z",
                     "reported_utc": None,
                     "delay_seconds": None,
@@ -150,14 +159,37 @@ def test_build_vehicles_unknown_status_and_null_occupancy() -> None:
         }
     )
 
-    out = build_vehicles(conn, generated_utc="2026-05-31T12:00:05Z", provider_id="stm")
+    out = build_vehicles(conn, generated_utc="2026-05-31T12:00:05Z", provider_id=provider_id)
     v = out.vehicles[0]
     assert v.id == "7777"
     assert v.status == "unknown"
+    assert v.trip is None
+    assert v.next_stop is None
     assert v.occupancy is None
     assert v.bearing is None
     assert v.speed_kmh is None
     assert v.reported_utc is None
+
+
+def test_build_vehicles_octranspo_with_and_without_trip() -> None:
+    # SQL-result fixture: the first vehicle's missing position stop was resolved
+    # from its trip update; the out-of-service vehicle has neither trip nor stop.
+    rows = json.loads(
+        (Path(__file__).parent / "fixtures" / "octranspo_live_vehicles.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    result = build_vehicles(
+        FakeConn({"live.vehicles": rows}),
+        provider_id="octranspo",
+        generated_utc="2026-05-31T12:00:05Z",
+    )
+    assigned, unassigned = result.vehicles
+    assert assigned.trip == "OC-trip"
+    assert assigned.next_stop == "OC-upcoming-stop"
+    assert unassigned.trip is None
+    assert unassigned.next_stop is None
+    assert all(vehicle.occupancy is None for vehicle in result.vehicles)
 
 
 def test_build_vehicles_all_status_bands_map() -> None:
@@ -181,6 +213,8 @@ def test_build_vehicles_all_status_bands_map() -> None:
             "status_band": band,
             "occupancy_status": None,
             "next_stop": None,
+            "next_stop_lat": None,
+            "next_stop_lon": None,
             "updated_utc": "2026-05-31T12:00:00Z",
             "reported_utc": "2026-05-31T11:59:00Z",
             "delay_seconds": None,
@@ -2308,3 +2342,32 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
     assert m0.occupancy_mix.empty == 0.1
     assert m0.p90_min is None
     assert m0.vehicles is None
+
+
+@pytest.mark.parametrize("provider_id", ["stm", "octranspo"])
+@pytest.mark.parametrize(
+    "coords", [(45.501234, -73.601234), (None, None), (45.5, None), (None, -73.6), (0, 0)]
+)
+def test_build_vehicles_publishes_only_paired_stop_coordinates(provider_id, coords):
+    rows = json.loads(
+        (Path(__file__).parent / "fixtures" / "octranspo_live_vehicles.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    rows[0].update(next_stop_lat=coords[0], next_stop_lon=coords[1])
+    result = build_vehicles(
+        FakeConn({"live.vehicles": rows}),
+        provider_id=provider_id,
+        generated_utc="2026-05-31T12:00:05Z",
+    )
+    expected = tuple(round(c, 5) for c in coords) if None not in coords else (None, None)
+    assert (result.vehicles[0].next_stop_lat, result.vehicles[0].next_stop_lon) == expected
+
+
+@pytest.mark.parametrize("provider_id, expected", [("stm", 0), ("octranspo", 60), ("unknown", 0)])
+def test_build_manifest_live_source_lag(provider_id, expected):
+    out = build_manifest(
+        FakeConn({}), provider_id=provider_id, generated_utc="t", settings=_FakeSettings()
+    )
+    assert out.files.live.source_lag_s == expected
+    assert out.model_dump()["files"]["live"]["source_lag_s"] == expected

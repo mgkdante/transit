@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -22,7 +21,6 @@ from transit_ops.sql_registry import query_name
 
 
 class _ConcurrencyProbe:
-
     def __init__(self, delay: float = 0.02) -> None:
         self._delay = delay
         self._lock = threading.Lock()
@@ -134,7 +132,7 @@ _LIVE_KEYS = (*_LIVE_CHILD_KEYS, "manifest.json")
 def _stub_live_items(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         snapshot_publish,
-        "_build_live_items",
+        "_build_live_publication",
         lambda *args, **kwargs: [(key, {"key": key}, "live") for key in _LIVE_KEYS],
     )
 
@@ -242,7 +240,6 @@ def test_publish_live_concurrency_one_preserves_sequential_manifest_last(
 
 
 class _CountingInner:
-
     def __init__(self, prior: dict[str, bytes] | None = None) -> None:
         self.store: dict[str, bytes] = dict(prior or {})
         self._lock = threading.Lock()
@@ -1162,7 +1159,6 @@ def test_static_publish_manifest_index_keys_present_and_complete() -> None:
 
 
 class _RecordingStaticConn:
-
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
         import datetime as _dt
 

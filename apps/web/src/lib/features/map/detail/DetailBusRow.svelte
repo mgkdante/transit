@@ -27,7 +27,7 @@
 	const absence = $derived(
 		liveAbsenceReason('vehicle-delay', {
 			...absenceContext(),
-			notReporting: notReporting(vehicle, clock.serverNow) != null,
+			notReporting: notReporting(vehicle, clock.serverNow, absenceContext().staleCutoffS) != null,
 		}),
 	);
 	let pointerPreview = $state(false);
@@ -69,7 +69,8 @@
 		<MaybeValue
 			value={delayMeasurement(vehicle.delay_min)}
 			reason={absence}
-			variant={unknownStatusAndDelay ? 'row' : 'inline'}
+			variant="compact"
+			disclosure={false}
 			{locale}
 		/>
 	</small>
