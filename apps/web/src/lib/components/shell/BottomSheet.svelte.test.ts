@@ -86,8 +86,16 @@ describe('BottomSheet', () => {
 	);
 
 	it.each([
-		{ locale: 'en' as const, name: 'Details height', values: ['Half height', 'Full height', 'Peek'] },
-		{ locale: 'fr' as const, name: 'Hauteur des détails', values: ['Mi-hauteur', 'Pleine hauteur', 'Aperçu'] },
+		{
+			locale: 'en' as const,
+			name: 'Details height',
+			values: ['Half height', 'Full height', 'Peek'],
+		},
+		{
+			locale: 'fr' as const,
+			name: 'Hauteur des détails',
+			values: ['Mi-hauteur', 'Pleine hauteur', 'Aperçu'],
+		},
 	])(
 		'opens at half height without blocking the map and cycles $locale heights from the handle',
 		async ({ locale, name, values }) => {
