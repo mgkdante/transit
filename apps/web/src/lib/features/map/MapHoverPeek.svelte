@@ -8,7 +8,7 @@
 		liveAbsenceReason,
 		readLiveAbsenceContext,
 	} from '#lib/site/absence.ts';
-	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { routeHasNoLiveData } from '#lib/v1/providers.ts';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapHoverPeek } from './mapHoverPeek';
 	import StatusBadge from '#lib/components/dataviz/StatusBadge.svelte';
@@ -29,7 +29,9 @@
 		liveAbsenceReason('vehicle-delay', {
 			...absenceContext(),
 			notReporting: peek.kind === 'vehicle' && peek.notReportingAgeS != null,
-			unsupported: peek.kind === 'vehicle' && peek.route?.type === ROUTE_TYPE_METRO,
+			unsupported:
+				peek.kind === 'vehicle' &&
+				routeHasNoLiveData(absenceContext().providerId, peek.route?.type),
 		}),
 	);
 </script>
@@ -121,7 +123,7 @@
 								...absenceContext(),
 								notReporting: peek.notReportingAgeS != null,
 								scheduleMissing: peek.nextStopAbsence === 'not-in-schedule',
-								unsupported: peek.route?.type === ROUTE_TYPE_METRO,
+								unsupported: routeHasNoLiveData(absenceContext().providerId, peek.route?.type),
 							})}
 							{locale}
 						/>
@@ -168,7 +170,11 @@
 				</dd>
 			</div>
 		</dl>
-		<p class="map-peek-count">{t.visibleBuses(peek.visibleVehicleCount)}</p>
+		<p class="map-peek-count">
+			{#if peek.visibleVehicleCount === 0 && routeHasNoLiveData(absenceContext().providerId, peek.type)}
+				<AbsentValue reason="metro-no-realtime" {locale} />
+			{:else}{t.visibleBuses(peek.visibleVehicleCount)}{/if}
+		</p>
 		{#if peek.alerts && peek.alerts.length > 0}<MapDetailAlerts
 				alerts={peek.alerts}
 				{locale}
