@@ -12,6 +12,8 @@
 </script>
 
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
 	const absenceContext = readLiveAbsenceContext();
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
@@ -39,7 +41,11 @@
 			{#each directions ?? [] as dir, di (di)}
 				<li class="line-direction">
 					<span class="line-direction-head">
-						<span class="line-direction-name">
+						<span
+							class="line-direction-name readable-name"
+							title={dir.headsign ?? copy.direction(dir.dir)}
+							use:readableName
+						>
 							{dir.headsign ?? copy.direction(dir.dir)}
 						</span>
 						<span class="line-direction-meta">
@@ -54,8 +60,15 @@
 									<a class="line-stop-link" href={stopHref(stop.id)}>
 										<span class="sr-only">{copy.viewStop} </span>
 										<span class="line-stop-seq">{stop.seq}</span>
-										<span class="line-stop-name"
-											>{stop.name ?? stopNameFallback(stop.id, locale)}</span
+										<span
+											class="line-stop-name readable-name"
+											title={stop.name
+												? stopDisplayName(stop.name)
+												: stopNameFallback(stop.id, locale)}
+											use:readableName
+											>{stop.name
+												? stopDisplayName(stop.name)
+												: stopNameFallback(stop.id, locale)}</span
 										>
 										<span class="line-stop-live">
 											{#if prediction}
@@ -179,7 +192,7 @@
 		color: var(--foreground);
 		overflow: hidden;
 		text-overflow: ellipsis;
-		white-space: nowrap;
+		white-space: normal;
 		transition: color var(--duration-fast) var(--ease-out);
 	}
 	.line-stop-live {

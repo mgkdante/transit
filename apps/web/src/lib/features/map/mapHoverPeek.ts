@@ -1,3 +1,4 @@
+import { stopDisplayName, lineLabel } from '#lib/site/transitDisplay.ts';
 import { notReporting } from './vehicleMotion';
 import type { clock } from '@yesid/ui/state';
 import type { Locale } from '#lib/i18n/index.ts';
@@ -23,6 +24,7 @@ import {
 type PeekLiveIndex = Pick<LiveIndex, 'byVehicleId' | 'vehiclesByStop' | 'byStopId'>;
 
 export interface MapHoverPeekContext {
+	readonly staleCutoffS?: number;
 	readonly locale?: Locale;
 	readonly index: PeekLiveIndex;
 	readonly stops: readonly SlimStopEntry[];
@@ -111,7 +113,7 @@ function stopRef(
 	const publishedName = stop.name.trim();
 	return {
 		id: stop.id,
-		name: publishedName || stop.id,
+		name: stopDisplayName(publishedName) || stop.id,
 		nameAbsent: publishedName.length === 0,
 	};
 }
@@ -129,14 +131,17 @@ export function resolveMapHoverPeek(
 		return {
 			kind: 'vehicle',
 			id: vehicle.id,
-			title: vehicle.route ? `Route ${vehicle.route}` : `Bus ${vehicle.id}`,
+			title: vehicle.route
+				? `Route ${lineLabel(vehicle.route, context.routesIndex)}`
+				: `Bus ${vehicle.id}`,
 			route: routeRef(vehicle.route, context.routesIndex),
 			status: vehicle.status,
 			delayMin: vehicle.delay_min ?? null,
 			occupancy: vehicle.occupancy ?? null,
 			nextStop: stopRef(vehicle.next_stop, context.stops),
 			nextStopAbsence: hasNextStop ? 'not-in-schedule' : 'not-reported',
-			notReportingAgeS: notReporting(vehicle, context.clock.serverNow)?.ageS ?? null,
+			notReportingAgeS:
+				notReporting(vehicle, context.clock.serverNow, context.staleCutoffS)?.ageS ?? null,
 			tripId: vehicle.trip ?? null,
 			alerts:
 				context.alerts == null
@@ -164,8 +169,8 @@ export function resolveMapHoverPeek(
 		return {
 			kind: 'route',
 			id: route.id,
-			title: `Route ${route.id}`,
-			longName: publishedLongName || `Route ${route.id}`,
+			title: `Route ${route.short || route.id}`,
+			longName: publishedLongName || `Route ${route.short || route.id}`,
 			type: route.type,
 			labelInferred: !publishedLongName,
 			visibleVehicleCount,
@@ -183,7 +188,7 @@ export function resolveMapHoverPeek(
 	return {
 		kind: 'stop',
 		id: stop.id,
-		title: publishedName || `Stop ${stop.id}`,
+		title: stopDisplayName(publishedName) || `Stop ${stop.id}`,
 		nameAbsent: publishedName.length === 0,
 		code: stop.code ?? null,
 		vehicleCount: context.index.vehiclesByStop.get(stop.id)?.size ?? 0,

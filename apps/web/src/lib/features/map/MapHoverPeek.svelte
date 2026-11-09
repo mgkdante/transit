@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
 	import { routeModeHint } from '#lib/search/stopMode.ts';
@@ -7,7 +10,7 @@
 		liveAbsenceReason,
 		readLiveAbsenceContext,
 	} from '#lib/site/absence.ts';
-	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { routeHasNoLiveData } from '#lib/v1/providers.ts';
 	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapHoverPeek } from './mapHoverPeek';
 	import StatusBadge from '#lib/components/dataviz/StatusBadge.svelte';
@@ -28,7 +31,9 @@
 		liveAbsenceReason('vehicle-delay', {
 			...absenceContext(),
 			notReporting: peek.kind === 'vehicle' && peek.notReportingAgeS != null,
-			unsupported: peek.kind === 'vehicle' && peek.route?.type === ROUTE_TYPE_METRO,
+			unsupported:
+				peek.kind === 'vehicle' &&
+				routeHasNoLiveData(absenceContext().providerId, peek.route?.type),
 		}),
 	);
 </script>
@@ -61,7 +66,7 @@
 				<dt>{t.route}</dt>
 				<dd>
 					{#if peek.route}
-						<span>{peek.route.id}</span>
+						<span>{line(peek.route.id)}</span>
 						<span>{peek.route.longName}</span>
 						{#if peek.route.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 						{#if peek.route.type != null}
@@ -75,18 +80,24 @@
 			<div>
 				<dt>{t.status}</dt>
 				<dd class="map-peek-status">
-					{#if peek.delayMin != null || peek.status !== 'unknown'}
-						<StatusBadge
-							status={peek.status}
-							label={STATUS_LABELS[locale][peek.status]}
-							mode="legend"
-							size="sm"
-						/>
-						<span aria-hidden="true">·</span>
+					{#if !isInService({ trip: peek.tripId })}{vehicleServiceCopy[locale].status}{:else}
+						{#if peek.delayMin != null || peek.status !== 'unknown'}
+							<StatusBadge
+								status={peek.status}
+								label={STATUS_LABELS[locale][peek.status]}
+								mode="legend"
+								size="sm"
+							/>
+							<span aria-hidden="true">·</span>
+						{/if}
+						<span class="map-peek-delay">
+							<MaybeValue
+								value={delayMeasurement(peek.delayMin)}
+								reason={vehicleAbsence}
+								{locale}
+							/>
+						</span>
 					{/if}
-					<span class="map-peek-delay">
-						<MaybeValue value={delayMeasurement(peek.delayMin)} reason={vehicleAbsence} {locale} />
-					</span>
 				</dd>
 			</div>
 			<div>
@@ -114,7 +125,7 @@
 								...absenceContext(),
 								notReporting: peek.notReportingAgeS != null,
 								scheduleMissing: peek.nextStopAbsence === 'not-in-schedule',
-								unsupported: peek.route?.type === ROUTE_TYPE_METRO,
+								unsupported: routeHasNoLiveData(absenceContext().providerId, peek.route?.type),
 							})}
 							{locale}
 						/>
@@ -137,7 +148,7 @@
 	{:else if peek.kind === 'route'}
 		<div class="map-peek-id">
 			<span>{t.route}</span>
-			<strong>{peek.id}</strong>
+			<strong>{line(peek.id)}</strong>
 		</div>
 		<dl>
 			<div>
@@ -161,7 +172,11 @@
 				</dd>
 			</div>
 		</dl>
-		<p class="map-peek-count">{t.visibleBuses(peek.visibleVehicleCount)}</p>
+		<p class="map-peek-count">
+			{#if peek.visibleVehicleCount === 0 && routeHasNoLiveData(absenceContext().providerId, peek.type)}
+				<AbsentValue reason="metro-no-realtime" {locale} />
+			{:else}{t.visibleBuses(peek.visibleVehicleCount)}{/if}
+		</p>
 		{#if peek.alerts && peek.alerts.length > 0}<MapDetailAlerts
 				alerts={peek.alerts}
 				{locale}

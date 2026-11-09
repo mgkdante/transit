@@ -35,7 +35,7 @@
 					io = null;
 				},
 				{
-					root: node.closest('#page-scroller'),
+					root: null,
 					rootMargin: '200px 0px',
 					threshold: 0,
 				},
@@ -66,6 +66,8 @@
 	.chart-frame {
 		position: relative;
 		width: 100%;
+		min-width: 0;
+		max-width: 100%;
 		min-height: var(--chart-frame-h);
 	}
 </style>

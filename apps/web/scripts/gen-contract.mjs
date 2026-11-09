@@ -72,7 +72,9 @@ export function generateModule(root) {
 								let property = expression(value, key, node.title);
 								if (!required.has(key)) {
 									property +=
-										webDefaultObjects.has(node.title) && typeof value.default === 'number'
+										(webDefaultObjects.has(node.title) ||
+											(node.title === 'ManifestLiveFiles' && key === 'source_lag_s')) &&
+										typeof value.default === 'number'
 											? `.default(${quote(value.default)})`
 											: '.optional()';
 								}

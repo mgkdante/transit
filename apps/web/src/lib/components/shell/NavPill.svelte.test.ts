@@ -1,5 +1,9 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { createMemoryLiveReader } from '#lib/v1/live/__fixtures__/reader.ts';
+import { createLiveStore, type LiveStore } from '#lib/v1/live/store.svelte.ts';
+import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+import { ManifestSchema } from '#lib/v1/schemas/index.ts';
 import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chromeSearchResults } from '#lib/search/chromeSearch.ts';
@@ -7,6 +11,8 @@ import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.
 import type { RouteIndexEntry } from '#lib/v1/schemas/index.ts';
 import NavPill from './__fixtures__/NavPillHarness.svelte';
 import { createNavigationRouter } from './__fixtures__/navigationRouter';
+import catalog from '../../../../e2e/providers.json';
+import { PublicProviderCatalogSchema } from '#lib/v1/providers.ts';
 
 vi.mock('$app/env/public', async () => ({
 	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
@@ -19,6 +25,23 @@ vi.mock('$app/navigation', () => ({
 }));
 
 afterEach(() => vi.restoreAllMocks());
+
+for (const locale of ['en', 'fr'] as const)
+	for (const provider of PublicProviderCatalogSchema.parse(catalog).providers)
+		it(`keeps ${provider.id} phone label and full ${locale} identity available`, () => {
+			const { city, operator } = provider.labels[locale];
+			const fullName = `${city} · ${operator}`;
+			const view = render(NavPill, {
+				props: { locale, providerId: provider.id, providers: [provider] },
+			});
+			const picker = view.getByRole('combobox', { name: new RegExp(fullName) });
+			expect(picker).toHaveAttribute('title', fullName);
+			expect(within(picker).getByRole('option', { selected: true })).toHaveTextContent(fullName);
+			expect(within(picker.parentElement!).getByText(operator, { exact: true })).toHaveAttribute(
+				'title',
+				fullName,
+			);
+		});
 
 it.each([
 	['en', 'Other networks unavailable'],
@@ -355,3 +378,42 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		expect(panel!.querySelector('[data-slot="search-controls"]')).toBeNull();
 	});
 });
+
+it.each(['en', 'fr'] as const)(
+	'shows search Feed health in %s even when vehicles could not load',
+	async (locale) => {
+		const reader = createMemoryLiveReader();
+		const manifest = ManifestSchema.parse({
+			provider: 'octranspo',
+			display_name: 'OC Transpo',
+			attribution: 'Test',
+			dataset_version: 'test',
+			bbox: [-76, 45, -75, 46],
+			labels: {},
+			surfaces: [],
+			files: { live: { ttl_s: 30, generated_utc: '2026-06-16T00:00:00Z' } },
+		});
+		let live!: LiveStore;
+		const dispose = $effect.root(() => {
+			live = createLiveStore(manifest, reader, { families: ['vehicles'] });
+		});
+		try {
+			await live.refresh();
+			const presentation = livePresentation({
+				familyStates: live.familyStates,
+				families: ['vehicles'],
+				locale,
+				page: 'map',
+			});
+			expect(presentation.notice.kind).toBe('unavailable');
+			const view = render(NavPill, {
+				props: { locale, search: '40061', searchPresentation: presentation },
+			});
+			expect(view.getByRole('status')).toHaveTextContent(presentation.notice.message);
+			expect(view.getByText(presentation.stamp.ageText)).toBeInTheDocument();
+		} finally {
+			live.stop();
+			dispose();
+		}
+	},
+);

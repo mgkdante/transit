@@ -1,3 +1,5 @@
+import { routeHasNoLiveData } from '#lib/v1/providers.ts';
+
 export const ROUTE_TYPE_METRO = 1;
 
 export const METRO_REALTIME_GAP = 'metro_realtime';
@@ -75,6 +77,7 @@ export interface AbsenceReason {
 }
 
 export interface AbsenceSignals {
+	readonly providerId?: string;
 	readonly routeType?: number | null;
 	readonly gaps?: readonly string[] | null;
 	readonly firstDeparture?: string | null;
@@ -88,8 +91,7 @@ export function inferAbsenceReason(signals: AbsenceSignals): AbsenceReason | nul
 	const { routeType, gaps, firstDeparture, lastDeparture, nowMinutes, nonResponding, lastSeenIso } =
 		signals;
 
-	const hasMetroGap = (gaps ?? []).includes(METRO_REALTIME_GAP);
-	if (routeType === ROUTE_TYPE_METRO && hasMetroGap) {
+	if (routeHasNoLiveData(signals.providerId, routeType, gaps ?? [])) {
 		return { key: 'metro-no-realtime' };
 	}
 

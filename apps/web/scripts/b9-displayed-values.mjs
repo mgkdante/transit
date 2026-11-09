@@ -1332,12 +1332,15 @@ const MARK_SIGNATURES = Object.freeze({
 			[0, 8],
 		],
 		unit: ['%', 'min'],
-		axis: ['On-time', '0', '20', '40', '60', '80', '100', 'Avg delay', '0', '2', '4', '6', '8'],
+		axis: ['0', '20', '40', '60', '80', '100', '0', '2', '4', '6', '8'],
+		// Axis titles sit in HTML above the plot so long EN/FR labels never clip.
+		titles: ['On-time (%)', 'Avg delay (min)'],
 	},
 	histogram: {
 		domain: [-300, 1800],
 		unit: 's',
-		axis: ['Delay (min)', '-5', '-1', '0', '1', '5', '10', '30'],
+		// -1 and 1 min are thinned next to the pinned zero at this width.
+		axis: ['Delay (min)', '-5', '0', '5', '10', '30'],
 	},
 	'dot-strip': {
 		domain: [0, 100],
@@ -1454,6 +1457,15 @@ async function verifyGeometry(page, seen) {
 			JSON.stringify(axis) === JSON.stringify(signature.axis),
 			`${kind} domain/unit signature drift: ${JSON.stringify(axis)}`,
 		);
+		if (signature.titles) {
+			const titles = (await root.locator('.axis-titles span').allTextContents()).map((value) =>
+				value.trim(),
+			);
+			invariant(
+				JSON.stringify(titles) === JSON.stringify(signature.titles),
+				`${kind} axis title drift: ${JSON.stringify(titles)}`,
+			);
+		}
 		if (kind === 'stacked-share') {
 			const frameBox = await frame.boundingBox();
 			const widths = await root
@@ -1983,9 +1995,14 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						await control.dispose();
 					}
 				}
-				// Geometry checks scroll the page. Park the pointer outside its links
-				// so scrolling cannot start a hover preload for an unrelated fixture route.
+				// Geometry checks scroll the page. Park the pointer and switch hover preloading
+				// off: content pages scroll the document, so any link can pass under the
+				// parked pointer and start a preload for an unrelated fixture route.
 				await page.mouse.move(0, 0);
+				await page.evaluate(() => {
+					for (const element of document.querySelectorAll('[data-sveltekit-preload-data]'))
+						element.setAttribute('data-sveltekit-preload-data', 'off');
+				});
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
 				let actual;

@@ -1,9 +1,15 @@
 <script lang="ts">
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';
 	import { StatusBadge, occupancyGlyph, occupancyVar } from '#lib/components/dataviz/index.ts';
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { notReporting } from '#lib/features/map/vehicleMotion.ts';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	import { onMount } from 'svelte';
 	import { absenceSentence } from '#lib/site/absence.ts';
 	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import type { VehicleResultCopy } from './search.copy';
@@ -17,18 +23,31 @@
 		copy: VehicleResultCopy;
 		statusLabel: string;
 		occupancyLabel: string | null;
+		occupancyAvailable?: boolean;
 	}
 
-	let { vehicle, locale, nextStopName, copy, statusLabel, occupancyLabel }: Props = $props();
+	let {
+		occupancyAvailable = true,
+		vehicle,
+		locale,
+		nextStopName,
+		copy,
+		statusLabel,
+		occupancyLabel,
+	}: Props = $props();
 
 	const href = $derived(localizeHref(routeFor({ kind: 'vehicle', id: vehicle.id }), locale));
 
 	const unknownStatusAndDelay = $derived(vehicle.status === 'unknown' && vehicle.delay_min == null);
 	const delayText = $derived(delayMeasurement(vehicle.delay_min));
 
-	const NOT_REPORTED = 'not-reported' as const;
+	const runtime = getV1Runtime();
+	onMount(() => runtime.clock.subscribe());
+	const absence = $derived(
+		notReporting(vehicle, runtime.clock.serverNow) ? 'not-reporting' : 'not-reported',
+	);
 
-	const nextStop = $derived(nextStopName);
+	const nextStop = $derived(nextStopName == null ? null : stopDisplayName(nextStopName));
 
 	const hasBearing = $derived(vehicle.bearing != null);
 
@@ -43,7 +62,7 @@
 	data-sveltekit-preload-data="hover"
 	class="vehicle-row"
 	data-slot="vehicle-result"
-	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(NOT_REPORTED, locale)}`}
+	aria-label={`${copy.busAria(vehicle.id)}, ${unknownStatusAndDelay ? '' : `${statusLabel}, `}${copy.delay}: ${delayText ?? absenceSentence(absence, locale)}`}
 >
 	<span class="vehicle-row-lead">
 		{#if hasBearing}
@@ -64,11 +83,11 @@
 		<span class="vehicle-row-title">
 			<span class="vehicle-row-id">{vehicle.id}</span>
 			{#if vehicle.route}
-				<span class="vehicle-row-route">{copy.routeTag(vehicle.route)}</span>
+				<span class="vehicle-row-route">{copy.routeTag(line(vehicle.route))}</span>
 			{/if}
 		</span>
 		<span class="vehicle-row-sub">
-			<MaybeValue present={nextStop != null} reason={NOT_REPORTED} {locale}>
+			<MaybeValue present={nextStop != null} reason={absence} {locale}>
 				{copy.next(nextStop ?? '')}
 			</MaybeValue>
 		</span>
@@ -80,19 +99,23 @@
 				size="sm"
 				label={statusLabel}
 			/>
-			<MaybeValue present={occupancyLabel != null} reason={NOT_REPORTED} {locale}>
-				<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
-					<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
-					<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
-				</span>
-			</MaybeValue>
+			{#if occupancyAvailable}<MaybeValue
+					present={occupancyLabel != null}
+					reason={absence}
+					{locale}
+				>
+					<span class="vehicle-row-crowd" style="--occ:{occColor};" title={occupancyLabel}>
+						<span class="vehicle-row-crowd-glyph" aria-hidden="true">{occGlyph}</span>
+						<span class="vehicle-row-crowd-label">{occupancyLabel}</span>
+					</span>
+				</MaybeValue>{/if}
 		</span>
 	</span>
 
 	<span class="vehicle-row-meta">
 		<MaybeValue
 			value={delayText}
-			reason={NOT_REPORTED}
+			reason={absence}
 			variant={unknownStatusAndDelay ? 'row' : 'inline'}
 			{locale}
 		/>

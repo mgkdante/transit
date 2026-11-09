@@ -19,6 +19,10 @@
 		en: 'Not enough data to judge reliability',
 		fr: 'Données insuffisantes pour juger la fiabilité',
 	} as const;
+	const compactHedges = {
+		en: { tentative: 'Uncertain', absent: 'Not enough data' },
+		fr: { tentative: 'Incertaine', absent: 'Données insuffisantes' },
+	} as const;
 	const pctText = $derived(
 		snapshot.otpPct == null
 			? null
@@ -27,15 +31,22 @@
 	const show = $derived(snapshot.phase === 'ready' && pctText != null);
 	const hedged = $derived(snapshot.verdict === 'absent' || snapshot.verdict === 'tentative');
 	const label = $derived(pctText ? labels[locale](pctText) : '');
+	const hedgeLabel = $derived(snapshot.hedge ?? hedges[locale]);
 </script>
 
 {#if show && hedged}
 	<span
 		data-slot="reliability-hedge"
 		data-status={snapshot.verdict}
-		class={['reliability-hedge', className].filter(Boolean).join(' ')}
-		>{snapshot.hedge ?? hedges[locale]}</span
+		class={['reliability-badge reliability-hedge', className].filter(Boolean).join(' ')}
+		role="img"
+		aria-label={hedgeLabel}
+		title={hedgeLabel}
 	>
+		<span aria-hidden="true"
+			>{compactHedges[locale][snapshot.verdict === 'tentative' ? 'tentative' : 'absent']}</span
+		>
+	</span>
 {:else if show}
 	<span
 		class={['reliability-badge', className].filter(Boolean).join(' ')}
@@ -50,14 +61,6 @@
 {/if}
 
 <style>
-	.reliability-hedge {
-		display: block;
-		max-inline-size: var(--measure-display);
-		font-size: var(--text-small);
-		white-space: normal;
-		overflow-wrap: anywhere;
-	}
-
 	.reliability-badge {
 		font-family: var(--font-mono);
 		font-size: var(--text-small);

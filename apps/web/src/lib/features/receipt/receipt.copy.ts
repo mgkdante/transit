@@ -211,7 +211,7 @@ export const copy = defineCopy({
 			silent: {
 				title: 'Planifiés mais jamais apparus',
 				subtitle:
-					'Les lignes dont des voyages planifiés ne sont jamais apparus dans le flux en direct',
+					'Les lignes dont des trajets planifiés ne sont jamais apparus dans le flux en direct',
 			},
 		},
 		caveatLabel: 'Mise en garde',
@@ -260,7 +260,7 @@ export const copy = defineCopy({
 			viewDetail: (id: string) => `Voir la ligne ${id}`,
 			shownOfTotal: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
 			caveat:
-				'Les lignes dont des voyages planifiés ne sont jamais apparus dans le flux en direct le jour sélectionné, sans annulation explicite. Cette liste identifie les lignes, pas les véhicules individuels.',
+				'Les lignes dont des trajets planifiés ne sont jamais apparus dans le flux en direct le jour sélectionné, sans annulation explicite. Cette liste identifie les lignes, pas les véhicules individuels.',
 		},
 		receiptSection: 'Le reçu',
 		terminalTitle: 'recu-de-service',

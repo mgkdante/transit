@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Chart from './Chart.svelte';
 import ChartFrame from './ChartFrame.svelte';
 import ChartViewport from './ChartViewport.svelte';
-import type { ChartSpec, HeatmapSpec, MagnitudeBarsSpec, StackedShareSpec } from './ChartSpec';
+import type { ChartSpec, HeatmapSpec, DotStripSpec, StackedShareSpec } from './ChartSpec';
 
 const fluidSpec: StackedShareSpec = {
 	kind: 'stacked-share',
@@ -14,16 +14,13 @@ const fluidSpec: StackedShareSpec = {
 	segments: [{ key: 'on-time', label: 'On time', share: 100, status: 'on_time' }],
 };
 
-const denseSpec: MagnitudeBarsSpec = {
-	kind: 'magnitude-bars',
-	mark: 'bar',
+const denseSpec: DotStripSpec = {
+	kind: 'dot-strip',
 	title: 'Worst stops',
 	locale: 'en',
 	domain: [0, 100],
 	unit: '%',
-	rowLabel: 'Stop',
-	rows: [],
-	sort: 'given',
+	points: [],
 	scale: 'severity',
 };
 
@@ -260,7 +257,7 @@ describe('Chart shared viewport', () => {
 				const frame = terminal.querySelector<HTMLElement>('[data-slot="chart-frame"]')!;
 				expect(frame).not.toBeNull();
 				const intersection = intersectionObserverFor(frame)!;
-				expect(intersection.root).toBe(insideMain ? main : null);
+				expect(intersection.root).toBeNull();
 				expect(intersection.rootMargin).toBe('200px 0px');
 				observerFor(frame)?.trigger(210, 44);
 				intersection.trigger(frame, false);

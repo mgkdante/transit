@@ -1,5 +1,9 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
@@ -45,7 +49,7 @@
 	} from '#lib/components/surface/index.ts';
 	import { StatusBadge } from '#lib/components/dataviz/index.ts';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
-	import { ArticleHeader } from '@yesid/ui/layout';
+
 	import { ScheduleTable, type ScheduleRow } from '#lib/components/schedule/index.ts';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
 	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
@@ -116,7 +120,10 @@
 	});
 	const articleTitle = $derived.by(() => {
 		const longName = route.data?.id === id ? route.data.long?.trim() : null;
-		return seed.name.trim() === id && longName ? `${id} ${longName}` : seed.name;
+		if (seed.name.trim() === id && longName) return `${line(id)} ${longName}`;
+		return line(id) !== id && seed.name.startsWith(id)
+			? line(id) + seed.name.slice(id.length)
+			: seed.name;
 	});
 	const reliability = createResource<RouteReliability | null>(
 		() => {
@@ -228,6 +235,7 @@
 
 	const absenceReason = $derived(
 		inferAbsenceReason({
+			providerId: v1.manifest.provider,
 			routeType: route.data?.type ?? null,
 			gaps: provenance.data?.gaps ?? null,
 			firstDeparture: route.data?.first_departure ?? null,
@@ -492,7 +500,12 @@
 																			value={delayMeasurement(bus.delay_min)}
 																			reason={liveAbsenceReason('vehicle-delay', {
 																				familyStates: live.familyStates,
-																				notReporting: notReporting(bus, clock.serverNow) != null,
+																				notReporting:
+																					notReporting(
+																						bus,
+																						clock.serverNow,
+																						liveTimingFor(manifest).staleCutoffS,
+																					) != null,
 																			})}
 																			variant="row"
 																			{locale}
@@ -507,7 +520,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow) != null }), locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow, liveTimingFor(manifest).staleCutoffS) != null }), locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon

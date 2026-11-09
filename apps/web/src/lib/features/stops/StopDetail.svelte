@@ -1,4 +1,8 @@
 <script lang="ts">
+	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { clock } from '@yesid/ui/state';
 	import { publicationPresentation, feedPresentation } from '#lib/v1/live/livePresentation.ts';
@@ -38,7 +42,7 @@
 	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
-	import { ControlsRail, ArticleHeader } from '@yesid/ui/layout';
+	import { ControlsRail } from '@yesid/ui/layout';
 	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { Separator } from '@yesid/ui/separator';
@@ -135,9 +139,11 @@
 		seed: () => stopSeed,
 	});
 	const articleTitle = $derived(
-		seed.name.trim() === id && stop.data?.id === id
-			? stop.data.name?.trim() || seed.name
-			: seed.name,
+		stopDisplayName(
+			seed.name.trim() === id && stop.data?.id === id
+				? stop.data.name?.trim() || seed.name
+				: seed.name,
+		),
 	);
 
 	const stopAlerts = $derived(
@@ -399,7 +405,7 @@
 									<SectionLabel text={t.info.routesServed} variant="metric" />
 									<ul class="stop-info-route-chips">
 										{#each s.routes_served ?? [] as route (route)}
-											<li><Badge variant="tag" size="sm">{route}</Badge></li>
+											<li><Badge variant="tag" size="sm">{line(route)}</Badge></li>
 										{/each}
 									</ul>
 								</div>
@@ -569,7 +575,7 @@
 															pressed={routeFilter === route}
 															onclick={() => (routeFilter = routeFilter === route ? null : route)}
 														>
-															{route}
+															{line(route)}
 														</ToggleChip>
 													{/each}
 												</div>

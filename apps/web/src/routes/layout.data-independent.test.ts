@@ -65,6 +65,11 @@ vi.mock('$app/navigation', () => ({
 		harness.afterNavigateCallbacks.push(callback);
 	}),
 }));
+vi.mock('@yesid/motion/utils/lenis', () => ({
+	getLenis: () => null,
+	initLenis: () => {},
+	destroyLenis: () => {},
+}));
 vi.mock('$app/env', () => ({ browser: false }));
 vi.mock('$app/env/public', async () => ({
 	...(await import('./../tests/publicEnv.ts')).PUBLIC_ENV,
@@ -168,7 +173,7 @@ function loadedV1(lang: 'en' | 'fr'): V1Context {
 			attribution: 'Fixture attribution',
 			dataset_version: 'fixture-v1',
 			labels: {},
-			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc } },
+			files: { live: { generated_utc: '2026-08-03T00:00:00Z' as IsoUtc, source_lag_s: 0 } },
 			surfaces: [],
 		},
 	};
@@ -226,21 +231,23 @@ afterEach(() => {
 });
 
 describe('root layout data-independent legal routes', () => {
-	it('returns #page-scroller to the top on a new path and keeps it on a query change', () => {
-		const { container } = renderWithoutV1('/privacy', 'en');
-		const main = container.querySelector<HTMLElement>('#page-scroller')!;
-		const navigate = (from: string, to: string) => {
+	it('resets the window on a new path but preserves query and history navigation', () => {
+		renderWithoutV1('/privacy', 'en');
+		const scrollTo = vi.spyOn(window, 'scrollTo');
+		const navigate = (from: string, to: string, type = 'link') => {
 			for (const callback of harness.afterNavigateCallbacks) {
-				callback({ from: { url: new URL(from) }, to: { url: new URL(to) }, type: 'link' });
+				callback({ from: { url: new URL(from) }, to: { url: new URL(to) }, type });
 			}
 		};
 
-		main.scrollTop = 900;
 		navigate('https://transit.yesid.dev/privacy', 'https://transit.yesid.dev/privacy?provider=stm');
-		expect(main.scrollTop).toBe(900);
+		expect(scrollTo).not.toHaveBeenCalled();
+		navigate('https://transit.yesid.dev/terms', 'https://transit.yesid.dev/privacy', 'popstate');
+		expect(scrollTo).not.toHaveBeenCalled();
 
 		navigate('https://transit.yesid.dev/privacy', 'https://transit.yesid.dev/terms');
-		expect(main.scrollTop).toBe(0);
+		expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
+		scrollTo.mockRestore();
 	});
 
 	it.each(['en', 'fr'] as const)(
@@ -452,9 +459,9 @@ describe('root layout data-independent legal routes', () => {
 		},
 	);
 
-	it('commits the actual root #page-scroller from a locked map to a scrollable rendered document', async () => {
+	it('commits the root shell from a locked map to a rendered document', async () => {
 		const view = renderWithoutV1('/map', 'en');
-		const main = view.container.querySelector<HTMLElement>('#page-scroller');
+		const main = view.container.querySelector<HTMLElement>('[data-slot="app-shell"]');
 		expect(main).toHaveClass('overflow-hidden');
 		expect(main).not.toHaveClass('overflow-y-auto');
 		const simulator = new KitNavigationSimulator({
@@ -475,8 +482,8 @@ describe('root layout data-independent legal routes', () => {
 		await simulator.commitNavigation('https://transit.yesid.dev/privacy');
 		await expect(accepted.navigation.complete).resolves.toBeUndefined();
 
-		expect(view.container.querySelector('#page-scroller')).toBe(main);
-		expect(main).toHaveClass('overflow-y-auto');
+		expect(view.container.querySelector('#page-scroller')).toBeNull();
+		expect(main).toHaveClass('min-h-dvh');
 		expect(main).not.toHaveClass('overflow-hidden');
 		expect(view.getByTestId('legal-child')).toBeInTheDocument();
 		expect(harness.runViewTransition).toHaveBeenCalledWith(accepted.navigation);

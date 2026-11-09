@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import PanelSizeHandle from './PanelSizeHandle.svelte';
 	import { intl } from '#lib/i18n/index.ts';
 	import BusFrontIcon from '@lucide/svelte/icons/bus-front';
@@ -32,6 +35,7 @@
 		store: FilterStore;
 		locale: Locale;
 		alertsAvailable?: boolean;
+		occupancyAvailable?: boolean;
 		routes?: readonly RouteIndexEntry[];
 		stops?: readonly StopIndexEntry[];
 		collapsible?: boolean;
@@ -44,6 +48,7 @@
 		store,
 		locale,
 		alertsAvailable = true,
+		occupancyAvailable = true,
 		routes = [],
 		stops = [],
 		collapsible = true,
@@ -87,7 +92,7 @@
 			selectedVehicleIds.length +
 			selectedTripIds.length,
 	);
-	const filterCount = $derived(store.chips.length);
+	const filterCount = $derived(store.chips.length + (store.state.showOutOfService ? 1 : 0));
 	const entityOptions = $derived([
 		{ kind: 'bus', label: t.entityBus },
 		{ kind: 'stop', label: t.entityStop, stop: true },
@@ -109,7 +114,7 @@
 	});
 
 	function fallbackRoute(id: string): RouteIndexEntry {
-		return { id, short: id, type: 3 };
+		return { id, short: line(id), type: 3 };
 	}
 
 	function routeDisplay(route: RouteIndexEntry): string {
@@ -122,7 +127,7 @@
 
 	function stopDisplay(stop: StopIndexEntry): string {
 		if (stop.name === stop.id) return stop.code ?? stop.id;
-		return stop.code ? `${stop.name} · ${stop.code}` : stop.name;
+		return stop.code ? `${stopDisplayName(stop.name)} · ${stop.code}` : stopDisplayName(stop.name);
 	}
 
 	function readRailCollapsed(): boolean {
@@ -297,6 +302,13 @@
 				ontoggle={() => toggleGroup('markers')}
 			>
 				<div class="mf-chips mf-entity-chips">
+					<button
+						type="button"
+						class="mf-chip"
+						data-on={!!store.state.showOutOfService}
+						aria-pressed={!!store.state.showOutOfService}
+						onclick={() => store.toggleOutOfService()}>{t.outOfServiceVehicles}</button
+					>
 					{#each entityOptions as item (item.kind)}
 						<button
 							type="button"
@@ -471,42 +483,43 @@
 				</div>
 			</MapFilterGroup>
 
-			<MapFilterGroup
-				kind="crowding"
-				label={t.modeOccupancy}
-				open={crowdingOpen}
-				{presentation}
-				ontoggle={() => toggleGroup('crowding')}
-			>
-				<div class="mf-chips">
-					{#each OCCUPANCY_CODES as code (code)}
-						<button
-							type="button"
-							class="mf-chip"
-							data-on={store.occupancy.includes(code)}
-							aria-label={OCCUPANCY_LABELS[locale][code]}
-							aria-pressed={store.occupancy.includes(code)}
-							style="--chip:{occupancyVar(code)}"
-							onclick={() => toggleOccupancy(code)}
-						>
-							<span class="mf-swatch"></span>
-							<span
-								class="mf-state-glyph"
-								data-m6d-glyph-kind="crowding"
-								data-m6d-glyph-code={code}
-								aria-hidden="true">{occupancyGlyph(code)}</span
+			{#if occupancyAvailable}<MapFilterGroup
+					kind="crowding"
+					label={t.modeOccupancy}
+					open={crowdingOpen}
+					{presentation}
+					ontoggle={() => toggleGroup('crowding')}
+				>
+					<div class="mf-chips">
+						{#each OCCUPANCY_CODES as code (code)}
+							<button
+								type="button"
+								class="mf-chip"
+								data-on={store.occupancy.includes(code)}
+								aria-label={OCCUPANCY_LABELS[locale][code]}
+								aria-pressed={store.occupancy.includes(code)}
+								style="--chip:{occupancyVar(code)}"
+								onclick={() => toggleOccupancy(code)}
 							>
-							<span class="mf-chip-text">{OCCUPANCY_LABELS[locale][code]}</span>
-						</button>
-					{/each}
-				</div>
-			</MapFilterGroup>
+								<span class="mf-swatch"></span>
+								<span
+									class="mf-state-glyph"
+									data-m6d-glyph-kind="crowding"
+									data-m6d-glyph-code={code}
+									aria-hidden="true">{occupancyGlyph(code)}</span
+								>
+								<span class="mf-chip-text">{OCCUPANCY_LABELS[locale][code]}</span>
+							</button>
+						{/each}
+					</div>
+				</MapFilterGroup>{/if}
 		</div>
 	</div>
 
 	{#if collapsible && !panelOpen}
 		<MapFilterRail
 			{alertsAvailable}
+			{occupancyAvailable}
 			copy={t}
 			activeCount={selectedCount}
 			hasFilters={!store.isEmpty}

@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
-import { breadcrumbCopy } from '../src/lib/components/surface/breadcrumb.copy';
 import { copy as healthCopy } from '../src/lib/features/health/health.copy';
 import { stopReliabilityCopy } from '../src/lib/features/stops/reliability/stops-reliability.copy';
 import { detailCopy } from '../src/lib/features/stops/stops.copy';
@@ -53,14 +52,12 @@ async function openRail(page: Page) {
 	return sheet;
 }
 
-test('a trip page names its breadcrumb trail and marks the current page', async ({ page }) => {
+test('a trip page shows one heading without breadcrumbs', async ({ page }) => {
 	await page.goto(`/trip/${trip}`);
-	const trail = page.getByRole('navigation', { name: breadcrumbCopy[locale].label, exact: true });
-
+	await expect(page.getByRole('navigation', { name: /Breadcrumb|Fil d/ })).toHaveCount(0);
 	await expect(
-		trail.getByRole('link', { name: tripCopy[locale].crumbHome, exact: true }),
-	).toBeVisible();
-	await expect(trail.locator('[aria-current="page"]')).toHaveText(tripCopy[locale].heading(trip));
+		page.getByRole('heading', { name: tripCopy[locale].heading(trip), exact: true }),
+	).toHaveCount(1);
 });
 
 test('status chips filter the departures and report their pressed state', async ({ page }) => {

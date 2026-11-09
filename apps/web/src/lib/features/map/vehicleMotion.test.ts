@@ -11,6 +11,7 @@ const EPOCH = Date.parse('2026-06-21T12:00:00Z');
 const vehicle = (age = 10, lon = -73.59) =>
 	VehicleSchema.parse({
 		id: 'bus',
+		trip: 'assigned-trip',
 		route: '24',
 		lat: 45.5,
 		lon,
@@ -345,6 +346,23 @@ describe.each(['stm', 'octranspo'])('%s next stop coordinates', () => {
 		expect(h.last().geometry.coordinates[0]).toBeCloseTo(-73.5895, 6);
 		h.frame(10000);
 		expect(h.last().geometry.coordinates[0]).toBeCloseTo(-73.5895, 6);
+		h.controller.destroy();
+	});
+});
+
+describe('provider lag through the motion controller', () => {
+	it('glides an OC fix and uses the extended stale cutoff in raw mode', () => {
+		const h = harness();
+		h.motion.remember(route);
+		h.feed(110, { ...intent, ttlS: 20, sourceLagS: 60 }, -73.6);
+		const start = h.last().geometry.coordinates[0];
+		h.frame(1000);
+		expect(h.last().geometry.coordinates[0]).toBeGreaterThan(start);
+		expect(h.last().properties.stale).toBe(0);
+		h.feed(170, { ...intent, preference: 'raw', ttlS: 20, sourceLagS: 60 });
+		expect(h.last().properties.stale).toBe(0);
+		h.feed(215, { ...intent, preference: 'raw', ttlS: 20, sourceLagS: 60 });
+		expect(h.last().properties.stale).toBe(1);
 		h.controller.destroy();
 	});
 });

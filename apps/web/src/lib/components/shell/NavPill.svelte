@@ -1,4 +1,6 @@
 <script lang="ts">
+	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
+	import type { LivePresentation } from '#lib/v1/live/livePresentation.ts';
 	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Component } from 'svelte';
 	import { trackEvent } from '#lib/site/analytics.ts';
@@ -53,6 +55,7 @@
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
+		searchPresentation?: LivePresentation | null;
 		searchScope?: ChromeSearchScope;
 		searchModes?: SvelteSet<TransitModeKey>;
 		onresultselect?: (result: ChromeSearchResult) => void;
@@ -69,6 +72,7 @@
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
+		searchPresentation,
 		searchScope = 'all',
 		searchModes = new SvelteSet<TransitModeKey>(),
 		onresultselect,
@@ -136,6 +140,9 @@
 		const provider = providers.find((candidate) => candidate.id === providerId);
 		return provider ? providerText(provider) : providerId;
 	});
+	const providerShortLabel = $derived(
+		providers.find((provider) => provider.id === providerId)?.labels[locale].operator ?? providerId,
+	);
 
 	let searchResultsOpen = $state(true);
 	let searchForm = $state<HTMLFormElement>();
@@ -202,7 +209,10 @@
 	]);
 
 	const showSearchResults = $derived(
-		searchResultsOpen && search.trim().length > 0 && visibleResults.length > 0,
+		searchResultsOpen &&
+			search.trim().length > 0 &&
+			(visibleResults.length > 0 ||
+				(searchPresentation != null && searchPresentation.notice.kind !== 'none')),
 	);
 
 	function submitSearch(event: SubmitEvent) {
@@ -281,6 +291,14 @@
 			/>
 			{#if showSearchResults}
 				<div class="nav-search-results" role="group" aria-label={searchAria}>
+					{#if searchPresentation}
+						<div class="nav-search-health">
+							<FreshnessStamp variant="live" presentation={searchPresentation.stamp} {locale} />
+							{#if searchPresentation.notice.kind !== 'none'}<p role="status">
+									{searchPresentation.notice.message}
+								</p>{/if}
+						</div>
+					{/if}
 					{#each visibleResults as result (`${result.kind}:${result.id}`)}
 						<button
 							type="button"
@@ -306,10 +324,16 @@
 {#snippet actions()}
 	<!-- The visible label is its own element, centred in the control; the native select sits on top, transparent. -->
 	<label bind:this={providerControl} class="nav-provider">
-		<span class="nav-provider-label" aria-hidden="true">{providerLabel}</span>
+		<span class="nav-provider-label nav-provider-full" aria-hidden="true" title={providerLabel}
+			>{providerLabel}</span
+		>
+		<span class="nav-provider-label nav-provider-short" aria-hidden="true" title={providerLabel}
+			>{providerShortLabel}</span
+		>
 		<select
 			class="nav-provider-select"
-			aria-label={navCopy.network}
+			aria-label={`${navCopy.network}: ${providerLabel}`}
+			title={providerLabel}
 			value={providerId}
 			onchange={(event) => {
 				const href = providerHref(url, event.currentTarget.value, locale);
@@ -362,6 +386,11 @@
 />
 
 <style>
+	.nav-search-health {
+		padding: 0.5rem 0.75rem;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
+	}
 	:root {
 		--pill-h: 72px;
 	}
@@ -396,6 +425,9 @@
 		font: inherit;
 		cursor: pointer;
 	}
+	.nav-provider-short {
+		display: none;
+	}
 	.nav-provider-select option {
 		background: var(--background);
 		color: var(--foreground);
@@ -405,6 +437,12 @@
 		outline-offset: 2px;
 	}
 	@container site-header (width < 600px) {
+		.nav-provider-full {
+			display: none;
+		}
+		.nav-provider-short {
+			display: block;
+		}
 		.nav-provider {
 			--size-provider-select: calc(100cqi - 2rem);
 			position: absolute;

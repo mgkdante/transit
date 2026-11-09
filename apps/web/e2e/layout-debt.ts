@@ -15,28 +15,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 	)
 		return 'LAYOUT-TERMINAL-SOURCE: network source label breaks inside a word on narrow screens';
 	if (
-		kind === 'clipped' &&
-		selector.startsWith('[data-slot="article-header"]') &&
-		/^(Network|Hotspots|Alerts|Status|Receipt|Repeat|Réseau|Points chauds|Alertes|Avis|15 juin 2026|État|Reçu|Récidivistes|Récidive|Fixture stop|24|Sherbrooke|Line|Stop)/i.test(
-			text,
-		)
-	)
-		return 'LAYOUT-HEADER: detail headline exceeds its clipped header stage';
-	if (kind === 'inaccessible-ellipsis' && selector.startsWith('[data-slot="entity-row"]'))
-		return 'LAYOUT-LINES: route names truncate without an accessible full name';
-	if (
-		kind === 'clipped' &&
-		/^#c\d+-content > div:nth-child\(1\)$/.test(selector) &&
-		/^(\d|Slowest|10 %|Daily|Jour|Recent|Récent)/.test(text)
-	)
-		return 'LAYOUT-CHART: network chart axis exceeds its clipped container';
-	if (
-		kind === 'clipped' &&
-		selector === '[data-slot="blueprint-listing-header"]' &&
-		/^(\d+\.\d m|PLAN DE VOIE|ÉCH\.|DWG |CATÉNAIRE)/.test(text)
-	)
-		return 'LAYOUT-BLUEPRINT: decorative drawing labels clip without an explicit allowance';
-	if (
 		kind === 'inaccessible-ellipsis' &&
 		selector.startsWith('[data-slot="terminal-panel"]') &&
 		text === 'salle-de-contrôle'
@@ -61,7 +39,7 @@ export async function expectLayout(page: Page, info: TestInfo, overlaps: string[
 				.filter((reason): reason is NonNullable<typeof reason> => reason !== null),
 		),
 	];
-	if (overlaps.length) reasons.push('LAYOUT-AXES: network chart axis labels overlap');
+	expect(overlaps, 'chart axis labels overlap').toEqual([]);
 	for (const description of reasons)
 		info.annotations.push({ type: 'defect', description: description! });
 	if (reasons.length) test.fail(true, reasons.join('; '));
