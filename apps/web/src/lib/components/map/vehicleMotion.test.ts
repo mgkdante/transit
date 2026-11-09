@@ -83,8 +83,19 @@ function controlledRuntime() {
 	let serverNow = NOW_MS;
 	let pending: (() => void) | null = null;
 	let handle = 0;
+	let timer: (() => void) | undefined;
+	let timerAt = Infinity;
 	const runtime: MotionRuntime = {
 		now: () => nowMs,
+		setTimer: (cb, ms) => {
+			timer = cb;
+			timerAt = nowMs + ms;
+			return 1;
+		},
+		clearTimer: () => {
+			timer = undefined;
+			timerAt = Infinity;
+		},
 		requestFrame: (cb) => {
 			pending = cb;
 			return ++handle;
@@ -100,6 +111,12 @@ function controlledRuntime() {
 		const cb = pending;
 		pending = null;
 		cb?.();
+		if (nowMs >= timerAt) {
+			const t = timer;
+			timer = undefined;
+			timerAt = Infinity;
+			t?.();
+		}
 	}
 	return { runtime, serverNowFn, frame, hasPending: () => pending != null };
 }
@@ -176,12 +193,12 @@ describe('projectEntry (pure)', () => {
 			fromBearing: 90,
 			startMs: 1000,
 		}).feature.geometry.coordinates[0];
-		const atMid = projectEntry(entry, NOW_MS, 1450, straightShape, {
+		const atMid = projectEntry(entry, NOW_MS, 1750, straightShape, {
 			fromCoord: [origin, 45.5],
 			fromBearing: 90,
 			startMs: 1000,
 		}).feature.geometry.coordinates[0];
-		const atEnd = projectEntry(entry, NOW_MS, 1900, straightShape, {
+		const atEnd = projectEntry(entry, NOW_MS, 2500, straightShape, {
 			fromCoord: [origin, 45.5],
 			fromBearing: 90,
 			startMs: 1000,
@@ -219,7 +236,7 @@ describe('projectEntry (pure)', () => {
 		const blended = projectEntry(
 			entry,
 			NOW_MS,
-			1450,
+			1750,
 			shapeFor,
 			{ fromCoord: [origin, W[1]], fromBearing: 0, startMs: 1000 },
 			invariants,
@@ -363,7 +380,7 @@ describe('createVehicleMotionController — forward projection', () => {
 		frame(40, 5_000);
 		const displayedBeforeJump = lastLon(setData);
 
-		c.set(fcAt(-73.55, 45.5), {
+		c.set(fcAt(-73.6975, 45.5), {
 			tickKey: 't2',
 			animate: true,
 			fixFor: fixFor(2, 10),
@@ -396,7 +413,7 @@ describe('createVehicleMotionController — forward projection', () => {
 		});
 		frame(40, 5_000);
 		const before = lastLon(setData);
-		c.set(fcAt(-73.55, 45.5), {
+		c.set(fcAt(-73.6975, 45.5), {
 			tickKey: 't2',
 			animate: true,
 			fixFor: fixFor(2, 10),
@@ -408,7 +425,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 		frame(450, 0);
 		const midBlend = lastLon(setData);
-		c.set(fcAt(-73.55, 45.5, 0, '40061'), {
+		c.set(fcAt(-73.6975, 45.5, 0, '40061'), {
 			tickKey: 't2',
 			animate: true,
 			fixFor: fixFor(2, 10),
@@ -460,7 +477,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 		frame(40, 0);
 
-		expect(shapeFor).toHaveBeenCalledTimes(1);
+		expect(shapeFor).not.toHaveBeenCalled();
 		expect(setData).not.toHaveBeenCalled();
 		c.destroy();
 	});
@@ -495,18 +512,24 @@ describe('createVehicleMotionController — forward projection', () => {
 		const { runtime, serverNowFn, frame } = controlledRuntime();
 		const shapeFor = vi.fn<ShapeResolver>().mockReturnValueOnce(null).mockReturnValue(STRAIGHT);
 		const c = createVehicleMotionController(runtime, setData);
+		let changed = () => {};
 		c.set(fcAt(W[0], W[1], 0), {
 			tickKey: 't1',
 			animate: true,
 			fixFor: fixFor(0, 10),
 			shapeFor,
+			subscribeShapes: (cb) => {
+				changed = cb;
+				return () => {};
+			},
 			serverNowFn,
 		});
 		const before = lastFeature(setData);
 		expect(before.properties.bearing).toBe(0);
 		setData.mockClear();
 
-		frame(40, 0);
+		changed();
+		frame(1500, 0);
 
 		expect(setData).toHaveBeenCalledTimes(1);
 		const after = lastFeature(setData);
@@ -516,7 +539,7 @@ describe('createVehicleMotionController — forward projection', () => {
 		c.destroy();
 	});
 
-	it('keeps evaluation cadence near 30fps when every stationary upload is skipped', () => {
+	it('stops evaluating when all vehicles are stationary', () => {
 		const { setData } = stubMap();
 		const controlled = controlledRuntime();
 		const serverNowFn = vi.fn(controlled.serverNowFn);
@@ -532,8 +555,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 		for (let frame = 0; frame < 60; frame += 1) controlled.frame(1_000 / 60, 0);
 
-		expect(serverNowFn.mock.calls.length).toBeGreaterThanOrEqual(29);
-		expect(serverNowFn.mock.calls.length).toBeLessThanOrEqual(30);
+		expect(serverNowFn).not.toHaveBeenCalled();
 		c.destroy();
 	});
 
@@ -623,16 +645,22 @@ describe('createVehicleMotionController — forward projection', () => {
 		const { runtime, serverNowFn, frame } = controlledRuntime();
 		const shapeFor = vi.fn<ShapeResolver>().mockReturnValueOnce(null).mockReturnValue(STRAIGHT);
 		const c = createVehicleMotionController(runtime, setData);
+		let changed = () => {};
 		c.set(fcAt(W[0], W[1]), {
 			tickKey: 't1',
 			animate: true,
 			fixFor: fixFor(5, 10),
 			shapeFor,
+			subscribeShapes: (cb) => {
+				changed = cb;
+				return () => {};
+			},
 			serverNowFn,
 		});
 		expect(lastLon(setData)).toBe(W[0]);
 
-		frame(40, 0);
+		changed();
+		frame(1500, 0);
 
 		expect(shapeFor).toHaveBeenCalledTimes(2);
 		expect(lastLon(setData)).toBeGreaterThan(W[0]);
@@ -678,11 +706,16 @@ describe('createVehicleMotionController — forward projection', () => {
 			},
 		);
 		const c = createVehicleMotionController(runtime, setData);
+		let changed = () => {};
 		c.set(fcAt(W[0], W[1]), {
 			tickKey: 't1',
 			animate: true,
 			fixFor: fixFor(5, 10),
 			shapeFor,
+			subscribeShapes: (cb) => {
+				changed = cb;
+				return () => {};
+			},
 			serverNowFn,
 		});
 		expect(shapeFor).toHaveBeenCalledTimes(1);
@@ -692,6 +725,7 @@ describe('createVehicleMotionController — forward projection', () => {
 		expect(shapeFor).toHaveBeenCalledTimes(1);
 
 		revision = 1;
+		changed();
 		frame(40, 0);
 		expect(shapeFor).toHaveBeenCalledTimes(2);
 		frame(40, 0);
@@ -699,6 +733,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 		suppliedShape = STRAIGHT;
 		revision = 2;
+		changed();
 		frame(40, 0);
 		expect(shapeFor).toHaveBeenCalledTimes(3);
 		expect(lastLon(setData)).toBeGreaterThan(W[0]);
@@ -734,7 +769,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 	it('clears a miss only when the resolver identity changes', () => {
 		const { setData } = stubMap();
-		const { runtime, serverNowFn } = controlledRuntime();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
 		const first = Object.assign(
 			vi.fn<ShapeResolver>(() => null),
 			{ revision: () => 0 },
@@ -761,6 +796,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 		c.set(feed, { ...options, shapeFor: replacement });
 		expect(replacement).toHaveBeenCalledTimes(1);
+		frame(1500, 0);
 		expect(lastLon(setData)).toBeGreaterThan(W[0]);
 		c.destroy();
 	});
@@ -852,7 +888,7 @@ describe('createVehicleMotionController — forward projection', () => {
 
 	it('does not memoize the pre-resolver missing-fix exit', () => {
 		const { setData } = stubMap();
-		const { runtime, serverNowFn } = controlledRuntime();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
 		let fix: VehicleFix | null = null;
 		const resolvedFix = fixFor(5, 10)('40061');
 		const shapeFor = Object.assign(
@@ -875,13 +911,14 @@ describe('createVehicleMotionController — forward projection', () => {
 		fix = resolvedFix;
 		c.set(feed, options);
 		expect(shapeFor).toHaveBeenCalledTimes(1);
+		frame(1500, 0);
 		expect(lastLon(setData)).toBeGreaterThan(W[0]);
 		c.destroy();
 	});
 
 	it('clears a revisioned miss when the controller snaps', () => {
 		const { setData } = stubMap();
-		const { runtime, serverNowFn } = controlledRuntime();
+		const { runtime, serverNowFn, frame } = controlledRuntime();
 		let suppliedShape: readonly Coord[] | null = null;
 		const shapeFor = Object.assign(
 			vi.fn<ShapeResolver>(() => suppliedShape),
@@ -906,6 +943,7 @@ describe('createVehicleMotionController — forward projection', () => {
 		suppliedShape = STRAIGHT;
 		c.set(feed, options);
 		expect(shapeFor).toHaveBeenCalledTimes(2);
+		frame(1500, 0);
 		expect(lastLon(setData)).toBeGreaterThan(W[0]);
 		c.destroy();
 	});
@@ -918,16 +956,22 @@ describe('createVehicleMotionController — forward projection', () => {
 			{ revision: () => 0 },
 		);
 		const c = createVehicleMotionController(runtime, setData);
+		let changed = () => {};
 		c.set(fcAt(W[0], W[1]), {
 			tickKey: null,
 			animate: true,
 			fixFor: fixFor(5, 10),
 			shapeFor,
+			subscribeShapes: (cb) => {
+				changed = cb;
+				return () => {};
+			},
 			serverNowFn,
 		});
-		frame(40, 0);
+		changed();
+		frame(1500, 0);
 
-		expect(shapeFor).toHaveBeenCalledTimes(2);
+		expect(shapeFor).toHaveBeenCalledTimes(3);
 		expect(lastLon(setData)).toBeGreaterThan(W[0]);
 		c.destroy();
 	});
@@ -957,16 +1001,16 @@ describe('createVehicleMotionController — forward projection', () => {
 		const c = createVehicleMotionController(runtime, setData);
 		const options = {
 			animate: true,
-			fixFor: fixFor(0, 0),
-			shapeFor: noShape,
+			fixFor: fixFor(0, 10),
+			shapeFor: straightShape,
 			serverNowFn,
 		};
 		c.set(fcAt(W[0], W[1]), { ...options, tickKey: 't1' });
-		c.set(fcAt(-73.55, W[1]), { ...options, tickKey: 't2' });
+		c.set(fcAt(-73.6975, W[1]), { ...options, tickKey: 't2' });
 		frame(450, 0);
 		const staleOrigin = lastLon(setData);
 		expect(staleOrigin).toBeGreaterThan(W[0]);
-		expect(staleOrigin).toBeLessThan(-73.55);
+		expect(staleOrigin).toBeLessThan(-73.6975);
 
 		c.set({ type: 'FeatureCollection', features: [] }, { ...options, tickKey: 't3' });
 		c.set(fcAt(-73.5, W[1]), { ...options, tickKey: 't4' });
