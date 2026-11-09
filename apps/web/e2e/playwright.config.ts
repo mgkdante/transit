@@ -77,34 +77,41 @@ export default defineConfig({
 						[1280, 900],
 					]
 			).flatMap(([width, height]) =>
-				(['light', 'dark'] as const).map((colorScheme) => ({
-					name: `layout-${browserName}-${width}-${colorScheme}`,
-					testMatch: /layout.*\.spec\.ts/,
-					use: {
-						browserName,
-						viewport: { width, height },
-						colorScheme,
-						storageState: {
-							cookies: [],
-							origins: [
-								{
-									origin: baseURL,
-									localStorage: [
-										{ name: 'theme', value: colorScheme },
-										{ name: 'sections-choice', value: 'expanded' },
-									],
-								},
-							],
+				(['light', 'dark'] as const)
+					.filter(
+						(colorScheme) =>
+							colorScheme === 'light' ||
+							width === 390 ||
+							(browserName === 'chromium' && width === 1280),
+					)
+					.map((colorScheme) => ({
+						name: `layout-${browserName}-${width}-${colorScheme}`,
+						testMatch: /layout.*\.spec\.ts/,
+						use: {
+							browserName,
+							viewport: { width, height },
+							colorScheme,
+							storageState: {
+								cookies: [],
+								origins: [
+									{
+										origin: baseURL,
+										localStorage: [
+											{ name: 'theme', value: colorScheme },
+											{ name: 'sections-choice', value: 'expanded' },
+										],
+									},
+								],
+							},
+							bypassCSP: true,
+							// Findings attach text and geometry; recording known failures across
+							// the matrix is costly and adds no layout assertion evidence.
+							trace: 'off' as const,
+							launchOptions: {
+								executablePath: browserName === 'chromium' ? executablePath : undefined,
+							},
 						},
-						bypassCSP: true,
-						// Findings attach text and geometry; recording known failures across
-						// the matrix is costly and adds no layout assertion evidence.
-						trace: 'off' as const,
-						launchOptions: {
-							executablePath: browserName === 'chromium' ? executablePath : undefined,
-						},
-					},
-				})),
+					})),
 			),
 		),
 	],

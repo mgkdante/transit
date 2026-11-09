@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "provider_id": "stm",
-  "rendered_utc": "2026-11-09T04:18:39.485Z",
+  "rendered_utc": "2026-11-09T04:57:41.859Z",
   "source": {
     "pmtiles_url": "/data/v1/stm/static/basemap/montreal.pmtiles",
     "sha256": "0c3163dd215712ba6363f67d5cb799d672d5e7ec54b58c0e961937c6148e6bb7",
@@ -44,7 +44,7 @@
     },
     {
       "path": "../db/config/providers/stm.yaml",
-      "sha256": "208b0ba8e6a443693ce45d9ae7b3d828987bae4b6ae29d17596635011acf08bd"
+      "sha256": "d3392e5432557f4923b558f60f0a739e816981f774aef0e169137386838e36ab"
     }
   ],
   "posters": [
