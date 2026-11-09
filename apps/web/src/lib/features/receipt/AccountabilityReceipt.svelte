@@ -1,5 +1,8 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const { line } = transitDisplay();
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
@@ -183,8 +186,8 @@
 	);
 	const worst = $derived(
 		selectWorstOfDay(currentReceipt ?? { worst_route: null, worst_stop: null }, {
-			routeName: (id, name) => name ?? routeNameFallback(id, locale),
-			stopName: (id, name) => name ?? stopNameFallback(id, locale),
+			routeName: (id, name) => name ?? routeNameFallback(line(id), locale),
+			stopName: (id, name) => (name ? stopDisplayName(name) : stopNameFallback(id, locale)),
 			routeLabel: t.worst.routeLabel,
 			stopLabel: t.worst.stopLabel,
 			routeDeltaLabel: t.worst.routeDeltaLabel,
@@ -225,7 +228,7 @@
 
 	const notReported = $derived(
 		selectNotReportedLines(currentReceipt?.service_states, {
-			routeName: (id, name) => name ?? routeNameFallback(id, locale),
+			routeName: (id, name) => name ?? routeNameFallback(line(id), locale),
 			rowLabel: t.notReported.rowLabel,
 			href: (id) => localizeHref(routeFor({ kind: 'line', id }), locale),
 			viewDetail: (id) => t.notReported.viewDetail(id),
