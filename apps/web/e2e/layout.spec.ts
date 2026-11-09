@@ -1,7 +1,7 @@
 import { test } from './layout-test';
 import { readFileSync } from 'node:fs';
 import { expect } from '@playwright/test';
-import { chartOverlaps } from './layout-helpers';
+import { chartOverlaps, forwardRoute } from './layout-helpers';
 import { expectLayout } from './layout-debt';
 import { localizeHref } from '../src/lib/i18n/routing';
 
@@ -33,11 +33,13 @@ for (const locale of ['en', 'fr'] as const)
 			test(`${locale} ${state} ${path} @layout`, async ({ page }, info) => {
 				await page.clock.setFixedTime(epoch + (state === 'stale' ? 900_000 : 30_000));
 				await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
-				await page.route('**/v1/**', async (route) => {
-					const url = new URL(route.request().url());
-					url.pathname = `/__layout/${state}${url.pathname}`;
-					await route.fulfill({ response: await route.fetch({ url: url.href }) });
-				});
+				await page.route('**/v1/**', (route) =>
+					forwardRoute(async () => {
+						const url = new URL(route.request().url());
+						url.pathname = `/__layout/${state}${url.pathname}`;
+						await route.fulfill({ response: await route.fetch({ url: url.href }) });
+					}),
+				);
 				await page.goto(localizeHref(path, locale), { waitUntil: 'networkidle' });
 				await expect(page.getByRole('main')).toBeVisible();
 				await page.evaluate(() => document.fonts.ready);

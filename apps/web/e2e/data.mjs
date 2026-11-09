@@ -53,6 +53,7 @@ createServer((request, response) => {
 
 // Opt-in layout variants leave the original fixtures unchanged for other specs.
 const layoutFiles = { ...files };
+layoutFiles['/v1/octranspo/live/vehicles.json'] = read('./octranspo-vehicles.json');
 for (const [key, body] of Object.entries(b9)) {
 	if (!['providers.json', 'manifest.json'].includes(key))
 		layoutFiles[`/v1/stm/${key}`] = JSON.stringify(body);
@@ -103,6 +104,8 @@ layoutFiles['/v1/stm/live/vehicles.json'] = JSON.stringify({
 			occupancy: 'many_seats',
 			delay_min: 0,
 			next_stop: 'S1',
+			next_stop_lat: 45.5,
+			next_stop_lon: -73.6,
 		},
 	],
 });
@@ -131,7 +134,15 @@ for (const state of ['fresh', 'stale', 'missing'])
 				parsed[key] = null;
 		if (state === 'missing' && path.endsWith('/live/vehicles.json'))
 			for (const vehicle of parsed.vehicles)
-				for (const key of ['occupancy', 'delay_min', 'speed_kmh', 'next_stop']) vehicle[key] = null;
+				for (const key of [
+					'occupancy',
+					'delay_min',
+					'speed_kmh',
+					'next_stop',
+					'next_stop_lat',
+					'next_stop_lon',
+				])
+					vehicle[key] = null;
 		if (state === 'missing' && path.endsWith('/live/network.json'))
 			for (const key of [
 				'on_time_pct',

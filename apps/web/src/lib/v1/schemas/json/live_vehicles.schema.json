@@ -72,6 +72,30 @@
           "default": null,
           "title": "Next Stop"
         },
+        "next_stop_lat": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Stop Lat"
+        },
+        "next_stop_lon": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Stop Lon"
+        },
         "occupancy": {
           "anyOf": [
             {

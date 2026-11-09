@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { measureMapFocusInset } from './mapFocusInset';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
@@ -202,6 +203,7 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
+	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
 	const presentation = $derived(
 		livePresentation({
 			familyStates: live.familyStates,
