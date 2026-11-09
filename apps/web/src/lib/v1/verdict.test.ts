@@ -1,11 +1,17 @@
+import { wilsonBounds } from './stats';
 import { describe, it, expect } from 'vitest';
-import { selectVerdict, wilsonInterval, reliabilityVerdict, isProblemVerdict } from './verdict';
-import { routeVerdictCopy } from '#lib/features/lines/reliability/routeVerdict.copy.ts';
+import {
+	verdictForWindow,
+	retainedDelayHeadline,
+	wilsonInterval,
+	isProblemVerdict,
+	type VerdictHeadline,
+	type ReliabilityWindow,
+} from './verdict';
 import { StopReliabilitySchema } from './schemas/stop_reliability';
 import { NetworkTrendSchema } from './schemas/network_trend';
-
-const en = routeVerdictCopy.en.verdict;
-const fr = routeVerdictCopy.fr.verdict;
+import { verdictCopy } from './verdict.copy';
+import { stopReliabilityCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 
 const h = (
 	otpPct: number | null,
@@ -15,6 +21,19 @@ const h = (
 	otpPct,
 	observationCount,
 	onTime,
+});
+
+const reading = (headline: VerdictHeadline, grain = 'day') => ({
+	periods: [
+		{
+			grain,
+			otp_pct: headline.otpPct,
+			observation_count: headline.observationCount,
+			on_time: headline.onTime,
+			wilson_lo: headline.wilsonLo,
+			wilson_hi: headline.wilsonHi,
+		},
+	],
 });
 
 describe('wilsonInterval', () => {
@@ -31,98 +50,106 @@ describe('wilsonInterval', () => {
 	});
 });
 
-describe('selectVerdict — value bands (with a confident large n)', () => {
+describe('verdictForWindow — value bands (with a confident large n)', () => {
 	const N = 4000;
 
 	it('≥80% reads reliable, with a Wilson hedge', () => {
-		const v = selectVerdict(h(85, N, 3400), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(85, N, 3400), 'week'), { grain: 'week' }, 'en');
 		expect(v.status).toBe('reliable');
 		expect(v.ban).toBe('85%');
 		expect(v.sentence).toContain('Ran reliably this week');
 		expect(v.sentence).toContain('95% CI:');
 	});
 	it('60–80% reads patchy', () => {
-		expect(selectVerdict(h(72, N, 2880), 'week', 'en', en).status).toBe('patchy');
+		expect(verdictForWindow(reading(h(72, N, 2880), 'week'), { grain: 'week' }, 'en').status).toBe(
+			'patchy',
+		);
 	});
 	it('<60% reads unreliable', () => {
-		const v = selectVerdict(h(48, N, 1920), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(48, N, 1920), 'week'), { grain: 'week' }, 'en');
 		expect(v.status).toBe('unreliable');
 		expect(v.sentence).toContain('Ran unreliably');
 	});
 	it('is two-sided: on-time + late natural frequencies add to ten', () => {
-		const v = selectVerdict(h(78, N, 3120), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(78, N, 3120), 'week'), { grain: 'week' }, 'en');
 		expect(v.sentence).toContain('8 in 10');
 		expect(v.sentence).toContain('2 in 10');
 	});
 	it('does not round a nonzero minority up to one in ten', () => {
-		const v = selectVerdict(h(96, 10000, 9600), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(96, 10000, 9600), 'week'), { grain: 'week' }, 'en');
 		expect(v.sentence).toContain('>9 in 10');
 		expect(v.sentence).toContain('<1 in 10');
 	});
 	it('a genuinely perfect window still reads "0 in 10 late" (a TRUE zero stays honest)', () => {
-		const v = selectVerdict(h(100, 5000, 5000), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(100, 5000, 5000), 'week'), { grain: 'week' }, 'en');
 		expect(v.sentence).toContain('10 in 10');
 		expect(v.sentence).toContain('0 in 10');
 	});
 });
 
-describe('selectVerdict — n-aware confidence pipeline', () => {
+describe('verdictForWindow — n-aware confidence pipeline', () => {
 	it('n<30 is tentative with a hedge and no percentage badge', () => {
-		const v = selectVerdict(h(90, 12, 11), 'day', 'en', en);
+		const v = verdictForWindow(reading(h(90, 12, 11), 'day'), { grain: 'day' }, 'en');
 		expect(v.status).toBe('tentative');
 		expect(v.ban).toBeNull();
 		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).toContain('12');
 	});
 	it('a wide interval entirely below 80 remains a problem and keeps its hedge', () => {
-		const v = selectVerdict(h(50, 30, 15), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(50, 30, 15), 'week'), { grain: 'week' }, 'en');
 		expect(v.status).toBe('unreliable');
 		expect(isProblemVerdict(v.status)).toBe(true);
 		expect(v.sentence).toContain('95% CI:');
 	});
 	it('no percentage at all → absent', () => {
-		const v = selectVerdict(h(null), 'day', 'en', en);
+		const v = verdictForWindow(reading(h(null), 'day'), { grain: 'day' }, 'en');
 		expect(v.status).toBe('absent');
 		expect(v.ban).toBeNull();
 	});
 });
 
-describe('selectVerdict — graceful pre-republish degradation (no denominator)', () => {
+describe('verdictForWindow — graceful pre-republish degradation (no denominator)', () => {
 	it('hedges when the denominator is unknown', () => {
-		const v = selectVerdict(h(82, null, null), 'month', 'en', en);
+		const v = verdictForWindow(reading(h(82, null, null), 'month'), { grain: 'month' }, 'en');
 		expect(v.status).toBe('tentative');
 		expect(v.ban).toBeNull();
 		expect(v.sentence).toContain('Not enough delay observations');
 		expect(v.sentence).not.toContain('95% sure');
 	});
 	it('stays tentative without an exact numerator or a published interval', () => {
-		const v = selectVerdict(h(85, 1000, null), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(85, 1000, null), 'week'), { grain: 'week' }, 'en');
 		expect(v.status).toBe('tentative');
 		expect(v.sentence).toContain('1000');
 		expect(v.sentence).not.toContain('95% CI:');
 	});
 	it('reads tentative when the Wilson interval crosses 80 (80% at n=1000)', () => {
-		const v = selectVerdict(h(80, 1000, 800), 'week', 'en', en);
+		const v = verdictForWindow(reading(h(80, 1000, 800), 'week'), { grain: 'week' }, 'en');
 		expect(v.status).toBe('tentative');
 	});
 });
 
-describe('selectVerdict — FR canonical voice', () => {
+describe('verdictForWindow — FR canonical voice', () => {
 	it('renders the FR reliable sentence + hedge', () => {
-		const v = selectVerdict(h(85, 4000, 3400), 'week', 'fr', fr);
+		const v = verdictForWindow(reading(h(85, 4000, 3400), 'week'), { grain: 'week' }, 'fr');
 		expect(v.status).toBe('reliable');
 		expect(v.sentence).toContain('Service fiable cette semaine');
 		expect(v.sentence).toContain('IC 95 % :');
 	});
 	it('FR absent voice', () => {
-		expect(selectVerdict(h(null), 'day', 'fr', fr).sentence).toContain('Aucun relevé de retard');
+		expect(verdictForWindow(reading(h(null), 'day'), { grain: 'day' }, 'fr').sentence).toContain(
+			'Aucun relevé de retard',
+		);
 	});
 });
 
-describe('selectVerdict — natural-frequency boundaries', () => {
+describe('verdictForWindow — natural-frequency boundaries', () => {
 	it('uses real counts when the published percentage rounds to an endpoint', () => {
-		expect(selectVerdict(h(100, 5000, 4999), 'week', 'en', en).sentence).toContain('<1 in 10');
-		expect(selectVerdict(h(0, 5000, 1), 'week', 'en', en).sentence).toContain('<1 in 10');
+		expect(
+			verdictForWindow(reading(h(100, 5000, 4999), 'week'), { grain: 'week' }, 'en').sentence,
+		).toContain('<1 in 10');
+		expect(
+			verdictForWindow(reading(h(0, 5000, 1), 'week'), { grain: 'week' }, 'en').sentence,
+		).toContain('<1 in 10');
 	});
 });
 
@@ -139,16 +166,16 @@ describe('one reliability verdict', () => {
 		(otp_pct, observation_count, wilson_lo, wilson_hi, status) => {
 			const point = { date: '2026-11-02', otp_pct, observation_count, wilson_lo, wilson_hi };
 			for (const file of [{ periods: [{ ...point, grain: 'day' }] }, { series: [point] }]) {
-				const result = reliabilityVerdict(file);
+				const result = verdictForWindow(file);
 				expect(result.status).toBe(status);
 				expect(result.interval).toEqual({ lo: Math.round(wilson_lo), hi: Math.round(wilson_hi) });
-				expect(selectVerdict(result, 'day', 'en', en).status).toBe(status);
-				expect(selectVerdict(result, 'day', 'fr', fr).status).toBe(status);
+				expect(verdictForWindow(reading(result), {}, 'en').status).toBe(status);
+				expect(verdictForWindow(reading(result), {}, 'fr').status).toBe(status);
 			}
 		},
 	);
 	it('carries published bounds through an explicit single-day selection', () => {
-		const result = reliabilityVerdict(
+		const result = verdictForWindow(
 			{
 				series: [
 					{
@@ -172,16 +199,15 @@ describe('one reliability verdict', () => {
 			wilson_lo: 85,
 			wilson_hi: 95,
 		};
-		expect(reliabilityVerdict({ periods: [point] })).toMatchObject({
+		expect(verdictForWindow({ periods: [point] })).toMatchObject({
 			status: 'tentative',
 			interval: null,
 		});
-		expect(reliabilityVerdict({ periods: [{ ...point, observation_count: null }] }).status).toBe(
+		expect(verdictForWindow({ periods: [{ ...point, observation_count: null }] }).status).toBe(
 			'tentative',
 		);
 		expect(
-			reliabilityVerdict({ periods: [{ ...point, otp_pct: null, observation_count: 1000 }] })
-				.status,
+			verdictForWindow({ periods: [{ ...point, otp_pct: null, observation_count: 1000 }] }).status,
 		).toBe('absent');
 	});
 	it('prefers exact counts and never borrows a selected period interval for an aggregate', () => {
@@ -193,8 +219,8 @@ describe('one reliability verdict', () => {
 			wilson_lo: 79.9,
 			wilson_hi: 83,
 		};
-		expect(reliabilityVerdict({ periods: [point] }).status).toBe('reliable');
-		expect(reliabilityVerdict({ periods: [point] }, { aggregate: h(81, 5000) }).status).toBe(
+		expect(verdictForWindow({ periods: [point] }).status).toBe('reliable');
+		expect(verdictForWindow({ periods: [point] }, { aggregate: h(81, 5000) }).status).toBe(
 			'tentative',
 		);
 	});
@@ -204,15 +230,12 @@ describe('one reliability verdict', () => {
 		{ wilson_hi: 83 },
 		{ wilson_lo: null, wilson_hi: null },
 	] as const)('stays tentative when no complete published interval exists: %j', (bounds) => {
-		const result = reliabilityVerdict({
+		const result = verdictForWindow({
 			periods: [{ grain: 'day', otp_pct: 85, observation_count: 1000, ...bounds }],
 		});
 		expect(result).toMatchObject({ status: 'tentative', interval: null });
-		for (const [locale, copy] of [
-			['en', en],
-			['fr', fr],
-		] as const) {
-			const sentence = selectVerdict(result, 'day', locale, copy);
+		for (const locale of ['en', 'fr'] as const) {
+			const sentence = verdictForWindow(reading(result), {}, locale);
 			expect(sentence.status).toBe('tentative');
 			expect(sentence.sentence).toContain('1000');
 			expect(sentence.sentence).not.toMatch(/95/);
@@ -238,9 +261,9 @@ describe('one reliability verdict', () => {
 				StopReliabilitySchema.parse({ id: 'probe', generated_utc, periods: [point] }),
 				NetworkTrendSchema.parse({ generated_utc, series: [point] }),
 			]) {
-				const result = reliabilityVerdict(file);
+				const result = verdictForWindow(file);
 				expect(result).toMatchObject({ status: 'tentative', interval: null });
-				expect(selectVerdict(result, 'day', 'en', en).sentence).not.toContain('95% CI:');
+				expect(verdictForWindow(reading(result), {}, 'en').sentence).not.toContain('95% CI:');
 			}
 		},
 	);
@@ -250,7 +273,7 @@ describe('one reliability verdict', () => {
 			{ wilson_lo: 80, wilson_hi: invalid },
 		]) {
 			expect(
-				reliabilityVerdict({
+				verdictForWindow({
 					periods: [{ grain: 'day', otp_pct: 85, observation_count: 1000, ...bounds }],
 				}),
 			).toMatchObject({ status: 'tentative', interval: null });
@@ -270,7 +293,7 @@ describe('one reliability verdict', () => {
 			StopReliabilitySchema.parse({ id: 'probe', generated_utc, periods: [point] }),
 			NetworkTrendSchema.parse({ generated_utc, series: [point] }),
 		]) {
-			expect(reliabilityVerdict(file)).toMatchObject({
+			expect(verdictForWindow(file)).toMatchObject({
 				status: 'tentative',
 				interval: { lo: 80, hi: 80 },
 			});
@@ -278,7 +301,7 @@ describe('one reliability verdict', () => {
 	});
 	it('keeps exact counts authoritative even when published bounds are invalid', () => {
 		expect(
-			reliabilityVerdict({
+			verdictForWindow({
 				periods: [
 					{
 						grain: 'day',
@@ -293,10 +316,10 @@ describe('one reliability verdict', () => {
 		).toMatchObject({ status: 'reliable', interval: { lo: 83, hi: 87 } });
 	});
 	it('uses exact intervals before choosing the shown whole-percent problem band', () => {
-		const published = reliabilityVerdict({
+		const published = verdictForWindow({
 			periods: [{ grain: 'day', otp_pct: 80, observation_count: 1_000_000, on_time: 796_000 }],
 		});
-		const selected = reliabilityVerdict(
+		const selected = verdictForWindow(
 			{},
 			{
 				from: '2026-10-01',
@@ -306,14 +329,14 @@ describe('one reliability verdict', () => {
 		);
 		expect(published).toMatchObject({ otpPct: 80, status: 'patchy' });
 		expect(selected).toMatchObject({ otpPct: 80, status: 'patchy' });
-		expect(selectVerdict(selected, 'month', 'en', en).status).toBe('patchy');
+		expect(verdictForWindow(reading(selected), {}, 'en').status).toBe('patchy');
 	});
 	it('never calls a shown percentage below 80 reliable, even if published counts disagree', () => {
-		const result = reliabilityVerdict({
+		const result = verdictForWindow({
 			periods: [{ grain: 'day', otp_pct: 79, observation_count: 5000, on_time: 4100 }],
 		});
 		expect(result).toMatchObject({ otpPct: 79, status: 'tentative' });
-		expect(selectVerdict(result, 'day', 'en', en).status).toBe('tentative');
+		expect(verdictForWindow(reading(result), {}, 'en').status).toBe('tentative');
 	});
 	it.each([
 		[85, 100, 'tentative', false],
@@ -326,24 +349,24 @@ describe('one reliability verdict', () => {
 		[81, 10000, 'reliable', false],
 		[80, 1000, 'tentative', false],
 	] as const)('judges percentage %s at n=%s as %s, problem=%s', (otp, n, status, problem) => {
-		const result = reliabilityVerdict({
+		const result = verdictForWindow({
 			periods: [
 				{ grain: 'day', otp_pct: otp, observation_count: n, on_time: Math.round((otp * n) / 100) },
 			],
 		});
 		expect(result.status).toBe(status);
 		expect(isProblemVerdict(result.status)).toBe(problem);
-		expect(selectVerdict(result, 'day', 'en', en).status).toBe(status);
+		expect(verdictForWindow(reading(result), {}, 'en').status).toBe(status);
 		expect(result.hedge).toContain('95% CI:');
 	});
 	it('keeps an interval crossing 60 in the hedge of a flagged verdict', () => {
-		const result = reliabilityVerdict({
+		const result = verdictForWindow({
 			periods: [{ grain: 'day', otp_pct: 55, observation_count: 200, on_time: 110 }],
 		});
 		expect(result.status).toBe('unreliable');
 		expect(result.interval).toEqual({ lo: 48, hi: 62 });
 		expect(result.hedge).toContain('48–62%');
-		expect(selectVerdict(result, 'day', 'fr', fr).sentence).toContain('48–62 %');
+		expect(verdictForWindow(reading(result), {}, 'fr').sentence).toContain('48–62 %');
 	});
 	it('keeps an explicitly selected grain and never borrows an unavailable window', () => {
 		const file = {
@@ -352,17 +375,17 @@ describe('one reliability verdict', () => {
 				{ grain: 'week', date: '2026-10-27', otp_pct: 40, observation_count: 29 },
 			],
 		};
-		expect(reliabilityVerdict(file, { grain: 'week' })).toMatchObject({
+		expect(verdictForWindow(file, { grain: 'week' })).toMatchObject({
 			status: 'tentative',
 			otpPct: 40,
 			observationCount: 29,
 			grain: 'week',
 		});
-		expect(reliabilityVerdict(file, { grain: 'month' })).toMatchObject({
+		expect(verdictForWindow(file, { grain: 'month' })).toMatchObject({
 			status: 'absent',
 			otpPct: null,
 		});
-		expect(reliabilityVerdict(file, { from: '2026-01-01', to: '2026-01-02' })).toMatchObject({
+		expect(verdictForWindow(file, { from: '2026-01-01', to: '2026-01-02' })).toMatchObject({
 			status: 'absent',
 			otpPct: null,
 		});
@@ -375,7 +398,7 @@ describe('one reliability verdict', () => {
 				{ date: '2026-10-02', observation_count: 900, severe_count: 450 },
 			],
 		};
-		expect(reliabilityVerdict(file, { from: '2026-10-01', to: '2026-10-02' })).toMatchObject({
+		expect(verdictForWindow(file, { from: '2026-10-01', to: '2026-10-02' })).toMatchObject({
 			otpPct: 55,
 			observationCount: 1000,
 			onTime: 550,
@@ -383,7 +406,7 @@ describe('one reliability verdict', () => {
 		});
 	});
 	it('returns a hedge sentence with the observation count for a tentative day', () => {
-		const result = reliabilityVerdict({
+		const result = verdictForWindow({
 			periods: [{ grain: 'day', otp_pct: 85, observation_count: 12 }],
 		});
 		expect(result.hedge).toEqual(expect.any(String));
@@ -405,20 +428,23 @@ describe('one reliability verdict', () => {
 			observation_count: 4000,
 			on_time: 2880,
 		};
-		expect(reliabilityVerdict({ periods: [day, week, month] })).toMatchObject({
+		expect(verdictForWindow({ periods: [day, week, month] })).toMatchObject({
 			grain: 'week',
 			otpPct: 85,
 			observationCount: 4000,
 			status: 'reliable',
 		});
 		expect(
-			reliabilityVerdict({ periods: [day, { ...week, observation_count: 29 }, month] }),
+			verdictForWindow({ periods: [day, { ...week, observation_count: 29 }, month] }),
 		).toMatchObject({ grain: 'month', otpPct: 72, observationCount: 4000, status: 'patchy' });
+		expect(verdictForWindow({ periods: [day, { ...week, observation_count: 29 }] })).toMatchObject({
+			grain: 'day',
+			otpPct: 20,
+			observationCount: 12,
+			status: 'tentative',
+		});
 		expect(
-			reliabilityVerdict({ periods: [day, { ...week, observation_count: 29 }] }),
-		).toMatchObject({ grain: 'day', otpPct: 20, observationCount: 12, status: 'tentative' });
-		expect(
-			reliabilityVerdict({
+			verdictForWindow({
 				periods: [{ ...day, date: '2026-11-01', observation_count: 4000 }, day, week],
 			}),
 		).toMatchObject({ grain: 'week', otpPct: 85 });
@@ -440,17 +466,17 @@ describe('one reliability verdict', () => {
 				on_time: n == null ? null : Math.round((n * otp) / 100),
 			};
 			for (const file of [{ periods: [{ ...period, grain: 'day' }] }, { series: [period] }]) {
-				const result = reliabilityVerdict(file);
+				const result = verdictForWindow(file);
 				expect(result.status).toBe(status);
 				expect(result.otpPct).toBe(otp);
 				expect(result.observationCount).toBe(n);
-				expect(selectVerdict(result, 'day', 'en', en).status).toBe(status);
+				expect(verdictForWindow(reading(result), {}, 'en').status).toBe(status);
 			}
 		},
 	);
 	it('skips an unqualified latest day and uses the qualifying week', () => {
 		expect(
-			reliabilityVerdict({
+			verdictForWindow({
 				periods: [
 					{ grain: 'month', otp_pct: 99 },
 					{ grain: 'week', otp_pct: 72, observation_count: 4000 },
@@ -460,7 +486,7 @@ describe('one reliability verdict', () => {
 			}).otpPct,
 		).toBe(72);
 		expect(
-			reliabilityVerdict({
+			verdictForWindow({
 				periods: [
 					{ grain: 'month', otp_pct: 99 },
 					{ grain: 'week', otp_pct: 72, observation_count: 4000 },
@@ -469,7 +495,7 @@ describe('one reliability verdict', () => {
 		).toBe(72);
 	});
 	it('pools a selected range by counts and never averages percentages', () => {
-		const result = reliabilityVerdict(
+		const result = verdictForWindow(
 			{
 				periods: [
 					{ grain: 'day', date: '2026-11-01', otp_pct: 100, observation_count: 10, on_time: 10 },
@@ -487,5 +513,219 @@ describe('one reliability verdict', () => {
 		expect(isProblemVerdict('unreliable')).toBe(true);
 		for (const status of ['reliable', 'tentative', 'absent', null] as const)
 			expect(isProblemVerdict(status)).toBe(false);
+	});
+});
+
+describe('Verdict consistency at the public interface', () => {
+	it.each([
+		[85, 230, 'tentative', [], 85, { on_time: 195, wilson_lo: 79.6, wilson_hi: 88.9 }],
+		[80, 1_000_000, 'patchy', [], 80, { on_time: 797_000, wilson_lo: 79.6, wilson_hi: 79.8 }],
+		[85, 4000, 'reliable', [], 85],
+		[79.6, 1_000_000, 'patchy', [], 80],
+		[59.6, 1_000_000, 'patchy', [], 60],
+		[85, 100, 'tentative', [], 85],
+		[55, 200, 'unreliable', [], 55],
+		[65, 40, 'patchy', [], 65],
+		[70, 40, 'tentative', [], 70],
+		[79, 5000, 'tentative', [], 79],
+		[81, 5000, 'tentative', [], 81],
+		[79, 10000, 'patchy', [], 79],
+		[81, 10000, 'reliable', [], 81],
+		[72, 4000, 'patchy', [], 72],
+		[48, 4000, 'unreliable', [], 48],
+		[85, 29, 'tentative', [], 85],
+		[85, null, 'tentative', [], 85],
+		[80, 1000, 'tentative', [], 80],
+		[
+			20,
+			12,
+			'reliable',
+			[{ grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 4000 }],
+			85,
+		],
+		[
+			20,
+			12,
+			'patchy',
+			[
+				{ grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 29 },
+				{ grain: 'month', date: '2026-10-01', otp_pct: 72, observation_count: 4000 },
+			],
+			72,
+		],
+		[
+			null,
+			null,
+			'patchy',
+			[
+				{ grain: 'week', date: '2026-10-27', otp_pct: 85, observation_count: 29 },
+				{ grain: 'month', date: '2026-10-01', otp_pct: 72, observation_count: 4000 },
+			],
+			72,
+		],
+	] as const)(
+		'%s percent with n=%s produces %s for every file shape and locale',
+		(otp_pct, observation_count, status, otherWindows, headlinePct, published = undefined) => {
+			const on_time =
+				published?.on_time ??
+				(otp_pct == null || observation_count == null
+					? null
+					: Math.round((otp_pct * observation_count) / 100));
+			const bounds = wilsonBounds(on_time, observation_count);
+			const point = {
+				date: '2026-11-02',
+				otp_pct,
+				observation_count,
+				wilson_lo: published?.wilson_lo ?? bounds?.[0],
+				wilson_hi: published?.wilson_hi ?? bounds?.[1],
+			};
+			const periods = [
+				...(otp_pct == null ? [] : [{ ...point, grain: 'day', on_time }]),
+				...otherWindows.map((window) => {
+					const on_time = Math.round((window.otp_pct * window.observation_count) / 100);
+					const bounds = wilsonBounds(on_time, window.observation_count);
+					return { ...window, on_time, wilson_lo: bounds?.[0], wilson_hi: bounds?.[1] };
+				}),
+			];
+			const publishedPoint = (point: ReliabilityWindow) => ({
+				date: point.date,
+				otp_pct: point.otp_pct,
+				observation_count: point.observation_count,
+				wilson_lo: point.wilson_lo,
+				wilson_hi: point.wilson_hi,
+			});
+			const files = [
+				{ periods },
+				{
+					periods: periods
+						.map(publishedPoint)
+						.map((point, i) => ({ ...point, grain: periods[i].grain })),
+				},
+				{
+					series: otp_pct == null ? [] : [point],
+					weekly: periods.filter((p) => p.grain === 'week').map(publishedPoint),
+					monthly: periods.filter((p) => p.grain === 'month').map(publishedPoint),
+				},
+			];
+			for (const locale of ['en', 'fr'] as const)
+				for (const file of files) {
+					const verdict = verdictForWindow(file, {}, locale);
+					expect(verdict.status).toBe(status);
+					expect(verdict.otpPct).toBe(headlinePct);
+					expect(isProblemVerdict(verdict.status)).toBe(
+						status === 'patchy' || status === 'unreliable',
+					);
+					expect(verdict.sentence.length).toBeGreaterThan(0);
+					if (observation_count === 29) expect(verdict.hedge).toContain('29');
+				}
+		},
+	);
+});
+
+describe('finished Verdict for the selected Window', () => {
+	it.each(['en', 'fr'] as const)(
+		'uses headline grain or explicit history wording in %s',
+		(locale) => {
+			const file = reading({ ...h(85, 4000), wilsonLo: 84, wilsonHi: 86 }, 'week');
+			const automatic = verdictForWindow(file, {}, locale);
+			expect(automatic).toMatchObject({
+				status: 'reliable',
+				otpPct: 85,
+				ban: '85%',
+				grain: 'week',
+				interval: { lo: 84, hi: 86 },
+			});
+			expect(automatic.sentence).toContain(verdictCopy[locale].windowPhrase.week);
+			const selected = verdictForWindow(
+				file,
+				{ from: '2026-10-01', to: '2026-10-31', aggregate: h(55, 1000, 550) },
+				locale,
+			);
+			expect(selected).toMatchObject({
+				status: 'unreliable',
+				otpPct: 55,
+				ban: '55%',
+				grain: 'day',
+				interval: { lo: 52, hi: 58 },
+			});
+			expect(selected.sentence).toContain(verdictCopy[locale].windowPhrase.range);
+			expect(selected.hedge).toBe(selected.sentence);
+		},
+	);
+	it.each(['en', 'fr'] as const)(
+		'uses the retained total instead of visible daily rows in %s',
+		(locale) => {
+			const file = {
+				periods: [
+					{ grain: 'day', date: '2026-10-01', otp_pct: 100, observation_count: 100, on_time: 100 },
+				],
+			};
+			const aggregate = retainedDelayHeadline({
+				otpPct: 55,
+				observationCount: 1000,
+				onTimeCount: 550,
+			});
+			const result = verdictForWindow(
+				file,
+				{ from: '2026-10-01', to: '2026-10-31', aggregate },
+				locale,
+			);
+			expect(result).toMatchObject({
+				status: 'unreliable',
+				otpPct: 55,
+				observationCount: 1000,
+				onTime: 550,
+			});
+			expect(result.sentence).toContain(verdictCopy[locale].windowPhrase.range);
+			expect(verdictForWindow(file, { from: '2026-10-01', to: '2026-10-31' }, locale).status).toBe(
+				'reliable',
+			);
+			expect(retainedDelayHeadline(null)).toBeUndefined();
+		},
+	);
+	it.each(['en', 'fr'] as const)(
+		'preserves stop prediction wording for every status in %s',
+		(locale) => {
+			for (const headline of [
+				h(null),
+				h(85, 12, 10),
+				h(85, 1000),
+				h(80, 1000, 800),
+				h(85, 4000, 3400),
+				h(72, 4000, 2880),
+				h(48, 4000, 1920),
+			]) {
+				const result = verdictForWindow(
+					reading(headline),
+					{},
+					locale,
+					stopReliabilityCopy[locale].verdict,
+				);
+				const generic = verdictForWindow(reading(headline), {}, locale);
+				expect(result.status).toBe(generic.status);
+				expect(result.interval).toEqual(generic.interval);
+				if (headline.observationCount != null && headline.observationCount >= 30)
+					expect(result.sentence).toMatch(
+						locale === 'en' ? /known predictions/ : /prévisions connues/,
+					);
+			}
+		},
+	);
+	it('preserves displayed-frequency rounding and the snapshot source-percentage Hedge', () => {
+		const result = verdictForWindow(reading({ ...h(90.4, 4000), wilsonLo: 89, wilsonHi: 92 }));
+		expect(result.otpPct).toBe(90);
+		expect(result.sentence).toContain('9 in 10');
+		expect(result.sentence).not.toContain('>9 in 10');
+		expect(result.hedge).toContain('>9 in 10');
+	});
+	it.each(['en', 'fr'] as const)('returns a finished absent Verdict in %s', (locale) => {
+		expect(verdictForWindow(null, {}, locale)).toMatchObject({
+			status: 'absent',
+			otpPct: null,
+			ban: null,
+			interval: null,
+			sentence: verdictCopy[locale].absent,
+			hedge: verdictCopy[locale].absent,
+		});
 	});
 });

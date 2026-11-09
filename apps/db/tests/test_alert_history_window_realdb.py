@@ -60,8 +60,11 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001
 
 def _seed(connection, *, provider=PROVIDER, offset=0) -> None:
     db_seed.feed_endpoints(
-        connection, {'e': ENDPOINT_ID + offset, 'p': provider}, endpoint_key="'i3_alerts'",
-        feed_kind="'i3_alerts'", source_format="'api_i3_json'",
+        connection,
+        {"e": ENDPOINT_ID + offset, "p": provider},
+        endpoint_key="'i3_alerts'",
+        feed_kind="'i3_alerts'",
+        source_format="'api_i3_json'",
     )
     for run_id, snap_id, captured in (
         (IN_RUN + offset, IN_SNAP + offset, IN_TIME),
@@ -69,7 +72,8 @@ def _seed(connection, *, provider=PROVIDER, offset=0) -> None:
         (IN_RUN + 2 + offset, IN_SNAP + 2 + offset, NOW),
     ):
         db_seed.ingestion_runs(
-            connection, {'r': run_id, 'p': provider, 'e': ENDPOINT_ID + offset},
+            connection,
+            {"r": run_id, "p": provider, "e": ENDPOINT_ID + offset},
             run_kind="'i3_alerts'",
         )
         connection.execute(
@@ -116,7 +120,7 @@ def test_window_clamps_and_serves_multi_period(conn, capsys) -> None:  # noqa: A
     _load(conn, IN_SNAP, IN_TIME, [IN_ALERT])
 
     t0 = time.perf_counter()
-    out = build_alert_history(conn, PROVIDER, generated_utc="t")
+    out = build_alert_history(conn, provider_id=PROVIDER, generated_utc="t")
     elapsed = time.perf_counter() - t0
 
     assert out.window_start is not None and out.window_end is not None
@@ -153,7 +157,7 @@ def test_pre_0077_row_falls_back_to_scalar_period(conn) -> None:  # noqa: ANN001
         ),
         {"p": PROVIDER},
     )
-    out = build_alert_history(conn, PROVIDER, generated_utc="t")
+    out = build_alert_history(conn, provider_id=PROVIDER, generated_utc="t")
     entry = next(e for e in out.alerts if e.header_text == "Fermeture de fin de semaine")
     assert len(entry.active_periods) == 1
     assert entry.url is None or isinstance(entry.url, str)
@@ -233,7 +237,7 @@ def test_distinct_messages_never_share_nullable_header_window_metadata(conn, see
         provider=other,
     )
 
-    out = build_alert_history(conn, PROVIDER, generated_utc="t")
+    out = build_alert_history(conn, provider_id=PROVIDER, generated_utc="t")
     assert out.total_in_window == 2
     assert {entry.description for entry in out.alerts} == {"inside only", "inside earlier"}
     assert len({entry.id for entry in out.alerts}) == 2
@@ -257,7 +261,7 @@ def test_distinct_messages_never_share_nullable_header_window_metadata(conn, see
 
 def test_missing_children_and_scalar_bounds_remain_unknown(conn):
     _load(conn, IN_SNAP, IN_TIME, [{"header": "No period", "description": "No window"}])
-    out = build_alert_history(conn, PROVIDER, generated_utc="t")
+    out = build_alert_history(conn, provider_id=PROVIDER, generated_utc="t")
     assert len(out.alerts) == 1
     assert out.alerts[0].active_periods == []
     assert out.alerts[0].url is None
@@ -276,7 +280,7 @@ def test_alert_cap_preserves_precap_count_and_start_order(conn, tied):
         for index in range(501)
     ]
     _load(conn, IN_SNAP, IN_TIME, alerts)
-    out = build_alert_history(conn, PROVIDER, generated_utc="t")
+    out = build_alert_history(conn, provider_id=PROVIDER, generated_utc="t")
     assert out.total_in_window == 501
     assert out.truncated
     assert len(out.alerts) == 500
@@ -325,7 +329,7 @@ def test_message_observation_survives_live_history_and_archive(conn, upstream_id
 
     def published():
         live = build_alerts(conn, provider_id=PROVIDER, generated_utc="t").alerts
-        history = build_alert_history(conn, PROVIDER, generated_utc="t")
+        history = build_alert_history(conn, provider_id=PROVIDER, generated_utc="t")
         sync_alert_archive_on_connection(
             conn,
             provider_id=PROVIDER,

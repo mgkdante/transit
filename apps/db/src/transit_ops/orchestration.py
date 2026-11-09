@@ -252,6 +252,15 @@ def _run_gis_steps_best_effort(
     engine: Engine,
 ) -> _GisStepsOutcome:
     try:
+        if registry.get_provider(provider_id).gis_feed() is None:
+            return _GisStepsOutcome(
+                gis_ingestion=None,
+                gis_silver_load=None,
+                gis_ingestion_duration_seconds=None,
+                gis_silver_load_duration_seconds=None,
+                gis_status="not-configured",
+                gis_error_message=None,
+            )
         gis_ingestion, gis_ingestion_duration_seconds = _run_timed_static_step(
             "ingest-gis",
             lambda: ingest_gis_feed(

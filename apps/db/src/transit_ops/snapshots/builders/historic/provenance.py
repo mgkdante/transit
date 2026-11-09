@@ -28,7 +28,7 @@ _PROVENANCE_SOURCES_SQL = named_query(
     WHERE provider_id = :provider_id
       AND is_current = true
     ORDER BY dataset_kind
-    """
+    """,
 )
 
 _PROVENANCE_FRESHNESS_SQL = named_query(
@@ -38,7 +38,7 @@ _PROVENANCE_FRESHNESS_SQL = named_query(
     FROM gold.feed_freshness_current
     WHERE provider_id = :provider_id
     ORDER BY endpoint_key
-    """
+    """,
 )
 
 _PROVENANCE_CONFORMANCE_SQL = named_query(
@@ -59,16 +59,14 @@ _PROVENANCE_CONFORMANCE_SQL = named_query(
     WHERE dv.provider_id = :provider_id
       AND dv.is_current IS TRUE
       AND dv.dataset_kind = 'static_schedule'
-    """
+    """,
 )
 
 
 _PROVIDER_GAPS: dict[str, list[str]] = {"stm": ["metro_realtime"]}
 
 
-def build_provenance(
-    conn: Connection, provider_id: str = "stm", *, generated_utc: str
-) -> Provenance:
+def build_provenance(conn: Connection, *, provider_id: str, generated_utc: str) -> Provenance:
     params = {"provider_id": provider_id}
 
     # The unpublished metro-realtime gap applies only to STM.
@@ -138,8 +136,8 @@ def build_provenance(
                 "consistently, including live whole-minute percentiles and histogram "
                 "assignment, alert duration and compatible historical outputs. Retained "
                 "version-1 artifacts keep their original values; compare methodology versions "
-                'when reproducing a result. Live histogram bins still classify rounded '
-                'whole-minute '
+                "when reproducing a result. Live histogram bins still classify rounded "
+                "whole-minute "
                 "trip means."
             ),
             "network_totals_basis": (
@@ -223,8 +221,8 @@ def build_provenance(
                 "realtime feed and counts canceled if ever reported with "
                 "schedule_relationship=CANCELED; the denominator is RT-reported "
                 "trips, NOT the full published schedule; computed per closed local "
-                'day and retained under the configured aggregate policy; null when no trips '
-                'were observed. '
+                "day and retained under the configured aggregate policy; null when no trips "
+                "were observed. "
                 "SCHEDULED UNIVERSE (2026-07-02, GC2 H1): scheduled_trip_days = "
                 "distinct scheduled trips active that date after resolving the "
                 "static GTFS calendar ∩ calendar_dates (exception_type 1/2, incl. "
@@ -243,8 +241,8 @@ def build_provenance(
                 "historic crowding = GTFS-RT OccupancyStatus band shares over "
                 "band-bearing pings (no numeric load factor); CRUSHED_STANDING "
                 "folds into standing; NOT_ACCEPTING/NO_DATA/NOT_BOARDABLE excluded; "
-                'summed per closed local day and retained under the configured aggregate '
-                'policy; null when no '
+                "summed per closed local day and retained under the configured aggregate "
+                "policy; null when no "
                 "occupancy telemetry exists, never an all-zero mix"
             ),
             "headway_regularity": (
@@ -261,7 +259,7 @@ def build_provenance(
                 "departure; span in minutes (may exceed 24h on overnight service); "
                 "first delay = the first trip's first-observation deviation, last delay "
                 "= the last trip's LATEST (terminal) observation deviation; retained under the "
-                'configured aggregate policy'
+                "configured aggregate policy"
             ),
             "alert_breakdown": (
                 "distinct content-hashed alerts in the 30-day window grouped by "
@@ -281,9 +279,7 @@ def build_provenance(
     )
 
 
-def _build_provenance_conformance(
-    conn: Connection, params: dict
-) -> ProvenanceConformance | None:
+def _build_provenance_conformance(conn: Connection, params: dict) -> ProvenanceConformance | None:
     rows = list(conn.execute(_PROVENANCE_CONFORMANCE_SQL, params).mappings())
     if not rows:
         return None

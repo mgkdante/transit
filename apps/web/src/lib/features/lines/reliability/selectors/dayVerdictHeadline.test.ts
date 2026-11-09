@@ -1,3 +1,4 @@
+import { verdictForWindow } from '#lib/v1/verdict.ts';
 import { describe, expect, it } from 'vitest';
 import type { IsoUtc, ReliabilityPeriod, RouteReliability } from '#lib/v1/index.ts';
 import { toReliabilityClusters } from '../clusters';
@@ -63,3 +64,11 @@ describe('selectDayVerdictHeadline', () => {
 		expect(selectDayVerdictHeadline(data)).toMatchObject(fullHeadline(data));
 	});
 });
+
+it.each(['en', 'fr'] as const)(
+	'returns the shared finished Verdict in %s for the route header',
+	(locale) => {
+		const data = route([{ grain: 'week', otp_pct: 85, observation_count: 4000, on_time: 3400 }]);
+		expect(selectDayVerdictHeadline(data, locale)).toEqual(verdictForWindow(data, {}, locale));
+	},
+);

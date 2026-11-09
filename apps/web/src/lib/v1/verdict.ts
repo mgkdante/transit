@@ -48,8 +48,22 @@ export interface VerdictWindow {
 	readonly aggregate?: VerdictHeadline;
 }
 
-export interface ReliabilityVerdict extends VerdictHeadline {
-	readonly status: VerdictStatus;
+export function retainedDelayHeadline(
+	total:
+		| { readonly otpPct: number; readonly observationCount: number; readonly onTimeCount: number }
+		| null
+		| undefined,
+): VerdictHeadline | undefined {
+	return total == null
+		? undefined
+		: {
+				otpPct: total.otpPct,
+				observationCount: total.observationCount,
+				onTime: total.onTimeCount,
+			};
+}
+
+export interface ReliabilityVerdict extends VerdictHeadline, VerdictResult {
 	readonly grain: string;
 	readonly interval: { readonly lo: number; readonly hi: number } | null;
 	readonly hedge: string;
@@ -167,13 +181,29 @@ export function reliabilityVerdict(
 	}
 	headline = window.aggregate ?? headline;
 	const grain = window.from && window.to ? 'day' : (headlineWindow?.grain ?? 'day');
-	return {
+	const classification = classify(headline);
+	const shownHeadline = {
 		...headline,
 		otpPct: headline.otpPct == null ? null : Math.round(headline.otpPct),
-		...classify(headline),
-		grain,
-		hedge: selectVerdict(headline, window.from && window.to ? 'range' : grain, 'en', copy).sentence,
 	};
+	const mode = window.from && window.to ? 'range' : grain;
+	return {
+		...shownHeadline,
+		interval: classification.interval,
+		...formatVerdict(shownHeadline, classification, mode, copy),
+		grain,
+		hedge: formatVerdict(headline, classification, mode, copy).sentence,
+	};
+}
+
+/** Finished Verdict for a view's Window. The copy-based API above also serves snapshot loaders. */
+export function verdictForWindow(
+	file: ReliabilityVerdictFile | null | undefined,
+	window: VerdictWindow = {},
+	locale: Locale = 'en',
+	copy: VerdictCopy = verdictCopy[locale],
+): ReliabilityVerdict {
+	return reliabilityVerdict(file, window, copy);
 }
 
 export function isProblemVerdict(status: VerdictStatus | null): boolean {
@@ -227,12 +257,18 @@ export function wilsonInterval(onTime: number, n: number): { lo: number; hi: num
 type Mode = 'day' | 'week' | 'month' | 'range';
 const asMode = (m: string): Mode => (m === 'week' || m === 'month' || m === 'range' ? m : 'day');
 
-function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' | 'interval'> {
+interface Classification {
+	readonly status: VerdictStatus;
+	readonly interval: ReliabilityVerdict['interval'];
+	readonly reason?: 'unknown-count' | 'too-few' | 'unavailable-interval';
+}
+
+function classify(headline: VerdictHeadline): Classification {
 	const otp = headline.otpPct;
 	const n = headline.observationCount;
 	if (otp == null || !Number.isFinite(otp)) return { status: 'absent', interval: null };
 	if (n == null || !Number.isFinite(n) || n < VERDICT_MIN_N)
-		return { status: 'tentative', interval: null };
+		return { status: 'tentative', interval: null, reason: n == null ? 'unknown-count' : 'too-few' };
 	// Published bounds are percentages rounded to one decimal. Compare them as supplied:
 	// an 80.0 lower bound qualifies, even when its unrounded value could be 79.95.
 	let lo = headline.wilsonLo;
@@ -250,7 +286,7 @@ function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' 
 		lo > hi ||
 		hi > 100
 	) {
-		return { status: 'tentative', interval: null };
+		return { status: 'tentative', interval: null, reason: 'unavailable-interval' };
 	}
 	const shownPct = Math.round(otp);
 	return {
@@ -266,23 +302,44 @@ function classify(headline: VerdictHeadline): Pick<ReliabilityVerdict, 'status' 
 	};
 }
 
-export function selectVerdict(
-	headline: VerdictHeadline | ReliabilityVerdict,
+function formatVerdict(
+	headline: VerdictHeadline,
+	result: Classification,
 	mode: string,
-	_locale: Locale,
 	verdict: VerdictCopy,
 ): VerdictResult {
 	const v = verdict;
 	const window = v.windowPhrase[asMode(mode)];
 	const otp = headline.otpPct;
 
-	if (otp == null || !Number.isFinite(otp))
-		return { status: 'absent', ban: null, sentence: v.absent };
+	if (result.status === 'absent') return { status: 'absent', ban: null, sentence: v.absent };
 
-	const otpInt = Math.round(otp);
+	const otpInt = Math.round(otp!);
 	const n = headline.observationCount;
+	if (result.reason === 'unknown-count' || result.reason === 'too-few') {
+		return {
+			status: result.status,
+			ban: null,
+			sentence: result.reason === 'unknown-count' ? v.unknownCount(window) : v.tooFew(window, n!),
+		};
+	}
+	if (result.interval == null) {
+		return {
+			status: result.status,
+			ban: `${otpInt}%`,
+			sentence: v.unavailableInterval(window, n!),
+		};
+	}
+	const { lo: loPct, hi: hiPct } = result.interval;
+	if (result.status === 'tentative') {
+		return {
+			status: result.status,
+			ban: `${otpInt}%`,
+			sentence: v.tentative({ window, otp: otpInt, n: n!, lo: loPct, hi: hiPct }),
+		};
+	}
 	const hasCounts = n != null && n > 0 && headline.onTime != null;
-	const onShare = hasCounts ? headline.onTime / n : otp / 100;
+	const onShare = hasCounts ? headline.onTime / n : otp! / 100;
 	let onTen: VerdictSentenceArgs['onTen'];
 	let lateTen: VerdictSentenceArgs['lateTen'];
 	if (hasCounts && headline.onTime === 0) {
@@ -298,34 +355,8 @@ export function selectVerdict(
 		onTen = '>9';
 		lateTen = '<1';
 	} else {
-		onTen = hasCounts ? 10 - Math.round(((n - headline.onTime) / n) * 10) : Math.round(otp / 10);
+		onTen = hasCounts ? 10 - Math.round(((n - headline.onTime) / n) * 10) : Math.round(otp! / 10);
 		lateTen = 10 - onTen;
-	}
-	if (n == null || !Number.isFinite(n) || n < VERDICT_MIN_N) {
-		return {
-			status: 'tentative',
-			ban: null,
-			sentence: n == null ? v.unknownCount(window) : v.tooFew(window, n),
-		};
-	}
-	// Keep the source interval when a shared verdict already rounded the displayed percentage.
-	const result = 'status' in headline ? headline : classify(headline);
-	if (result.status === 'absent') return { status: 'absent', ban: null, sentence: v.absent };
-	if (result.interval == null) {
-		return {
-			status: 'tentative',
-			ban: `${otpInt}%`,
-			sentence: v.unavailableInterval(window, n),
-		};
-	}
-	const { lo: loPct, hi: hiPct } = result.interval;
-
-	if (result.status === 'tentative') {
-		return {
-			status: 'tentative',
-			ban: `${otpInt}%`,
-			sentence: v.tentative({ window, otp: otpInt, n, lo: loPct, hi: hiPct }),
-		};
 	}
 	const band = result.status;
 	return {
