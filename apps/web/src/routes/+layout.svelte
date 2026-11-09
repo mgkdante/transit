@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
 	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
@@ -116,7 +117,11 @@
 	const v1 = $derived(data.v1);
 	setV1Context(() => v1 ?? undefined);
 	const footerAttribution = $derived(
-		dataIndependentRoute ? legalCopy[locale].footerAttribution : v1?.manifest.attribution,
+		dataIndependentRoute
+			? legalCopy[locale].footerAttribution
+			: v1
+				? providerAttribution(v1.manifest.provider, v1.manifest.attribution, locale)
+				: undefined,
 	);
 	const footerProviderName = $derived(dataIndependentRoute ? undefined : v1?.manifest.display_name);
 	const footer = $derived(footerCopy[locale]);

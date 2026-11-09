@@ -154,10 +154,10 @@ export const copy = defineCopy({
 		kicker: 'REDDITION DE COMPTES · RÉCIDIVISTES',
 		heading: 'Récidivistes',
 		subheading: '// REPEAT OFFENDERS',
-		lede: 'Les voyages et véhicules qui accumulent les retards de plus de cinq minutes.',
+		lede: 'Les trajets et véhicules qui accumulent les retards de plus de cinq minutes.',
 		article: articleCopy('fr', {
 			watermark: 'Récidive',
-			tags: ['récidivistes', 'voyages', 'véhicules', 'récurrence'],
+			tags: ['récidivistes', 'trajets', 'véhicules', 'récurrence'],
 			sections: (count: number) => `${count} ${count === 1 ? 'section' : 'sections'}`,
 		}),
 		asOf: 'À JOUR AU',
@@ -203,8 +203,8 @@ export const copy = defineCopy({
 				subtitle: 'Taux de retards graves et récurrence',
 			},
 			trips: {
-				title: 'Voyages',
-				subtitle: 'Voyages classés selon la répétition des retards graves sur les jours observés',
+				title: 'Trajets',
+				subtitle: 'Trajets classés selon la répétition des retards graves sur les jours observés',
 			},
 			vehicles: {
 				title: 'Véhicules',
@@ -280,7 +280,7 @@ export const copy = defineCopy({
 			rowSubtitle: (kind: string, id: string) => `${kind} · ${id}`,
 		},
 		type: {
-			trip: 'Voyage',
+			trip: 'Trajet',
 			vehicle: 'Véhicule',
 			route: 'Ligne',
 			stop: 'Arrêt',

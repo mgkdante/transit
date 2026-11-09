@@ -246,9 +246,9 @@ export const copy = defineCopy({
 			} as Readonly<Record<string, string>>,
 		},
 		pipelineNotes: {
-			section: 'Notes du pipeline',
-			note: 'Comment le pipeline construit ce qui n’a pas de fiche-métrique propre, publié tel quel depuis la dernière exécution.',
-			listLabel: 'Notes de méthode du pipeline',
+			section: 'Notes de la chaîne de traitement',
+			note: 'Comment la chaîne de traitement construit ce qui n’a pas de fiche-métrique propre, publié tel quel depuis la dernière exécution.',
+			listLabel: 'Notes de méthode de la chaîne de traitement',
 			labels: {
 				history_freeze: 'Gel des périodes closes',
 				service_time_conversion: 'Conversion des heures de service',
@@ -325,7 +325,7 @@ export const copy = defineCopy({
 		},
 		conformance: {
 			section: 'Conformité du flux',
-			note: 'À quel point le dernier horaire correspondait au modèle attendu par le pipeline.',
+			note: 'À quel point le dernier horaire correspondait au modèle attendu par la chaîne de traitement.',
 			detailsTitle: 'Champs non modélisés (conservés tels quels)',
 			extraRowsLabel: 'Lignes supplémentaires conservées',
 			membersLabel: 'Champs hors du modèle standard',
@@ -338,8 +338,8 @@ export const copy = defineCopy({
 			unknown: 'inconnu',
 		},
 		lanes: {
-			terminal: { title: 'voies-du-pipeline', tag: 'CONSTRUCTION' },
-			section: 'Voies du pipeline',
+			terminal: { title: 'voies-de-traitement', tag: 'CONSTRUCTION' },
+			section: 'Voies de la chaîne de traitement',
 			note: 'Chaque voie de publication, il y a combien de temps elle a publié pour la dernière fois, combien de fichiers elle a écrits, et le résultat de sa dernière vérification des valeurs. Les heures sont les cadences prévues, pas des garanties.',
 			listLabel: 'Voies de publication',
 			laneLabel: {
@@ -400,7 +400,7 @@ export const copy = defineCopy({
 			},
 		},
 		aggregate: {
-			title: 'GATE PIPELINE',
+			title: 'VÉRIFICATION DES VALEURS',
 			summary: (pass: string, total: string) => `${pass} lignes conformes sur ${total}`,
 			worst: (lane: string) => `pire : ${lane}`,
 			allClear: 'toutes les lignes conformes',
