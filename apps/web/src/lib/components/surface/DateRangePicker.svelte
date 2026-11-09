@@ -98,7 +98,7 @@
 	<AbsentValue variant="block" reason={emptyReason} {locale} />
 {:else if mode === 'single'}
 	<div
-		class={['date-range', stack && 'date-range--stack', className]}
+		class={['date-range', 'date-range--single', stack && 'date-range--stack', className]}
 		data-slot="date-range"
 		role="group"
 		aria-label={labels.group}
@@ -173,6 +173,10 @@
 	}
 	.date-range--stack .date-range__field {
 		justify-content: space-between;
+	}
+	.date-range--single.date-range--stack .date-range__field {
+		flex-direction: column;
+		align-items: stretch;
 	}
 	.date-range--stack .date-range__input {
 		flex: 1 1 auto;
