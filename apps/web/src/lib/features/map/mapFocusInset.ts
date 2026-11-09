@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { tick } from 'svelte';
+import { coveredArea } from './mapCameraCoveredArea';
 
 export const MIN_VISIBLE_SPAN_PX = 240;
 
@@ -76,22 +77,23 @@ export function measureMapFocusInset(
 	const rightOcclusion = clampOcclusion(rawRight, containerWidth);
 	const bottomOcclusion = clampOcclusion(rawBottom, containerHeight - topOcclusion);
 
+	const { pointOffset, routePadding } = coveredArea(
+		{
+			top: topOcclusion,
+			right: rightOcclusion,
+			bottom: bottomOcclusion,
+			left: 0,
+		},
+		64,
+	);
 	return {
 		containerWidth,
 		containerHeight,
 		topOcclusion,
 		rightOcclusion,
 		bottomOcclusion,
-		pointOffset: [
-			rightOcclusion === 0 ? 0 : -rightOcclusion / 2,
-			(topOcclusion - bottomOcclusion) / 2,
-		],
-		routePadding: {
-			top: 64 + topOcclusion,
-			right: 64 + rightOcclusion,
-			bottom: 64 + bottomOcclusion,
-			left: 64,
-		},
+		pointOffset,
+		routePadding,
 	};
 }
 

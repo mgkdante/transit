@@ -2,8 +2,12 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { mapViewportOptions, type MapFitPadding } from '#lib/components/map/viewport.ts';
+import { type MapFitPadding } from '#lib/components/map/viewport.ts';
+import providerFixtures from '../../../../e2e/providers.json';
+import { RouteFileSchema } from '#lib/v1/schemas/route.ts';
+import { focusCoordinate, fitRouteBounds } from './mapCamera';
 import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
+import { createMapCamera, initialCamera, type CameraMap, type CameraInputs } from './mapCamera';
 
 const ISLAND_FIT_BOUNDS = [-73.9757, 45.4022, -73.4764, 45.7028] as const;
 const MAP_MAX_BOUNDS = [-74.28605, 45.3, -73.16605, 45.82] as const;
@@ -73,7 +77,6 @@ const { cameraForBoxAndBearing } = (await import(CAMERA_HELPER_MODULE)) as {
 };
 
 const PRE_M6F2_MAX_BOUNDS = [-74.32, 45.3, -73.2, 45.82] as const;
-const MAP_STAGE_INITIAL_ZOOM = 11;
 const CENTRED_PX = 1e-6;
 
 type Viewport = { label: string; width: number; height: number };
@@ -112,46 +115,90 @@ function paddingObject(padding: MapFitPadding): PaddingBox {
 	};
 }
 
+function transformCamera(viewport: Viewport, inputs: CameraInputs, padding?: MapFitPadding) {
+	const controller = createMapCamera<[number, number]>();
+	const value = { ...inputs, ...(padding === undefined ? {} : { fitPadding: padding }) };
+	const options = controller.initial(value);
+	const transform = new MercatorTransform();
+	transform.setMinZoom(options.minZoom!);
+	transform.setMaxZoom(options.maxZoom!);
+	transform.setRenderWorldCopies(options.renderWorldCopies!);
+	transform.setMaxBounds(LngLatBounds.convert(options.maxBounds));
+	transform.setZoom(options.zoom);
+	transform.setCenter(LngLat.convert(options.center));
+	transform.resize(viewport.width, viewport.height);
+	const map: CameraMap = {
+		getContainer: () => {
+			throw new Error('The transform adapter requires explicit covered-area insets');
+		},
+		flyTo(camera, event) {
+			controller.claim(event);
+			return map.jumpTo({ center: camera.center, zoom: camera.zoom });
+		},
+		easeTo(camera, event) {
+			controller.claim(event);
+			return map.jumpTo({ center: camera.center, zoom: camera.zoom });
+		},
+		getCenter: () => transform.center as ReturnType<CameraMap['getCenter']>,
+		getZoom: () => transform.zoom,
+		getBearing: () => 0,
+		getPitch: () => 0,
+		getRoll: () => 0,
+		getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+		setMaxBounds(bounds) {
+			transform.setMaxBounds(LngLatBounds.convert(bounds));
+			return this as ReturnType<CameraMap['setMaxBounds']>;
+		},
+		jumpTo(camera) {
+			if (camera.zoom !== undefined) transform.setZoom(camera.zoom);
+			if (camera.center) transform.setCenter(LngLat.convert(camera.center));
+			return this as ReturnType<CameraMap['jumpTo']>;
+		},
+		fitBounds(bounds, fit = {}, event) {
+			controller.claim(event ?? {});
+			const box = paddingObject(fit.padding ?? 0);
+			const camera = cameraForBoxAndBearing(
+				{ padding: box, offset: [0, 0], maxZoom: fit.maxZoom ?? options.maxZoom! },
+				box,
+				LngLatBounds.convert(bounds),
+				0,
+				transform,
+			);
+			if (!camera) throw new Error('MapLibre refused the fit for this viewport');
+			transform.setZoom(camera.zoom);
+			transform.setCenter(camera.center);
+			transform.resize(viewport.width, viewport.height);
+			return this as ReturnType<CameraMap['fitBounds']>;
+		},
+	};
+	map.fitBounds(options.bounds, options.fitBoundsOptions);
+	controller.attach(map, value);
+	return { transform, map, controller, value };
+}
+
 function settleCamera(
 	viewport: Viewport,
 	overrides: { maxBounds?: readonly number[]; padding?: MapFitPadding } = {},
 ) {
-	const padding = overrides.padding ?? deriveMapFitPadding(viewport.width >= 1024, viewport.width);
-	const options = mapViewportOptions(
-		ISLAND_FIT_BOUNDS,
-		padding,
-		overrides.maxBounds ?? MAP_MAX_BOUNDS,
+	const { transform } = transformCamera(
+		viewport,
+		initialCamera(
+			{
+				manifest: { bbox: [...ISLAND_FIT_BOUNDS] },
+				provider: {
+					fit_bounds: [...ISLAND_FIT_BOUNDS],
+					max_bounds: [...(overrides.maxBounds ?? MAP_MAX_BOUNDS)] as [
+						number,
+						number,
+						number,
+						number,
+					],
+				},
+			},
+			viewport.width,
+		),
+		overrides.padding,
 	);
-	const { minZoom, maxZoom, renderWorldCopies } = options;
-	if (
-		typeof minZoom !== 'number' ||
-		typeof maxZoom !== 'number' ||
-		typeof renderWorldCopies !== 'boolean'
-	) {
-		throw new Error('mapViewportOptions must pin minZoom, maxZoom and renderWorldCopies');
-	}
-
-	const transform = new MercatorTransform();
-	transform.setMinZoom(minZoom);
-	transform.setMaxZoom(maxZoom);
-	transform.setRenderWorldCopies(renderWorldCopies);
-	transform.setMaxBounds(LngLatBounds.convert(options.maxBounds));
-	transform.setZoom(MAP_STAGE_INITIAL_ZOOM);
-	transform.setCenter(LngLat.convert(mapInitialCenter));
-	transform.resize(viewport.width, viewport.height);
-
-	const box = paddingObject(padding);
-	const camera = cameraForBoxAndBearing(
-		{ padding: box, offset: [0, 0], maxZoom },
-		box,
-		LngLatBounds.convert(options.bounds),
-		0,
-		transform,
-	);
-	if (!camera) throw new Error('MapLibre refused the fit for this viewport');
-	transform.setZoom(camera.zoom);
-	transform.setCenter(camera.center);
-	transform.resize(viewport.width, viewport.height);
 
 	const [west, , east, north] = ISLAND_FIT_BOUNDS;
 	const leftEdge = transform.locationToScreenPoint(new LngLat(west, north)).x;
@@ -319,4 +366,97 @@ describe('settled map camera (computed from the real MapLibre transform)', () =>
 			for (const camera of cameras) expect(camera).toEqual(cameras[0]);
 		}
 	});
+});
+
+describe('camera interface through the transform adapter', () => {
+	function bbox(value: number[]): [number, number, number, number] {
+		if (value.length !== 4) throw new Error('Expected fixture bbox');
+		return [value[0], value[1], value[2], value[3]];
+	}
+	const providers = providerFixtures.providers.map((provider) => ({
+		name: provider.labels.en.operator,
+		bbox: bbox(provider.max_bounds),
+		fit_bounds: bbox(provider.fit_bounds),
+		max_bounds: bbox(provider.max_bounds),
+	}));
+
+	for (const provider of providers) {
+		it.each([
+			{ label: '390x844', width: 390, height: 844 },
+			{ label: '768x1024', width: 768, height: 1024 },
+			{ label: '1280x800', width: 1280, height: 800 },
+			{ label: '1920x1080', width: 1920, height: 1080 },
+		])(provider.name + ' preserves fit, user ownership and recovery at $label', (viewport) => {
+			const inputs = initialCamera({ manifest: { bbox: provider.bbox }, provider }, viewport.width);
+			const { map, controller, value } = transformCamera(viewport, inputs);
+			const settled = [map.getZoom(), map.getCenter().lng, map.getCenter().lat];
+			expect(settled).toMatchSnapshot();
+			const focus = transformCamera(viewport, inputs);
+			const intents = focus.controller.intents;
+			intents.state({
+				kind: 'point',
+				coord: [provider.bbox[0] + 0.2, provider.bbox[1] + 0.2],
+				minZoom: 14,
+			});
+			intents.state({
+				kind: 'selection',
+				selection: [provider.bbox[0] + 0.3, provider.bbox[1] + 0.3],
+			});
+			intents.replay((intent) => {
+				if (intent.kind === 'selection') focusCoordinate(focus.map, intent.selection, 14, 40);
+			});
+			expect(focus.map.getZoom()).toBe(14);
+			expect(intents.pending).toBeNull();
+			const focused = [focus.map.getCenter().lng, focus.map.getCenter().lat];
+			focus.controller.update(focus.map, { ...inputs, fitPadding: 80 });
+			expect([focus.map.getCenter().lng, focus.map.getCenter().lat]).toEqual(focused);
+			const route = RouteFileSchema.parse({
+				id: 'camera-route',
+				generated_utc: '2026-11-08T00:00:00Z',
+				directions: [
+					{
+						dir: 0,
+						shape: {
+							type: 'LineString',
+							coordinates: [
+								[provider.bbox[0] + 0.2, provider.bbox[1] + 0.2],
+								[provider.bbox[2] - 0.2, provider.bbox[3] - 0.2],
+							],
+						},
+					},
+				],
+			});
+			expect(fitRouteBounds(focus.map, route, { top: 64, right: 64, bottom: 64, left: 64 })).toBe(
+				true,
+			);
+			expect(focus.map.getZoom()).toBeLessThanOrEqual(15);
+			const focusRecovery = focus.controller.capture(focus.map, inputs);
+			intents.state({
+				kind: 'point',
+				coord: [provider.bbox[0] + 0.25, provider.bbox[1] + 0.25],
+				minZoom: 15,
+			});
+			const recoveredFocus = transformCamera(viewport, inputs);
+			focus.controller.attach(recoveredFocus.map, inputs, focusRecovery);
+			intents.replay((intent) => {
+				if (intent.kind === 'point')
+					focusCoordinate(recoveredFocus.map, intent.coord, intent.minZoom, 40);
+			});
+			expect(recoveredFocus.map.getZoom()).toBe(15);
+			expect(recoveredFocus.map.getCenter().lng).toBeCloseTo(provider.bbox[0] + 0.25, 8);
+			expect(recoveredFocus.map.getCenter().lat).toBeCloseTo(provider.bbox[1] + 0.25, 8);
+
+			controller.claim({ originalEvent: {} });
+			controller.update(map, { ...value, fitPadding: 80 });
+			expect([map.getZoom(), map.getCenter().lng, map.getCenter().lat]).toEqual(settled);
+			const recovery = controller.capture(map, value);
+			const replacement = transformCamera(viewport, { ...inputs, fitPadding: 80 });
+			replacement.controller.attach(replacement.map, { ...inputs, fitPadding: 80 }, recovery);
+			expect([
+				replacement.map.getZoom(),
+				replacement.map.getCenter().lng,
+				replacement.map.getCenter().lat,
+			]).toEqual(settled);
+		});
+	}
 });
