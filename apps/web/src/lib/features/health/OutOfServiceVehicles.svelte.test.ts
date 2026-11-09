@@ -47,6 +47,7 @@ describe.each(['stm', 'octranspo'])('%s status count', (provider) => {
 	it('keeps unloaded data unknown', () => {
 		state.vehicles = null;
 		const view = render(OutOfServiceVehicles, { manifest, locale: 'en' });
-		expect(view.getByText('Out-of-service vehicles: —')).toBeInTheDocument();
+		expect(view.queryByText(/Out-of-service vehicles/)).toBeNull();
+		expect(view.queryByText(/—/)).toBeNull();
 	});
 });

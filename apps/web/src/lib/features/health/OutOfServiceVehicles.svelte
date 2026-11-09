@@ -13,4 +13,7 @@
 	});
 </script>
 
-<p>{vehicleServiceCopy[locale].count} {count ?? '—'}</p>
+<!-- Unknown until the vehicles snapshot loads: show nothing rather than a bare dash or a zero. -->
+{#if count !== null}
+	<p>{vehicleServiceCopy[locale].count} {count}</p>
+{/if}
