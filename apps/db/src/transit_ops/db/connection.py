@@ -22,12 +22,13 @@ def require_database_url(settings: Settings) -> str:
     return settings.sqlalchemy_database_url
 
 
-def make_engine(settings: Settings) -> Engine:
+def make_engine(settings: Settings, *, connect_timeout: int | None = None) -> Engine:
 
     return create_engine(
         require_database_url(settings),
         pool_pre_ping=True,
         connect_args={
+            **({"connect_timeout": connect_timeout} if connect_timeout is not None else {}),
             "keepalives": 1,
             "keepalives_idle": 20,
             "keepalives_interval": 10,
