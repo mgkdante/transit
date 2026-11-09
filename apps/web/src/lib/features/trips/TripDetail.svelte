@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '#lib/components/surface/compact-row.css';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
@@ -389,15 +390,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, max-content) auto auto;
 		justify-content: start;
-		align-items: center;
-		gap: 0.875rem;
 		width: calc(100% + 1rem);
-		margin-inline: -0.5rem;
-		padding: 0.625rem 0.5rem;
-		border-radius: var(--radius-sm);
-		color: var(--foreground);
-		text-decoration: none;
-		transition: background-color var(--duration-fast) var(--ease-out);
 	}
 	.trip-stop-name,
 	.trip-last-stop-name {
