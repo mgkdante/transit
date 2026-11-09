@@ -1,9 +1,9 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, TrendDatum, TrendSpec } from '$lib/components/dataviz/chart';
-import { SEVERE_DOMAIN, DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import { wilsonBounds, MIN_POINTS_FOR_LINE, MIN_N_RATE } from '$lib/v1/stats';
-import type { StopDailyPoint } from '$lib/v1';
-import type { DateWindow } from '$lib/filters';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { AbsenceSpec, TrendDatum, TrendSpec } from '#lib/components/dataviz/chart/index.ts';
+import { SEVERE_DOMAIN, DELAY_POS_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import { wilsonBounds, MIN_POINTS_FOR_LINE, MIN_N_RATE } from '#lib/v1/stats.ts';
+import type { StopDailyPoint } from '#lib/v1/index.ts';
+import type { DateWindow } from '#lib/filters/index.ts';
 
 export interface DailyTrendLabels {
 	title: string;

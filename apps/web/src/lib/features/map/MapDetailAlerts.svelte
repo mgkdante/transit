@@ -1,21 +1,33 @@
 <script lang="ts">
+	import { formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { copy as MAP_COPY } from './map.copy';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type { Locale } from '$lib/i18n';
-	import type { Alert } from '$lib/v1/schemas';
-	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '$lib/v1/alertDisplay';
-	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { Alert } from '#lib/v1/schemas/index.ts';
+	import { alertDisplayText, alertDisplayUrl, alertLanguageNotice } from '#lib/v1/alertDisplay.ts';
+	import { causeLabel, effectLabel } from '#lib/v1/gtfsAlertLabels.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import type { MapSelectionDetailCopy } from './mapSelectionDetail.copy';
 
 	interface Props {
 		alerts: readonly Alert[] | null;
+		alertsStale?: boolean;
+		alertsAgeSeconds?: number | null;
 		locale: Locale;
 		t: MapSelectionDetailCopy;
 		onalertselect?: (alert: Alert) => void;
 		presentation?: 'detail' | 'peek-passive';
 	}
 
-	let { alerts, locale, t, onalertselect, presentation = 'detail' }: Props = $props();
+	let {
+		alerts,
+		alertsStale = false,
+		alertsAgeSeconds = null,
+		locale,
+		t,
+		onalertselect,
+		presentation = 'detail',
+	}: Props = $props();
 	const uid = $props.id();
 	const PEEK_ALERT_CAP = 1;
 
@@ -26,6 +38,11 @@
 
 <section class="map-alerts" aria-label={t.alerts}>
 	<h3>{t.alerts}</h3>
+	{#if alertsAgeSeconds != null}
+		<p class="map-alerts-age">
+			{MAP_COPY[locale].alertsChecked(formatRelativeSeconds(alertsAgeSeconds, locale))}
+		</p>
+	{/if}
 	{#if alerts == null}
 		<StateNotice title={t.alertsUnavailable} glyph="○" tone="neutral" presentation="silo" />
 	{:else if alerts.length > 0}
@@ -105,7 +122,12 @@
 			<p class="map-peek-alerts-more">+{alerts.length - PEEK_ALERT_CAP} {t.more}</p>
 		{/if}
 	{:else}
-		<StateNotice title={t.noAlerts} glyph="●" tone="positive" presentation="silo" />
+		<StateNotice
+			title={t.noAlerts}
+			glyph="●"
+			tone={alertsStale ? 'neutral' : 'positive'}
+			presentation="silo"
+		/>
 	{/if}
 </section>
 
@@ -114,6 +136,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+	}
+	.map-alerts-age {
+		margin: 0;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 	.map-alerts h3 {
 		display: flex;

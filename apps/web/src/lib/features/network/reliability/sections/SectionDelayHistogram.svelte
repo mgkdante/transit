@@ -1,7 +1,11 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { Chart, type HistogramSpec, type AbsenceSpec } from '$lib/components/dataviz/chart';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import {
+		Chart,
+		type HistogramSpec,
+		type AbsenceSpec,
+	} from '#lib/components/dataviz/chart/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 

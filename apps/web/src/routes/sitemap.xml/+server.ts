@@ -1,18 +1,18 @@
+import { env as cloudflareEnv } from 'cloudflare:workers';
 import type { RequestHandler } from './$types';
-import { readPublicSiteConfig } from '$lib/site/config';
-import { buildSitemapXml, type SitemapEntities } from '$lib/site/seoFiles';
-import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
-import { serverV1Context } from '$lib/v1/serverContext';
-import { loadProviderCatalog, resolveProvider } from '$lib/v1/providers';
+import { readPublicSiteConfig } from '#lib/site/config.ts';
+import { buildSitemapXml, type SitemapEntities } from '#lib/site/seoFiles.ts';
+import { getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
+import { serverV1Context } from '#lib/v1/serverContext.ts';
+import { loadProviderCatalog, resolveProvider } from '#lib/v1/providers.ts';
 
 export const prerender = false;
 
 const SITEMAP_CACHE_CONTROL = 'public, max-age=3600, s-maxage=14400';
 
 export const GET: RequestHandler = async (event) => {
-	const { platform } = event;
 	const config = readPublicSiteConfig();
-	const hasSnapshotTransport = Boolean(platform?.env?.SNAPSHOTS || platform?.env?.DATA);
+	const hasSnapshotTransport = Boolean(cloudflareEnv.SNAPSHOTS || cloudflareEnv.DATA);
 
 	let entities: SitemapEntities = {};
 	if (hasSnapshotTransport && config.indexing) {

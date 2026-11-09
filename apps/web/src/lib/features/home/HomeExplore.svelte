@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { getLocalizeHref, intl, type Locale } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
+	import { getLocalizeHref, intl, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor } from '#lib/nav/index.ts';
 	import { FilterGroup, FilterSummary } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';

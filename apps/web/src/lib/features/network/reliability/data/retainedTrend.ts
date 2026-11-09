@@ -1,16 +1,22 @@
-import type { DateWindow } from '$lib/filters';
-import { roundHalfAwayFromZero } from '$lib/utils';
-import type { HistoryRangeLoadResult } from '$lib/v1/history/rangeResource.svelte';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
+import type { HistoryRangeLoadResult } from '#lib/v1/history/rangeResource.svelte.ts';
 import {
 	mergeNetworkHistory,
 	selectNetworkHistoryPartitionRefs,
 	type NetworkHistoryRange,
-} from '$lib/v1/history/families';
-import { addIsoDays } from '$lib/v1/history/selection';
-import type { HistoricCollectionIndex, NetworkHistoryPartition, TrendPoint } from '$lib/v1/schemas';
-import { wilsonBounds } from '$lib/v1/stats';
+} from '#lib/v1/history/families.ts';
+import { addIsoDays } from '#lib/v1/history/selection.ts';
+import type {
+	HistoricCollectionIndex,
+	NetworkHistoryPartition,
+	TrendPoint,
+} from '#lib/v1/schemas/index.ts';
+import { wilsonBounds } from '#lib/v1/stats.ts';
+import type { VerdictHeadline } from '#lib/v1/verdict.ts';
 
 export interface RetainedNetworkTrend {
+	readonly headline: VerdictHeadline;
 	readonly series: readonly TrendPoint[];
 	readonly weekly: readonly TrendPoint[];
 	readonly monthly: readonly TrendPoint[];
@@ -168,6 +174,11 @@ export function buildRetainedNetworkTrend(
 	if (series.length === 0) return { value: null, status: 'no_data' };
 
 	const value: RetainedNetworkTrend = {
+		headline: {
+			otpPct: fullRange.delay.value?.otpPct ?? null,
+			observationCount: fullRange.delay.value?.observationCount ?? null,
+			onTime: fullRange.delay.value?.onTimeCount ?? null,
+		},
 		series,
 		weekly: coarsePoints('week', dates, index, partitions, window),
 		monthly: coarsePoints('month', dates, index, partitions, window),

@@ -1,12 +1,14 @@
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HistoryArtifactContractError } from '$lib/v1/history';
-import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
-import { dataRefresh } from '$lib/stores';
-import { quietMode } from '@yesid/ui/state';
+import { HistoryArtifactContractError } from '#lib/v1/history/index.ts';
+import type { IsoUtc, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
+import { dataRefresh } from '#lib/stores/index.ts';
 import { copy as receiptCopy } from './receipt.copy';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 const ports = vi.hoisted(() => ({
 	getReceiptsIndex: vi.fn(),
@@ -21,13 +23,13 @@ const nav = vi.hoisted(() => ({
 }));
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
 	}),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
@@ -39,11 +41,9 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({
-	replaceState: nav.replaceState,
-}));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState: nav.replaceState }));
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
@@ -146,8 +146,6 @@ async function activate(container: HTMLElement, id: string): Promise<void> {
 beforeEach(() => {
 	cleanup();
 	currentLocale.value = 'en';
-	quietMode.resetForTest();
-	localStorage.removeItem('quiet-mode');
 	for (const key of ['receipt-controls', 'receipt-toc']) {
 		sessionStorage.removeItem(`persisted:${key}`);
 	}
@@ -170,7 +168,6 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	currentLocale.value = 'en';
-	quietMode.resetForTest();
 	vi.unstubAllGlobals();
 });
 
@@ -594,8 +591,6 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 		'exposes one $locale page announcement while collapsed and before/after the mobile sheet',
 		async ({ locale, expected }) => {
 			currentLocale.value = locale;
-			localStorage.setItem('quiet-mode', 'true');
-			quietMode.init();
 			nav.url = new URL('http://localhost/receipt?date=');
 			const { container } = render(AccountabilityReceipt);
 			const bundle = receiptCopy[locale];
@@ -609,6 +604,7 @@ describe('AccountabilityReceipt — raw URL corrections', () => {
 				).toHaveTextContent(expected),
 			);
 			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+			await fireEvent.click(within(rail).getByRole('button', { name: bundle.rail.controls }));
 			expect(within(rail).getByRole('button', { name: bundle.rail.controls })).toHaveAttribute(
 				'aria-expanded',
 				'false',

@@ -1,4 +1,4 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 import type { StatusCode, OccupancyCode, SeverityCode } from './schemas';
 
 export const STATUS_LABELS: Record<Locale, Record<StatusCode, string>> = {

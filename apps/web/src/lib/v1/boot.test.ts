@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Manifest } from '$lib/v1/schemas';
+import type { Manifest } from '#lib/v1/schemas/index.ts';
 
 const mocks = vi.hoisted(() => ({
 	getManifest: vi.fn(),
 	getLabels: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories/manifest', () => ({ getManifest: mocks.getManifest }));
-vi.mock('$lib/v1/repositories/labels', () => ({ getLabels: mocks.getLabels }));
+vi.mock('#lib/v1/repositories/manifest.ts', () => ({ getManifest: mocks.getManifest }));
+vi.mock('#lib/v1/repositories/labels.ts', () => ({ getLabels: mocks.getLabels }));
 
 import { bootV1, bootProvider, resolveLabel } from './boot';
 

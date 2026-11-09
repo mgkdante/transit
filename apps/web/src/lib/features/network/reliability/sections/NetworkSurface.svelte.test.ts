@@ -1,3 +1,4 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import {
 	fireEvent,
 	render as renderSvelte,
@@ -6,12 +7,12 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
-import type { IsoUtc } from '$lib/v1/schemas';
+import type { NetworkFile, NetworkShift, TrendPoint } from '#lib/v1/index.ts';
+import type { IsoUtc } from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
-import { quietMode } from '@yesid/ui/state';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
+import { assertRailIndependence } from '../../../../../tests/railIndependence';
 
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
@@ -126,7 +127,6 @@ function resetNetworkSurfaceState(): void {
 	openSurface.mockClear();
 	createLiveStoreSpy.mockClear();
 	createResourceSpy.mockClear();
-	quietMode.resetForTest();
 }
 
 const networkSurface = createSurfaceHarness({
@@ -146,7 +146,7 @@ function renderPicker(name: 'Trend window' | 'Delay series' | 'Trend grain') {
 	return screen.getByRole('radiogroup', { name });
 }
 
-vi.mock('$lib/nav', async () => {
+vi.mock('#lib/nav/index.ts', async () => {
 	return {
 		layout: { isDesktop: true },
 		openSurface,
@@ -167,10 +167,11 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: (manifest: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
@@ -191,6 +192,21 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			get ageSeconds() {
 				return live.ageSeconds;
 			},
+			get familyStates() {
+				return {
+					network: {
+						active: true,
+						retainedGeneration: network.generated_utc,
+						health: {
+							state: 'live',
+							retained: true,
+							ageSeconds: live.ageSeconds,
+							isStale: live.isStale,
+							notice: live.error ? 'refresh-unavailable' : null,
+						},
+					},
+				};
+			},
 			get isStale() {
 				return live.isStale;
 			},
@@ -204,14 +220,14 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 		};
 	},
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: vi.fn(),
 	getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
 	loadNetworkHistoryRange: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: vi.fn() }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown, options?: unknown) => {
 		createResourceSpy(loader, options);
 		const src = loader.toString();
@@ -236,11 +252,18 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 
 beforeEach(() => networkSurface.reset());
 
-afterEach(() => {
-	quietMode.resetForTest();
-});
+afterEach(() => {});
 
 describe('NetworkSurface article shell', () => {
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(NetworkSurface);
+		await assertRailIndependence({
+			container,
+			panelNames: [copy.viewControlsLabel, copy.rail.toc],
+			contentCount: 10,
+		});
+	});
+
 	it('requests only the network live family', () => {
 		const foreignKey = 'persisted:stop-reliability-toc';
 		sessionStorage.setItem(foreignKey, 'keep');
@@ -381,7 +404,7 @@ describe('NetworkSurface article shell', () => {
 			'[data-network-section="network-daily-trend"] > [data-slot="card"]',
 		) as HTMLElement;
 		await fireEvent.click(within(trend).getByRole('button', { name: copy.trendSection }));
-		expect(sessionStorage.getItem('persisted:network-daily-trend')).toBe('false');
+		expect(sessionStorage.getItem('persisted:network-daily-trend')).toBeNull();
 	});
 
 	it('places the dated comparison before the history rows and responsive companions', () => {
@@ -549,6 +572,14 @@ describe('NetworkSurface live cards (S9C)', () => {
 		network.feed_freshness_s = null;
 		render(NetworkSurface);
 		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
+	});
+
+	it('does not understate worker feed age when the retained snapshot age is unknown', () => {
+		live.ageSeconds = null;
+		live.isStale = true;
+		render(NetworkSurface);
+		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
+		expect(document.querySelector('[data-slot="freshness-stamp"]')).toHaveTextContent('unknown');
 	});
 });
 
@@ -961,7 +992,6 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		const reasonIds = reasons.map((reason) => reason.id);
 		expect(reasonIds).toHaveLength(1);
 		expect(new Set(reasonIds).size).toBe(reasonIds.length);
-		expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
 
 		const monthRadios = screen.getAllByRole('radio', { name: copy.grain.month });
 		expect(monthRadios).toHaveLength(1);
@@ -988,30 +1018,20 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 	});
 });
 
-describe('NetworkSurface current-position verdict', () => {
+describe('NetworkSurface historic verdict', () => {
 	it.each(['en', 'fr'] as const)(
-		'names the vehicle population and both outside-band directions in %s',
+		'hedges a historic percentage with no denominator in %s',
 		(locale) => {
 			network.on_time_pct = 80;
-			network.status_dist = { early: 1, on_time: 8, late: 0, severe: 1, unknown: 0 };
 			const { container } = render(NetworkSurface, {
 				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 			});
 			const banner = container.querySelector('.network-verdict [data-slot="verdict"]');
-			expect(banner).toHaveAttribute('data-status', 'reliable');
-			const sentence = banner?.querySelector('p')?.textContent ?? '';
-			expect(sentence).toContain('80');
-			expect
-				.soft(sentence)
-				.toMatch(
-					locale === 'en'
-						? /current known-status vehicle positions/
-						: /positions actuelles de véhicules au statut connu/,
-				);
-			expect
-				.soft(sentence)
-				.toMatch(locale === 'en' ? /outside.*early or late/ : /hors.*avance ou.*retard/);
-			expect.soft(sentence).not.toMatch(/trips|trajets|ran late|95% sure|sûr à 95/);
+			expect(banner).toHaveAttribute('data-status', 'tentative');
+			expect(banner?.querySelector('.verdict__ban')).toBeNull();
+			expect(banner).toHaveTextContent(
+				locale === 'en' ? 'observation count unknown' : 'nombre d’observations inconnu',
+			);
 		},
 	);
 });
@@ -1036,7 +1056,10 @@ describe('NetworkSurface daily comparison scope', () => {
 				change as HTMLElement,
 			);
 			expect(container.querySelector('.network-verdict [data-slot="verdict-delta"]')).toBeNull();
-			expect(container.querySelector('.network-verdict')).toHaveTextContent(/50\s*%/);
+			expect(container.querySelector('.network-verdict [data-slot="verdict"]')).toHaveAttribute(
+				'data-status',
+				'tentative',
+			);
 			expect(change).toHaveTextContent(
 				locale === 'en'
 					? 'Daily on-time change: +70 percentage points'
@@ -1076,6 +1099,9 @@ describe('NetworkSurface daily comparison scope', () => {
 		trendSeries[1].otp_pct = null;
 		const { container } = render(NetworkSurface);
 		expect(container.querySelector('[data-slot="verdict-delta"]')).toBeNull();
-		expect(container.querySelector('.network-verdict')).toHaveTextContent(/80\s*%/);
+		expect(container.querySelector('.network-verdict [data-slot="verdict"]')).toHaveAttribute(
+			'data-status',
+			'absent',
+		);
 	});
 });

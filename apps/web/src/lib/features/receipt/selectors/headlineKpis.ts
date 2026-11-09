@@ -1,5 +1,5 @@
-import type { Receipt } from '$lib/v1/schemas';
-import type { MetricKey } from '$lib/features/metrics/metrics.content';
+import type { Receipt } from '#lib/v1/schemas/index.ts';
+import type { MetricKey } from '#lib/features/metrics/metrics.content.ts';
 
 export interface HeadlineKpiVM {
 	readonly key: MetricKey;

@@ -4,9 +4,9 @@ import { selectOccupancyMix } from './occupancyMix';
 import { selectOccupancyTrend } from './occupancyTrend';
 import { selectHeadlineKpis } from './headlineKpis';
 import { networkReliabilityCopy } from '../network-reliability.copy';
-import { metricInfoFor } from '$lib/features/metrics/metrics.content';
-import type { StatusDist, OccupancyMix } from '$lib/v1/schemas';
-import type { NetworkFile, OccupancyCode, TrendPoint } from '$lib/v1';
+import { metricInfoFor } from '#lib/features/metrics/metrics.content.ts';
+import type { StatusDist, OccupancyMix } from '#lib/v1/schemas/index.ts';
+import type { NetworkFile, OccupancyCode, TrendPoint } from '#lib/v1/index.ts';
 
 const statusLabel = (c: string) => `S:${c}`;
 const occLabel = (c: OccupancyCode) => `O:${c}`;

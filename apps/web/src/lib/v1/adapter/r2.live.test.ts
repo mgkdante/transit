@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 import { r2Adapter } from './r2';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const ISO = '2026-07-15T12:00:00Z';
 
@@ -36,6 +36,20 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe('r2 live ports', () => {
+	it('passes live response cache headers to the caller', async () => {
+		const onResponseHeaders = vi.fn();
+		const response = json({ generated_utc: ISO, vehicles: [] });
+		response.headers.set('Cache-Control', 'public, max-age=30');
+		response.headers.set('Age', '21');
+		await r2Adapter.live.vehicles({
+			manifest: bootManifest(),
+			fetch: vi.fn(async () => response),
+			onResponseHeaders,
+		});
+		expect(onResponseHeaders).toHaveBeenCalledWith(response.headers);
+		expect(onResponseHeaders.mock.calls[0][0].get('age')).toBe('21');
+	});
+
 	it('reuse an authoritative boot manifest and fetch only the five live payloads', async () => {
 		const manifest = bootManifest();
 		const payloads: Record<string, unknown> = {

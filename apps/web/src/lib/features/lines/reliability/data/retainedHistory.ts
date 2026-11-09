@@ -1,8 +1,8 @@
-import type { DateWindow } from '$lib/filters';
-import { roundHalfAwayFromZero } from '$lib/utils';
-import { elapsedUtcMinutes } from '$lib/utils/time';
-import { mergeLineHistory, selectLineHistoryPartitionRefs } from '$lib/v1/history/families';
-import { wilsonBounds } from '$lib/v1/stats';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
+import { elapsedUtcMinutes } from '#lib/utils/time.ts';
+import { mergeLineHistory, selectLineHistoryPartitionRefs } from '#lib/v1/history/families.ts';
+import { wilsonBounds } from '#lib/v1/stats.ts';
 import type {
 	CancellationPeriod,
 	HistoricCollectionIndex,
@@ -14,7 +14,7 @@ import type {
 	ServiceSpanPeriod,
 	SkippedStopPeriod,
 	RouteReliability,
-} from '$lib/v1';
+} from '#lib/v1/index.ts';
 
 export interface RetainedLineHistory {
 	readonly aggregate: LineHistoryRange;

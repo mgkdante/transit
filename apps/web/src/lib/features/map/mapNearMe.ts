@@ -1,5 +1,5 @@
-import type { LatLon } from '$lib/components/map';
-import { isInsideBounds } from '$lib/geocode/types';
+import type { LatLon } from '#lib/components/map/index.ts';
+import { isInsideBounds } from '#lib/geocode/types.ts';
 
 export function parseCoordinateQuery(query: string, bbox: readonly number[]): LatLon | null {
 	const match = query.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/);

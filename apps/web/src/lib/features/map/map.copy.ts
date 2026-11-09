@@ -1,4 +1,4 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 
 export const copy = defineCopy({
 	en: {
@@ -93,11 +93,13 @@ export const copy = defineCopy({
 		familyTrips: 'trip details',
 		familyDepartures: 'departures',
 		familyAlerts: 'service alerts',
+		alertsChecked: (age: string) => `Alerts checked ${age}`,
 		selectedFamilyFailure: (family: string, retained: boolean) =>
 			retained
 				? `Live data for ${family} is unavailable. Showing the last successful update.`
 				: `Live data for ${family} is unavailable right now.`,
 		feedNotResponding: (age) => `Live feed not responding. Last update ${age}.`,
+		feedAgeUnknown: 'Data may be out of date.',
 		feedNotRespondingShort: 'not responding',
 		motion: {
 			label: 'Positions',
@@ -106,6 +108,8 @@ export const copy = defineCopy({
 			toRaw: 'Show reported positions only',
 			toSmooth: 'Animate estimated positions between reports',
 			hintSmooth: 'Between reports',
+			unavailableLabel: 'Estimated unavailable',
+			unavailable: 'Estimated positions are unavailable with reduced motion enabled.',
 			hintRaw: 'Latest reports',
 			explain: 'Method',
 		},
@@ -204,12 +208,14 @@ export const copy = defineCopy({
 		familyTrips: 'les détails des trajets',
 		familyDepartures: 'les départs',
 		familyAlerts: 'les alertes de service',
+		alertsChecked: (age: string) => `Alertes vérifiées ${age}`,
 		selectedFamilyFailure: (family: string, retained: boolean) =>
 			retained
 				? `Les données en direct pour ${family} sont indisponibles. La dernière mise à jour réussie reste affichée.`
 				: `Les données en direct pour ${family} sont indisponibles pour l’instant.`,
 		feedNotResponding: (age: string) =>
 			`Le flux en direct ne répond pas. Dernière mise à jour ${age}.`,
+		feedAgeUnknown: 'Les données peuvent ne plus être à jour.',
 		feedNotRespondingShort: 'ne répond pas',
 		motion: {
 			label: 'Positions',
@@ -218,6 +224,8 @@ export const copy = defineCopy({
 			toRaw: 'Afficher les positions signalées seulement',
 			toSmooth: 'Animer les positions estimées entre les relevés',
 			hintSmooth: 'Entre les relevés',
+			unavailableLabel: 'Estimation indisponible',
+			unavailable: 'Les positions estimées sont indisponibles avec les animations réduites.',
 			hintRaw: 'Derniers signalements',
 			explain: 'Méthode',
 		},

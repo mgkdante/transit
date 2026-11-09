@@ -1,10 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handle } from '../hooks.server';
+import { handle, handleError } from '../hooks.server';
+
+const workers = vi.hoisted(() => ({ waitUntil: vi.fn() }));
+vi.mock('cloudflare:workers', () => workers);
 
 const publicEnv = vi.hoisted(() => ({ PUBLIC_INDEXING: 'true' }));
-vi.mock('$env/dynamic/public', () => ({ env: publicEnv }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./publicEnv.ts')).PUBLIC_ENV,
+	get PUBLIC_INDEXING() {
+		return publicEnv.PUBLIC_INDEXING;
+	},
+}));
 afterEach(() => {
+	vi.restoreAllMocks();
 	publicEnv.PUBLIC_INDEXING = 'true';
+	vi.unstubAllGlobals();
+});
+
+it('logs unexpected server failures without personal request or error details', () => {
+	const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+	handleError({
+		kind: 'unknown',
+		error: new Error('address=123 private street'),
+		event: {
+			...event('https://transit.yesid.dev/api/geocode?q=123+private+street'),
+			route: { id: '/api/geocode' },
+		},
+	});
+	expect(log.mock.calls).toEqual([[{ event: 'server_error', route: '/api/geocode' }]]);
+});
+
+it('keeps expected client errors quiet but reports deliberate server failures', () => {
+	const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+	const requestEvent: Parameters<typeof handle>[0]['event'] = {
+		...event(),
+		route: { id: '/[[lang=locale]]' },
+	};
+	handleError({
+		kind: 'framework',
+		error: { status: 404, message: 'Not found' },
+		event: requestEvent,
+	});
+	handleError({ kind: 'app', error: { status: 400, message: 'Bad request' }, event: requestEvent });
+	expect(log).not.toHaveBeenCalled();
+	handleError({
+		kind: 'app',
+		error: { status: 503, message: 'private detail' },
+		event: requestEvent,
+	});
+	expect(log.mock.calls).toEqual([[{ event: 'server_error', route: '/[[lang=locale]]' }]]);
 });
 
 interface CacheHarness {
@@ -13,7 +57,7 @@ interface CacheHarness {
 	readonly match: ReturnType<typeof vi.fn>;
 	readonly put: ReturnType<typeof vi.fn>;
 	readonly open: ReturnType<typeof vi.fn>;
-	readonly waitUntil: ReturnType<typeof vi.fn>;
+	readonly waitUntil: ReturnType<typeof vi.fn<(promise: Promise<unknown>) => void>>;
 	readonly writes: Promise<unknown>[];
 }
 
@@ -29,7 +73,9 @@ function cacheHarness(hit?: Response): CacheHarness {
 		match,
 		put,
 		open: vi.fn(async () => ({ match, put })),
-		waitUntil: vi.fn((promise: Promise<unknown>) => writes.push(promise)),
+		waitUntil: vi.fn((promise: Promise<unknown>) => {
+			writes.push(promise);
+		}),
 		writes,
 	};
 }
@@ -43,6 +89,15 @@ function event(
 	} = {},
 ): Parameters<typeof handle>[0]['event'] {
 	const cache = options.cache;
+	vi.stubGlobal(
+		'caches',
+		cache
+			? { default: { match: cache.defaultMatch, put: cache.defaultPut }, open: cache.open }
+			: undefined,
+	);
+	workers.waitUntil.mockImplementation((promise: Promise<unknown>) => {
+		cache?.waitUntil(promise);
+	});
 	return {
 		url: new URL(url),
 		request: new Request(url, {
@@ -50,16 +105,6 @@ function event(
 			headers: options.headers,
 		}),
 		locals: {},
-		platform:
-			cache == null
-				? undefined
-				: ({
-						caches: {
-							default: { match: cache.defaultMatch, put: cache.defaultPut },
-							open: cache.open,
-						},
-						ctx: { waitUntil: cache.waitUntil },
-					} as unknown as App.Platform),
 	} as Parameters<typeof handle>[0]['event'];
 }
 
@@ -151,9 +196,11 @@ describe('server HTML edge cache', () => {
 
 	it('bypasses cached HTML for a server-data request with the same normalized URL', async () => {
 		const cache = cacheHarness(html('<h1>cached document</h1>'));
-		const request = event('https://transit.yesid.dev/fr/metrics/__data.json', { cache });
-		request.url = new URL('https://transit.yesid.dev/fr/metrics');
-		request.isDataRequest = true;
+		const request = {
+			...event('https://transit.yesid.dev/fr/metrics/__data.json', { cache }),
+			url: new URL('https://transit.yesid.dev/fr/metrics'),
+			isDataRequest: true,
+		};
 		const payload = { type: 'data', nodes: [] };
 		const resolve = vi.fn(
 			async () =>

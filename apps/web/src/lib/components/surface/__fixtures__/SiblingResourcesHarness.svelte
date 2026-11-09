@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import type { Resource } from '$lib/v1/resource.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { Resource } from '#lib/v1/resource.svelte.ts';
 	import ResourceBoundary from '../ResourceBoundary.svelte';
 
 	let {

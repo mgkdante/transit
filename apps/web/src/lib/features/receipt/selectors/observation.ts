@@ -1,8 +1,8 @@
-import { localizeHref, type Locale } from '$lib/i18n';
-import { fmtDelayMin, fmtPct } from '$lib/utils';
-import type { Manifest, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
-import { entityUrl } from '$lib/v1/config';
-import { metricInfoFor, type MetricKey } from '$lib/features/metrics/metrics.content';
+import { localizeHref, type Locale } from '#lib/i18n/index.ts';
+import { fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
+import type { Manifest, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
+import { entityUrl } from '#lib/v1/config.ts';
+import { metricInfoFor, type MetricKey } from '#lib/features/metrics/metrics.content.ts';
 import { copy } from '../receipt.copy';
 
 export function receiptObservation(

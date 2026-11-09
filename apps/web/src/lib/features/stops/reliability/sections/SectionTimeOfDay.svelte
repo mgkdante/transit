@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
-	import { RankedRow } from '$lib/components/dataviz';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
 	import type { TimeOfDayRow } from '../selectors/timeOfDay';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';

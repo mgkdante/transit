@@ -1,10 +1,10 @@
 import type { z } from 'zod';
-import type { Locale } from '$lib/i18n';
-import { entityUrl, resolveUrl, v1Provider } from '$lib/v1/config';
-import { getEntityJson, type FetchFn } from '$lib/v1/http';
-import { LabelsFileSchema } from '$lib/v1/schemas/labels';
-import { ManifestSchema, type Manifest } from '$lib/v1/schemas/manifest';
-import { assertProviderGeneration } from '$lib/v1/schemas/parse';
+import type { Locale } from '#lib/i18n/index.ts';
+import { entityUrl, resolveUrl, v1Provider } from '#lib/v1/config.ts';
+import { getEntityJson, type FetchFn } from '#lib/v1/http.ts';
+import { LabelsFileSchema } from '#lib/v1/schemas/labels.ts';
+import { ManifestSchema, type Manifest } from '#lib/v1/schemas/manifest.ts';
+import { assertProviderGeneration } from '#lib/v1/schemas/parse.ts';
 import { browserAdapterManifest } from './browserManifest';
 import type { AdapterCtx } from './types';
 
@@ -107,6 +107,7 @@ export async function readWhole<T>(
 		cache,
 		providerId: providerOf(ctx),
 		signal: ctx?.signal,
+		onResponseHeaders: ctx?.onResponseHeaders,
 	});
 	if (value === undefined) {
 		throw new Error(`[v1.${label}] expected file not found at ${url}`);

@@ -1,8 +1,14 @@
-import { delocalizePath, localizeHref, pathLocale } from '$lib/i18n';
+import { delocalizePath, localizeHref, pathLocale } from '#lib/i18n/index.ts';
 import { v1BaseUrl } from './config';
 import { PublicProviderCatalogSchema, type PublicProviderCatalog } from './schemas/providers';
 export { PublicProviderSchema, PublicProviderCatalogSchema } from './schemas/providers';
 export type { PublicProvider, PublicProviderCatalog } from './schemas/providers';
+
+export function providerHasAlerts(
+	provider: import('./schemas/providers').PublicProvider | null | undefined,
+): boolean {
+	return !(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false);
+}
 
 export function providerHref(url: URL, provider: string, lang = pathLocale(url.pathname)): string {
 	let path = delocalizePath(url.pathname);

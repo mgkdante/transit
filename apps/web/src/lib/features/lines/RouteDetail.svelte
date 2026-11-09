@@ -1,47 +1,59 @@
 <script lang="ts">
+	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
+	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+	import { formatRelativeSeconds } from '#lib/utils/time.ts';
+	import { copy as MAP_COPY } from '#lib/features/map/map.copy.ts';
 	import { clock } from '@yesid/ui/state';
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import type { DetailTab } from '$lib/site/detailTabs';
-	import { createDetailTabController } from '$lib/site/detailTabController.svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
-	import { mapHrefFor, routeFor } from '$lib/nav';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { deriveRouteStopPredictions } from '$lib/v1/live/routeStopPredictions';
-	import { getRoute } from '$lib/v1/repositories/static';
-	import { getRouteReliability } from '$lib/v1/repositories/historic';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import { getV1Context } from '$lib/v1/boot';
-	import { alertsForRoute } from '$lib/v1/affectedAlerts';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import type { RouteFile, RouteReliability, Provenance, StopPrediction, Vehicle } from '$lib/v1';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import type { IdentitySeed } from '$lib/v1/serverContext';
-	import { minutesSinceMidnight } from '$lib/utils/time';
+	import type { DetailTab } from '#lib/site/detailTabs.ts';
+	import { createDetailTabController } from '#lib/site/detailTabController.svelte.ts';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { fmtDelayMin as sharedFmtDelayMin } from '#lib/utils/index.ts';
+	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
+	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
+	import { deriveRouteStopPredictions } from '#lib/v1/live/routeStopPredictions.ts';
+	import { getRoute } from '#lib/v1/repositories/static.ts';
+	import { getRouteReliability } from '#lib/v1/repositories/historic.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { alertsForRoute } from '#lib/v1/affectedAlerts.ts';
+	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
+	import type {
+		RouteFile,
+		RouteReliability,
+		Provenance,
+		StopPrediction,
+		Vehicle,
+	} from '#lib/v1/index.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import type { IdentitySeed } from '#lib/v1/serverContext.ts';
+	import { minutesSinceMidnight } from '#lib/utils/time.ts';
 
-	import { inferAbsenceReason } from '$lib/site/serviceWindow';
-	import { EdgeState, MaybeValue } from '$lib/components/edge';
+	import { inferAbsenceReason } from '#lib/site/serviceWindow.ts';
+	import { EdgeState, MaybeValue } from '#lib/components/edge/index.ts';
 	import {
 		EntityDetail,
 		ResourceBoundary,
 		MapDrilldownLink,
 		FreshnessStamp,
 		AffectedAlerts,
-	} from '$lib/components/surface';
-	import { StatusBadge } from '$lib/components/dataviz';
-	import { ArticleSectionStack, type ArticleMetaEntry } from '$lib/components/layout';
+	} from '#lib/components/surface/index.ts';
+	import { StatusBadge } from '#lib/components/dataviz/index.ts';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
 	import { ArticleHeader } from '@yesid/ui/layout';
-	import { ScheduleTable, type ScheduleRow } from '$lib/components/schedule';
+	import { ScheduleTable, type ScheduleRow } from '#lib/components/schedule/index.ts';
 	import { CollapsibleSection, type TocEntry, SectionHeading } from '@yesid/ui/brand';
-	import { articleNavigationCopy } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
-	import { formatUtc } from '$lib/utils/time';
+	import { articleNavigationCopy } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
+	import { formatUtc } from '#lib/utils/time.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
-	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict } from '$lib/v1/verdict';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
 	import LazyRouteReliabilityPane, {
@@ -53,14 +65,14 @@
 		type LineHistorySeed,
 	} from './reliability/data/lineHistoryResource.svelte';
 	import { directionHeadsigns } from './directions';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey } from '$lib/metrics';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import type { MetricKey } from '#lib/metrics.ts';
 	import { detailCopy } from './lines.copy';
 	import LineDirections from './LineDirections.svelte';
-	import { absenceSentence } from '$lib/site/absence';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
-	import { STATUS_LABELS } from '$lib/v1/enumLabels';
-	import { dayTypeLabel, shiftLabel } from '$lib/features/reliability/shiftGrains';
+	import { absenceSentence } from '#lib/site/absence.ts';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+	import { dayTypeLabel, shiftLabel } from '#lib/features/reliability/shiftGrains.ts';
 
 	const localizeHref = getLocalizeHref();
 
@@ -94,8 +106,8 @@
 		{ key: 'schedule', label: t.tabs.schedule },
 		{ key: 'reliability', label: t.tabs.reliability },
 	]);
-	const detailTabController = createDetailTabController(page.url);
-	$effect(() => detailTabController.syncFromUrl(page.url));
+	const detailTabController = createDetailTabController(new URL(page.url.href));
+	$effect(() => detailTabController.syncFromUrl(new URL(page.url.href)));
 
 	const route = createResource<RouteFile | null>(() => getRoute(id), {
 		key: () => id,
@@ -116,7 +128,7 @@
 	function historyFor(routeId: string): LineHistoryResource {
 		return createLineHistoryResource(
 			routeId,
-			historyRangeRequestFromSearchParams(page.url.searchParams),
+			historyRangeRequestFromSearchParams(new URLSearchParams(page.url.search)),
 			() => lineHistorySeed,
 		);
 	}
@@ -140,21 +152,25 @@
 	});
 
 	const relCopy = $derived(routeVerdictCopy[locale]);
-	const verdictHeadline = $derived(
-		reliability.data ? selectDayVerdictHeadline(reliability.data) : null,
-	);
 	const routeVerdict = $derived(
-		verdictHeadline ? selectVerdict(verdictHeadline, 'day', locale, relCopy.verdict) : null,
+		reliability.data ? selectDayVerdictHeadline(reliability.data, locale) : null,
 	);
-	const hasHeaderVerdict = $derived(routeVerdict?.ban != null);
+	const hasHeaderVerdict = $derived(routeVerdict != null && routeVerdict.status !== 'absent');
 	const headerVerdictCurrentOnly = $derived(
 		(lineHistory.request.hasFrom || lineHistory.request.hasTo) && lineHistory.state !== 'current',
 	);
 
-	const manifest = getV1Context().manifest;
+	const v1 = getV1Context();
+	const manifest = v1.manifest;
 	const live = createLiveStore(manifest, {
-		families: ['vehicles', 'trips', 'alerts', 'network'],
+		families: providerHasAlerts(v1.provider)
+			? ['vehicles', 'trips', 'alerts', 'network']
+			: ['vehicles', 'trips', 'network'],
 	});
+	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
+	const presentation = $derived(
+		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+	);
 	onMount(() => {
 		live.start();
 		return () => live.stop();
@@ -163,8 +179,13 @@
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
 	const articleGeneratedUtc = $derived(
 		detailTabController.active === 'reliability'
-			? (reliability.data?.generated_utc ?? route.data?.generated_utc ?? live.generatedUtc)
-			: (live.generatedUtc ?? route.data?.generated_utc ?? reliability.data?.generated_utc ?? null),
+			? (reliability.data?.generated_utc ??
+					route.data?.generated_utc ??
+					presentation.publicationUtc)
+			: (presentation.publicationUtc ??
+					route.data?.generated_utc ??
+					reliability.data?.generated_utc ??
+					null),
 	);
 	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
 	const articleTimeText = $derived(
@@ -290,7 +311,7 @@
 		closeAria: articleNav.closeAria,
 	});
 
-	const showAbsenceNote = $derived(live.generatedUtc != null && roster.length === 0);
+	const showAbsenceNote = $derived(presentation.stamp.generatedUtc != null && roster.length === 0);
 
 	const tripHref = (tripId: string): string =>
 		localizeHref(routeFor({ kind: 'trip', id: tripId }), locale);
@@ -337,7 +358,7 @@
 			titleId="line-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 			{#snippet actions()}
 				<MapDrilldownLink
@@ -361,7 +382,6 @@
 								headerVariant="article-summary"
 								index={0}
 								anchor="line-detail-profile"
-								sectionKey={`line-detail-${id}-profile`}
 							>
 								<div class="route-profile-grid">
 									<MetricDisplay
@@ -401,18 +421,11 @@
 								headerVariant="article-summary"
 								index={1}
 								anchor="line-detail-directions"
-								sectionKey={`line-detail-${id}-directions`}
 							>
 								<div class="route-section">
-									{#if live.generatedUtc != null || live.ageSeconds != null}
+									{#if presentation.stamp.generatedUtc != null || presentation.stamp.ageSeconds != null}
 										<div class="route-section-head route-section-head--meta">
-											<FreshnessStamp
-												variant="live"
-												generatedUtc={live.generatedUtc}
-												ageSeconds={live.ageSeconds}
-												isStale={live.isStale}
-												{locale}
-											/>
+											<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 										</div>
 									{/if}
 									{#if showAbsenceNote}
@@ -435,7 +448,6 @@
 									headerVariant="article-summary"
 									index={2}
 									anchor="line-detail-live"
-									sectionKey={`line-detail-${id}-live`}
 								>
 									<div class="route-aside">
 										<AffectedAlerts
@@ -444,6 +456,14 @@
 											copy={t.alerts}
 											testId="route-alerts"
 										/>
+
+										{#if providerHasAlerts(v1.provider) && routeAlerts.length > 0 && live.familyStates.alerts.health.ageSeconds != null}
+											<p class="route-alerts-age">
+												{MAP_COPY[locale].alertsChecked(
+													formatRelativeSeconds(live.familyStates.alerts.health.ageSeconds, locale),
+												)}
+											</p>
+										{/if}
 
 										{#if roster.length > 0}
 											<div class="route-roster" data-testid="route-roster">
@@ -469,7 +489,10 @@
 																	<span class="route-roster-delay"
 																		><MaybeValue
 																			value={delayMeasurement(bus.delay_min)}
-																			reason="not-reported"
+																			reason={liveAbsenceReason('vehicle-delay', {
+																				familyStates: live.familyStates,
+																				notReporting: notReporting(bus, clock.serverNow) != null,
+																			})}
 																			variant="row"
 																			{locale}
 																		/></span
@@ -483,7 +506,7 @@
 																<a
 																	class="route-roster-link"
 																	href={tripHref(bus.trip)}
-																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence('not-reported', locale)}`}
+																	aria-label={`${t.roster.viewTrip(bus.id)}, ${unknownStatusAndDelay ? '' : `${STATUS_LABELS[locale][bus.status]}, `}${t.roster.delay}: ${delayMeasurement(bus.delay_min) ?? absenceSentence(liveAbsenceReason('vehicle-delay', { familyStates: live.familyStates, notReporting: notReporting(bus, clock.serverNow) != null }), locale)}`}
 																>
 																	{@render rosterRow()}
 																	<ChevronRightIcon
@@ -527,7 +550,6 @@
 								headerVariant="article-summary"
 								index={0}
 								anchor="line-schedule-span"
-								sectionKey={`line-schedule-${id}-span`}
 							>
 								<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
 								<div class="route-schedule-span">
@@ -560,7 +582,6 @@
 								headerVariant="article-summary"
 								index={1}
 								anchor="line-schedule-periods"
-								sectionKey={`line-schedule-${id}-periods`}
 							>
 								{#snippet headerActions()}
 									{@render scheduleInfo('headway', t.servicePeriods)}
@@ -628,6 +649,11 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 		gap: 1rem;
+	}
+	.route-alerts-age {
+		margin: 0;
+		font-size: var(--text-caption);
+		color: var(--muted-foreground);
 	}
 	.route-aside {
 		display: flex;

@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { intl } from '$lib/i18n';
-	import type { Locale } from '$lib/i18n';
-	import { fmtDelayMin } from '$lib/utils';
-	import type { DateWindow } from '$lib/filters';
-	import type { StopDailyPoint } from '$lib/v1';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { MetricDisplay } from '$lib/components/brand';
+	import { intl } from '#lib/i18n/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { fmtDelayMin } from '#lib/utils/index.ts';
+	import type { DateWindow } from '#lib/filters/index.ts';
+	import type { StopDailyPoint } from '#lib/v1/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { MetricDisplay } from '#lib/components/brand/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { selectDailyTrend } from '../selectors/dailyTrend';
 	import { poolDailyRange, type ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';

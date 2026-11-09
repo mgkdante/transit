@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import type { HistoricCollectionIndex, IsoUtc, LineHistoryPartition } from '$lib/v1/schemas';
-import type { RawHistoryRangeRequest } from '$lib/v1/history/rangeResource.svelte';
+import type {
+	HistoricCollectionIndex,
+	IsoUtc,
+	LineHistoryPartition,
+} from '#lib/v1/schemas/index.ts';
+import type { RawHistoryRangeRequest } from '#lib/v1/history/rangeResource.svelte.ts';
 import {
 	createLineHistoryResource,
 	type LineHistoryResource,
@@ -13,7 +17,7 @@ type Equal<A, B> =
 type Expect<T extends true> = T;
 type _LineSignature = Expect<
 	Equal<
-		typeof import('$lib/features/lines/reliability/data/lineHistoryResource.svelte').createLineHistoryResource,
+		typeof import('#lib/features/lines/reliability/data/lineHistoryResource.svelte.ts').createLineHistoryResource,
 		(
 			entityId: string,
 			request: RawHistoryRangeRequest,
@@ -31,7 +35,7 @@ const builders = vi.hoisted(() => ({
 	buildRetainedLineHistory: vi.fn(),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => repositories);
+vi.mock('#lib/v1/repositories/historic.ts', () => repositories);
 
 vi.mock('./retainedHistory', () => builders);
 

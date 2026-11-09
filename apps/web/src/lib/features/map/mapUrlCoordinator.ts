@@ -1,18 +1,16 @@
-import { FILTER_SEARCH_PARAM_KEYS } from '$lib/filters';
+import { FILTER_SEARCH_PARAM_KEYS } from '#lib/filters/index.ts';
 
 export interface MapUrlRewriteOptions {
-	readonly replaceState: true;
-	readonly keepFocus: true;
-	readonly noScroll: true;
+	readonly replace: true;
+	readonly reset: false;
 }
 
 export type MapUrlNavigate = (target: string, options: MapUrlRewriteOptions) => unknown;
 export type MapUrlSettlement = 'echo' | 'adopt';
 
 export const MAP_URL_REWRITE = {
-	replaceState: true,
-	keepFocus: true,
-	noScroll: true,
+	replace: true,
+	reset: false,
 } as const;
 
 export interface MapUrlCoordinator {

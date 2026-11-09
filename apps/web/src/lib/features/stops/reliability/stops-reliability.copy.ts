@@ -1,6 +1,6 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import { historyCopy } from '$lib/components/surface/historyCopy';
-import type { VerdictCopy, VerdictSentenceArgs } from '$lib/v1/verdict';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { historyCopy } from '#lib/components/surface/historyCopy.ts';
+import type { VerdictCopy, VerdictSentenceArgs } from '#lib/v1/verdict.ts';
 
 const predictionShare = {
 	fr: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>
@@ -60,7 +60,8 @@ export const stopReliabilityCopy = defineCopy({
 			partial: 'Cette plage ne couvre qu’une partie des mesures conservées.',
 			currentOnly:
 				'L’identité, les périodes, les habitudes, les jours, les heures et le détail par ligne restent basés sur le portrait actuel.',
-			predictionScope: 'Résumé du portrait actuel; indépendant des dates choisies.',
+			predictionScope:
+				'Le verdict décrit la fenêtre choisie; les lignes du bilan restent celles du portrait actuel.',
 			loading: 'Chargement de la plage conservée…',
 			ready: 'Plage conservée chargée.',
 			error: 'Impossible de charger cette plage conservée.',
@@ -78,10 +79,13 @@ export const stopReliabilityCopy = defineCopy({
 			unreliable: predictionShare.fr,
 			tentative: ({ window, otp, n, lo, hi }) =>
 				`Dans ce résumé ${window}, ${otp} % de ${n} prévisions connues sont sans retard grave. Bornes de Wilson nominales à 95 % : ${lo}–${hi} %; les relevés peuvent être dépendants.`,
+			unknownCount: () =>
+				'Relevés insuffisants pour juger la fiabilité : nombre d’observations inconnu.',
+			unavailableInterval: (window, n) =>
+				`Ce résumé ${window} contient ${n} prévisions connues, mais aucune plage d’incertitude exploitable pour juger la fiabilité.`,
 			tooFew: (window: string, n: number) =>
 				`Ce résumé ${window} contient seulement ${n} prévisions connues admissibles.`,
 			absent: 'Aucune prévision de retard admissible dans ce résumé.',
-			hedgeSimple: (otp: number) => ` (${otp} %)`,
 			hedgeCI: (otp: number, lo: number, hi: number) =>
 				` (${otp} %; Wilson nominal à 95 % : ${lo}–${hi} %, relevés potentiellement dépendants)`,
 		} satisfies VerdictCopy,
@@ -212,7 +216,8 @@ export const stopReliabilityCopy = defineCopy({
 			partial: 'This range has only partial retained metric coverage.',
 			currentOnly:
 				'Identity, periods, habits, weekday, time-of-day, and by-line detail still use the current snapshot.',
-			predictionScope: 'Current snapshot summary; unaffected by the selected dates.',
+			predictionScope:
+				'The verdict uses the selected window; summary rows still use the current snapshot.',
 			loading: 'Loading retained range…',
 			ready: 'Retained range loaded.',
 			error: 'This retained range could not be loaded.',
@@ -230,9 +235,12 @@ export const stopReliabilityCopy = defineCopy({
 			unreliable: predictionShare.en,
 			tentative: ({ window, otp, n, lo, hi }) =>
 				`In this ${window}, ${otp}% of ${n} known predictions are not severely late. Nominal 95% Wilson bounds: ${lo}–${hi}%; readings may be dependent.`,
+			unknownCount: () =>
+				'Not enough delay observations to judge reliability: observation count unknown.',
+			unavailableInterval: (window, n) =>
+				`This ${window} contains ${n} known predictions, but no usable uncertainty range to judge reliability.`,
 			tooFew: (window, n) => `This ${window} contains only ${n} eligible known predictions.`,
 			absent: 'No eligible predicted-delay readings in this summary.',
-			hedgeSimple: (otp) => ` (${otp}%)`,
 			hedgeCI: (otp, lo, hi) =>
 				` (${otp}%; nominal 95% Wilson: ${lo}–${hi}%, potentially dependent readings)`,
 		} satisfies VerdictCopy,

@@ -1,17 +1,18 @@
 <script lang="ts">
+	import type { LivePresentation } from '#lib/v1/live/livePresentation.ts';
 	import type { Snippet } from 'svelte';
-	import type { Locale } from '$lib/i18n';
-	import type { FilterStore } from '$lib/filters';
-	import type { LatLon, WithDistance } from '$lib/components/map';
-	import type { GeocodePrecision, GeocodeSuggestion } from '$lib/geocode/types';
-	import type { StopIndexEntry } from '$lib/v1/schemas';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { FilterStore } from '#lib/filters/index.ts';
+	import type { LatLon, WithDistance } from '#lib/components/map/index.ts';
+	import type { GeocodePrecision, GeocodeSuggestion } from '#lib/geocode/types.ts';
+	import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
 	import type { MapCopy } from './map.copy';
 	import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
 	import MapHeadTitle from './MapHeadTitle.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
-	import MapFeedStallBanner, { deriveMapFeedBannerState } from './MapFeedStallBanner.svelte';
+	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
 	import MapHoverPeek from './MapHoverPeek.svelte';
 
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
@@ -19,11 +20,7 @@
 	interface Props {
 		locale: Locale;
 		t: MapCopy;
-		generatedUtc: string | null;
-		ageSeconds: number | null;
-		isStale: boolean;
-		degraded?: boolean;
-		selectedFamilyFailureMessage?: string | null;
+		presentation: LivePresentation;
 		nearMeOpen: boolean;
 		nearMeQuery: string;
 		nearMeLoading: boolean;
@@ -38,8 +35,6 @@
 		isDesktop: boolean;
 		filtersStore: FilterStore;
 		detailOpen: boolean;
-		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
-		liveEdgeMessage: string | null;
 		hoverPeek: MapHoverPeekModel | null;
 		controls: Snippet<[{ collapsible?: boolean } | undefined]>;
 	}
@@ -47,11 +42,7 @@
 	let {
 		locale,
 		t,
-		generatedUtc,
-		ageSeconds,
-		isStale,
-		degraded = false,
-		selectedFamilyFailureMessage = null,
+		presentation,
 		nearMeOpen = $bindable(),
 		nearMeQuery = $bindable(),
 		nearMeLoading,
@@ -66,8 +57,6 @@
 		isDesktop,
 		filtersStore,
 		detailOpen,
-		liveEdgeState,
-		liveEdgeMessage,
 		hoverPeek,
 		controls,
 	}: Props = $props();
@@ -76,42 +65,15 @@
 	$effect(() => {
 		if (isDesktop) desktopControlsMounted = true;
 	});
-
-	const feedBannerState = $derived(
-		deriveMapFeedBannerState({
-			selectedFamilyFailureMessage,
-			isStale,
-			liveEdgeState,
-			liveEdgeMessage,
-		}),
-	);
-	const ageLabel = $derived(feedBannerState === 'global-stall' ? t.feedNotRespondingShort : null);
 </script>
 
 <div
 	data-slot="map-freshness-owner"
 	data-active-placement={isDesktop ? 'floating' : 'head'}
-	data-not-responding={ageLabel ? 'true' : 'false'}
+	data-not-responding={presentation.stamp.ageLabel ? 'true' : 'false'}
 >
-	<MapHeadTitle
-		{locale}
-		kicker={t.kicker}
-		heading={t.heading}
-		{generatedUtc}
-		{ageSeconds}
-		{ageLabel}
-		{isStale}
-		{degraded}
-	/>
-	<MapFreshness
-		placement="floating"
-		{generatedUtc}
-		{ageSeconds}
-		{ageLabel}
-		{isStale}
-		{degraded}
-		{locale}
-	/>
+	<MapHeadTitle {locale} kicker={t.kicker} heading={t.heading} presentation={presentation.stamp} />
+	<MapFreshness placement="floating" presentation={presentation.stamp} {locale} />
 </div>
 
 <MapNearMeControl
@@ -138,16 +100,7 @@
 
 <MapFilterPill store={filtersStore} {locale} hidden={detailOpen} {controls} />
 
-<MapFeedStallBanner
-	{generatedUtc}
-	{ageSeconds}
-	{isStale}
-	{locale}
-	{selectedFamilyFailureMessage}
-	{liveEdgeState}
-	{liveEdgeMessage}
-	state={feedBannerState}
-/>
+<MapFeedStallBanner {presentation} />
 
 {#if hoverPeek && isDesktop && !nearMeOpen}
 	<div class="map-overlay map-peek">

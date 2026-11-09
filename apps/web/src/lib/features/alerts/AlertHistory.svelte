@@ -1,32 +1,33 @@
 <script lang="ts">
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import {
 		getAlertArchiveIndex,
 		getAlertArchiveRange,
 		getAlertHistory,
-	} from '$lib/v1/repositories/historic';
-	import type { AlertArchiveEntry } from '$lib/v1/schemas/alert_archive';
-	import type { AlertHistory, AlertHistoryEntry } from '$lib/v1/schemas/alert_history';
-	import type { SeverityCode } from '$lib/v1/schemas/types';
-	import { createResource, type Resource } from '$lib/v1/resource.svelte';
+	} from '#lib/v1/repositories/historic.ts';
+	import type { AlertArchiveEntry } from '#lib/v1/schemas/alert_archive.ts';
+	import type { AlertHistory, AlertHistoryEntry } from '#lib/v1/schemas/alert_history.ts';
+	import type { SeverityCode } from '#lib/v1/schemas/types.ts';
+	import { createResource, type Resource } from '#lib/v1/resource.svelte.ts';
 	import {
 		availabilityFromAlertIndex,
 		datesForAvailability,
 		type HistoryAvailability,
 		type HistoryCorrection,
-	} from '$lib/v1/history/selection';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import { fromSearchParams, type AlertAffects, type DateWindow } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { ResourceBoundary } from '$lib/components/surface';
+	} from '#lib/v1/history/selection.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
+	import { fromSearchParams, type AlertAffects, type DateWindow } from '#lib/filters/index.ts';
+	import { mirrorSearchParams } from '#lib/site/urlMirror.ts';
+	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		ArticleHeader,
 		DetailFrame,
@@ -35,13 +36,13 @@
 	} from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { alertDisplayText } from '$lib/v1/alertDisplay';
-	import { causeLabel, effectLabel } from '$lib/v1/gtfsAlertLabels';
-	import { foldSearchText } from '$lib/search/normalize';
+	import { ExplainedMetricCard } from '#lib/components/dataviz/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import { alertDisplayText } from '#lib/v1/alertDisplay.ts';
+	import { causeLabel, effectLabel } from '#lib/v1/gtfsAlertLabels.ts';
+	import { foldSearchText } from '#lib/search/normalize.ts';
 
 	import {
 		sortNewestFirst,
@@ -69,9 +70,7 @@
 	const locale: Locale = getLocale();
 	const t = $derived(alertHistoryCopy[locale]);
 	const provider = $derived(page.data?.provider);
-	const alertsAvailable = $derived(
-		!(provider?.inputs.i3_alerts === false && provider.inputs.service_alerts === false),
-	);
+	const alertsAvailable = $derived(providerHasAlerts(provider));
 	const officialAlertsUrl = $derived(provider?.alert_links[locale]);
 
 	const history = createResource((signal) => getAlertHistory({ signal }), {
@@ -84,10 +83,10 @@
 	const VISIBLE_CAP = 25;
 	let expanded = $state(false);
 
-	const rawHistoryFrom = page.url.searchParams.get('from');
-	const rawHistoryTo = page.url.searchParams.get('to');
+	const rawHistoryFrom = new URLSearchParams(page.url.search).get('from');
+	const rawHistoryTo = new URLSearchParams(page.url.search).get('to');
 	const hasExplicitHistoryWindow = rawHistoryFrom !== null || rawHistoryTo !== null;
-	const seed = fromSearchParams(page.url.searchParams);
+	const seed = fromSearchParams(new URLSearchParams(page.url.search));
 	let affects = $state<'all' | AlertAffects>(seed.alertAffects ?? 'all');
 	let severity = $state<'all' | SeverityCode>(seed.alertSeverity ?? 'all');
 	let route = $state<string | null>([...seed.routes][0] ?? null);
@@ -450,7 +449,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'alerts-window',
-			sectionKey: 'alerts-card-window',
 			number: 1,
 			title: t.cards.window.title,
 			subtitle: t.cards.window.subtitle,
@@ -458,7 +456,6 @@
 		},
 		{
 			id: 'alerts-breakdown',
-			sectionKey: 'alerts-card-breakdown',
 			number: 2,
 			title: t.cards.breakdown.title,
 			subtitle: t.cards.breakdown.subtitle,
@@ -466,7 +463,6 @@
 		},
 		{
 			id: 'alerts-log',
-			sectionKey: 'alerts-card-log',
 			number: 3,
 			title: t.cards.log.title,
 			subtitle: t.cards.log.subtitle,
@@ -477,7 +473,7 @@
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const meta: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -526,7 +522,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection title={t.filters.railLabel} sectionKey="alerts-filters">
+	<CollapsibleSection independent title={t.filters.railLabel}>
 		<AlertFilters
 			bind:affects
 			bind:severity
@@ -551,10 +547,9 @@
 		<div class="alert-history-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="alerts-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -578,9 +573,12 @@
 <DetailFrame
 	class="alert-history-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={controlsReady ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -595,7 +593,7 @@
 			titleId="alerts-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -631,10 +629,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'alerts-window'}
 								<div class="alert-history-headline" data-slot="alert-headline">

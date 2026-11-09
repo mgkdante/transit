@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { Locale } from '$lib/i18n';
-	import type { RouteReliability } from '$lib/v1';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { RouteReliability } from '#lib/v1/index.ts';
 	import type { LineHistoryResource } from '../data/lineHistoryResource.svelte';
 
 	type Props = {

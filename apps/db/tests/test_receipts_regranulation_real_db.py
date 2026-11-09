@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
@@ -43,15 +42,20 @@ def conn(real_db_engine, seed_provider):  # noqa: ANN001, ANN201
 def _seed(c, seed_provider) -> None:  # noqa: ANN001
     seed_provider(c, PROVIDER, display_name="STM S13 receipts")
     db_seed.feed_endpoints(
-        c, {'e': STATIC_ENDPOINT_ID, 'p': PROVIDER}, endpoint_key="'static_schedule'",
-        feed_kind="'static_schedule'", source_format="'gtfs_schedule_zip'",
+        c,
+        {"e": STATIC_ENDPOINT_ID, "p": PROVIDER},
+        endpoint_key="'static_schedule'",
+        feed_kind="'static_schedule'",
+        source_format="'gtfs_schedule_zip'",
     )
     db_seed.ingestion_runs(
-        c, {'r': STATIC_RUN_ID, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID},
+        c,
+        {"r": STATIC_RUN_ID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID},
         run_kind="'static_schedule'",
     )
     db_seed.dataset_versions(
-        c, {'d': DVID, 'p': PROVIDER, 'e': STATIC_ENDPOINT_ID, 'r': STATIC_RUN_ID},
+        c,
+        {"d": DVID, "p": PROVIDER, "e": STATIC_ENDPOINT_ID, "r": STATIC_RUN_ID},
         content_hash="'s13-hash'",
     )
     for rid, name in (("51", "Édouard-Montpetit"), ("24", "Sherbrooke"), ("747", "YUL")):
@@ -209,7 +213,7 @@ def _availability(receipts) -> dict[str, ReceiptAvailability]:
 
 
 def test_silent_day_lists_not_reported_route(conn) -> None:  # noqa: ANN001
-    out = build_receipts(conn, PROVIDER, generated_utc="t")
+    out = build_receipts(conn, provider_id=PROVIDER, generated_utc="t")
     r = out[SILENT_DAY.isoformat()]
     ss = r.service_states
     assert ss is not None
@@ -226,7 +230,7 @@ def test_silent_day_lists_not_reported_route(conn) -> None:  # noqa: ANN001
 
 
 def test_schedule_only_day_emitted_with_schedule_flag(conn) -> None:  # noqa: ANN001
-    out = build_receipts(conn, PROVIDER, generated_utc="t")
+    out = build_receipts(conn, provider_id=PROVIDER, generated_utc="t")
     key = SCHEDULE_ONLY_DAY.isoformat()
     assert key in out
     r = out[key]
@@ -238,7 +242,7 @@ def test_schedule_only_day_emitted_with_schedule_flag(conn) -> None:  # noqa: AN
 
 
 def test_empty_day_emitted_without_data_or_schedule(conn) -> None:  # noqa: ANN001
-    out = build_receipts(conn, PROVIDER, generated_utc="t")
+    out = build_receipts(conn, provider_id=PROVIDER, generated_utc="t")
     key = EMPTY_DAY.isoformat()
     assert key in out
     avail = _availability(out)[key]
@@ -247,13 +251,13 @@ def test_empty_day_emitted_without_data_or_schedule(conn) -> None:  # noqa: ANN0
 
 
 def test_fully_dark_scheduled_day_absent(conn) -> None:  # noqa: ANN001
-    out = build_receipts(conn, PROVIDER, generated_utc="t")
+    out = build_receipts(conn, provider_id=PROVIDER, generated_utc="t")
     assert DARK_DAY.isoformat() not in out
     assert DARK_DAY.isoformat() not in _availability(out)
 
 
 def test_old_retained_day_is_enriched_and_supplement_only_gap_stays_absent(conn) -> None:  # noqa: ANN001
-    out = build_receipts(conn, PROVIDER, generated_utc="t")
+    out = build_receipts(conn, provider_id=PROVIDER, generated_utc="t")
 
     old_key = OLD_RETAINED_DAY.isoformat()
     receipt = out[old_key]
@@ -295,7 +299,7 @@ def test_worst_queries_return_one_ranked_candidate_per_date(conn) -> None:  # no
 def test_real_db_receipt_under_byte_ceiling(conn, capsys) -> None:  # noqa: ANN001
     from transit_ops.snapshots.contract import RECEIPT_BYTE_CEILING
 
-    out = build_receipts(conn, PROVIDER, generated_utc=BUILT.isoformat())
+    out = build_receipts(conn, provider_id=PROVIDER, generated_utc=BUILT.isoformat())
     sizes = {ds: len(r.model_dump_json().encode("utf-8")) for ds, r in out.items()}
     biggest = max(sizes, key=sizes.get)
     with capsys.disabled():

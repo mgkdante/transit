@@ -143,7 +143,7 @@ def plan_historic_generation_gc(
     mode: GcMode = "dry-run",
     existing_marks: Mapping[str, HistoricGcMark] | None = None,
     min_unreachable: timedelta = MIN_UNREACHABLE,
-    provider_id: str | None = None,
+    provider_id: str | None,
 ) -> HistoricGcReport:
 
     if mode == "apply":

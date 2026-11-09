@@ -1,7 +1,7 @@
-import { wilsonBoundsProportion, MIN_N_RATE } from '$lib/v1/stats';
-import type { StopDailyPoint } from '$lib/v1';
-import type { DateWindow } from '$lib/filters';
-import { roundHalfAwayFromZero } from '$lib/utils';
+import { wilsonBoundsProportion, MIN_N_RATE } from '#lib/v1/stats.ts';
+import type { StopDailyPoint } from '#lib/v1/index.ts';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
 
 export interface DailyRangeVerdict {
 	readonly daysWithData: number;

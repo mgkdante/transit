@@ -1,19 +1,19 @@
 import type { z } from 'zod';
-import { resolveUrl } from '$lib/v1/config';
-import { getEntityJson, getEntityJsonWithBytes, sha256Hex } from '$lib/v1/http';
-import { HistoricHotspotsDaySchema, HotspotsSchema } from '$lib/v1/schemas/hotspots';
+import { resolveUrl } from '#lib/v1/config.ts';
+import { getEntityJson, getEntityJsonWithBytes, sha256Hex } from '#lib/v1/http.ts';
+import { HistoricHotspotsDaySchema, HotspotsSchema } from '#lib/v1/schemas/hotspots.ts';
 import {
 	HistoricRepeatOffendersDaySchema,
 	RepeatOffendersSchema,
-} from '$lib/v1/schemas/repeat_offenders';
-import { AlertHistorySchema } from '$lib/v1/schemas/alert_history';
-import { ReceiptsIndexSchema } from '$lib/v1/schemas/receipts_index';
-import { RouteReliabilityIndexSchema } from '$lib/v1/schemas/route_reliability_index';
-import { ReceiptSchema } from '$lib/v1/schemas/receipts';
-import { RouteReliabilitySchema } from '$lib/v1/schemas/route_reliability';
-import { StopReliabilitySchema } from '$lib/v1/schemas/stop_reliability';
-import { NetworkTrendSchema } from '$lib/v1/schemas/network_trend';
-import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '$lib/v1/schemas/alert_archive';
+} from '#lib/v1/schemas/repeat_offenders.ts';
+import { AlertHistorySchema } from '#lib/v1/schemas/alert_history.ts';
+import { ReceiptsIndexSchema } from '#lib/v1/schemas/receipts_index.ts';
+import { RouteReliabilityIndexSchema } from '#lib/v1/schemas/route_reliability_index.ts';
+import { ReceiptSchema } from '#lib/v1/schemas/receipts.ts';
+import { RouteReliabilitySchema } from '#lib/v1/schemas/route_reliability.ts';
+import { StopReliabilitySchema } from '#lib/v1/schemas/stop_reliability.ts';
+import { NetworkTrendSchema } from '#lib/v1/schemas/network_trend.ts';
+import { AlertArchiveIndexSchema, AlertArchivePageSchema } from '#lib/v1/schemas/alert_archive.ts';
 import {
 	HistoricAvailabilityIndexSchema,
 	HistoricCollectionIndexSchema,
@@ -21,18 +21,18 @@ import {
 	LineHistoryPartitionSchema,
 	NetworkHistoryPartitionSchema,
 	StopHistoryPartitionSchema,
-} from '$lib/v1/schemas/history';
+} from '#lib/v1/schemas/history.ts';
 import {
 	HistoryArtifactContractError,
 	assertSafeHistoryArtifactPath,
-} from '$lib/v1/history/partitions';
-import { encodeHistoryEntityId } from '$lib/v1/history/entity';
+} from '#lib/v1/history/partitions.ts';
+import { encodeHistoryEntityId } from '#lib/v1/history/entity.ts';
 import {
 	historyPointerPayloadSha,
 	isHistoryEntityIndexPath,
 	isHistoryFamilyIndexPath,
 	isHistoryPointArtifactPath,
-} from '$lib/v1/history/pointers';
+} from '#lib/v1/history/pointers.ts';
 import type { AdapterCtx } from './types';
 import {
 	R2_DEFAULTS as DEFAULTS,

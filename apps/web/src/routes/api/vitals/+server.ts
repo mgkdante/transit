@@ -1,3 +1,4 @@
+import { env as cloudflareEnv } from 'cloudflare:workers';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
@@ -10,7 +11,7 @@ export const prerender = false;
 
 const NO_CONTENT = () => new Response(null, { status: 204 });
 
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request }) => {
 	const declaredLen = Number(request.headers.get('content-length') ?? '');
 	if (Number.isFinite(declaredLen) && declaredLen > MAX_VITALS_BODY_BYTES) {
 		return json({ error: 'payload_too_large' }, { status: 413 });
@@ -39,7 +40,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	}
 	if (samples.length === 0) return NO_CONTENT();
 
-	const dataset = platform?.env?.WEB_VITALS;
+	const dataset = cloudflareEnv.WEB_VITALS;
 	if (!dataset) return NO_CONTENT();
 
 	try {

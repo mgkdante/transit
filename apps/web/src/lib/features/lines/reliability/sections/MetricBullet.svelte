@@ -1,10 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { MaybeValue } from '$lib/components/edge';
-	import type { BulletSpec } from '$lib/components/dataviz/chart/ChartSpec';
-	import type { Locale } from '$lib/i18n';
+	import { cn } from '#lib/utils/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { MaybeValue } from '#lib/components/edge/index.ts';
+	import type { BulletSpec } from '#lib/components/dataviz/chart/ChartSpec.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 
 	let {
 		label,

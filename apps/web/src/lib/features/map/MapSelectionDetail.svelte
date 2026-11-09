@@ -1,18 +1,21 @@
 <script lang="ts">
+	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
+	const absenceContext = readLiveAbsenceContext();
 	import { tick } from 'svelte';
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import type { Chip } from '$lib/filters';
-	import type { Alert } from '$lib/v1/schemas';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
+	import { Button } from '@yesid/ui/button';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import type { Chip } from '#lib/filters/index.ts';
+	import type { Alert } from '#lib/v1/schemas/index.ts';
+	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
 	import {
 		STATUS_GLYPH,
 		occupancyGlyph,
 		occupancyVar,
 		statusVar,
-	} from '$lib/components/dataviz/tokens';
-	import { delayMeasurement } from '$lib/site/delayPresentation';
-	import { ROUTE_TYPE_METRO } from '$lib/site/serviceWindow';
-	import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
+	} from '#lib/components/dataviz/tokens.ts';
+	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import { ROUTE_TYPE_METRO } from '#lib/site/serviceWindow.ts';
+	import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
 	import type { MapSelection, MapSelectionDetail } from './mapSelectionSession.svelte';
 	import type { SelectionPresence, SelectionSourceHealth } from './mapSelectionSession.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
@@ -22,7 +25,6 @@
 		directionLabel,
 		formatAge,
 		timeLabel,
-		vehicleFieldAbsence,
 	} from './mapSelectionDetail.logic';
 	import MapDelayTag from './MapDelayTag.svelte';
 	import MapDetailAlerts from './MapDetailAlerts.svelte';
@@ -43,6 +45,8 @@
 		onpreview?: (selection: MapSelection | null) => void;
 		onfilter?: (chip: Chip) => void;
 		onalertselect?: (alert: Alert) => void;
+		alertsStale?: boolean;
+		alertsAgeSeconds?: number | null;
 		notReporting?: { ageS: number } | null;
 		selectionPresence?: SelectionPresence | null;
 		selectionSourceHealth?: SelectionSourceHealth | null;
@@ -58,6 +62,8 @@
 		onpreview,
 		onfilter,
 		onalertselect,
+		alertsStale = false,
+		alertsAgeSeconds = null,
 		notReporting = null,
 		selectionPresence = null,
 		selectionSourceHealth = null,
@@ -116,17 +122,22 @@
 							? t.detailFailed
 							: t.detailStale}
 					{#if selectionSourceHealth === 'retrying' || selectionSourceHealth === 'failed'}
-						<button class="detail-retry" type="button" onclick={() => onrefresh?.()}
-							>{t.retry}</button
+						<Button
+							variant="ghost"
+							size="sm"
+							class="ml-2 min-h-11"
+							type="button"
+							onclick={() => onrefresh?.()}>{t.retry}</Button
 						>
 					{/if}
 				</p>
 			{/if}
 
 			{#if detail.kind === 'vehicle'}
-				{@const absence = vehicleFieldAbsence({
-					stale: notReporting != null,
-					metro: detail.routeType === ROUTE_TYPE_METRO,
+				{@const absence = liveAbsenceReason('vehicle-delay', {
+					...absenceContext(),
+					notReporting: notReporting != null,
+					unsupported: detail.routeType === ROUTE_TYPE_METRO,
 				})}
 				<DetailAttributeGrid>
 					<div>
@@ -167,8 +178,15 @@
 					<div>
 						<dt>{t.nextStop}</dt>
 						<dd>
-							<MaybeValue present={detail.nextStop != null} reason={detail.nextStopAbsence} {locale}
-								>{detail.nextStop!.name}</MaybeValue
+							<MaybeValue
+								present={detail.nextStop != null}
+								reason={liveAbsenceReason('next-stop', {
+									...absenceContext(),
+									notReporting: notReporting != null,
+									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+									scheduleMissing: detail.nextStopAbsence === 'not-in-schedule',
+								})}
+								{locale}>{detail.nextStop!.name}</MaybeValue
 							>
 						</dd>
 						{#if detail.nextStop}<dd class="detail-attribute-action">
@@ -187,7 +205,10 @@
 								value={detail.nextStops[0]?.etaUtc
 									? timeLabel(detail.nextStops[0].etaUtc, locale, timeZone)
 									: null}
-								reason="no-prediction"
+								reason={liveAbsenceReason('trip-prediction', {
+									...absenceContext(),
+									notReporting: notReporting != null,
+								})}
 								{locale}
 							/>
 						</dd>
@@ -214,8 +235,14 @@
 								style={`--glyph: ${detail.vehicle.occupancy ? occupancyVar(detail.vehicle.occupancy) : 'var(--muted-foreground)'}`}
 								>{occupancyGlyph(detail.vehicle.occupancy)}</span
 							>
-							<MaybeValue present={detail.vehicle.occupancy != null} reason={absence} {locale}
-								>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
+							<MaybeValue
+								present={detail.vehicle.occupancy != null}
+								reason={liveAbsenceReason('occupancy', {
+									...absenceContext(),
+									notReporting: notReporting != null,
+									unsupported: detail.routeType === ROUTE_TYPE_METRO,
+								})}
+								{locale}>{OCCUPANCY_LABELS[locale][detail.vehicle.occupancy!]}</MaybeValue
 							>
 						</dd>
 						{#if detail.vehicle.occupancy != null}<dd class="detail-attribute-action">
@@ -253,7 +280,14 @@
 			{/if}
 		</div>
 
-		<MapDetailAlerts alerts={detail.alerts} {locale} {t} {onalertselect} />
+		<MapDetailAlerts
+			alerts={detail.alerts}
+			{alertsStale}
+			{alertsAgeSeconds}
+			{locale}
+			{t}
+			{onalertselect}
+		/>
 		{#if detail.kind === 'vehicle'}
 			<DetailStatPills>
 				<span class="detail-pill">{t.bus} {detail.vehicle.id}</span>
@@ -482,15 +516,6 @@
 	.detail-source-state[data-source-health] {
 		border-color: color-mix(in srgb, var(--dataviz-status-late) 38%, var(--border) 62%);
 		background: color-mix(in srgb, var(--dataviz-status-late) 7%, var(--card) 86%);
-	}
-	.detail-retry {
-		display: inline-flex;
-		min-height: 2.75rem;
-		align-items: center;
-		margin-left: 0.5rem;
-		padding-inline: 0.75rem;
-		border-radius: var(--radius-md);
-		color: var(--foreground);
 	}
 	.map-selection-detail ol {
 		display: grid;

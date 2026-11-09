@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 	import type { HealthCopy } from '../health.copy';
 
 	interface SectionRetentionProps {

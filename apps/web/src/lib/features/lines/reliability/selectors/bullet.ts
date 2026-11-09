@@ -1,5 +1,6 @@
-import type { Locale } from '$lib/i18n';
-import type { BulletSpec } from '$lib/components/dataviz/chart/ChartSpec';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { BulletSpec } from '#lib/components/dataviz/chart/ChartSpec.ts';
+import type { VerdictStatus } from '#lib/v1/verdict.ts';
 
 export interface BulletOpts {
 	readonly title: string;
@@ -29,7 +30,12 @@ export function selectBullet(value: number | null, locale: Locale, opts: BulletO
 	};
 }
 
-export function otpTone(otpPct: number | null): BulletSpec['tone'] {
-	if (otpPct == null) return 'neutral';
-	return otpPct >= 80 ? 'good' : otpPct >= 60 ? 'warn' : 'bad';
+export function verdictTone(status: VerdictStatus | null | undefined): BulletSpec['tone'] {
+	return status === 'reliable'
+		? 'good'
+		: status === 'patchy'
+			? 'warn'
+			: status === 'unreliable'
+				? 'bad'
+				: 'neutral';
 }

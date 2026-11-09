@@ -4,8 +4,8 @@ import type {
 	AlertArchiveIndex,
 	AlertArchivePage,
 	AlertArchivePageRef,
-} from '$lib/v1/schemas';
-import { providerLocalDateKey } from '$lib/utils/time';
+} from '#lib/v1/schemas/index.ts';
+import { providerLocalDateKey } from '#lib/utils/time.ts';
 
 export const HISTORY_PARTITION_CONCURRENCY = 4;
 

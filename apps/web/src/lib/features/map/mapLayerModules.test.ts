@@ -1,8 +1,8 @@
 import type { Map as MapLibreMap, StyleSpecification } from 'maplibre-gl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FilterState } from '$lib/filters';
-import { minimalDarkStyle } from '$lib/components/map/basemap';
-import { STOP_HIGHLIGHT_LAYER, STOPS_LAYER, STOPS_SOURCE } from '$lib/components/map/stopsLayer';
+import type { FilterState } from '#lib/filters/index.ts';
+import { minimalDarkStyle } from '#lib/components/map/basemap.ts';
+import { STOP_HIGHLIGHT_LAYER, STOPS_LAYER, STOPS_SOURCE } from '#lib/components/map/stopsLayer.ts';
 import {
 	createMapLayerFeedController,
 	firstSymbolLayerId,
@@ -184,60 +184,16 @@ describe('map layer feed invariants', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('passes the frozen motion option shape unchanged', () => {
-		const set = vi.fn();
-		const fixFor = vi.fn(() => null);
-		const shapeFor = vi.fn(() => null);
-		const serverNowFn = vi.fn(() => 123_456);
-		const filter: FilterState = {
-			routes: new Set(),
-			stops: new Set(),
-			trips: new Set(),
-			vehicles: new Set(),
-		};
-		const context = {
-			routes: { items: [], selected: null },
-			vehicles: {
-				motion: { set },
-				items: [],
-				filter,
-				alertIds: new Set(),
-				selectedId: null,
-				serverNow: 123_456,
-				ttlS: 30,
-				tickKey: 'tick-1',
-				stale: false,
-				fixFor,
-				shapeFor,
-				serverNowFn,
-				animate: true,
-			},
-			stops: {
-				items: [],
-				filter,
-				alertIds: new Set(),
-				selectedId: null,
-			},
-			nearTarget: { target: null },
-		} as unknown as MapLayerFeedContext;
-		const map = {
-			getLayer: () => undefined,
-			setPaintProperty: vi.fn(),
-		} as unknown as MapLibreMap;
-
-		MAP_LAYER_MODULES.find((module) => module.id === 'vehicles')?.feed(map, context);
-
-		expect(set).toHaveBeenCalledWith(
-			{ type: 'FeatureCollection', features: [] },
-			{
-				tickKey: 'tick-1',
-				stale: false,
-				fixFor,
-				shapeFor,
-				serverNowFn,
-				animate: true,
-			},
+	it('delivers presentation intent through the motion module interface', () => {
+		const draw = vi.fn();
+		const motion = { set: vi.fn(), destroy: vi.fn() };
+		const filter = { routes: new Set(), stops: new Set(), trips: new Set(), vehicles: new Set() };
+		const vehicles = { motion, draw, filter, alertIds: new Set(), selectedId: null };
+		MAP_LAYER_MODULES.find((module) => module.id === 'vehicles')?.feed(
+			{} as MapLibreMap,
+			{ vehicles } as unknown as MapLayerFeedContext,
 		);
+		expect(draw).toHaveBeenCalledWith(motion, filter, vehicles.alertIds, null);
 	});
 
 	it('feeds only modules whose semantic input changed, but force-feeds after reinstall', () => {
@@ -255,14 +211,10 @@ describe('map layer feed invariants', () => {
 				filter,
 				alertIds: new Set(),
 				selectedId: null,
-				serverNow: 123_456,
-				ttlS: 30,
 				tickKey: 'tick-1',
 				stale: false,
-				fixFor: vi.fn(() => null),
-				shapeFor: undefined,
-				serverNowFn: vi.fn(() => 123_456),
-				animate: false,
+				motionKey: false,
+				draw: vi.fn(),
 			},
 			stops: { items: [], filter, alertIds: new Set(), selectedId: null },
 			nearTarget: { target: null },

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectCompleteness } from './completeness';
-import type { TrendPoint } from '$lib/v1';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 const pt = (date: string, rate: number | null): TrendPoint => ({
 	date,

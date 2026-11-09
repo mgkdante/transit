@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HistoryArtifactContractError } from '$lib/v1/history';
-import { sha256Hex } from '$lib/v1/http';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import { HistoryArtifactContractError } from '#lib/v1/history/index.ts';
+import { sha256Hex } from '#lib/v1/http.ts';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 import { r2Adapter } from './r2';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const ISO = '2026-03-31T12:00:00Z';
 const GENERATION = 'a'.repeat(64);

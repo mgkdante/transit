@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectGradedPeriods, selectDayPercentiles } from './gradedPeriods';
-import type { StopReliabilityPeriod } from '$lib/v1/schemas';
+import type { StopReliabilityPeriod } from '#lib/v1/schemas/index.ts';
 
 const label = (g: string) => ({ day: 'Day', week: 'Week', month: 'Month' })[g] ?? g;
 

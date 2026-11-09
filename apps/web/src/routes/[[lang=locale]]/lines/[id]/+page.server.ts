@@ -1,11 +1,11 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { canonicalDetailTabLocation, detailTabFromSearchParams } from '$lib/site/detailTabs';
-import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-import { loadLineHistorySeed } from '$lib/features/lines/reliability/data/lineHistoryResource.svelte';
-import { getRouteReliability } from '$lib/v1/repositories/historic';
-import { getRoute } from '$lib/v1/repositories/static';
-import { serverV1Context, type IdentitySeed } from '$lib/v1/serverContext';
+import { canonicalDetailTabLocation, detailTabFromSearchParams } from '#lib/site/detailTabs.ts';
+import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
+import { loadLineHistorySeed } from '#lib/features/lines/reliability/data/lineHistoryResource.svelte.ts';
+import { getRouteReliability } from '#lib/v1/repositories/historic.ts';
+import { getRoute } from '#lib/v1/repositories/static.ts';
+import { serverV1Context, type IdentitySeed } from '#lib/v1/serverContext.ts';
 
 export const load: PageServerLoad = async (event) => {
 	const canonicalLocation = canonicalDetailTabLocation(event.url);

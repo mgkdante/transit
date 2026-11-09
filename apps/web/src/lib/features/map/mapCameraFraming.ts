@@ -1,6 +1,6 @@
 import { centerFromProviderBbox, type MapFitPadding } from '../../components/map/viewport';
-import type { Manifest } from '$lib/v1/schemas';
-import type { PublicProvider } from '$lib/v1/providers';
+import type { Manifest } from '#lib/v1/schemas/index.ts';
+import type { PublicProvider } from '#lib/v1/providers.ts';
 
 export function mapCameraFraming({
 	manifest,
@@ -17,13 +17,9 @@ export function mapCameraFraming({
 	};
 }
 
-const MAP_FIT_PADDING_PX = 40;
-// Symmetric side padding preserves the accepted desktop framing at all heights.
-const DESKTOP_SIDE_PAD_FRAC = 0.4;
-
-/** Derive camera padding from the hydration-safe layout snapshot and whole-map width. */
-export function deriveMapFitPadding(isDesktopLayout: boolean, mapWidthPx: number): MapFitPadding {
-	if (!isDesktopLayout || mapWidthPx <= 0) return MAP_FIT_PADDING_PX;
-	const side = Math.round(mapWidthPx * DESKTOP_SIDE_PAD_FRAC);
-	return { top: 0, bottom: 0, left: side, right: side };
+/** Hydration/poster fallback; the live camera uses measured chrome insets. */
+export function deriveMapFitPadding(isDesktopLayout: boolean, _mapWidthPx: number): MapFitPadding {
+	return isDesktopLayout
+		? { top: 160, bottom: 72, left: 280, right: 16 }
+		: { top: 160, bottom: 112, left: 16, right: 16 };
 }

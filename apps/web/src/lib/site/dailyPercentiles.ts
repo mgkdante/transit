@@ -1,6 +1,6 @@
-import { defineCopy, type Locale } from '$lib/i18n';
-import { fmtCount, fmtDelayMin } from '$lib/utils';
-import type { LineHistoryRange, StopHistoryRange } from '$lib/v1/history/families';
+import { defineCopy, type Locale } from '#lib/i18n/index.ts';
+import { fmtCount, fmtDelayMin } from '#lib/utils/index.ts';
+import type { LineHistoryRange, StopHistoryRange } from '#lib/v1/history/families.ts';
 
 const COPY = defineCopy({
 	fr: {

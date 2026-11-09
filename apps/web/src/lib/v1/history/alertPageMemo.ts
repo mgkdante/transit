@@ -1,4 +1,4 @@
-import type { AlertArchivePage } from '$lib/v1/schemas';
+import type { AlertArchivePage } from '#lib/v1/schemas/index.ts';
 
 export const ALERT_ARCHIVE_PAGE_MEMO_LIMIT = 64;
 

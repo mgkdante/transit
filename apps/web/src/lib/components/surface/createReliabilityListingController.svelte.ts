@@ -2,7 +2,7 @@ import type {
 	ReliabilityLoader,
 	ReliabilitySnapshot,
 	ReliabilityTarget,
-} from '$lib/v1/reliabilitySnapshot.svelte';
+} from '#lib/v1/reliabilitySnapshot.svelte.ts';
 
 export function isReliabilitySnapshotPending(snapshot: ReliabilitySnapshot): boolean {
 	return snapshot.phase === 'idle' || snapshot.phase === 'loading';

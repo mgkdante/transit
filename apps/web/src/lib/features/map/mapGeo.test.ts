@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { routeBoundsFromFile, zoomForNearMePrecision } from './mapGeo';
-import type { RouteFile } from '$lib/v1';
+import type { RouteFile } from '#lib/v1/index.ts';
 
 function route(directions: RouteFile['directions']): RouteFile {
 	return { generated_utc: '2026-06-21T00:00:00Z', id: 'r1', directions } as RouteFile;

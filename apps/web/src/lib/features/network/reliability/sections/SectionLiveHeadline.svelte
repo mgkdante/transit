@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { DashboardGrid } from '@yesid/ui/layout';
-	import { ExplainedMetricCard } from '$lib/components/dataviz';
+	import { ExplainedMetricCard } from '#lib/components/dataviz/index.ts';
 	import { TerminalPanel, type TerminalFooterItem } from '@yesid/ui/brand';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { KpiCardVM } from '../selectors/headlineKpis';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';

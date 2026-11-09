@@ -1,7 +1,7 @@
 import { render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import { buildLiveIndex } from '$lib/v1/live';
-import type { IsoUtc, StopFile, StopIndexEntry } from '$lib/v1/schemas';
+import { buildLiveIndex } from '#lib/v1/live/index.ts';
+import type { IsoUtc, StopFile, StopIndexEntry } from '#lib/v1/schemas/index.ts';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
 import { resolveMapSelection } from './selectionSession/mapSelection';
 

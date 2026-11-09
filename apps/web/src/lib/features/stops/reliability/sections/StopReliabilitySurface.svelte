@@ -1,55 +1,43 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { fmtDelayMin } from '$lib/utils';
-	import { formatDateKey } from '$lib/utils/time';
-	import { fromSearchParams, resolveWindow, type DateWindow } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { absenceSentence, absenceShort, describeAbsence } from '$lib/site/absence';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor } from '#lib/nav/index.ts';
+	import { fmtDelayMin } from '#lib/utils/index.ts';
+	import type { DateWindow } from '#lib/filters/index.ts';
+	import { absenceSentence, absenceShort, describeAbsence } from '#lib/site/absence.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import type { StopReliability } from '$lib/v1';
-	import type { OccupancyCode } from '$lib/v1/schemas';
+	import type { StopReliability } from '#lib/v1/index.ts';
+	import type { OccupancyCode } from '#lib/v1/schemas/index.ts';
 	import {
 		ArticleControlStack,
-		createRetainedHistoryUi,
 		ReliabilityPane,
 		GrainPicker,
 		HistoryNavigator,
-		type GrainSegment,
-	} from '$lib/components/surface';
-	import {
-		CollapsibleSection,
-		observeActiveToc,
-		revealTocTarget,
-		TocNav,
-		type TocEntry,
-	} from '@yesid/ui/brand';
-	import { onMount, type Snippet } from 'svelte';
-	import { ArticleSectionStack, ReliabilityRailLayout } from '$lib/components/layout';
+	} from '#lib/components/surface/index.ts';
+	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
+	import type { Snippet } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
+	import { ArticleSectionStack, ReliabilityRailLayout } from '#lib/components/layout/index.ts';
 	import { Button } from '@yesid/ui/button';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
-	import type { MetricKey, SupplementalMetricKey } from '$lib/metrics';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { weekdayLabel, shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
-	import { detailCopy as linesDetailCopy } from '$lib/features/lines/lines.copy';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import type { MetricKey, SupplementalMetricKey } from '#lib/metrics.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import { weekdayLabel, shiftLabel, dayTypeLabel } from '#lib/features/reliability/shiftGrains.ts';
+	import { detailCopy as linesDetailCopy } from '#lib/features/lines/lines.copy.ts';
 
 	import {
-		presentGrains,
-		defaultStopGrain,
-		STOP_GRAINS,
-		type StopGrain,
-	} from '../data/presentGrains';
-	import { selectDailyPercentiles } from '$lib/site/dailyPercentiles';
+		RELIABILITY_GRAINS as STOP_GRAINS,
+		type ReliabilityGrain as StopGrain,
+	} from '#lib/reliability/grains.ts';
+	import { selectDailyPercentiles } from '#lib/site/dailyPercentiles.ts';
 	import { applyRetainedStopHistory, clearRetainedStopHistory } from '../data/retainedHistory';
 	import type { StopHistoryResource } from '../data/stopHistoryResource.svelte';
 	import { selectGradedPeriods, selectDayPercentiles } from '../selectors/gradedPeriods';
 	import { selectRankedRoutes } from '../selectors/rankedRoutes';
 	import { selectWeekdaySeasonality } from '../selectors/weekdaySeasonality';
 	import { selectTimeOfDay } from '../selectors/timeOfDay';
-	import { hasHabits } from '$lib/reliability/habitsHeatmap';
+	import { hasHabits } from '#lib/reliability/habitsHeatmap.ts';
 	import { selectCrowdingMix } from '../selectors/crowdingMix';
 	import type { ExactDailyRangeIngredients } from '../selectors/dailyRange';
 	import { stopReliabilityCopy } from '../stops-reliability.copy';
@@ -86,97 +74,44 @@
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
 	const retainedDataBody = $derived(`${retainedDataAbsence.why}. ${copy.history.currentOnly}`);
 
-	const present = $derived(presentGrains(data.periods));
-	const dfltGrain = $derived(defaultStopGrain(present));
-
-	const seed = fromSearchParams(page.url.searchParams);
-	let grain = $state<StopGrain>(
-		seed.grain === 'week' || seed.grain === 'month' ? seed.grain : 'day',
-	);
-
-	let settled = $state(false);
-	$effect(() => {
-		if (settled) return;
-		settled = true;
-		if (!present.has(grain)) grain = dfltGrain;
-	});
-	$effect(() => {
-		if (settled && !present.has(grain)) grain = dfltGrain;
-	});
-
-	const currentHistoryDates = $derived(
-		[...new Set((data.daily ?? []).map((point) => point.date))].sort(),
-	);
-	const historyUi = createRetainedHistoryUi({
-		resource: () => history,
-		currentDates: () => currentHistoryDates,
-		copy: () => ({
-			...copy.history,
-			noData: absenceSentence('no-retained-data', locale),
-		}),
-		formatDate: (date) => formatDateKey(date, locale),
-	});
-	const historyRequested = $derived(historyUi.requested);
-	const explicitHistory = $derived(historyUi.explicit);
-	const retainedReady = $derived(historyUi.ready);
-	const availableHistoryDates = $derived(historyUi.availableDates);
-	const currentHistoryWindow = $derived.by<DateWindow | undefined>(() => {
-		if (
-			history == null ||
-			!historyRequested ||
-			history.state !== 'current' ||
-			history.index != null ||
-			historyUi.requestWindow == null
-		)
-			return undefined;
-		return resolveWindow(historyUi.requestWindow, new Set(currentHistoryDates));
-	});
-	const historyWindow = $derived<DateWindow | undefined>(
-		explicitHistory ? historyUi.resolvedWindow : currentHistoryWindow,
-	);
-	const effectiveWindow = $derived<DateWindow | null>(
-		windowOverride !== undefined ? windowOverride : (historyWindow ?? null),
-	);
-	const historyCoverageText = $derived(historyUi.coverageText);
-	const historySelectionText = $derived(
-		historyRequested ? historyUi.selectionText(historyWindow) : null,
-	);
-	const historyAnnouncement = $derived(historyUi.announcement);
-	const historyLiveAnnouncement = $derived(historyUi.liveAnnouncement);
-	const historyWire = $derived.by<Record<string, string | null>>(() => {
-		const grainValue = grain === 'day' ? null : grain;
-		if (history == null || windowOverride !== undefined)
-			return { grain: grainValue } as Record<string, string | null>;
-		return { grain: grainValue, ...historyUi.wireWindow(currentHistoryWindow) };
-	});
-	$effect(() => {
-		if (syncUrl) mirrorSearchParams(historyWire);
-	});
-
-	const grainLabels = $derived<Partial<Record<StopGrain, string>>>({
+	const grainLabels = $derived({
 		day: copy.grain.day,
 		week: copy.grain.week,
 		month: copy.grain.month,
 	});
-	const grainSegments = $derived<GrainSegment<StopGrain>[]>(
-		STOP_GRAINS.map((g) => ({ key: g, label: grainLabels[g] ?? g, available: present.has(g) })),
-	);
+	const view = createReliabilityViewState({
+		snapshot: () => data,
+		retained: {
+			resource: () => history,
+			copy: () => ({ ...copy.history, noData: absenceSentence('no-retained-data', locale) }),
+			window: () => windowOverride,
+		},
+		grains: { keys: STOP_GRAINS, labels: () => grainLabels },
+		apply: (current, retained) =>
+			retained ? applyRetainedStopHistory(current, retained) : clearRetainedStopHistory(current),
+		locale: () => locale,
+		verdict: { file: (data) => data, copy: () => copy.verdict },
+		url: () => (syncUrl ? {} : false),
+	});
+	const grain = $derived<StopGrain>(view.grain);
+	const grainSegments = $derived(view.segments);
+	const explicitHistory = $derived(view.history.active);
+	const retainedReady = $derived(view.history.ready);
+	const availableHistoryDates = $derived(view.navigator?.availableDates ?? []);
+	const historyWindow = $derived(view.navigator?.value);
+	const historySelectionText = $derived(view.navigator?.selectionText ?? null);
+	const effectiveWindow = $derived(view.window ?? null);
+	const historyAnnouncement = $derived(view.announcements.correction);
+	const historyLiveAnnouncement = $derived(view.announcements.live);
 	const windowCaption = $derived(copy.grain.window(grain));
 	const grainSummary = $derived(grainLabels[grain] ?? grain);
-
-	const selectedData = $derived.by<StopReliability>(() => {
-		if (!explicitHistory) return data;
-		if (retainedReady && history?.value != null) {
-			return applyRetainedStopHistory(data, history.value);
-		}
-		return clearRetainedStopHistory(data);
-	});
+	const selectedData = $derived(view.data);
 	const exactDailyRange = $derived.by<ExactDailyRangeIngredients | null>(() => {
-		if (!retainedReady || history?.value == null || historyWindow == null) return null;
-		const delay = history.value.aggregate.delay.value;
+		if (!retainedReady || view.history.value == null || historyWindow == null) return null;
+		const delay = view.history.value.aggregate.delay.value;
 		if (delay == null) return null;
 		return {
-			daysWithData: history.value.retainedDayCount,
+			daysWithData: view.history.value.retainedDayCount,
 			from: historyWindow.from,
 			to: historyWindow.to,
 			observationCount: delay.observationCount,
@@ -190,23 +125,14 @@
 	);
 	const retainedPercentiles = $derived(
 		explicitHistory && retainedReady
-			? selectDailyPercentiles(history?.value?.aggregate ?? null)
+			? selectDailyPercentiles(view.history.value?.aggregate ?? null)
 			: null,
 	);
 	const dayPercentiles = $derived(
 		explicitHistory ? retainedPercentiles : selectDayPercentiles(data.periods, grain),
 	);
 
-	const gradedPeriodRaw = $derived.by(() => {
-		const rows = (data.periods ?? []).filter((p) => p.grain === grain);
-		return rows.length > 0 ? rows[rows.length - 1] : null;
-	});
-	const stopVerdictHeadline = $derived<VerdictHeadline>({
-		otpPct: gradedPeriodRaw?.otp_pct ?? null,
-		observationCount: gradedPeriodRaw?.observation_count ?? null,
-		onTime: null,
-	});
-	const stopVerdict = $derived(selectVerdict(stopVerdictHeadline, grain, locale, copy.verdict));
+	const stopVerdict = $derived(view.verdict);
 
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: noObservationLabel });
@@ -275,59 +201,33 @@
 			children: [],
 		})),
 	);
-	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
 	const sectionIndex = (id: string): number => sectionNav.findIndex((section) => section.id === id);
-	const sectionKey = (id: string): string => `stop-reliability-card-${id}`;
 
-	let activeId = $state('');
-	let cardOpenSignals = $state<Record<string, number>>({});
-	let navigationGeneration = 0;
-	onMount(() => observeActiveToc((id) => (activeId = id)));
-
-	function openCard(id: string): void {
-		cardOpenSignals = {
-			...cardOpenSignals,
-			[id]: (cardOpenSignals[id] ?? 0) + 1,
-		};
-	}
-	function cardOpenSignal(id: string): number {
-		return cardOpenSignals[id] ?? 0;
-	}
-
-	async function navigate(id: string): Promise<void> {
-		const generation = ++navigationGeneration;
-		await revealTocTarget(id, {
-			beforeReveal: openableAnchors.has(id) ? openCard : undefined,
-			isCurrent: () => generation === navigationGeneration,
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
+	const navigation = useSectionJump(afterNavigate);
+	let sectionRoot = $state<HTMLElement>();
+	$effect(() => {
+		if (sectionRoot)
+			return navigation.register(tocEntries, { root: sectionRoot, landFragments: true });
+	});
+	const navigate = (id: string) =>
+		navigation.jump(id, { behavior: $prefersReducedMotion ? 'auto' : 'smooth' });
 </script>
 
 {#snippet metricInfo(key: MetricKey | SupplementalMetricKey, name: string)}
 	<MetricInfo class="stop-metric-info" metricKey={key} {locale} {name} side="bottom" />
 {/snippet}
 
-<div class="stop-reliability">
+<div bind:this={sectionRoot} class="stop-reliability">
 	<div data-slot="stop-reliability-sections">
 		{#snippet railContent({ closeSheet }: { closeSheet: () => void })}
 			{#snippet historyControls()}
-				<HistoryNavigator
-					mode="range"
-					{locale}
-					labels={copy.history.navigator}
-					value={historyWindow}
-					availableDates={availableHistoryDates}
-					coverageText={historyCoverageText}
-					selectionText={historySelectionText}
-					liveAnnouncement={false}
-					onRangeChange={historyUi.selectRange}
-				/>
+				<HistoryNavigator {...view.navigator!} />
 			{/snippet}
 			{#snippet primaryControls()}
 				<GrainPicker
 					segments={grainSegments}
-					bind:value={grain}
+					value={view.grain}
+					onSelect={view.selectGrain}
 					label={copy.grain.label}
 					variant="time-grid"
 				/>
@@ -338,7 +238,7 @@
 				</p>
 			{/snippet}
 
-			<CollapsibleSection title={copy.controlsLabel} sectionKey="stop-reliability-controls">
+			<CollapsibleSection independent title={copy.controlsLabel}>
 				<ArticleControlStack
 					history={availableHistoryDates.length > 0 ? historyControls : undefined}
 					primary={primaryControls}
@@ -349,8 +249,7 @@
 			<div class="rail-toc" data-slot="section-toc">
 				<TocNav
 					entries={tocEntries}
-					{activeId}
-					sectionKey="stop-reliability-toc"
+					{navigation}
 					onNavigate={(id) => {
 						closeSheet();
 						void navigate(id);
@@ -378,7 +277,7 @@
 					</p>
 				{/if}
 				{#if explicitHistory}
-					{#if history?.state === 'no-data'}
+					{#if view.history.state === 'no-data'}
 						<StateNotice
 							title={retainedDataAbsence.label}
 							body={retainedDataBody}
@@ -387,13 +286,13 @@
 						/>
 					{:else}
 						<div class="stop-history-state" data-slot="history-state">
-							{#if history?.state === 'loading-index' || history?.state === 'loading-range'}
+							{#if view.history.state === 'loading-index' || view.history.state === 'loading-range'}
 								<p data-slot="history-loading">{copy.history.loading}</p>
-							{:else if history?.state === 'partial'}
+							{:else if view.history.state === 'partial'}
 								<p data-slot="history-partial">{copy.history.partial}</p>
-							{:else if history?.state === 'error'}
+							{:else if view.history.state === 'error'}
 								<p data-slot="history-error">{copy.history.error}</p>
-								<Button variant="outline" size="sm" onclick={() => history?.retry()}>
+								<Button variant="outline" size="sm" onclick={() => view.history.retry()}>
 									{copy.history.retry}
 								</Button>
 							{/if}
@@ -408,9 +307,7 @@
 							headerVariant="article-summary"
 							anchor="stop-rel-trend"
 							index={sectionIndex('stop-rel-trend')}
-							sectionKey={sectionKey('stop-rel-trend')}
 							open={true}
-							openSignal={cardOpenSignal('stop-rel-trend')}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
@@ -439,9 +336,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-percentiles"
 								index={sectionIndex('stop-rel-percentiles')}
-								sectionKey={sectionKey('stop-rel-percentiles')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-percentiles')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -470,9 +365,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-pane"
 								index={sectionIndex('stop-rel-pane')}
-								sectionKey={sectionKey('stop-rel-pane')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-pane')}
 							>
 								<div class="stop-reliability-pane-body" data-slot="stop-reliability-pane">
 									{#if explicitHistory}
@@ -494,9 +387,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-habits"
 								index={sectionIndex('stop-rel-habits')}
-								sectionKey={sectionKey('stop-rel-habits')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-habits')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -519,9 +410,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-weekday"
 								index={sectionIndex('stop-rel-weekday')}
-								sectionKey={sectionKey('stop-rel-weekday')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-weekday')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -543,9 +432,7 @@
 								headerVariant="article-summary"
 								anchor="stop-rel-time"
 								index={sectionIndex('stop-rel-time')}
-								sectionKey={sectionKey('stop-rel-time')}
 								open={true}
-								openSignal={cardOpenSignal('stop-rel-time')}
 							>
 								{#snippet headerActions()}
 									<MetricInfo
@@ -573,9 +460,7 @@
 							headerVariant="article-summary"
 							anchor="stop-rel-crowding"
 							index={sectionIndex('stop-rel-crowding')}
-							sectionKey={sectionKey('stop-rel-crowding')}
 							open={true}
-							openSignal={cardOpenSignal('stop-rel-crowding')}
 						>
 							{#snippet headerActions()}
 								<MetricInfo
@@ -602,9 +487,7 @@
 							headerVariant="article-summary"
 							anchor="stop-rel-by-route"
 							index={sectionIndex('stop-rel-by-route')}
-							sectionKey={sectionKey('stop-rel-by-route')}
 							open={true}
-							openSignal={cardOpenSignal('stop-rel-by-route')}
 						>
 							{#snippet headerActions()}
 								<MetricInfo

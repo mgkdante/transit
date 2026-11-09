@@ -1,10 +1,10 @@
-import { normalizeSnapshotPointer, resolveUrl } from '$lib/v1/config';
-import { getEntityJson } from '$lib/v1/http';
-import { BasemapFileSchema } from '$lib/v1/schemas/basemap';
-import { RouteFileSchema } from '$lib/v1/schemas/route';
-import { RoutesIndexSchema } from '$lib/v1/schemas/routes_index';
-import { StopFileSchema } from '$lib/v1/schemas/stop';
-import { StopsIndexSchema } from '$lib/v1/schemas/stops_index';
+import { normalizeSnapshotPointer, resolveUrl } from '#lib/v1/config.ts';
+import { getEntityJson } from '#lib/v1/http.ts';
+import { BasemapFileSchema } from '#lib/v1/schemas/basemap.ts';
+import { RouteFileSchema } from '#lib/v1/schemas/route.ts';
+import { RoutesIndexSchema } from '#lib/v1/schemas/routes_index.ts';
+import { StopFileSchema } from '#lib/v1/schemas/stop.ts';
+import { StopsIndexSchema } from '#lib/v1/schemas/stops_index.ts';
 import {
 	fetchOf,
 	providerOf,

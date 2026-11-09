@@ -1,11 +1,11 @@
 import { fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
-import type { GeocodeSuggestion } from '$lib/geocode/types';
+import type { GeocodeSuggestion } from '#lib/geocode/types.ts';
 import MapNearMeControl from './MapNearMeControl.svelte';
 import { copy } from './map.copy';
 
-vi.mock('$lib/v1/boot', () => ({ getV1Context: () => ({ manifest: { provider: 'stm' } }) }));
+vi.mock('#lib/v1/boot', () => ({ getV1Context: () => ({ manifest: { provider: 'stm' } }) }));
 
 afterEach(() => {
 	vi.useRealTimers();

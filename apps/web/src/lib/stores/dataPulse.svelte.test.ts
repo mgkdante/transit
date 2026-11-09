@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Manifest } from '$lib/v1/schemas';
+import type { Manifest } from '#lib/v1/schemas/index.ts';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const mocks = vi.hoisted(() => ({
 	getManifestFresh: vi.fn<() => Promise<Manifest>>(),
 	bumpEpoch: vi.fn<() => void>(),
 }));
-vi.mock('$lib/v1/repositories/manifest', () => ({
+vi.mock('#lib/v1/repositories/manifest.ts', () => ({
 	getManifestFresh: mocks.getManifestFresh,
 }));
 vi.mock('./refresh.svelte', () => ({
@@ -524,9 +524,9 @@ describe('dataPulse — lifecycle', () => {
 describe('dataPulse — SSR safety', () => {
 	it('subscribe() is a no-op without a browser (no timer, no poll)', async () => {
 		vi.resetModules();
-		vi.doMock('$app/environment', () => ({ browser: false }));
+		vi.doMock('$app/env', () => ({ browser: false }));
 		const freshSpy = vi.fn();
-		vi.doMock('$lib/v1/repositories/manifest', () => ({ getManifestFresh: freshSpy }));
+		vi.doMock('#lib/v1/repositories/manifest.ts', () => ({ getManifestFresh: freshSpy }));
 		vi.doMock('./refresh.svelte', () => ({ dataRefresh: { bumpEpoch: vi.fn() } }));
 		const { dataPulse: ssrPulse } = await import('./dataPulse.svelte');
 
@@ -535,8 +535,8 @@ describe('dataPulse — SSR safety', () => {
 		expect(freshSpy).not.toHaveBeenCalled();
 		expect(typeof dispose).toBe('function');
 		dispose();
-		vi.doUnmock('$app/environment');
-		vi.doUnmock('$lib/v1/repositories/manifest');
+		vi.doUnmock('$app/env');
+		vi.doUnmock('#lib/v1/repositories/manifest.ts');
 		vi.doUnmock('./refresh.svelte');
 		vi.resetModules();
 	});

@@ -3,9 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import EdgeState from './EdgeState.svelte';
 import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 const LOCALES: Locale[] = ['en', 'fr'];
 
@@ -142,6 +142,7 @@ describe('EdgeState — error-v1 retry affordance', () => {
 		});
 		const btn = getByText('Réessayer');
 		expect(btn).toBeInTheDocument();
+		expect(btn).toHaveClass('min-h-11');
 		await fireEvent.click(btn);
 		expect(onRetry).toHaveBeenCalledOnce();
 	});

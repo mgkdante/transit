@@ -1,18 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import {
-	ABSENCE_COPY,
-	describeAbsence,
-	known,
-	absent,
-	fieldAbsenceReason,
-	type AbsenceReasonKey,
-} from './absence';
+import { ABSENCE_COPY, describeAbsence, known, absent, type AbsenceReasonKey } from './absence';
 import * as absenceApi from './absence';
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 
 const LOCALES: Locale[] = ['en', 'fr'];
 
 const ALL_KEYS: AbsenceReasonKey[] = [
+	'report-behind',
+	'refresh-unavailable',
+	'not-loaded',
 	'metro-no-realtime',
 	'closed-opens-at',
 	'overnight-opens-at',
@@ -182,15 +178,5 @@ describe('describeAbsence — pure resolver', () => {
 		const d = describeAbsence('totally-made-up' as AbsenceReasonKey, 'en');
 		expect(d.label).toBe('Unknown');
 		expect(d.why).toBe('not reported in the live feed');
-	});
-});
-
-describe('fieldAbsenceReason — thin per-field inferrer', () => {
-	it('a stale entity is not-reporting', () => {
-		expect(fieldAbsenceReason({ stale: true })).toBe('not-reporting');
-	});
-	it('a present entity with a missing field is not-reported', () => {
-		expect(fieldAbsenceReason({ stale: false })).toBe('not-reported');
-		expect(fieldAbsenceReason({})).toBe('not-reported');
 	});
 });

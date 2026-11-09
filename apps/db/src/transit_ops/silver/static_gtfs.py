@@ -1501,6 +1501,37 @@ def _pin_static_archive_source(connection: Connection, archive: BronzeStaticArch
         raise ValueError("Static archive source is no longer available for loading")
 
 
+def refresh_trip_service_spans(
+    connection: Connection, *, provider_id: str, dataset_version_id: int
+) -> None:
+    """Replace a version's spans within its static-load transaction."""
+    params = {"provider_id": provider_id, "dataset_version_id": dataset_version_id}
+    connection.execute(text("""
+        DELETE FROM gold.trip_service_span
+        WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id
+    """), params)
+    connection.execute(text("""
+INSERT INTO gold.trip_service_span
+    (provider_id, dataset_version_id, route_id, trip_id, service_id, first_seconds, last_seconds)
+SELECT t.provider_id, t.dataset_version_id, t.route_id, t.trip_id, t.service_id,
+           min(split_part(COALESCE(st.departure_time, st.arrival_time), ':', 1)::bigint * 3600
+               + split_part(COALESCE(st.departure_time, st.arrival_time), ':', 2)::int * 60
+               + split_part(COALESCE(st.departure_time, st.arrival_time), ':', 3)::int
+           ) AS first_seconds,
+           max(split_part(COALESCE(st.arrival_time, st.departure_time), ':', 1)::bigint * 3600
+               + split_part(COALESCE(st.arrival_time, st.departure_time), ':', 2)::int * 60
+               + split_part(COALESCE(st.arrival_time, st.departure_time), ':', 3)::int
+           ) AS last_seconds
+    FROM silver.trips t
+    JOIN silver.stop_times st
+      ON st.provider_id = t.provider_id AND st.dataset_version_id = t.dataset_version_id
+     AND st.trip_id = t.trip_id
+    WHERE COALESCE(st.departure_time, st.arrival_time) IS NOT NULL
+      AND t.provider_id = :provider_id AND t.dataset_version_id = :dataset_version_id
+    GROUP BY t.dataset_version_id, t.trip_id
+    """), params)
+
+
 def load_static_zip_to_silver(
     connection: Connection,
     *,
@@ -1572,6 +1603,9 @@ def load_static_zip_to_silver(
                 statement=CALENDAR_DATES_INSERT,
             ),
         }
+        refresh_trip_service_spans(
+            connection, provider_id=archive.provider_id, dataset_version_id=dataset_version_id
+        )
         optional_row_counts = {
             "agency": load_member(
                 member_key="agency.txt",

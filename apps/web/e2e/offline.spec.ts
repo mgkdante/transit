@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
+import { navPillCopy } from '../src/lib/i18n/messages';
 import { AUDIT_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE as locale } from '../src/lib/i18n/config';
 

@@ -19,12 +19,13 @@
 </script>
 
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import { onDestroy, onMount } from 'svelte';
-	import { intl, getLocale } from '$lib/i18n';
+	import { intl, getLocale } from '#lib/i18n/index.ts';
 	import { theme } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { mapCopy } from './map.copy';
-	import { getV1Context } from '$lib/v1/boot';
+	import { getV1Context } from '#lib/v1/boot.ts';
 
 	interface Props {
 		importHero?: () => Promise<ProgressiveMapHeroModule>;
@@ -260,11 +261,12 @@
 			{#if phase === 'failed'}
 				<div class="map-progressive-failure" role="alert">
 					<p>{t.mapImportError}</p>
-					<button
+					<Button
 						type="button"
-						class="map-progressive-action"
+						size="sm"
+						class="mt-4 min-h-11"
 						disabled={liveRetryPending}
-						onclick={retry}>{t.mapImportRetry}</button
+						onclick={retry}>{t.mapImportRetry}</Button
 					>
 				</div>
 			{/if}
@@ -386,29 +388,6 @@
 		font: 600 0.72rem/1.3 var(--font-mono);
 		letter-spacing: 0.04em;
 		color: color-mix(in srgb, var(--reflective) 82%, transparent);
-	}
-
-	.map-progressive-action {
-		min-height: 2.75rem;
-		margin-top: 1rem;
-		padding: 0.65rem 1rem;
-		border: 1px solid color-mix(in srgb, var(--reflective) 68%, transparent);
-		border-radius: var(--radius-md);
-		background: var(--primary);
-		color: var(--primary-foreground);
-		font: inherit;
-		font-weight: 700;
-		cursor: pointer;
-	}
-
-	.map-progressive-action:focus-visible {
-		outline: 3px solid var(--ring);
-		outline-offset: 3px;
-	}
-
-	.map-progressive-action:disabled {
-		cursor: wait;
-		opacity: 0.72;
 	}
 
 	.map-progressive-status,

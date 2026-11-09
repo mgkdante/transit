@@ -1,69 +1,67 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { onMount, untrack } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import {
 		absenceSentence,
 		absenceShort,
 		describeAbsence,
 		routeNameFallback,
-	} from '$lib/site/absence';
-	import { routeFor } from '$lib/nav';
+	} from '#lib/site/absence.ts';
+	import { routeFor } from '#lib/nav/index.ts';
 	import { desktop } from '@yesid/ui/state';
-	import { mapSearchFor, fromSearchParams, toSearchParams, emptyFilterState } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
+	import { mapSearchFor } from '#lib/filters/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { formatDateKey, formatRelativeSeconds } from '$lib/utils/time';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtNumber as sharedFmtNumber,
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
-	} from '$lib/utils';
-	import { getV1Context } from '$lib/v1/boot';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { getNetworkTrend } from '$lib/v1/repositories/historic';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import type { NetworkFile } from '$lib/v1/schemas/network';
-	import type { NetworkTrend, TrendPoint } from '$lib/v1/schemas/network_trend';
-	import type { Provenance } from '$lib/v1/schemas/provenance';
-	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas/types';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import { shiftLabel, dayTypeLabel } from '$lib/features/reliability/shiftGrains';
+	} from '#lib/utils/index.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { getNetworkTrend } from '#lib/v1/repositories/historic.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import type { NetworkFile } from '#lib/v1/schemas/network.ts';
+	import type { NetworkTrend, TrendPoint } from '#lib/v1/schemas/network_trend.ts';
+	import type { Provenance } from '#lib/v1/schemas/provenance.ts';
+	import type { OccupancyCode, StatusCode } from '#lib/v1/schemas/types.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import { shiftLabel, dayTypeLabel } from '#lib/features/reliability/shiftGrains.ts';
 	import {
 		ArticleControlStack,
-		createRetainedHistoryUi,
 		FreshnessStamp,
 		ConformanceBadge,
 		ResourceBoundary,
 		GrainPicker,
 		HistoryNavigator,
 		type GrainSegment,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import {
 		SurfaceRail,
 		type SurfaceRailContext,
-		type SurfaceRailPresentation,
 		ArticleHeader,
 		DetailFrame,
 	} from '@yesid/ui/layout';
-	import { historyRangeRequestFromSearchParams } from '$lib/v1/history/rangeResource.svelte';
-	import { CollapsibleSection, revealTocTarget, TocNav, type TocEntry } from '@yesid/ui/brand';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { ArticleKeywords, ArticleSectionStack } from '$lib/components/layout';
-	import { EdgeState } from '$lib/components/edge';
+	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
+	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
+	import { ArticleKeywords, ArticleSectionStack } from '#lib/components/layout/index.ts';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { VerdictBanner } from '$lib/components/brand';
-	import { selectVerdict, type VerdictHeadline } from '$lib/v1/verdict';
-	import type { MetricKey } from '$lib/metrics';
-	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import type { MetricKey } from '#lib/metrics.ts';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
 
 	import {
-		presentGrains,
-		defaultNetworkGrain,
-		NETWORK_GRAINS,
-		type NetworkGrain,
-	} from '../data/presentGrains';
+		RELIABILITY_GRAINS as NETWORK_GRAINS,
+		type ReliabilityGrain as NetworkGrain,
+	} from '#lib/reliability/grains.ts';
 	import { WINDOWS, bestFitWindow, windowedSeries, type WindowDays } from '../data/trendWindow';
 	import { createNetworkHistoryResource } from '../data/networkHistoryResource.svelte';
 	import { selectHeadlineKpis } from '../selectors/headlineKpis';
@@ -117,7 +115,7 @@
 		seed: () => trendSeed,
 	});
 	const history = createNetworkHistoryResource(
-		historyRangeRequestFromSearchParams(page.url.searchParams),
+		historyRangeRequestFromSearchParams(new URLSearchParams(page.url.search)),
 	);
 	onMount(() => () => history.destroy());
 	const provenance = createResource(() => getProvenance(), {
@@ -138,12 +136,6 @@
 	const fmtCancel = (v: number | null): string | null =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
 
-	const feedAge = $derived.by<string | null>(() => {
-		const s = live.network?.feed_freshness_s ?? null;
-		if (s == null) return null;
-		return formatRelativeSeconds(s + (live.ageSeconds ?? 0), locale);
-	});
-
 	const kpis = $derived.by(() =>
 		live.network
 			? selectHeadlineKpis(live.network, {
@@ -159,12 +151,7 @@
 				})
 			: null,
 	);
-	const networkHeadline = $derived<VerdictHeadline>({
-		otpPct: live.network?.on_time_pct ?? null,
-		observationCount: null,
-		onTime: null,
-	});
-	const networkVerdict = $derived(selectVerdict(networkHeadline, 'day', locale, t.verdict));
+
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -217,19 +204,22 @@
 		}),
 	);
 
-	const historyUi = createRetainedHistoryUi({
-		resource: () => history,
-		copy: () => ({
-			...t.history,
-			noData: absenceSentence('no-retained-data', locale),
-		}),
-		formatDate: (date) => formatDateKey(date, locale),
+	const grainLabels = $derived({ day: t.grain.day, week: t.grain.week, month: t.grain.month });
+	const view = createReliabilityViewState({
+		snapshot: () => trend.data,
+		retained: {
+			resource: () => history,
+			copy: () => ({ ...t.history, noData: absenceSentence('no-retained-data', locale) }),
+		},
+		grains: { keys: NETWORK_GRAINS, labels: () => grainLabels },
+		apply: (_current, retained) => retained,
+		verdict: { file: (data) => data, headline: (retained) => retained.headline },
+		locale: () => locale,
 	});
-	const explicitHistory = $derived(historyUi.explicit);
-	const retainedReady = $derived(historyUi.ready);
-	const selectedTrend = $derived(
-		explicitHistory ? (retainedReady ? history.value : null) : trend.data,
-	);
+	const explicitHistory = $derived(view.history.active);
+	const retainedReady = $derived(view.history.ready);
+	const selectedTrend = $derived(view.data);
+
 	const dailyChange = $derived.by(() => {
 		const series = selectedTrend?.series ?? [];
 		const latest = series.at(-1);
@@ -256,75 +246,15 @@
 	const weeklySeries = $derived<readonly TrendPoint[]>(selectedTrend?.weekly ?? []);
 	const monthlySeries = $derived<readonly TrendPoint[]>(selectedTrend?.monthly ?? []);
 	const allSeries = $derived({ daily: dailySeries, weekly: weeklySeries, monthly: monthlySeries });
-	const present = $derived(presentGrains(allSeries));
-
-	const historyDates = $derived(historyUi.availableDates);
-	const historyWindow = $derived(explicitHistory ? historyUi.resolvedWindow : undefined);
-	const historyCoverageText = $derived(historyUi.coverageText);
-	const historySelectionText = $derived(
-		explicitHistory ? historyUi.selectionText(historyUi.resolvedWindow) : null,
-	);
-	const historyAnnouncement = $derived(historyUi.announcement);
-
-	let grainKey = $state<NetworkGrain>(
-		(() => {
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'week' || seeded === 'month' ? seeded : 'day';
-		})(),
-	);
-	const grain = $derived<NetworkGrain>(grainKey);
+	const grain = $derived<NetworkGrain>(view.grain);
+	const grainKey = $derived(view.grain);
+	const historyAnnouncement = $derived(view.announcements.correction);
+	const networkVerdict = $derived(view.verdict);
 	const isDailyGrain = $derived(grain === 'day');
-
-	const grainLabels: Partial<Record<NetworkGrain, string>> = $derived({
-		day: t.grain.day,
-		week: t.grain.week,
-		month: t.grain.month,
-	});
-	const showGrainPicker = $derived(present.size > 1);
-
-	const uid = $props.id();
-	const grainDisabledReason = $derived(absenceSentence('no-observations', locale));
-	const grainSegments = $derived<GrainSegment<NetworkGrain>[]>(
-		NETWORK_GRAINS.map((key) => {
-			const available = present.has(key);
-			return {
-				key,
-				label: grainLabels[key] ?? key,
-				available,
-				...(available
-					? {}
-					: { describedById: `${uid}-grain-reason-${key}`, title: grainDisabledReason }),
-			};
-		}),
-	);
-	function grainSegmentsFor(presentation: SurfaceRailPresentation): GrainSegment<NetworkGrain>[] {
-		return grainSegments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
-
-	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = defaultNetworkGrain(present);
-	});
-
-	const historyWire = $derived.by<{
-		grain: string | null;
-		from: string | null;
-		to: string | null;
-	}>(() => {
-		const state = emptyFilterState();
-		if (grainKey !== 'day') state.grain = grainKey;
-		const windowWire = historyUi.wireWindow();
-		return {
-			grain: toSearchParams(state).get('grain'),
-			...windowWire,
-		};
-	});
-	$effect(() => mirrorSearchParams(historyWire));
+	const showGrainPicker = $derived(view.segments.filter((segment) => segment.available).length > 1);
 
 	const currentDailySeries = $derived<readonly TrendPoint[]>(trend.data?.series ?? []);
+	// This trailing-day chart window is independent of the retained-history selection.
 	const bestFit = $derived<WindowDays>(bestFitWindow(currentDailySeries.length));
 
 	let windowKey = $state('7');
@@ -371,7 +301,9 @@
 	let retardKey = $state('p90');
 	const delayAvailabilityKnown = $derived(
 		explicitHistory &&
-			(history.state === 'ready' || history.state === 'partial' || history.state === 'no-data'),
+			(view.history.state === 'ready' ||
+				view.history.state === 'partial' ||
+				view.history.state === 'no-data'),
 	);
 	const p90Available = $derived(
 		isDailyGrain && (!delayAvailabilityKnown || windowed.some((point) => point.p90_min != null)),
@@ -382,7 +314,7 @@
 	const showRetardPicker = $derived(!delayAvailabilityKnown || p90Available || avgAvailable);
 	const showSecondaryControls = $derived((isDailyGrain && !explicitHistory) || showRetardPicker);
 	const hasViewControls = $derived(
-		history.index != null || showGrainPicker || showSecondaryControls,
+		view.history.discovered || showGrainPicker || showSecondaryControls,
 	);
 	const retardSegments = $derived.by<GrainSegment<string>[]>(() => [
 		{ key: 'p90', label: t.trend.retardP90, available: p90Available },
@@ -486,14 +418,20 @@
 			children: [],
 		})),
 	);
-	let activeId = $state('');
-	function navigate(id: string): void {
-		void revealTocTarget(id, {
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-		});
-	}
+	const navigation = useSectionJump(afterNavigate);
+	const navigate = (id: string) =>
+		navigation.jump(id, { behavior: $prefersReducedMotion ? 'auto' : 'smooth' });
 	const railSummary = $derived(grainLabels[grainKey] ?? grainKey);
 	const articleMeta = $derived([t.article.sections(tocEntries.length)]);
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'network',
+			networkFeedAgeAtPublication: live.network?.feed_freshness_s ?? null,
+		}),
+	);
 </script>
 
 <p
@@ -601,42 +539,24 @@
 	</ArticleSectionStack>
 {/snippet}
 
-{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
-		<HistoryNavigator
-			mode="range"
-			{locale}
-			labels={t.history.navigator}
-			value={historyWindow}
-			availableDates={historyDates}
-			coverageText={historyCoverageText}
-			selectionText={historySelectionText}
-			announcement={historyAnnouncement}
-			liveAnnouncement={false}
-			onRangeChange={historyUi.selectRange}
-		/>
+		<HistoryNavigator {...view.navigator!} announcement={historyAnnouncement} />
 	{/snippet}
 	{#snippet primaryControls()}
 		<GrainPicker
-			segments={presentedGrainSegments}
-			bind:value={grainKey}
+			segments={view.segments}
+			value={view.grain}
+			onSelect={view.selectGrain}
 			label={t.grain.label}
 			variant="time-grid"
 		/>
-		{#each presentedGrainSegments as seg (seg.key)}
-			{#if seg.describedById}
-				<span id={seg.describedById} class="network-reason sr-only" data-slot="controls-reason"
-					>{grainDisabledReason}</span
-				>
-			{/if}
-		{/each}
 	{/snippet}
 
 	{#if hasViewControls}
-		<CollapsibleSection title={t.viewControlsLabel} sectionKey="network-controls">
+		<CollapsibleSection independent title={t.viewControlsLabel}>
 			<ArticleControlStack
-				history={history.index != null ? historyControls : undefined}
+				history={view.history.discovered ? historyControls : undefined}
 				primary={showGrainPicker ? primaryControls : undefined}
 				secondary={showSecondaryControls ? windowControls : undefined}
 			/>
@@ -646,8 +566,7 @@
 	<div class="rail-toc" data-slot="section-toc">
 		<TocNav
 			entries={tocEntries}
-			{activeId}
-			sectionKey="network-toc"
+			{navigation}
 			onNavigate={(id) => {
 				navigate(id);
 				closeSheet();
@@ -671,9 +590,12 @@
 <DetailFrame
 	class="network-detail"
 	railScroll
-	bind:activeId
 	rail={railCell}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation,
+		landFragments: true,
+		entries: tocEntries,
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -687,27 +609,19 @@
 			titleId="network-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 			{#snippet actions()}
 				<div class="network-feed-health">
-					<FreshnessStamp
-						variant="live"
-						generatedUtc={live.generatedUtc}
-						ageSeconds={live.ageSeconds}
-						isStale={live.isStale}
-						degraded={live.error != null}
-						label={live.error ? t.snapshotRefreshFailed : undefined}
-						{locale}
-					/>
-					{#if feedAge != null}
+					<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
+					{#if presentation.networkFeedAgeText != null}
 						<span
 							class="network-feed-age"
 							data-slot="feed-age"
-							aria-label={`${t.feedAge.a11yPrefix} ${feedAge}`}
+							aria-label={`${t.feedAge.a11yPrefix} ${presentation.networkFeedAgeText}`}
 						>
 							<span class="network-feed-age-label">{t.feedAge.label}</span>
-							<span class="network-feed-age-value">{feedAge}</span>
+							<span class="network-feed-age-value">{presentation.networkFeedAgeText}</span>
 						</span>
 					{/if}
 					<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
@@ -768,9 +682,9 @@
 			aria-label={t.historicRegion}
 		>
 			{#if explicitHistory}
-				{#if retainedReady && history.value != null}
+				{#if retainedReady && view.history.value != null}
 					<div class="network-history-notes" data-slot="history-scope-notes">
-						{#if history.state === 'partial'}
+						{#if view.history.state === 'partial'}
 							<p data-slot="history-partial">{t.history.partial}</p>
 						{/if}
 						<p data-slot="history-daily-only">{t.history.dailyOnly}</p>
@@ -779,7 +693,7 @@
 						{/if}
 					</div>
 					{@render historicBoard()}
-				{:else if history.state === 'no-data'}
+				{:else if view.history.state === 'no-data'}
 					<StateNotice
 						title={retainedDataAbsence.label}
 						body={retainedDataAbsence.why}
@@ -788,12 +702,12 @@
 						aria-live="polite"
 						data-slot="history-no-data"
 					/>
-				{:else if history.state === 'error'}
+				{:else if view.history.state === 'error'}
 					<EdgeState
 						variant="error-v1"
 						lang={locale}
 						layout={edgeLayout}
-						onRetry={() => history.retry()}
+						onRetry={() => view.history.retry()}
 					/>
 				{:else}
 					<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />

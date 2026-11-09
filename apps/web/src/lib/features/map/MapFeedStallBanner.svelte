@@ -1,105 +1,20 @@
-<script lang="ts" module>
-	export type MapFeedBannerState =
-		| 'selected-family-failure'
-		| 'global-stall'
-		| 'unavailable'
-		| 'no-vehicles'
-		| 'idle';
-
-	export function deriveMapFeedBannerState({
-		selectedFamilyFailureMessage,
-		isStale,
-		liveEdgeState,
-		liveEdgeMessage,
-	}: {
-		selectedFamilyFailureMessage: string | null;
-		isStale: boolean;
-		liveEdgeState: 'unavailable' | 'no-vehicles' | null;
-		liveEdgeMessage: string | null;
-	}): MapFeedBannerState {
-		if (selectedFamilyFailureMessage) return 'selected-family-failure';
-		if (isStale) return 'global-stall';
-		if (liveEdgeMessage && liveEdgeState) return liveEdgeState;
-		return 'idle';
-	}
-</script>
-
 <script lang="ts">
-	import { clock } from '@yesid/ui/state';
-	import type { Locale } from '$lib/i18n';
-	import { ageSeconds as ageFromUtc, formatRelativeSeconds } from '$lib/utils/time';
-
-	import { copy as MAP_COPY } from './map.copy';
-
-	interface Props {
-		generatedUtc: string | null;
-		ageSeconds?: number | null;
-		isStale: boolean;
-		locale: Locale;
-		selectedFamilyFailureMessage?: string | null;
-		liveEdgeState?: 'unavailable' | 'no-vehicles' | null;
-		liveEdgeMessage?: string | null;
-		state?: MapFeedBannerState;
-	}
-
-	let {
-		generatedUtc,
-		ageSeconds = undefined,
-		isStale,
-		locale,
-		selectedFamilyFailureMessage = null,
-		liveEdgeState = null,
-		liveEdgeMessage = null,
-		state = undefined,
-	}: Props = $props();
-
-	const t = $derived(MAP_COPY[locale]);
-
-	$effect(() => clock.subscribe());
-
-	const effectiveAge = $derived<number | null>(
-		ageSeconds !== undefined
-			? ageSeconds
-			: generatedUtc
-				? (() => {
-						const age = ageFromUtc(generatedUtc, clock.serverNow);
-						return Number.isNaN(age) ? null : Math.max(0, age);
-					})()
-				: null,
-	);
-	const relative = $derived(
-		effectiveAge == null ? '' : formatRelativeSeconds(effectiveAge, locale),
-	);
-	const stallMessage = $derived(t.feedNotResponding(relative));
-	const resolvedState = $derived(
-		state ??
-			deriveMapFeedBannerState({
-				selectedFamilyFailureMessage,
-				isStale,
-				liveEdgeState,
-				liveEdgeMessage,
-			}),
-	);
-	const message = $derived(
-		resolvedState === 'selected-family-failure'
-			? (selectedFamilyFailureMessage ?? '')
-			: resolvedState === 'global-stall'
-				? stallMessage
-				: resolvedState === 'idle'
-					? ''
-					: (liveEdgeMessage ?? ''),
-	);
+	import type { LivePresentation } from '#lib/v1/live/livePresentation.ts';
+	let { presentation }: { presentation: LivePresentation } = $props();
+	const resolvedState = $derived(presentation.bannerState);
 </script>
 
 <div
 	class="map-overlay map-live-edge"
-	class:map-feed-stall={resolvedState === 'global-stall'}
-	data-slot={resolvedState === 'global-stall' ? 'map-feed-stall' : undefined}
+	class:map-feed-stall={resolvedState === 'global-stall' || resolvedState === 'partial-stall'}
+	data-slot={resolvedState === 'global-stall' || resolvedState === 'partial-stall'
+		? 'map-feed-stall'
+		: undefined}
 	data-state={resolvedState}
 	role="status"
 	aria-live="polite"
 >
-	{message}
+	{presentation.notice.message}
 </div>
 
 <style>

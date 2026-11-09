@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Snippet } from 'svelte';
-	import type { Chip } from '$lib/filters';
-	import type { Alert } from '$lib/v1/schemas';
-	import { BottomSheet } from '$lib/components/shell';
+	import type { Chip } from '#lib/filters/index.ts';
+	import type { Alert } from '#lib/v1/schemas/index.ts';
+	import { BottomSheet } from '#lib/components/shell/index.ts';
 	import type {
 		MapSelection,
 		MapSelectionDetail as MapSelectionDetailModel,
@@ -21,6 +21,8 @@
 		canGoBack: boolean;
 		onback: () => void;
 		selectedDetail: MapSelectionDetailModel | null;
+		alertsStale?: boolean;
+		alertsAgeSeconds?: number | null;
 		notReporting: { ageS: number } | null;
 		selectionPresence?: SelectionPresence | null;
 		selectionSourceHealth?: SelectionSourceHealth | null;
@@ -42,6 +44,8 @@
 		canGoBack,
 		onback,
 		selectedDetail,
+		alertsStale = false,
+		alertsAgeSeconds = null,
 		notReporting,
 		selectionPresence = null,
 		selectionSourceHealth = null,
@@ -85,6 +89,8 @@
 	{#if selectedDetail}
 		<div class="mobile-detail-body" data-mobile-detail-body>
 			<MapSelectionDetail
+				{alertsStale}
+				{alertsAgeSeconds}
 				detail={selectedDetail}
 				{locale}
 				{timeZone}

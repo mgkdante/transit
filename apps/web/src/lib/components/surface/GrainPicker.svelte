@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { SegmentedChoice, type SegmentedChoiceOption } from '@yesid/ui/brand';
 
 	export type GrainPickerVariant = 'default' | 'time-grid';
@@ -20,6 +20,7 @@
 		readonly label: string;
 		readonly variant?: GrainPickerVariant;
 		readonly class?: string;
+		readonly onSelect?: (key: K) => void;
 	}
 
 	let {
@@ -28,7 +29,16 @@
 		label,
 		variant = 'default',
 		class: className,
+		onSelect,
 	}: GrainPickerProps = $props();
+	const uid = $props.id();
+	const describedSegments = $derived(
+		segments.map((segment) =>
+			segment.available === false && segment.title && !segment.describedById
+				? { ...segment, describedById: `${uid}-reason-${segment.key}` }
+				: segment,
+		),
+	);
 
 	function pointerTitle(segment: GrainSegment): string | undefined {
 		if (segment.available !== false) {
@@ -39,7 +49,7 @@
 	}
 
 	const options = $derived(
-		segments.map(
+		describedSegments.map(
 			(segment): SegmentedChoiceOption => ({
 				key: segment.key,
 				label: segment.label,
@@ -53,6 +63,7 @@
 
 	function select(key: string): void {
 		value = key;
+		onSelect?.(key);
 	}
 </script>
 
@@ -66,3 +77,11 @@
 	data-slot="grain-picker"
 	class={cn('grain-picker', variant === 'time-grid' && 'grain-picker--time-grid', className)}
 />
+
+{#each describedSegments as segment (segment.key)}
+	{#if segment.describedById === `${uid}-reason-${segment.key}`}
+		<span id={segment.describedById} class="sr-only" data-slot="controls-reason"
+			>{segment.title}</span
+		>
+	{/if}
+{/each}

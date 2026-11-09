@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { selectReceiptTimeOfDay } from './timeOfDay';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
 
 const labels = { shiftLabel: (s: string) => s };
 

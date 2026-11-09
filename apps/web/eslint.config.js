@@ -4,7 +4,7 @@ import svelte from 'eslint-plugin-svelte';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
-/** Flat config — SvelteKit 2 / Svelte 5 (runes) / TypeScript. */
+/** Flat config / SvelteKit 3 / Svelte 5 (runes) / TypeScript. */
 export default ts.config(
 	js.configs.recommended,
 	...ts.configs.recommended,

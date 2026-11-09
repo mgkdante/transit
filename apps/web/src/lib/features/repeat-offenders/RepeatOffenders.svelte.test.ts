@@ -1,4 +1,4 @@
-import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
+import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
 import {
 	act,
 	fireEvent,
@@ -8,18 +8,21 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
-import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import type { RepeatOffenders as RepeatOffendersData, IsoUtc } from '#lib/v1/schemas/index.ts';
+import type {
+	ChartDatumPopoverModel,
+	MagnitudeDatum,
+} from '#lib/components/dataviz/chart/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
 const nav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/repeat-offenders'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -31,11 +34,15 @@ const navigate = vi.hoisted(() => vi.fn());
 vi.mock('$app/state', () => ({
 	page: nav.page,
 }));
-vi.mock('$app/navigation', () => ({ goto: navigate, replaceState: nav.replaceState }));
+vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
+	goto: navigate,
+	replaceState: nav.replaceState,
+}));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
@@ -44,15 +51,15 @@ const { payload } = vi.hoisted(() => ({
 }));
 const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRepeatOffenders: vi.fn(),
 	getRepeatOffendersHistoryIndex: vi.fn(),
 	getRepeatOffendersHistoryDay: vi.fn(),
 }));
-vi.mock('$lib/v1/history/selection', () => ({
+vi.mock('#lib/v1/history/selection.ts', () => ({
 	availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
 }));
-vi.mock('$lib/v1/history/dateResource.svelte', () => ({
+vi.mock('#lib/v1/history/dateResource.svelte.ts', () => ({
 	historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
 	createHistoryDateResource: vi.fn(() => ({
 		request: { hasDate: false, rawDate: null },
@@ -203,7 +210,6 @@ function resetRepeatSurfaceState(): void {
 	payload.current = seed();
 	reconciliationIntersectionCallback = undefined;
 	Element.prototype.scrollIntoView = vi.fn();
-	quietMode.resetForTest();
 }
 
 const repeatSurface = createSurfaceHarness({
@@ -251,11 +257,11 @@ function capturedRow(key: string): CapturedMagnitudeDatum {
 }
 
 describe('RepeatOffenders — approved analytical article', () => {
-	it('renders one article h1, the exact two quiet controls, and three simultaneous cards', () => {
+	it('renders one article h1, the single page action, and three simultaneous cards', () => {
 		const { container } = render(RepeatOffenders);
 		expect(screen.getAllByRole('heading', { level: 1, name: 'Repeat offenders' })).toHaveLength(1);
-		const controls = screen.getByTestId('quiet-mode-controls');
-		expect(within(controls).getAllByRole('button')).toHaveLength(2);
+		const controls = screen.getByTestId('sections-controls');
+		expect(within(controls).getAllByRole('button')).toHaveLength(1);
 		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 
@@ -279,7 +285,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(header).not.toHaveTextContent('Recurrence read over the latest trailing week');
 	});
 
-	it('puts window, number shown, context, and contents in one independently persisted rail', async () => {
+	it('puts window, number shown, context, and contents in one independently toggled rail', async () => {
 		const entries = Array.from({ length: 6 }, (_, index) => ({
 			rank: index + 1,
 			type: 'trip' as const,
@@ -318,9 +324,14 @@ describe('RepeatOffenders — approved analytical article', () => {
 		await fireEvent.click(filters);
 		expect(filters).toHaveAttribute('aria-expanded', 'false');
 		expect(toc).toHaveAttribute('aria-expanded', 'true');
-		expect(sessionStorage.getItem('persisted:repeat-offenders-controls')).toBe('false');
+		expect(sessionStorage.getItem('persisted:repeat-offenders-controls')).toBeNull();
 		await fireEvent.click(toc);
-		expect(sessionStorage.getItem('persisted:repeat-offenders-toc')).toBe('false');
+		expect(sessionStorage.getItem('persisted:repeat-offenders-toc')).toBeNull();
+		await assertRailIndependence({
+			container,
+			panelNames: [repeatCopy.en.rail.controls, repeatCopy.en.rail.toc],
+			contentCount: 2,
+		});
 	});
 
 	it('keeps both week and month visible while disabling and describing the unavailable grain', () => {

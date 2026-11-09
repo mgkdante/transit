@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import { intl, type Locale } from '$lib/i18n';
-	import type { ProvenanceConformance } from '$lib/v1/schemas';
+	import { cn } from '#lib/utils/index.ts';
+	import { intl, type Locale } from '#lib/i18n/index.ts';
+	import type { ProvenanceConformance } from '#lib/v1/schemas/index.ts';
 	import { StatusDot } from '@yesid/ui/brand';
 
 	export interface ConformanceBadgeProps {

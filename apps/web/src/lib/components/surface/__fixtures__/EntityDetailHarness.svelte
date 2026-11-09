@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import EntityDetail from '../EntityDetail.svelte';
 	import type { TocEntry } from '@yesid/ui/brand';
-	import { ReliabilityRailLayout } from '$lib/components/layout';
+	import { ReliabilityRailLayout } from '#lib/components/layout/index.ts';
 
 	type TabKey = 'detail' | 'schedule' | 'reliability';
 

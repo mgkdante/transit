@@ -1,6 +1,6 @@
-import { severeShareToSeverity } from '$lib/features/reliability/shiftGrains';
-import type { NetworkShift } from '$lib/v1';
-import type { SeverityCode } from '$lib/v1/schemas';
+import { severeShareToSeverity } from '#lib/features/reliability/shiftGrains.ts';
+import type { NetworkShift } from '#lib/v1/index.ts';
+import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 export interface ShiftRow {
 	readonly key: string;

@@ -4,6 +4,7 @@ import {
   chmodSync,
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -24,6 +25,18 @@ import {
   restore,
   verifySource,
 } from "./web-build-artifact.mjs";
+
+test("every deployment input exists in the real checkout, including the Kit 3 CSP config", () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  assert.ok(BUILD_INPUTS.includes("apps/web/kit.config.js"));
+  assert.ok(!BUILD_INPUTS.includes("apps/web/svelte.config.js"));
+  for (const input of BUILD_INPUTS) {
+    assert.ok(
+      lstatSync(join(root, input)).isFile(),
+      `missing build input: ${input}`,
+    );
+  }
+});
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "transit-web-artifact-"));

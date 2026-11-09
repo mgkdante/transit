@@ -2,8 +2,8 @@ import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import MapDetailAlerts from './MapDetailAlerts.svelte';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
-import type { Alert } from '$lib/v1/schemas';
-import { AlertMessageProvenanceSchema } from '$lib/v1/schemas/alert_history';
+import type { Alert } from '#lib/v1/schemas/index.ts';
+import { AlertMessageProvenanceSchema } from '#lib/v1/schemas/alert_history.ts';
 
 const frenchMessage = AlertMessageProvenanceSchema.parse({
 	snapshot_id: '1',
@@ -15,6 +15,33 @@ const frenchMessage = AlertMessageProvenanceSchema.parse({
 });
 
 describe('MapDetailAlerts', () => {
+	it.each([
+		['en', 'Alerts checked 5 minutes ago'],
+		['fr', 'Alertes vérifiées il y a 5 minutes'],
+	] as const)('shows the separate alert age in %s', (locale, note) => {
+		render(MapDetailAlerts, {
+			props: { alerts: [], alertsAgeSeconds: 300, locale, t: MAP_SELECTION_DETAIL_COPY[locale] },
+		});
+		expect(screen.getByText(note)).toBeInTheDocument();
+	});
+	it.each([null, undefined])('omits the alert age when it is %s', (alertsAgeSeconds) => {
+		render(MapDetailAlerts, {
+			props: { alerts: [], alertsAgeSeconds, locale: 'en', t: MAP_SELECTION_DETAIL_COPY.en },
+		});
+		expect(screen.queryByText(/Alerts checked/)).not.toBeInTheDocument();
+	});
+	it.each(['en', 'fr'] as const)(
+		'keeps an out-of-date empty alert list neutral in %s',
+		(locale) => {
+			const { container } = render(MapDetailAlerts, {
+				props: { alerts: [], alertsStale: true, locale, t: MAP_SELECTION_DETAIL_COPY[locale] },
+			});
+			expect(container.querySelector('[data-slot="state-notice"]')).toHaveAttribute(
+				'data-tone',
+				'neutral',
+			);
+		},
+	);
 	it.each(['en', 'fr'] as const)('rejects raw provider copy in %s', (locale) => {
 		const { container } = render(MapDetailAlerts, {
 			props: {

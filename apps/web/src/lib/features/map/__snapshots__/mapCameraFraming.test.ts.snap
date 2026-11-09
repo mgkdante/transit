@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '360x800' 1`] = `
+[
+  8.79282157258142,
+  -75.69000000000001,
+  45.40199221827771,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '390x844' 1`] = `
+[
+  8.919085345227593,
+  -75.69000000000001,
+  45.399753476267335,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '768x1024' 1`] = `
+[
+  9.958831524020349,
+  -75.69000000000001,
+  45.38718080562393,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '844x390' 1`] = `
+[
+  7.379557981217862,
+  -75.69000000000001,
+  45.446412409458134,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '1280x900' 1`] = `
+[
+  9.880619224330074,
+  -75.78845634485049,
+  45.3983199687504,
+]
+`;
+
+exports[`camera interface through the transform adapter > OC Transpo preserves fit, user ownership and recovery at '1920x1080' 1`] = `
+[
+  10.22483538641922,
+  -75.76755759240581,
+  45.39342823730709,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '360x800' 1`] = `
+[
+  8.851426289167133,
+  -73.72605,
+  45.57827829545107,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '390x844' 1`] = `
+[
+  8.977690061813306,
+  -73.72605,
+  45.576135391689604,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '768x1024' 1`] = `
+[
+  10.017436240606063,
+  -73.72605,
+  45.56410100236798,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '844x390' 1`] = `
+[
+  7.594527287882684,
+  -73.72605,
+  45.61380670102912,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '1280x900' 1`] = `
+[
+  10.095588530994895,
+  -73.81087649046947,
+  45.57249748701503,
+]
+`;
+
+exports[`camera interface through the transform adapter > STM preserves fit, user ownership and recovery at '1920x1080' 1`] = `
+[
+  10.439804693084042,
+  -73.79287086749245,
+  45.568295980547845,
+]
+`;

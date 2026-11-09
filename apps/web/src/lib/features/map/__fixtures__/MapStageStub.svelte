@@ -3,8 +3,8 @@
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 	import { mapHeroReceiptSignals } from './MapHeroReceiptSignals.svelte';
-	import { STOPS_LAYER } from '$lib/components/map/stopsLayer';
-	import { VEHICLE_BODY_LAYER } from '$lib/components/map/vehicleLayer';
+	import { STOPS_LAYER } from '#lib/components/map/stopsLayer.ts';
+	import { VEHICLE_BODY_LAYER } from '#lib/components/map/vehicleLayer.ts';
 
 	interface Props {
 		class?: string;

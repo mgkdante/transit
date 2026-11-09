@@ -1,4 +1,8 @@
-import { ROUTE_LINE_HIT_LAYER, STOPS_LAYER, VEHICLE_BODY_LAYER } from '$lib/components/map';
+import {
+	ROUTE_LINE_HIT_LAYER,
+	STOPS_LAYER,
+	VEHICLE_BODY_LAYER,
+} from '#lib/components/map/index.ts';
 import { PICKABLE_MAP_LAYERS } from './mapLayerModules';
 import type { MapSelection } from './mapSelectionSession.svelte';
 

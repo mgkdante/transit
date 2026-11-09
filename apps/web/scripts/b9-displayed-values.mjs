@@ -20,6 +20,7 @@ import {
 	OBSERVATION_IDS,
 	compareObservations,
 	expectedDomainObservationsFromFixture,
+	expectedDefaultLineHeadline,
 	expectedScheduleTruth,
 	normalizeObservation,
 	runOracleSelfCheck,
@@ -269,6 +270,14 @@ async function readMetricValue(page, root) {
 	return text == null ? { value: null, text: '' } : displayCell(text);
 }
 
+function lineVerdictObservationCount(text) {
+	const count =
+		text.match(/\b(?:of|de)\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
+		text.match(/:\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
+		text.match(/\((\d+)\)/u)?.[1];
+	return parseNumber(count);
+}
+
 async function collectLine(page, cell) {
 	const headlineText = await readValues(
 		page,
@@ -280,10 +289,6 @@ async function collectLine(page, cell) {
 		.locator('[data-section="verdict"] [data-slot="verdict"]')
 		.first()
 		.innerText();
-	const observedN =
-		verdictText.match(/(?:of|de)\s+(\d+)\s+(?:delay observations|relevés de retard)/iu)?.[1] ??
-		verdictText.match(/\((\d+)\)/u)?.[1] ??
-		null;
 	const runBulletText = async (slot) =>
 		(await readValues(page, `[data-slot="${slot}"]`, '.metric-bullet__value'))[0] ?? null;
 	const completenessValue = await runBulletText('service-completeness');
@@ -468,7 +473,7 @@ async function collectLine(page, cell) {
 		observation('line.day.p50_min', headline[2] ?? null),
 		observation('line.day.p90_min', headline[3] ?? null),
 		observation('line.day.severe_pct', severe),
-		observation('line.day.observation_count', parseNumber(observedN)),
+		observation('line.day.observation_count', lineVerdictObservationCount(verdictText)),
 		observation('line.day.cancellation_pct', cancellation),
 		observation('line.day.skipped_pct', skipped),
 		observation('line.day.completeness_pct', completeness),
@@ -523,6 +528,18 @@ async function collectLine(page, cell) {
 	];
 }
 
+function stopVerdictObservationCount(text) {
+	const observedN =
+		text.match(/\bn=(\d+)/u)?.[1] ??
+		text.match(
+			/\b(?:of|de|contains|contient)\s+(\d+)\s+(?:known predictions|prévisions connues)/iu,
+		)?.[1] ??
+		text.match(
+			/\b(?:only|seulement)\s+(\d+)\s+(?:eligible known predictions|prévisions connues admissibles)/iu,
+		)?.[1];
+	return parseNumber(observedN);
+}
+
 async function collectStop(page) {
 	const periodMetrics = await page
 		.locator('[data-slot="stop-reliability-pane"] [data-slot="metric-display"]')
@@ -541,9 +558,6 @@ async function collectStop(page) {
 		.locator('[data-slot="stop-reliability-sections"] [data-slot="verdict"]')
 		.first()
 		.innerText();
-	const observedN =
-		verdictText.match(/\bn=(\d+)/u)?.[1] ??
-		verdictText.match(/(\d+)\s+(?:known predictions|prévisions connues)/iu)?.[1];
 	const summaryText = await readValues(
 		page,
 		'[data-slot="stop-reliability-summary"] [data-slot="metric-display"]',
@@ -618,7 +632,7 @@ async function collectStop(page) {
 		observation('stop.day.p50_min', percentiles[0] ?? null),
 		observation('stop.day.p90_min', percentiles[1] ?? null),
 		observation('stop.day.severe_pct', summary[0] ?? null),
-		observation('stop.day.observation_count', parseNumber(observedN)),
+		observation('stop.day.observation_count', stopVerdictObservationCount(verdictText)),
 		observation('stop.daily.rows', dailyRows),
 		observation('stop.range.severe_pct', rangeValues[0] ?? null),
 		observation('stop.range.observations', rangeValues[2] ?? null),
@@ -970,6 +984,14 @@ async function verifySsr(page, cell, fixture, html) {
 					main
 						.querySelector('[data-slot="article-header"] .header__meta time')
 						?.getAttribute('datetime') ?? null,
+				headerPresent: main.querySelector('.route-verdict-banner [data-slot="verdict"]') != null,
+				headerStatus:
+					main
+						.querySelector('.route-verdict-banner [data-slot="verdict"]')
+						?.getAttribute('data-status') ?? null,
+				headerHedge:
+					main.querySelector('.route-verdict-banner .verdict__sentence')?.textContent?.trim() ??
+					null,
 				headerBan:
 					main.querySelector('.route-verdict-banner .verdict__ban')?.textContent?.trim() ?? null,
 				currentOnly:
@@ -1020,18 +1042,34 @@ async function verifySsr(page, cell, fixture, html) {
 				date && ssr.window.includes(date),
 				`${cell.path} SSR omitted selected/current date ${date}`,
 			);
+		const current = expectedDefaultLineHeadline(fixture);
+		const hasCurrentPercentage =
+			typeof current?.otp_pct === 'number' && Number.isFinite(current.otp_pct);
 		invariant(
-			ssr.headerBan != null,
-			`${cell.path} SSR omitted its independent current header verdict`,
+			ssr.headerPresent === hasCurrentPercentage,
+			`${cell.path} SSR current-header presence disagrees with published data`,
 		);
-		if (ssr.headerBan != null) {
-			const current = expectedDomainObservationsFromFixture(fixture, 'line', cell.locale).find(
-				(row) => row.id === 'line.day.otp_pct',
-			);
+		if (hasCurrentPercentage) {
 			invariant(
-				parseNumber(ssr.headerBan) === current.value,
-				`${cell.path} SSR header borrowed the selected historical percentage`,
+				typeof ssr.headerHedge === 'string' && ssr.headerHedge.length > 0,
+				`${cell.path} SSR current header omitted its hedge`,
 			);
+			if (!(current.observation_count >= 30)) {
+				invariant(
+					ssr.headerBan == null && ssr.headerStatus === 'tentative',
+					`${cell.path} SSR thin current header must hedge without a confident percentage`,
+				);
+				if (typeof current.observation_count === 'number')
+					invariant(
+						ssr.headerHedge.includes(`(${current.observation_count})`),
+						`${cell.path} SSR current hedge omitted the observation count`,
+					);
+			} else {
+				invariant(
+					parseNumber(ssr.headerBan) === Math.round(current.otp_pct),
+					`${cell.path} SSR header borrowed the selected historical percentage`,
+				);
+			}
 			invariant(
 				selected
 					? ssr.currentOnly ===
@@ -1040,6 +1078,11 @@ async function verifySsr(page, cell, fixture, html) {
 								: 'Header verdict: current snapshot')
 					: ssr.currentOnly == null,
 				`${cell.path} SSR current-header scope changed`,
+			);
+		} else {
+			invariant(
+				ssr.headerBan == null,
+				`${cell.path} SSR absent current header fabricated a percentage`,
 			);
 		}
 	} else if (cell.surface === 'stop') {
@@ -1200,8 +1243,27 @@ async function verifyControls(page, cell) {
 			'[data-slot="surface-rail"] [data-slot="date-range"] input[type="date"]',
 		);
 		invariant((await dates.count()) === 2, `${cell.path} date-range controls did not mount`);
+		const rangeResponse = page.waitForResponse((response) => {
+			const path = new URL(response.url()).pathname;
+			return (
+				response.status() === 200 &&
+				path.includes('/historic/history/lines/') &&
+				/\/\d{4}-\d{2}\.json$/u.test(path)
+			);
+		});
 		await dates.nth(0).fill('2026-08-28');
 		await dates.nth(1).fill('2026-08-29');
+		await (await rangeResponse).finished();
+		// Kit 3 may schedule the retained read after the input event. Do not let
+		// the next grain click abort it while an empty/loading KPI looks absent.
+		await page.waitForFunction(() => {
+			const caption = document.querySelector('[data-slot="active-window"]')?.textContent ?? '';
+			return (
+				!document.querySelector('[data-slot="history-loading"]') &&
+				caption.includes('2026-08-28') &&
+				caption.includes('2026-08-29')
+			);
+		});
 		const rangeKpis = await readValues(
 			page,
 			'[data-section="verdict"] [data-slot="verdict-kpis"] > [data-slot="metric-bullet"]',
@@ -1878,6 +1940,27 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					);
 				}
 				await verifySsr(page, cell, fixture, ssrHtml);
+				// B9 measures the rendered data. Reveal content through its bulk control
+				// before interacting with detail controls inside the collapsed sections.
+				await page.waitForFunction(
+					() =>
+						document.querySelector('[data-sections-control][data-sections-ready]') &&
+						[...document.querySelectorAll('[data-section-bulk]')].every((card) =>
+							card.hasAttribute('data-section-ready'),
+						),
+				);
+				const bulk = page.locator('[data-sections-control]:not([data-sections-hidden]) button');
+				if ((await bulk.count()) > 0) {
+					await bulk.waitFor({ state: 'visible' });
+					if ((await bulk.getAttribute('data-collapsed')) === 'true') await bulk.click();
+					await page.waitForFunction(() =>
+						[...document.querySelectorAll('[data-section-bulk]')].every(
+							(card) =>
+								card.querySelector('[data-section-trigger]')?.getAttribute('aria-expanded') ===
+								'true',
+						),
+					);
+				}
 				for (const toggle of await page.locator('[data-slot="detail-toggle"]').all()) {
 					const control = await toggle.elementHandle();
 					invariant(control != null, `${cell.path} detail control disappeared`);
@@ -1900,6 +1983,9 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						await control.dispose();
 					}
 				}
+				// Geometry checks scroll the page. Park the pointer outside its links
+				// so scrolling cannot start a hover preload for an unrelated fixture route.
+				await page.mouse.move(0, 0);
 				await verifyAccessibility(page, cell);
 				await verifyTextSemantics(page, cell, fixture);
 				let actual;
@@ -2041,6 +2127,47 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 }
 
 function runRunnerSelfCheck() {
+	for (const [text, expected] of [
+		['Reliability is uncertain: 80% of 100 delay observations in the on-time band.', 100],
+		['Fiabilité incertaine : 80 % de 100 relevés de retard dans la plage de ponctualité.', 100],
+		['Reliability is uncertain: 1000 delay observations, but no usable uncertainty range.', 1000],
+		[
+			'Fiabilité incertaine : 1000 relevés de retard, mais aucune plage d’incertitude exploitable.',
+			1000,
+		],
+		['Not enough delay observations (12) to judge reliability.', 12],
+		[
+			'Ran reliably, about 9 in 10 delay observations in the on-time band (87%, 95% CI: 80–92%).',
+			null,
+		],
+		[
+			'Service fiable, environ 9 relevés de retard sur 10 dans la plage de ponctualité (87 %, IC 95 % : 80–92 %).',
+			null,
+		],
+	]) {
+		invariant(
+			lineVerdictObservationCount(text) === expected,
+			`line verdict observation count: ${text}`,
+		);
+	}
+	for (const [text, expected] of [
+		['In this daily summary, 85% of 120 known predictions are not severely late.', 120],
+		['Dans ce résumé quotidien, 85 % de 120 prévisions connues sont sans retard grave.', 120],
+		['This daily summary contains only 29 eligible known predictions.', 29],
+		['Ce résumé quotidien contient seulement 29 prévisions connues admissibles.', 29],
+		['This daily summary contains 1000 known predictions, but no usable uncertainty range.', 1000],
+		[
+			'Ce résumé quotidien contient 1000 prévisions connues, mais aucune plage d’incertitude exploitable.',
+			1000,
+		],
+		['In this daily summary, about 9 in 10 known predictions are not severely late.', null],
+		['Dans ce résumé quotidien, environ 9 prévisions connues sur 10 sont sans retard grave.', null],
+	]) {
+		invariant(
+			stopVerdictObservationCount(text) === expected,
+			`stop verdict observation count: ${text}`,
+		);
+	}
 	// Preserve the existing fixture-mode report shape after retiring live readiness.
 	return { ...runOracleSelfCheck(), representativeDate: '2026-09-02' };
 }

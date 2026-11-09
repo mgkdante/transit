@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { MetricDisplay } from '$lib/components/brand';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue } from '$lib/components/edge';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { MetricDisplay } from '#lib/components/brand/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import type { CrowdingVM } from '../selectors/crowdingMix';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';

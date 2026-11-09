@@ -224,6 +224,19 @@ def test_static_copy_round_trips_typed_rows_on_real_postgres(real_db_engine, see
                 "shapes": 1,
                 "translations": 1,
             }
+            spans = text("""
+                SELECT route_id, trip_id, service_id, first_seconds, last_seconds
+                FROM gold.trip_service_span WHERE dataset_version_id = :version_id
+            """)
+            params = {"version_id": result.dataset_version_id}
+            expected_span = [("R1", "T1", "WK", 92400, 92100)]
+            assert connection.execute(spans, params).all() == expected_span
+            # Rebuilding the same version replaces, rather than duplicates, its rows.
+            static_silver_module.refresh_trip_service_spans(
+                connection, provider_id=PARITY_PROVIDER,
+                dataset_version_id=result.dataset_version_id,
+            )
+            assert connection.execute(spans, params).all() == expected_span
             stop_rows = connection.execute(
                 text(
                     """

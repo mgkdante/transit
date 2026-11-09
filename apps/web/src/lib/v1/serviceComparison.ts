@@ -1,4 +1,4 @@
-import { defineCopy } from '$lib/i18n/copy';
+import { defineCopy } from '#lib/i18n/copy.ts';
 
 export const serviceComparisonCopy = defineCopy({
 	en: {

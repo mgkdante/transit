@@ -4,9 +4,13 @@ import {
 	PublicProviderCatalogSchema,
 	resolveProvider,
 	providerHref,
+	providerHasAlerts,
 } from './providers';
 
-vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_V1_BASE: '/data/v1' } }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{ PUBLIC_V1_BASE: '/data/v1' },
+}));
 
 const provider = {
 	id: 'test',
@@ -23,6 +27,17 @@ const catalog = {
 	default_provider: 'test',
 	providers: [provider],
 };
+
+it('only disables alerts when both input families are explicitly unavailable', () => {
+	expect(providerHasAlerts(undefined)).toBe(true);
+	expect(providerHasAlerts({ ...provider, inputs: {} })).toBe(true);
+	expect(
+		providerHasAlerts({ ...provider, inputs: { i3_alerts: false, service_alerts: false } }),
+	).toBe(false);
+	expect(
+		providerHasAlerts({ ...provider, inputs: { i3_alerts: true, service_alerts: false } }),
+	).toBe(true);
+});
 
 it('selects any ready provider and normalizes unknown or duplicate choices to the catalog default', () => {
 	const ready = PublicProviderCatalogSchema.parse({

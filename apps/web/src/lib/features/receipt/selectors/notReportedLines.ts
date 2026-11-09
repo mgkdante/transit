@@ -1,4 +1,8 @@
-import type { ReceiptNotReportedRoute, ReceiptServiceStates, SeverityCode } from '$lib/v1/schemas';
+import type {
+	ReceiptNotReportedRoute,
+	ReceiptServiceStates,
+	SeverityCode,
+} from '#lib/v1/schemas/index.ts';
 
 export const NOT_REPORTED_DOMAIN: readonly [number, number] = [0, 20];
 

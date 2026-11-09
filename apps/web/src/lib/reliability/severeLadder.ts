@@ -1,12 +1,12 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 import type {
 	AbsenceSpec,
 	ChartDatumPopoverModel,
 	MagnitudeBarsSpec,
 	MagnitudeDatum,
-} from '$lib/components/dataviz/chart';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
-import { severeShareToSeverity } from '$lib/features/reliability/shiftGrains';
+} from '#lib/components/dataviz/chart/index.ts';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { severeShareToSeverity } from '#lib/features/reliability/shiftGrains.ts';
 
 export interface SevereLadderEvidence {
 	readonly wilsonLo: number | null;

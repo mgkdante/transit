@@ -1,5 +1,5 @@
-import { localizeHref, type Locale } from '$lib/i18n';
-import { mapSearchFor, type MapFilterTarget } from '$lib/filters';
+import { localizeHref, type Locale } from '#lib/i18n/index.ts';
+import { mapSearchFor, type MapFilterTarget } from '#lib/filters/index.ts';
 
 export type SurfaceKind =
 	| 'vehicle'

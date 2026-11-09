@@ -5,12 +5,11 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/svelte';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StopFile, StopReliability, StopDeparture } from '$lib/v1';
-import type { IdentitySeed } from '$lib/v1/serverContext';
-import type { PublicProvider } from '$lib/v1/providers';
-import { alertUnavailableCopy } from '$lib/components/surface/alertAvailabilityCopy';
-import { quietMode } from '@yesid/ui/state';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { StopFile, StopReliability, StopDeparture } from '#lib/v1/index.ts';
+import type { IdentitySeed } from '#lib/v1/serverContext.ts';
+import type { PublicProvider } from '#lib/v1/providers.ts';
+import { alertUnavailableCopy } from '#lib/components/surface/alertAvailabilityCopy.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import StopDetail from './StopDetail.svelte';
 
@@ -23,7 +22,7 @@ const stopDetailNav = vi.hoisted(() => {
 		data: {} as { provider?: Partial<PublicProvider> },
 	};
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -34,6 +33,7 @@ const stopDetailNav = vi.hoisted(() => {
 
 vi.mock('$app/state', () => ({ page: stopDetailNav.page }));
 vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
 	replaceState: stopDetailNav.replaceState,
 }));
 
@@ -212,8 +212,16 @@ const ALERTS_BY_CODE = [
 
 const liveStore = {
 	familyStates: {
-		departures: { phase: 'ready', consecutiveFailures: 0 },
-		alerts: { phase: 'ready', consecutiveFailures: 0 },
+		departures: {
+			phase: 'ready',
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', ageSeconds: 12, isStale: false, retained: true, notice: null },
+		},
+		alerts: {
+			phase: 'ready',
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', ageSeconds: 12, isStale: false, retained: true, notice: null },
+		},
 	},
 	vehicles: null,
 	trips: null,
@@ -241,8 +249,28 @@ const liveStore = {
 const emptyLiveStore = {
 	...liveStore,
 	familyStates: {
-		departures: { phase: 'idle', consecutiveFailures: 0 },
-		alerts: { phase: 'idle', consecutiveFailures: 0 },
+		departures: {
+			phase: 'idle',
+			retainedGeneration: null,
+			health: {
+				state: 'never-loaded',
+				ageSeconds: null,
+				isStale: false,
+				retained: false,
+				notice: null,
+			},
+		},
+		alerts: {
+			phase: 'idle',
+			retainedGeneration: null,
+			health: {
+				state: 'never-loaded',
+				ageSeconds: null,
+				isStale: false,
+				retained: false,
+				notice: null,
+			},
+		},
 	},
 	departures: null,
 	alerts: null,
@@ -306,25 +334,25 @@ const stopSurface = createSurfaceHarness({
 	mount: renderSvelte,
 });
 
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale };
 });
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getStop: (id: string) => getStopSpy(id),
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getStopReliability: (id: string) => getStopReliabilitySpy(id),
 	getStopHistoryDirectory: stopHistoryHarness.getStopHistoryDirectory,
 	getStopHistoryIndex: stopHistoryHarness.getStopHistoryIndex,
 	loadStopHistoryRange: stopHistoryHarness.loadStopHistoryRange,
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: () => provenanceData }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => provenanceData }));
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 	createLiveStore: stopHistoryHarness.createLiveStore,
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: {
 			short_name: 'STM',
@@ -336,7 +364,7 @@ vi.mock('$lib/v1/boot', () => ({
 	}),
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown) => {
 		const data = loader();
 		if (data === reliabilityData && reliabilityResourceState != null) {
@@ -392,10 +420,18 @@ function resetStopSurfaceState() {
 	liveStore.index.byStopId.clear();
 	liveStore.index.byStopId.set('57191', DEPARTURES);
 	liveStore.index.byStopId.set('99999', DEPARTURES_B);
-	quietMode.resetForTest();
 }
 
-beforeEach(() => stopSurface.reset());
+beforeEach(() => {
+	// Content interactions use a returning expanded reader; boot is outside this unit harness.
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
+	stopSurface.reset();
+});
+afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 type StopDetailTestProps = { id: string; seed?: IdentitySeed };
 
@@ -625,7 +661,7 @@ describe('StopDetail article contract', () => {
 		}
 	});
 
-	it('keeps the default Detail URL clean and carries one bulk disclosure state across article panes', async () => {
+	it('keeps the default Detail URL clean and preserves mounted panes while new panes use the bulk choice', async () => {
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
@@ -644,7 +680,7 @@ describe('StopDetail article contract', () => {
 		for (const card of detailCards) {
 			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
 		}
-		const focus = screen.getByTestId('quiet-mode-toggle');
+		const focus = screen.getByTestId('sections-toggle');
 		await fireEvent.click(focus);
 		await waitFor(() => {
 			for (const card of detailCards) {
@@ -735,18 +771,18 @@ describe('StopDetail article contract', () => {
 
 		expect(actionRow).not.toBeNull();
 		expect(actionRow?.querySelector('a')).not.toBeNull();
-		expect(controlRow).toContainElement(screen.getByTestId('quiet-mode-controls'));
+		expect(controlRow).toContainElement(screen.getByTestId('sections-controls'));
 		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
 
 		await fireEvent.click(trigger);
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		expect(screen.getByTestId('quiet-mode-toggle')).toBeVisible();
+		expect(screen.getByTestId('sections-toggle')).toBeVisible();
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});
 
-	it('remounts the persisted facts-card state when the stop id changes in place', async () => {
+	it('applies the bulk choice when the stop id changes in place', async () => {
 		const view = render(StopDetail, { props: { id: '57191' } });
 		const firstCard = view.container.querySelector('[data-toc="stop-detail-facts"]') as HTMLElement;
 

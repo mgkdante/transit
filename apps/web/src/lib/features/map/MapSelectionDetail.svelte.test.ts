@@ -1,12 +1,20 @@
+import { clock } from '@yesid/ui/state';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { fireEvent, render } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { OCCUPANCY_LABELS, STATUS_LABELS } from '$lib/v1/enumLabels';
-import { occupancyGlyph } from '$lib/components/dataviz';
-import { buildLiveIndex } from '$lib/v1/live';
-import type { Alert, IsoUtc, RouteFile, StopFile, StopIndexEntry, Vehicle } from '$lib/v1/schemas';
+import { OCCUPANCY_LABELS, STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+import { occupancyGlyph } from '#lib/components/dataviz/index.ts';
+import { buildLiveIndex } from '#lib/v1/live/index.ts';
+import type {
+	Alert,
+	IsoUtc,
+	RouteFile,
+	StopFile,
+	StopIndexEntry,
+	Vehicle,
+} from '#lib/v1/schemas/index.ts';
 import MapSelectionDetail from './MapSelectionDetail.svelte';
 import DetailBusRow from './detail/DetailBusRow.svelte';
 import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
@@ -834,30 +842,37 @@ describe('MapSelectionDetail', () => {
 		);
 	});
 
-	it('shows failed retained detail visually and forwards the retry affordance without a live region', async () => {
-		const detail = resolveMapSelection(
-			{ kind: 'vehicle', id: 'veh-1' },
-			{ index, stops, alerts, routes },
-		);
-		const onrefresh = vi.fn();
-		const { container, getByRole, getByText, queryByRole } = render(MapSelectionDetail, {
-			props: {
-				detail,
-				locale: 'en',
-				selectionPresence: 'missing-grace',
-				selectionSourceHealth: 'failed',
-				onrefresh,
-			},
-		});
+	it.each([
+		{ locale: 'en', message: 'Live detail is unavailable', retryLabel: 'Retry' },
+		{ locale: 'fr', message: 'Détail en direct indisponible', retryLabel: 'Réessayer' },
+	] as const)(
+		'shows failed retained detail and forwards retry without a live region ($locale)',
+		async ({ locale, message, retryLabel }) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const onrefresh = vi.fn();
+			const { container, getByRole, getByText, queryByRole } = render(MapSelectionDetail, {
+				props: {
+					detail,
+					locale,
+					selectionPresence: 'missing-grace',
+					selectionSourceHealth: 'failed',
+					onrefresh,
+				},
+			});
 
-		expect(getByText('Live detail is unavailable')).toBeInTheDocument();
-		expect(queryByRole('status')).not.toBeInTheDocument();
-		const retry = getByRole('button', { name: 'Retry' });
-		expect(retry).toHaveClass('detail-retry');
-		await fireEvent.click(retry);
-		expect(onrefresh).toHaveBeenCalledTimes(1);
-		expect(container.querySelector('[data-source-health="failed"]')).toBeInTheDocument();
-	});
+			expect(getByText(message)).toBeInTheDocument();
+			expect(queryByRole('status')).not.toBeInTheDocument();
+			const retry = getByRole('button', { name: retryLabel });
+			expect(retry).toHaveAttribute('data-slot', 'button');
+			expect(retry).toHaveClass('min-h-11');
+			await fireEvent.click(retry);
+			expect(onrefresh).toHaveBeenCalledTimes(1);
+			expect(container.querySelector('[data-source-health="failed"]')).toBeInTheDocument();
+		},
+	);
 
 	it('marks missing-grace with a healthy source as stale without offering retry', () => {
 		const detail = resolveMapSelection(
@@ -877,26 +892,32 @@ describe('MapSelectionDetail', () => {
 		expect(queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
 	});
 
-	it('allows a retry while missing-grace is refreshing', async () => {
-		const detail = resolveMapSelection(
-			{ kind: 'vehicle', id: 'veh-1' },
-			{ index, stops, alerts, routes },
-		);
-		const onrefresh = vi.fn();
-		const { getByRole, getByText } = render(MapSelectionDetail, {
-			props: {
-				detail,
-				locale: 'en',
-				selectionPresence: 'missing-grace',
-				selectionSourceHealth: 'retrying',
-				onrefresh,
-			},
-		});
+	it.each([
+		{ locale: 'en', message: 'Refreshing live detail', retryLabel: 'Retry' },
+		{ locale: 'fr', message: 'Actualisation des données en direct', retryLabel: 'Réessayer' },
+	] as const)(
+		'shows retrying retained detail and forwards retry ($locale)',
+		async ({ locale, message, retryLabel }) => {
+			const detail = resolveMapSelection(
+				{ kind: 'vehicle', id: 'veh-1' },
+				{ index, stops, alerts, routes },
+			);
+			const onrefresh = vi.fn();
+			const { getByRole, getByText } = render(MapSelectionDetail, {
+				props: {
+					detail,
+					locale,
+					selectionPresence: 'missing-grace',
+					selectionSourceHealth: 'retrying',
+					onrefresh,
+				},
+			});
 
-		expect(getByText('Refreshing live detail')).toBeInTheDocument();
-		await fireEvent.click(getByRole('button', { name: 'Retry' }));
-		expect(onrefresh).toHaveBeenCalledTimes(1);
-	});
+			expect(getByText(message)).toBeInTheDocument();
+			await fireEvent.click(getByRole('button', { name: retryLabel }));
+			expect(onrefresh).toHaveBeenCalledTimes(1);
+		},
+	);
 
 	it('renders a vehicle detail with status, crowding, next stop, and alerts', async () => {
 		const detail = resolveMapSelection(
@@ -971,18 +992,23 @@ describe('MapSelectionDetail', () => {
 	});
 
 	it.each([
-		{ alertState: null, message: 'Alert data unavailable' },
-		{ alertState: [] as Alert[], message: 'No alerts attached' },
-	])('distinguishes $message in the detail surface', ({ alertState, message }) => {
+		{ alertState: null, message: 'Alert data unavailable', alertsStale: false },
+		{ alertState: [] as Alert[], message: 'No alerts attached', alertsStale: false },
+		{ alertState: [] as Alert[], message: 'No alerts attached', alertsStale: true },
+	])('distinguishes $message in the detail surface', ({ alertState, message, alertsStale }) => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
 		);
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
 		const { getByText } = render(MapSelectionDetail, {
-			props: { detail: { ...detail, alerts: alertState }, locale: 'en' },
+			props: { detail: { ...detail, alerts: alertState }, alertsStale, locale: 'en' },
 		});
 		expect(getByText(message)).toBeInTheDocument();
+		expect(getByText(message).closest('[data-slot="state-notice"]')).toHaveAttribute(
+			'data-tone',
+			alertState == null || alertsStale ? 'neutral' : 'positive',
+		);
 	});
 
 	it('renders a per-bus not-reporting GPS note when the vehicle fix is stale', () => {
@@ -1423,7 +1449,12 @@ describe.each(['en', 'fr'] as const)('DetailBusRow published status in %s', (loc
 		const t = MAP_SELECTION_DETAIL_COPY[locale];
 		const { container, getByRole } = render(DetailBusRow, {
 			props: {
-				vehicle: { ...vehicles[0], status, delay_min: delay },
+				vehicle: {
+					...vehicles[0],
+					updated_utc: utc(new Date(clock.serverNow).toISOString()),
+					status,
+					delay_min: delay,
+				},
 				locale,
 				t,
 				onselect: vi.fn(),

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { clock } from '@yesid/ui/state';
-	import { cn } from '$lib/utils';
-	import { formatRelative } from '$lib/utils/time';
+	import { cn } from '#lib/utils/index.ts';
+	import { formatRelative } from '#lib/utils/time.ts';
 
-	import type { Locale } from '$lib/i18n';
-	import { describeAbsence, type AbsenceReason } from '$lib/site/absence';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { describeAbsence, type AbsenceReason } from '#lib/site/absence.ts';
 	import { Skeleton } from '@yesid/ui/skeleton';
+	import { Button } from '@yesid/ui/button';
 	import { DEFAULT_LOADING_SKELETON_DELAY_MS } from './loading';
 	import {
 		StateNotice,
@@ -197,9 +198,9 @@
 
 {#snippet retryAction()}
 	{#if variant === 'error-v1' && onRetry}
-		<button type="button" class="edge-retry" onclick={onRetry} data-slot="edge-retry">
+		<Button type="button" size="sm" class="min-h-11" onclick={onRetry} data-slot="edge-retry">
 			{RETRY_LABEL[lang]}
-		</button>
+		</Button>
 	{/if}
 {/snippet}
 
@@ -262,28 +263,5 @@
 <style>
 	.edge-skeleton-pending {
 		visibility: hidden;
-	}
-
-	.edge-retry {
-		min-height: var(--size-tap-min);
-		font-family: var(--font-body);
-		font-size: var(--text-small);
-		font-weight: 600;
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border: none;
-		border-radius: var(--radius-md);
-		padding: 0.5rem 1.25rem;
-		cursor: pointer;
-		transition: background var(--duration-fast) var(--ease-default);
-	}
-	.edge-retry:hover {
-		background: var(--primary-hover);
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.edge-retry {
-			transition: none;
-		}
 	}
 </style>

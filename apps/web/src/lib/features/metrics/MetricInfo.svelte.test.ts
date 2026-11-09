@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import MetricInfo from './MetricInfo.svelte';
-import { metricInfoFor } from '$lib/metrics';
+import { metricInfoFor } from '#lib/metrics.ts';
 
 const base = {
 	tip: 'The share of readings that landed on time.',

@@ -1,12 +1,12 @@
-import type { Locale } from '$lib/i18n';
-import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { ChartDatumPopoverModel } from '#lib/components/dataviz/chart/index.ts';
 import {
 	encodeSevereLadder,
 	type SevereLadderLabels,
 	type SevereLadderEvidence as HotspotPopoverEvidence,
 	type SevereLadderResult as HotspotLadderResult,
-} from '$lib/reliability/severeLadder';
-import type { HotspotEntry } from '$lib/v1/schemas';
+} from '#lib/reliability/severeLadder.ts';
+import type { HotspotEntry } from '#lib/v1/schemas/index.ts';
 
 export type { HotspotPopoverEvidence, HotspotLadderResult };
 

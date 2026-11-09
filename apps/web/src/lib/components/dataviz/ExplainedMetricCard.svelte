@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	import type { AbsenceReasonKey } from '$lib/site/absence';
-	import type { Locale } from '$lib/i18n';
+	import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Snippet } from 'svelte';
 
 	export interface ExplainedMetricCardProps {
@@ -19,8 +19,8 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import MetricDisplay from '$lib/components/brand/MetricDisplay.svelte';
+	import { cn } from '#lib/utils/index.ts';
+	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 
 	let {
 		label,

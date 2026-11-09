@@ -24,7 +24,7 @@
 // leaving the dataviz scale free for the overlay marks drawn on top.
 
 import type { ExpressionSpecification, FilterSpecification, StyleSpecification } from 'maplibre-gl';
-import type { BasemapFile, Manifest } from '$lib/v1/schemas';
+import type { BasemapFile, Manifest } from '#lib/v1/schemas/index.ts';
 
 /**
  * Neutral surface palette for the basemap chrome. These mirror the theme

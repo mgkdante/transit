@@ -1,5 +1,5 @@
-import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
-import { localizeHref, type Locale } from '$lib/i18n';
+import { serviceComparisonCopy } from '#lib/v1/serviceComparison.ts';
+import { localizeHref, type Locale } from '#lib/i18n/index.ts';
 
 export type MetricKey =
 	| 'otp'

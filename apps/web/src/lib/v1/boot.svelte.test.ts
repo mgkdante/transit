@@ -1,10 +1,13 @@
 import { render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
-import { r2Adapter } from '$lib/v1/adapter/r2';
-import { clearBrowserAdapterManifestForTests } from '$lib/v1/adapter/browserManifest';
+import { r2Adapter } from '#lib/v1/adapter/r2.ts';
+import { clearBrowserAdapterManifestForTests } from '#lib/v1/adapter/browserManifest.ts';
 import OptionalV1ContextHarness from './__fixtures__/OptionalV1ContextHarness.svelte';
 
 const ISO = '2026-07-15T12:00:00Z';

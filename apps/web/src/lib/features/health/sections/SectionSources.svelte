@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { EntityList } from '$lib/components/surface';
-	import type { ProvenanceSource } from '$lib/v1/schemas';
+	import { EntityList } from '#lib/components/surface/index.ts';
+	import type { ProvenanceSource } from '#lib/v1/schemas/index.ts';
 	import type { HealthCopy } from '../health.copy';
 
 	interface SectionSourcesProps {

@@ -4,8 +4,8 @@ import {
 	DELAY_DIST_DOMAIN,
 	OTP_TREND_MIN_SPAN,
 	OTP_TREND_REFERENCE,
-} from '$lib/features/reliability/shiftGrains';
-import type { TrendPoint } from '$lib/v1';
+} from '#lib/features/reliability/shiftGrains.ts';
+import type { TrendPoint } from '#lib/v1/index.ts';
 
 const points: TrendPoint[] = [
 	{ date: '2026-06-14', otp_pct: 78, avg_delay_min: 2.1, p90_min: 5, vehicles: 9 },

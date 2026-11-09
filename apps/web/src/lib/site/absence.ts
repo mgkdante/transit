@@ -1,4 +1,6 @@
-import type { Locale } from '$lib/i18n';
+import { getContext, setContext } from 'svelte';
+import type { FeedHealthState, LiveFamily } from '#lib/v1/live/store.svelte.ts';
+import type { Locale } from '#lib/i18n/index.ts';
 import type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';
 
 export type { AbsenceReasonKey as ServiceWindowReasonKey } from './serviceWindow';
@@ -6,6 +8,9 @@ export type { AbsenceReason, AbsenceSignals } from './serviceWindow';
 export { inferAbsenceReason } from './serviceWindow';
 
 export type ValueAbsenceKey =
+	| 'report-behind'
+	| 'refresh-unavailable'
+	| 'not-loaded'
 	| 'not-reported'
 	| 'not-reporting'
 	| 'not-in-schedule'
@@ -46,6 +51,12 @@ type ReasonCopy = { readonly short: string; readonly why: string };
 
 export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> = {
 	en: {
+		'report-behind': { short: 'Report behind', why: 'the live report is behind' },
+		'refresh-unavailable': {
+			short: 'Refresh unavailable',
+			why: 'the live report could not be refreshed',
+		},
+		'not-loaded': { short: 'No live data', why: 'the live report has not loaded yet' },
 		'metro-no-realtime': { short: 'No live data', why: 'live positions are not published here' },
 		'closed-opens-at': { short: 'Closed', why: 'service is closed, opens at {first}' },
 		'overnight-opens-at': { short: 'No service', why: 'no service at this hour, opens at {first}' },
@@ -89,6 +100,15 @@ export const ABSENCE_COPY: Record<Locale, Record<AbsenceReasonKey, ReasonCopy>> 
 		},
 	},
 	fr: {
+		'report-behind': { short: 'Rapport en retard', why: 'le rapport en direct est en retard' },
+		'refresh-unavailable': {
+			short: 'Indisponible',
+			why: 'le rapport en direct n’a pas pu être actualisé',
+		},
+		'not-loaded': {
+			short: 'Aucune donnée en direct',
+			why: 'le rapport en direct n’est pas encore chargé',
+		},
 		'metro-no-realtime': {
 			short: 'Aucune donnée en direct',
 			why: 'les positions en direct ne sont pas publiées ici',
@@ -182,8 +202,49 @@ export function absenceSentence(
 	return `${description.label} · ${description.why}`;
 }
 
-export function fieldAbsenceReason(signals: { stale?: boolean }): ValueAbsenceKey {
-	return signals.stale ? 'not-reporting' : 'not-reported';
+export type LiveAbsenceField = keyof typeof LIVE_FIELD_FAMILY;
+const LIVE_FIELD_FAMILY = {
+	position: 'vehicles',
+	'vehicle-delay': 'vehicles',
+	occupancy: 'vehicles',
+	'next-stop': 'vehicles',
+	'vehicle-route': 'vehicles',
+	'vehicle-trip': 'vehicles',
+	'trip-prediction': 'trips',
+	'trip-prediction-delay': 'trips',
+	'trip-delay': 'trips',
+	'trip-route': 'trips',
+	prediction: 'departures',
+	'prediction-delay': 'departures',
+} as const satisfies Record<string, LiveFamily>;
+export interface LiveAbsenceContext {
+	readonly familyStates?: Readonly<
+		Partial<Record<LiveFamily, { readonly health: { readonly state: FeedHealthState } }>>
+	>;
+	readonly notReporting?: boolean;
+	readonly unsupported?: boolean;
+	readonly scheduleMissing?: boolean;
+}
+/** Feed health takes precedence over an individual vehicle's silence. */
+export function liveAbsenceReason(
+	field: LiveAbsenceField,
+	context: LiveAbsenceContext = {},
+): AbsenceReasonKey {
+	if (context.unsupported) return 'metro-no-realtime';
+	if (context.scheduleMissing) return 'not-in-schedule';
+	const state = context.familyStates?.[LIVE_FIELD_FAMILY[field]]?.health.state;
+	if (state === 'retrying' || state === 'failed-no-data') return 'refresh-unavailable';
+	if (state === 'retained-stale') return 'report-behind';
+	if (state === 'never-loaded') return 'not-loaded';
+	if (context.notReporting) return 'not-reporting';
+	return field === 'prediction' || field === 'trip-prediction' ? 'no-prediction' : 'not-reported';
+}
+const LIVE_ABSENCE_CONTEXT = Symbol('live-absence');
+export function provideLiveAbsenceContext(reader: () => LiveAbsenceContext): void {
+	setContext(LIVE_ABSENCE_CONTEXT, reader);
+}
+export function readLiveAbsenceContext(): () => LiveAbsenceContext {
+	return getContext<(() => LiveAbsenceContext) | undefined>(LIVE_ABSENCE_CONTEXT) ?? (() => ({}));
 }
 
 const NAME_FALLBACK_COPY: Record<Locale, { stop: string; route: string }> = {

@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "provider_id": "stm",
-  "rendered_utc": "2026-10-03T19:15:32.169Z",
+  "rendered_utc": "2026-11-09T04:18:39.485Z",
   "source": {
     "pmtiles_url": "/data/v1/stm/static/basemap/montreal.pmtiles",
     "sha256": "0c3163dd215712ba6363f67d5cb799d672d5e7ec54b58c0e961937c6148e6bb7",
@@ -28,19 +28,19 @@
     },
     {
       "path": "scripts/build-map-posters.ts",
-      "sha256": "4d574fa814bed2b8068eb86a4cf6e676bdd816704bc97a31e8699015fb0d28e9"
+      "sha256": "3bfb2acb0bb19c6876d244534fe21d34951483325a5acc6fcc2476eb988d435e"
     },
     {
       "path": "src/lib/components/map/basemap.ts",
-      "sha256": "3d0f658aaabc0eed0787bbd367949f9bd2b8b3fa32a4b24e29ad30ccbffff7b1"
+      "sha256": "573b618c0b34dd3d604e8865cbe003ff9031d830ff1cdd95eb3d94fb98a433d9"
     },
     {
       "path": "src/lib/components/map/viewport.ts",
-      "sha256": "0d752d353888887752fce1e0e8f09599b2db3562078608c7c7da489cbe4e8094"
+      "sha256": "0a13e4a67a8237765a22542af75f8b27244cd5a09d361e5955f132373305f37a"
     },
     {
       "path": "src/lib/features/map/mapCameraFraming.ts",
-      "sha256": "5f9b5cddc75fa5b4de8382e1f91f1041d5373d1e5a483d59343551b71feed211"
+      "sha256": "3989386afc463ec856c7864ef809fb2ac736eaeacf1cb9c75d727dbe3f62ec2c"
     },
     {
       "path": "../db/config/providers/stm.yaml",
@@ -49,40 +49,40 @@
   ],
   "posters": [
     {
-      "filename": "basemap-montreal-dark-mobile-20261003.avif",
+      "filename": "basemap-montreal-dark-mobile-20261109.avif",
       "theme": "dark",
       "width": 390,
       "height": 844,
       "format": "avif",
-      "bytes": 39847,
-      "sha256": "57d20ae58cf135512b2548f524568b39ad40f2e5d0bfb7fce782acff6bafee66"
+      "bytes": 23059,
+      "sha256": "b2493e6ab18e5351b095126017524ddc0b0a3727b50bf9737a4854bf4a30c808"
     },
     {
-      "filename": "basemap-montreal-dark-desktop-20261003.avif",
+      "filename": "basemap-montreal-dark-desktop-20261109.avif",
       "theme": "dark",
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 97464,
-      "sha256": "513720bc0adaa16891751b8bbd4365cf97ebf00cfbc546f3a64e1d7baf29f750"
+      "bytes": 100196,
+      "sha256": "2b62f2b5b928aa2be47493e94e11b6ae2722fb6bff2464882e8721703be51236"
     },
     {
-      "filename": "basemap-montreal-light-mobile-20261003.avif",
+      "filename": "basemap-montreal-light-mobile-20261109.avif",
       "theme": "light",
       "width": 390,
       "height": 844,
       "format": "avif",
-      "bytes": 50357,
-      "sha256": "e467dea43c0b3948e0834aee273f93cfbc111cd7b082de39ae7a9b5c418e1d67"
+      "bytes": 26050,
+      "sha256": "826df19b40ebaf9967307582c178dd9dc4912c591aa4f77a186a71d8e7fcf2d8"
     },
     {
-      "filename": "basemap-montreal-light-desktop-20261003.avif",
+      "filename": "basemap-montreal-light-desktop-20261109.avif",
       "theme": "light",
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 117586,
-      "sha256": "ab5f666407c0a6f50ecf50b90b96e2ca0a4922ab0000fc076349e5c8531c8176"
+      "bytes": 118131,
+      "sha256": "68818f9cfa9da542d6669c9588ac2b03f3b4c5a92e6f1479b7c79465c620640b"
     }
   ]
 }

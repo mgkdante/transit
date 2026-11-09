@@ -1,8 +1,9 @@
 <script lang="ts">
 	import WavesIcon from '@lucide/svelte/icons/waves';
-	import { motionMode } from '$lib/stores';
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
+	import { motionMode } from '#lib/stores/index.ts';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import type { MapCopy } from './map.copy';
+	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 
 	const localizeHref = getLocalizeHref();
 
@@ -14,7 +15,7 @@
 
 	let { locale, copy: t, collapsed = false }: Props = $props();
 
-	const smooth = $derived(motionMode.isSmooth);
+	const smooth = $derived(motionMode.isSmooth && !$prefersReducedMotion);
 	const explainHref = $derived(`${localizeHref('/metrics', locale)}#live-positions`);
 </script>
 
@@ -28,10 +29,13 @@
 			class="map-motion-round"
 			role="switch"
 			aria-checked={smooth}
+			disabled={$prefersReducedMotion}
+			title={$prefersReducedMotion ? t.motion.unavailable : undefined}
 			aria-label={t.motion.toSmooth}
 			data-testid="map-motion-switch"
 			onclick={() => motionMode.toggle()}
 		></button>
+		{#if $prefersReducedMotion}<span class="map-motion-hint">{t.motion.unavailable}</span>{/if}
 	{:else}
 		<div class="map-motion-heading">
 			<span class="map-motion-label">{t.motion.label}</span>
@@ -40,18 +44,31 @@
 				class="map-motion-switch"
 				role="switch"
 				aria-checked={smooth}
+				disabled={$prefersReducedMotion}
 				data-testid="map-motion-switch"
 				onclick={() => motionMode.toggle()}
 			>
 				<span class="map-motion-track" aria-hidden="true"
 					><span class="map-motion-thumb"></span></span
 				>
-				<span class="map-motion-state">{smooth ? t.motion.smooth : t.motion.raw}</span>
+				<span class="map-motion-state"
+					>{$prefersReducedMotion
+						? t.motion.unavailableLabel
+						: smooth
+							? t.motion.smooth
+							: t.motion.raw}</span
+				>
 				<span class="sr-only"> {t.motion.toSmooth}</span>
 			</button>
 		</div>
 		<div class="map-motion-caption">
-			<span class="map-motion-hint">{smooth ? t.motion.hintSmooth : t.motion.hintRaw}</span>
+			<span class="map-motion-hint"
+				>{$prefersReducedMotion
+					? t.motion.unavailable
+					: smooth
+						? t.motion.hintSmooth
+						: t.motion.hintRaw}</span
+			>
 			<a class="map-motion-explain" href={explainHref}>{t.motion.explain}</a>
 		</div>
 	{/if}

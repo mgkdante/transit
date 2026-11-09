@@ -22,10 +22,12 @@ bun run dev
 icons. `bun run dev` serves http://localhost:5173 from the public snapshots; it
 needs internet access but no database, API keys or Cloudflare account.
 
-On Windows, `bun install --frozen-lockfile` can resolve differently from Linux.
-If it fails, run `bun install` and keep the `bun.lock` change out of your
-commit. A dependency change needs a lockfile resolved by Bun on Linux, which is
-what CI installs from.
+For a dependency change, run `bun install` on your machine and commit the intended
+`bun.lock` change. CI's `bun install --frozen-lockfile` on Linux decides whether
+it works. If that install fails, regenerate the lockfile with the pinned Bun on
+a Linux host or in CI, then rerun the checks. Windows work stays on native tools.
+For an unchanged checkout, a local frozen-install failure is a setup problem;
+keep incidental lockfile changes out of your commit.
 
 ## Check a change
 
@@ -47,7 +49,7 @@ manifests, which cover linux-x64 and win32-x64.
 
 CI also checks the social cards, icons, map posters and deploy dry runs. Shared
 design changes belong in
-[yesid.dev-design](https://github.com/mgkdante/yesid.dev-design); the `@yesid/*`
+[yesid.design](https://github.com/mgkdante/yesid.design); the `@yesid/*`
 URLs in `apps/web/package.json` pin the release in use.
 
 ## Python pipeline

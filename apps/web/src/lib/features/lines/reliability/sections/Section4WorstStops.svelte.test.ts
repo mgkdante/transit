@@ -1,12 +1,14 @@
+import { verdictForWindow } from '#lib/v1/verdict.ts';
 import { render } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import Section4WorstStops from './Section4WorstStops.svelte';
 import { reliabilityCopy } from '../reliability.copy';
 import type { PunctualityVM } from '../clusters';
-import type { WeakStop } from '$lib/v1';
+import type { WeakStop } from '#lib/v1/index.ts';
 
 const vm = (weakStops: WeakStop[], weakStopsWindowed: boolean): PunctualityVM => ({
 	headline: {
+		...verdictForWindow(null),
 		otpPct: null,
 		avgDelayMin: null,
 		p50Min: null,

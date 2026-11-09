@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { DateWindow } from '$lib/filters';
-import { wilsonBounds } from '$lib/v1/stats';
+import type { DateWindow } from '#lib/filters/index.ts';
+import { wilsonBounds } from '#lib/v1/stats.ts';
 import {
 	HistoricCollectionIndexSchema,
 	NetworkHistoryPartitionSchema,
@@ -8,7 +8,7 @@ import {
 	type HistoricMetricCoverage,
 	type HistoricPartitionRef,
 	type NetworkHistoryPartition,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { buildRetainedNetworkTrend } from './retainedTrend';
 
 const GENERATED = '2026-07-13T12:00:00Z';
@@ -157,6 +157,14 @@ function completeFixture(): {
 }
 
 describe('buildRetainedNetworkTrend', () => {
+	it('retains exact counts for the whole selected window verdict', () => {
+		const { index, partitions } = completeFixture();
+		expect(buildRetainedNetworkTrend(index, partitions, WINDOW).value?.headline).toEqual({
+			otpPct: 68.75,
+			observationCount: 160,
+			onTime: 110,
+		});
+	});
 	it('emits exact sparse daily points, preserving real zero and daily-only p90/vehicles', () => {
 		const { index, partitions } = completeFixture();
 		const result = buildRetainedNetworkTrend(index, partitions, WINDOW);
@@ -298,6 +306,7 @@ describe('buildRetainedNetworkTrend', () => {
 		).toEqual({
 			status: 'partial',
 			value: {
+				headline: { otpPct: null, observationCount: null, onTime: null },
 				series: [
 					{
 						date: '2026-02-01',

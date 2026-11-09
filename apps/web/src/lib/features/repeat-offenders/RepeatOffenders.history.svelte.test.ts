@@ -1,13 +1,13 @@
-import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
+import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataRefresh } from '$lib/stores';
+import { dataRefresh } from '#lib/stores/index.ts';
 import type {
 	HistoricCollectionIndex,
 	HistoricRepeatOffendersDay,
 	IsoUtc,
 	RepeatOffenders,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
 
 const harness = vi.hoisted(() => {
@@ -45,17 +45,18 @@ const harness = vi.hoisted(() => {
 
 vi.mock('$app/state', () => ({ page: harness.page }));
 vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
 	replaceState: harness.replaceState,
 	goto: harness.goto,
 }));
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => harness.locale.value };
 });
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRepeatOffenders: harness.getRepeatOffenders,
 	getRepeatOffendersHistoryIndex: harness.getRepeatOffendersHistoryIndex,
 	getRepeatOffendersHistoryDay: harness.getRepeatOffendersHistoryDay,
@@ -319,7 +320,7 @@ describe('RepeatOffenders retained date history', () => {
 				.querySelector('[data-slot="history-navigator"]')
 				?.compareDocumentPosition(rail.querySelector('[data-slot="grain-picker"]')!),
 		).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-		expect(screen.getByTestId('quiet-mode-controls').querySelectorAll('button')).toHaveLength(2);
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
 		expect(screen.getAllByRole('link', { name: /Current trip/ })[0]).toHaveAttribute(
 			'href',
 			'/lines/11',

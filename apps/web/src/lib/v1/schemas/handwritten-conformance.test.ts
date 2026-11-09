@@ -4,7 +4,10 @@ import type { z } from 'zod';
 import { PublicProviderCatalogSchema } from '../providers';
 import * as s from './index';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
 type Node = {
 	$ref?: string;
@@ -19,6 +22,9 @@ type Node = {
 	additionalProperties?: boolean | Node;
 };
 const families = [
+	['live_alerts', s.AlertsFileSchema],
+	['live_trips', s.TripsFileSchema],
+	['live_stop_departures', s.StopDeparturesFileSchema],
 	['providers', PublicProviderCatalogSchema],
 	['historic_availability_index', s.HistoricAvailabilityIndexSchema],
 	['historic_collection_index', s.HistoricCollectionIndexSchema],

@@ -1,6 +1,10 @@
 <script lang="ts">
-	import { ChartLegend, SeverityBar, type ChartLegendItem } from '$lib/components/dataviz';
-	import { Chart, ScrollFrame, type StackedShareSpec } from '$lib/components/dataviz/chart';
+	import { ChartLegend, SeverityBar, type ChartLegendItem } from '#lib/components/dataviz/index.ts';
+	import {
+		Chart,
+		ScrollFrame,
+		type StackedShareSpec,
+	} from '#lib/components/dataviz/chart/index.ts';
 	import { CollapsibleSection } from '@yesid/ui/brand';
 
 	const shareSpec: StackedShareSpec = {
@@ -29,7 +33,7 @@
 	<span>Hourly cells</span>
 {/snippet}
 
-<CollapsibleSection title="Reliability" open={true} quiet={false}>
+<CollapsibleSection title="Reliability" open={true}>
 	<p data-testid="plain-card-prose">Plain card prose</p>
 	<Chart spec={shareSpec} />
 	<ChartLegend items={standaloneLegendItems} data-testid="standalone-chart-legend" />

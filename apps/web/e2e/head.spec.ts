@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
 import { SECURITY_HEADERS } from '@yesid/seo-kit/headers';
-import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
+import { navPillCopy } from '../src/lib/i18n/messages';
 import { AUDIT_NAV, SURFACE_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';
 
@@ -58,6 +58,16 @@ test('the share card is a PNG of the declared size', async ({ page, request }) =
 	expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([width, height]);
 });
 
+// Icon services (and Plausible, through them) read only /favicon.ico, not the SVG link.
+test('the root favicon.ico holds the brand mark at 16, 32 and 48 pixels', async ({ request }) => {
+	const icon = await request.get('/favicon.ico');
+	expect(icon.status()).toBe(200);
+	const bytes = await icon.body();
+	expect([bytes.readUInt16LE(0), bytes.readUInt16LE(2)], 'an ICO header').toEqual([0, 1]);
+	const sizes = Array.from({ length: bytes.readUInt16LE(4) }, (_, i) => bytes[6 + i * 16] || 256);
+	expect(sizes).toEqual([16, 32, 48]);
+});
+
 test('documents carry the security headers and robots matches the indexing policy', async ({
 	page,
 	request,
@@ -101,9 +111,12 @@ for (const colorScheme of ['dark', 'light'] as const) {
 }
 
 // The fixture server stands in for https://data.yesid.dev on another origin, which connect-src blocks.
-const fixtureData = new URL(
-	JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars.PUBLIC_V1_BASE,
-).origin;
+const fixtureData = process.env.TRANSIT_E2E_DATA_PORT
+	? `http://127.0.0.1:${process.env.TRANSIT_E2E_DATA_PORT}`
+	: new URL(
+			JSON.parse(readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8')).vars
+				.PUBLIC_V1_BASE,
+		).origin;
 
 test('every destination runs under the real policy without a violation', async ({ page }) => {
 	const violations: string[] = [];

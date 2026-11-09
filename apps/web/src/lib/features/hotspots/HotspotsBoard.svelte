@@ -1,63 +1,66 @@
 <script lang="ts">
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor, type SurfaceKind } from '$lib/nav';
-	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { absenceSentence } from '$lib/site/absence';
-	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
-	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor, type SurfaceKind } from '#lib/nav/index.ts';
+	import {
+		fromSearchParams,
+		toSearchParams,
+		emptyFilterState,
+		type WorstN,
+	} from '#lib/filters/index.ts';
+	import { availabilityFromPointCollectionIndex } from '#lib/v1/history/selection.ts';
+	import { createHistoryCorrectionPresentation } from '#lib/v1/history/datePresentation.svelte.ts';
 	import {
 		createHistoryDateResource,
 		historyDateRequestFromSearchParams,
-	} from '$lib/v1/history/dateResource.svelte';
+	} from '#lib/v1/history/dateResource.svelte.ts';
 	import {
 		getHotspots,
 		getHotspotsHistoryDay,
 		getHotspotsHistoryIndex,
-	} from '$lib/v1/repositories/historic';
-	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '$lib/v1/schemas';
-	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+	} from '#lib/v1/repositories/historic.ts';
+	import type { HistoricCollectionIndex, HotspotEntry, Hotspots } from '#lib/v1/schemas/index.ts';
+	import type { ChartDatumPopoverModel } from '#lib/components/dataviz/chart/index.ts';
 	import {
 		ArticleControlStack,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
 		type GrainSegment,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		ArticleHeader,
 		DetailFrame,
 		SurfaceRail,
 		type SurfaceRailContext,
-		type SurfaceRailPresentation,
 	} from '@yesid/ui/layout';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
-	import { TypedInformationCard } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { fmtCount, fmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
+	import { fmtCount, fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
 
 	import {
 		ladderGrains,
 		HOTSPOT_GRAINS,
 		type HotspotGrainKey,
-	} from '$lib/reliability/ladderGrains';
+	} from '#lib/reliability/ladderGrains.ts';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from '$lib/reliability/ladderCap';
+	} from '#lib/reliability/ladderCap.ts';
 	import { selectHotspotLadder, type HotspotPopoverEvidence } from './selectors/hotspotLadder';
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
@@ -75,7 +78,7 @@
 			loadDate: (date, index, signal) => getHotspotsHistoryDay(date, index, { signal }),
 		},
 		{
-			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			initialRequest: historyDateRequestFromSearchParams(new URLSearchParams(page.url.search)),
 		},
 	);
 	onDestroy(() => hotspots.destroy());
@@ -111,73 +114,34 @@
 		});
 	}
 
-	let grainKey = $state<HotspotGrainKey>(
-		(() => {
-			const raw = page.url.searchParams.get('grain');
-			if (raw === 'shift') return 'shift';
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'week' || seeded === 'month' ? seeded : 'day';
-		})(),
-	);
-
-	const grainLabels = $derived<Partial<Record<HotspotGrainKey, string>>>({
+	const grainLabels = $derived({
 		day: t.grain.day,
 		week: t.grain.week,
 		month: t.grain.month,
-		shift: t.grain.shift,
+		shift: { label: t.grain.shift, compactLabel: t.grain.shiftCompact },
 	});
+	const view = createReliabilityViewState({
+		snapshot: () => hotspots.data,
+		grains: { keys: HOTSPOT_GRAINS, labels: () => grainLabels, present: () => present },
+		locale: () => locale,
+		url: () => {
+			const state = emptyFilterState();
+			if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
+			const date =
+				hotspots.request.hasDate && hotspots.resolved == null
+					? hotspots.request.rawDate
+					: hotspots.canonicalDate;
+			return { date, n: toSearchParams(state).get('n') };
+		},
+	});
+	const grainKey = $derived<HotspotGrainKey>(view.grain);
 	const showGrainPicker = $derived(present.size > 1);
-	const uid = $props.id();
-	const disabledReason = $derived(absenceSentence('no-observations', locale));
-	const grainSegments = $derived<GrainSegment<HotspotGrainKey>[]>(
-		HOTSPOT_GRAINS.map((key) => {
-			const available = present.has(key);
-			return {
-				key,
-				label: grainLabels[key] ?? key,
-				...(key === 'shift' ? { compactLabel: t.grain.shiftCompact } : {}),
-				available,
-				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
-			};
-		}),
+
+	let worstN = $state<WorstN>(
+		fromSearchParams(new URLSearchParams(page.url.search)).worstN ?? DEFAULT_WORST_N,
 	);
-	function grainSegmentsFor(
-		presentation: SurfaceRailPresentation,
-	): GrainSegment<HotspotGrainKey>[] {
-		return grainSegments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
-
-	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
-	});
-
-	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
-
-	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
-		const state = emptyFilterState();
-		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
-		const grainParam =
-			grainKey === 'day'
-				? null
-				: grainKey === 'shift'
-					? 'shift'
-					: ((): string | null => {
-							state.grain = grainKey;
-							return toSearchParams(state).get('grain');
-						})();
-		const dateParam =
-			hotspots.request.hasDate && hotspots.resolved == null
-				? hotspots.request.rawDate
-				: hotspots.canonicalDate;
-		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
-	});
-	$effect(() => mirrorSearchParams(wire));
 
 	function navKindFor(type: string): SurfaceKind | null {
 		const kind = type.toLowerCase();
@@ -317,7 +281,9 @@
 			? t.history.retainedWindow(formatDateKey(hotspots.selectedDate, locale))
 			: t.window[grainKey],
 	);
-	const controlsSummary = $derived(grainLabels[grainKey] ?? '');
+	const controlsSummary = $derived(
+		view.segments.find((segment) => segment.key === grainKey)?.label ?? '',
+	);
 	const isEmpty = $derived(present.size === 0);
 	const showCombinedRail = $derived(
 		(hotspots.data != null && present.size > 0) ||
@@ -330,7 +296,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'hotspots-top',
-			sectionKey: 'hotspots-card-top',
 			number: 1,
 			title: t.cards.top.title,
 			subtitle: hotspots.mode === 'history' ? t.history.retainedTopSubtitle : t.cards.top.subtitle,
@@ -338,7 +303,6 @@
 		},
 		{
 			id: 'hotspots-lines',
-			sectionKey: 'hotspots-card-lines',
 			number: 2,
 			title: t.cards.lines.title,
 			subtitle: t.cards.lines.subtitle,
@@ -346,7 +310,6 @@
 		},
 		{
 			id: 'hotspots-stops',
-			sectionKey: 'hotspots-card-stops',
 			number: 3,
 			title: t.cards.stops.title,
 			subtitle: t.cards.stops.subtitle,
@@ -357,7 +320,7 @@
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -372,8 +335,7 @@
 	});
 </script>
 
-{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
 		{#key historyCorrection.revision}
 			<HistoryNavigator
@@ -394,22 +356,12 @@
 	{/snippet}
 	{#snippet primaryControls()}
 		<GrainPicker
-			segments={presentedGrainSegments}
-			bind:value={grainKey}
+			segments={view.segments}
+			value={view.grain}
+			onSelect={view.selectGrain}
 			label={t.grain.label}
 			variant="time-grid"
 		/>
-		{#each presentedGrainSegments as segment (segment.key)}
-			{#if segment.describedById}
-				<span
-					id={segment.describedById}
-					class="hotspots-reason sr-only"
-					data-slot="controls-reason"
-				>
-					{disabledReason}
-				</span>
-			{/if}
-		{/each}
 	{/snippet}
 	{#snippet secondaryControls()}
 		<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
@@ -420,7 +372,7 @@
 		</p>
 	{/snippet}
 
-	<CollapsibleSection title={t.rail.controls} sectionKey="hotspots-controls">
+	<CollapsibleSection independent title={t.rail.controls}>
 		<ArticleControlStack
 			history={hasHistoryNavigator ? historyControls : undefined}
 			primary={showGrainPicker ? primaryControls : undefined}
@@ -432,10 +384,9 @@
 		<div class="hotspots-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="hotspots-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -459,9 +410,12 @@
 <DetailFrame
 	class="hotspots-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={showCombinedRail ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -476,7 +430,7 @@
 			titleId="hotspots-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -504,10 +458,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'hotspots-top'}
 								<div class="hotspots-article-prose">

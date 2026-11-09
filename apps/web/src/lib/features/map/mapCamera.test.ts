@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import type { RouteFile } from '$lib/v1';
+import type { RouteFile } from '#lib/v1/index.ts';
 
 const mocks = vi.hoisted(() => ({
 	animate: true,

@@ -3,16 +3,33 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { compile } from 'svelte/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFilterStore, emptyFilterState } from '$lib/filters';
-import { motionMode } from '$lib/stores';
-import type { StopIndexEntry } from '$lib/v1/schemas';
-import { formatRelativeSeconds } from '$lib/utils/time';
-import type { WithDistance } from '$lib/components/map';
+import { createFilterStore, emptyFilterState } from '#lib/filters/index.ts';
+import { motionMode } from '#lib/stores/index.ts';
+import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
+import { formatRelativeSeconds } from '#lib/utils/time.ts';
+import type { WithDistance } from '#lib/components/map/index.ts';
 import type { MapHoverPeek } from './mapHoverPeek';
 import { copy as MAP_COPY } from './map.copy';
+import { presentationFixture, stampFixture } from '#lib/v1/live/__fixtures__/presentation.ts';
+import type { MapNoticeState } from '#lib/v1/live/livePresentation.ts';
 import MapOverlayChromeHarness from './__fixtures__/MapOverlayChromeHarness.svelte';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
+
+const stalledPresentation = () =>
+	presentationFixture({
+		bannerState: 'global-stall',
+		stamp: stampFixture({ isStale: true, ageLabel: 'not responding', ageText: 'not responding' }),
+		notice: {
+			kind: 'whole-feed-stall',
+			message: 'Live feed not responding',
+			body: '',
+			tone: 'warning',
+		},
+	});
 
 const stop: StopIndexEntry = {
 	id: 'stop-1',
@@ -127,7 +144,18 @@ describe('MapOverlayChrome', () => {
 			const store = createFilterStore(emptyFilterState());
 			const t = MAP_COPY[locale];
 			const generatedUtc = '2026-09-07T12:00:00Z';
-			const props = { store, locale, generatedUtc, ageSeconds: 7, isStale: false };
+			const props = {
+				store,
+				locale,
+				presentation: presentationFixture({
+					stamp: stampFixture({
+						generatedUtc,
+						ageSeconds: 7,
+						ageText: formatRelativeSeconds(7, locale),
+						label: t.latestReport,
+					}),
+				}),
+			};
 			const { container, rerender } = render(MapOverlayChromeHarness, { props });
 			const banner = screen.getByRole('status');
 			const assertReport = (age: number, timestamp: string, degraded: boolean) => {
@@ -152,11 +180,22 @@ describe('MapOverlayChrome', () => {
 			const retainedFailure = t.selectedFamilyFailure(t.familyVehicles, true);
 			await rerender({
 				...props,
-				ageSeconds: 8,
-				degraded: true,
-				liveEdgeState: failure === 'unavailable' ? 'unavailable' : null,
-				liveEdgeMessage: failure === 'unavailable' ? t.liveUnavailable : null,
-				selectedFamilyFailureMessage: failure === 'retained-family' ? retainedFailure : null,
+				presentation: presentationFixture({
+					stamp: stampFixture({
+						generatedUtc,
+						ageSeconds: 8,
+						ageText: formatRelativeSeconds(8, locale),
+						degraded: true,
+						label: t.latestReport,
+					}),
+					bannerState: failure === 'unavailable' ? 'unavailable' : 'selected-family-failure',
+					notice: {
+						kind: 'refresh-unavailable',
+						message: failure === 'unavailable' ? t.liveUnavailable : retainedFailure,
+						body: '',
+						tone: 'warning',
+					},
+				}),
 			});
 			assertReport(8, generatedUtc, true);
 			expect(screen.getByRole('status')).toBe(banner);
@@ -168,12 +207,14 @@ describe('MapOverlayChrome', () => {
 			const recoveredUtc = '2026-09-07T12:00:09Z';
 			await rerender({
 				...props,
-				generatedUtc: recoveredUtc,
-				ageSeconds: 1,
-				degraded: false,
-				liveEdgeState: null,
-				liveEdgeMessage: null,
-				selectedFamilyFailureMessage: null,
+				presentation: presentationFixture({
+					stamp: stampFixture({
+						generatedUtc: recoveredUtc,
+						ageSeconds: 1,
+						ageText: formatRelativeSeconds(1, locale),
+						label: t.latestReport,
+					}),
+				}),
 			});
 			assertReport(1, recoveredUtc, false);
 			expect(screen.getByRole('status')).toBe(banner);
@@ -212,8 +253,15 @@ describe('MapOverlayChrome', () => {
 		await rerender({
 			store,
 			locale: 'en',
-			liveEdgeState: 'unavailable',
-			liveEdgeMessage: MAP_COPY.en.liveUnavailable,
+			presentation: presentationFixture({
+				bannerState: 'unavailable',
+				notice: {
+					kind: 'unavailable',
+					message: MAP_COPY.en.liveUnavailable,
+					body: '',
+					tone: 'warning',
+				},
+			}),
 		});
 		const edge = container.querySelector('.map-live-edge')!;
 		expect(edge).toBeInTheDocument();
@@ -361,7 +409,7 @@ describe('MapOverlayChrome', () => {
 			);
 			const store = createFilterStore(emptyFilterState());
 			const view = render(MapOverlayChromeHarness, {
-				props: { store, locale: 'en', isDesktop: false, isStale: false },
+				props: { store, locale: 'en', isDesktop: false, presentation: presentationFixture() },
 			});
 			view.container.style.setProperty('--map-mobile-control-bottom', '84px');
 			view.container.style.setProperty('--chrome-offset', '16px');
@@ -370,7 +418,12 @@ describe('MapOverlayChrome', () => {
 			await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 			expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
-			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
+			await view.rerender({
+				store,
+				locale: 'en',
+				isDesktop: false,
+				presentation: stalledPresentation(),
+			});
 			expect(screen.getByRole('status')).toBe(stableRegion);
 			expect(stableRegion).toHaveAttribute('data-state', 'global-stall');
 			expect(stableRegion).toHaveClass('map-feed-stall');
@@ -389,7 +442,12 @@ describe('MapOverlayChrome', () => {
 			expect(getComputedStyle(stableRegion).top).toBe('auto');
 			expect(getComputedStyle(stableRegion).right).toBe('12px');
 
-			await view.rerender({ store, locale: 'en', isDesktop: false, isStale: false });
+			await view.rerender({
+				store,
+				locale: 'en',
+				isDesktop: false,
+				presentation: presentationFixture(),
+			});
 			expect(screen.getByTestId('map-filter-pill')).toBeInTheDocument();
 			expect(screen.getByRole('status')).toBe(stableRegion);
 			expect(stableRegion).toHaveAttribute('data-state', 'idle');
@@ -410,13 +468,18 @@ describe('MapOverlayChrome', () => {
 		installViewportMatchMedia(1024);
 		const store = createFilterStore(emptyFilterState());
 		const view = render(MapOverlayChromeHarness, {
-			props: { store, locale: 'en', isDesktop: false, isStale: false },
+			props: { store, locale: 'en', isDesktop: false, presentation: presentationFixture() },
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
 		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
 
-		await view.rerender({ store, locale: 'en', isDesktop: false, isStale: true });
+		await view.rerender({
+			store,
+			locale: 'en',
+			isDesktop: false,
+			presentation: stalledPresentation(),
+		});
 		installCompiledCss(
 			'src/lib/features/map/MapFilterPill.svelte',
 			'src/lib/features/map/MapFeedStallBanner.svelte',
@@ -497,8 +560,20 @@ describe('MapOverlayChrome', () => {
 					store,
 					locale: 'en',
 					isDesktop: widthPx >= 1024,
-					isStale,
-					selectedFamilyFailureMessage: failure,
+					presentation: presentationFixture({
+						bannerState: state as MapNoticeState,
+						stamp: stampFixture({
+							isStale,
+							ageText: readout ?? '12 seconds ago',
+							ageLabel: readout,
+						}),
+						notice: {
+							kind: 'none',
+							message: failure ?? (isStale ? 'Live feed not responding' : ''),
+							body: '',
+							tone: 'warning',
+						},
+					}),
 				},
 			});
 			container.style.setProperty('--map-mobile-control-bottom', '84px');
@@ -611,8 +686,16 @@ describe('MapOverlayChrome', () => {
 				store,
 				locale: 'en',
 				isDesktop: false,
-				isStale: true,
-				selectedFamilyFailureMessage: 'Vehicle positions unavailable',
+				presentation: presentationFixture({
+					bannerState: 'selected-family-failure',
+					stamp: stampFixture({ isStale: true }),
+					notice: {
+						kind: 'refresh-unavailable',
+						message: 'Vehicle positions unavailable',
+						body: '',
+						tone: 'warning',
+					},
+				}),
 			},
 		});
 

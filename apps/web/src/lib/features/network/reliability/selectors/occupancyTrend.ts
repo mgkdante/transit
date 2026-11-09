@@ -1,8 +1,8 @@
-import type { TrendPoint } from '$lib/v1/schemas/network_trend';
-import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
-import type { StackedShareSpec } from '$lib/components/dataviz/chart';
-import { stackedShareSpec } from '$lib/components/dataviz/chart/share';
-import type { Locale } from '$lib/i18n/config';
+import type { TrendPoint } from '#lib/v1/schemas/network_trend.ts';
+import { OCCUPANCY_CODES, type OccupancyCode } from '#lib/v1/schemas/types.ts';
+import type { StackedShareSpec } from '#lib/components/dataviz/chart/index.ts';
+import { stackedShareSpec } from '#lib/components/dataviz/chart/share.ts';
+import type { Locale } from '#lib/i18n/config.ts';
 
 export interface OccupancyDay {
 	readonly date: string;

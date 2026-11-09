@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { intl, getLocalizeHref, getLocale } from '$lib/i18n';
-	import { mapHrefFor } from '$lib/nav';
-	import { getRoutesIndex } from '$lib/v1/repositories/static';
-	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
-	import { isProblemVerdict } from '$lib/v1/reliabilityVerdict';
-	import type { RouteIndexEntry } from '$lib/v1';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
+	import { intl, getLocalizeHref, getLocale } from '#lib/i18n/index.ts';
+	import { mapHrefFor } from '#lib/nav/index.ts';
+	import { getRoutesIndex } from '#lib/v1/repositories/static.ts';
+	import { createReliabilityLoader } from '#lib/v1/reliabilitySnapshot.svelte.ts';
+	import { isProblemVerdict, verdictRank } from '#lib/v1/verdict.ts';
+	import type { RouteIndexEntry } from '#lib/v1/index.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import {
 		ResourceBoundary,
 		EntityList,
@@ -15,13 +16,13 @@
 		ReliabilityBadge,
 		createReliabilityListingController,
 		isReliabilitySnapshotPending,
-	} from '$lib/components/surface';
-	import { ListingHeaderStats } from '$lib/components/layout';
+	} from '#lib/components/surface/index.ts';
+	import { ListingHeaderStats } from '#lib/components/layout/index.ts';
 	import { ListingFrame } from '@yesid/ui/layout';
 	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
 	import { blueprintScrub } from '@yesid/motion/utils/blueprintScrub';
-	import { foldSearchText, tokenMatchScore } from '$lib/search/normalize';
-	import { routeModeHint, routeModeKey } from '$lib/search/stopMode';
+	import { foldSearchText, tokenMatchScore } from '#lib/search/normalize.ts';
+	import { routeModeHint, routeModeKey } from '#lib/search/stopMode.ts';
 	import { indexCopy } from './lines.copy';
 	import LinesBlueprint from './LinesBlueprint.svelte';
 
@@ -31,7 +32,7 @@
 
 	const routes = createResource(() => getRoutesIndex());
 
-	const reliability = createReliabilityLoader('route');
+	const reliability = createReliabilityLoader('route', verdictCopy[locale]);
 	const observeReliability = reliability.reliability;
 
 	let query = $state('');
@@ -89,14 +90,13 @@
 		return sorted.filter((r) => tokenMatchScore([r.id, r.short, r.long], q) != null);
 	});
 
-	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
 	const reliabilityListing = createReliabilityListingController({
 		loader: reliability,
 		candidates: () => filtered,
 		id: (route) => route.id,
 		requestWhen: () => sort === 'worst' || status === 'problem',
 		rankWhen: () => sort === 'worst',
-		rank: (snapshot) => (snapshot.verdict == null ? 99 : (VERDICT_RANK[snapshot.verdict] ?? 99)),
+		rank: (snapshot) => verdictRank(snapshot.verdict),
 	});
 	const worstPending = $derived(reliabilityListing.rankingPending);
 	const sorted = $derived(reliabilityListing.order(filtered));
@@ -142,7 +142,6 @@
 			allLabel={t.sortAlpha}
 			allowDeselect={false}
 			collapsible
-			persistKey="lines-filter-sort-group"
 			testIdPrefix="lines-sort"
 			onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'alpha')}
 		/>
@@ -156,7 +155,6 @@
 			allLabel={t.statusAll}
 			allowDeselect={false}
 			collapsible
-			persistKey="lines-filter-status-group"
 			testIdPrefix="lines-status"
 			onSelect={(key) => (status = key === 'problem' ? 'problem' : 'all')}
 		/>
@@ -170,7 +168,6 @@
 			allLabel={t.modeAll}
 			allowDeselect={false}
 			collapsible
-			persistKey="lines-filter-mode-group"
 			testIdPrefix="lines-mode"
 			onSelect={(key) => (mode = key ?? 'all')}
 		/>
@@ -185,7 +182,6 @@
 	aside={listingStats}
 	onHeaderMount={blueprintScrub}
 	filterLabel={t.controlsLabel}
-	filterPersistKey="lines-listing-filters"
 	search={listingSearch}
 	filters={listingFilters}
 >

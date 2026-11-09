@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { selectCrowdingDelay, type CrowdingDelayLabels } from './crowdingDelay';
-import { DELAY_POS_DOMAIN } from '$lib/features/reliability/domains';
-import { OCCUPANCY_CODES } from '$lib/v1/schemas';
-import type { CrowdingDelayCell } from '$lib/v1';
+import { DELAY_POS_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { OCCUPANCY_CODES } from '#lib/v1/schemas/index.ts';
+import type { CrowdingDelayCell } from '#lib/v1/index.ts';
 
 const labels: CrowdingDelayLabels = {
 	title: 'Delay by crowding',

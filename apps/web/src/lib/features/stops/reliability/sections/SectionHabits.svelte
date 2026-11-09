@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { absenceShort } from '$lib/site/absence';
-	import { ChartLegend } from '$lib/components/dataviz';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { buildHabitsHeatmap } from '$lib/reliability/habitsHeatmap';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { absenceShort } from '#lib/site/absence.ts';
+	import { ChartLegend } from '#lib/components/dataviz/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { buildHabitsHeatmap } from '#lib/reliability/habitsHeatmap.ts';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';
 

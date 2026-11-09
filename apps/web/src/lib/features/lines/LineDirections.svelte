@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	import type { RouteFile, StopPrediction } from '$lib/v1';
-	import type { Locale } from '$lib/i18n';
+	import type { RouteFile, StopPrediction } from '#lib/v1/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import type { RouteDetailCopy } from './lines.copy';
 
 	export interface LineDirectionsProps {
@@ -12,12 +12,14 @@
 </script>
 
 <script lang="ts">
-	import { getLocalizeHref } from '$lib/i18n';
-	import { routeFor } from '$lib/nav';
-	import { stopNameFallback } from '$lib/site/absence';
-	import { formatUtc } from '$lib/utils/time';
-	import { delayLabel, delayTone } from '$lib/site/delayPresentation';
-	import { AbsentValue } from '$lib/components/edge';
+	import { liveAbsenceReason, readLiveAbsenceContext } from '#lib/site/absence.ts';
+	const absenceContext = readLiveAbsenceContext();
+	import { getLocalizeHref } from '#lib/i18n/index.ts';
+	import { routeFor } from '#lib/nav/index.ts';
+	import { stopNameFallback } from '#lib/site/absence.ts';
+	import { formatUtc } from '#lib/utils/time.ts';
+	import { delayLabel, delayTone } from '#lib/site/delayPresentation.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	const localizeHref = getLocalizeHref();
@@ -49,11 +51,8 @@
 							{#each dir.stops ?? [] as stop, si (stop.id + '-' + si)}
 								{@const prediction = predictions.get(stop.id) ?? null}
 								<li class="line-stop">
-									<a
-										class="line-stop-link"
-										href={stopHref(stop.id)}
-										aria-label={copy.viewStop(stop.name ?? stopNameFallback(stop.id, locale))}
-									>
+									<a class="line-stop-link" href={stopHref(stop.id)}>
+										<span class="sr-only">{copy.viewStop} </span>
 										<span class="line-stop-seq">{stop.seq}</span>
 										<span class="line-stop-name"
 											>{stop.name ?? stopNameFallback(stop.id, locale)}</span
@@ -72,10 +71,18 @@
 														{delayLabel(prediction.delayMin, copy)}
 													</span>
 												{:else}
-													<AbsentValue reason="not-reported" variant="row" {locale} />
+													<AbsentValue
+														reason={liveAbsenceReason('trip-prediction-delay', absenceContext())}
+														variant="row"
+														{locale}
+													/>
 												{/if}
 											{:else}
-												<AbsentValue reason="no-prediction" variant="row" {locale} />
+												<AbsentValue
+													reason={liveAbsenceReason('trip-prediction', absenceContext())}
+													variant="row"
+													{locale}
+												/>
 											{/if}
 										</span>
 										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />

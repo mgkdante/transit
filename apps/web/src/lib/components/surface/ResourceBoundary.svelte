@@ -1,12 +1,12 @@
 <script lang="ts" generics="T">
 	import type { Snippet } from 'svelte';
-	import type { Locale } from '$lib/i18n';
-	import type { Resource } from '$lib/v1/resource.svelte';
-	import { asDataState } from '$lib/v1/data-state';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { Resource } from '#lib/v1/resource.svelte.ts';
+	import { asDataState } from '#lib/v1/data-state.ts';
 	import { desktop } from '@yesid/ui/state';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { type StateNoticePresentation } from '@yesid/ui/feedback';
-	import type { AbsenceReason } from '$lib/site/serviceWindow';
+	import type { AbsenceReason } from '#lib/site/serviceWindow.ts';
 
 	interface ResourceBoundaryProps {
 		resource: Resource<T>;

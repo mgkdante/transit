@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { absenceShort, routeNameFallback, stopNameFallback } from '$lib/site/absence';
-	import { routeFor } from '$lib/nav';
-	import { mirrorSearchParam } from '$lib/site/urlMirror';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { absenceShort, routeNameFallback, stopNameFallback } from '#lib/site/absence.ts';
+	import { routeFor } from '#lib/nav/index.ts';
+	import { mirrorSearchParam } from '#lib/site/urlMirror.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct as sharedFmtPct,
-	} from '$lib/utils';
-	import { shiftLabel } from '$lib/features/reliability/shiftGrains';
-	import { getAdvertisedReceipt, getReceiptsIndex } from '$lib/v1/repositories/historic';
-	import type { Receipt } from '$lib/v1';
-	import { getV1Context } from '$lib/v1/boot';
+	} from '#lib/utils/index.ts';
+	import { shiftLabel } from '#lib/features/reliability/shiftGrains.ts';
+	import { getAdvertisedReceipt, getReceiptsIndex } from '#lib/v1/repositories/historic.ts';
+	import type { Receipt } from '#lib/v1/index.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
 	import { receiptObservation } from './selectors/observation';
 	import ObservationCopy from './ObservationCopy.svelte';
 	import {
@@ -24,15 +24,15 @@
 		previousAvailableDate,
 		resolveHistoryDate,
 		type HistoryCorrection,
-	} from '$lib/v1/history/selection';
-	import { createResource } from '$lib/v1/resource.svelte';
-	import { HistoryNavigator, ResourceBoundary } from '$lib/components/surface';
-	import { historyCopy } from '$lib/components/surface/historyCopy';
+	} from '#lib/v1/history/selection.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
+	import { HistoryNavigator, ResourceBoundary } from '#lib/components/surface/index.ts';
+	import { historyCopy } from '#lib/components/surface/historyCopy.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		ArticleHeader,
 		DetailFrame,
@@ -40,11 +40,11 @@
 		type SurfaceRailContext,
 	} from '@yesid/ui/layout';
 	import { TerminalPanel, CollapsibleSection, TocNav } from '@yesid/ui/brand';
-	import { TypedInformationCard } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { desktop } from '@yesid/ui/state';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { copy as COPY } from './receipt.copy';
 	import { selectHeadlineKpis } from './selectors/headlineKpis';
@@ -74,7 +74,7 @@
 	const dateOptions = $derived(availableDates.map((date) => ({ date })));
 	const hasDates = $derived(availableDates.length > 0);
 
-	const seededDate = page.url.searchParams.get('date');
+	const seededDate = new URLSearchParams(page.url.search).get('date');
 	let selectedDate = $state('');
 	let canonicalDate = $state<string | null>(null);
 	let historyAnnouncement = $state<string | null>(null);
@@ -240,7 +240,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'receipt-main',
-			sectionKey: 'receipt-card-main',
 			number: 1,
 			title: t.cards.main.title,
 			subtitle: t.cards.main.subtitle,
@@ -248,7 +247,6 @@
 		},
 		{
 			id: 'receipt-time',
-			sectionKey: 'receipt-card-time',
 			number: 2,
 			title: t.cards.time.title,
 			subtitle: t.cards.time.subtitle,
@@ -256,7 +254,6 @@
 		},
 		{
 			id: 'receipt-delivered',
-			sectionKey: 'receipt-card-delivered',
 			number: 3,
 			title: t.cards.delivered.title,
 			subtitle: t.cards.delivered.subtitle,
@@ -264,7 +261,6 @@
 		},
 		{
 			id: 'receipt-silent',
-			sectionKey: 'receipt-card-silent',
 			number: 4,
 			title: t.cards.silent.title,
 			subtitle: t.cards.silent.subtitle,
@@ -283,7 +279,7 @@
 		reconcileEmpty: () => settledEmpty,
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const railSummary = $derived(selectedDate ? formatDateKey(selectedDate, locale) : '');
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
@@ -318,7 +314,7 @@
 </p>
 
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
-	<CollapsibleSection title={t.rail.controls} sectionKey="receipt-controls">
+	<CollapsibleSection independent title={t.rail.controls}>
 		<div class="receipt-controls" data-slot="receipt-controls">
 			{#key navigatorRevision}
 				<HistoryNavigator
@@ -356,10 +352,9 @@
 		<div class="receipt-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="receipt-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -383,9 +378,12 @@
 <DetailFrame
 	class="receipt-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={hasDates ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -400,7 +398,7 @@
 			titleId="receipt-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -441,10 +439,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'receipt-main'}
 								<div class="receipt-main-body">

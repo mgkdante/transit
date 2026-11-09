@@ -1,6 +1,6 @@
-import type { Locale } from '$lib/i18n';
-import type { LiveIndex } from '$lib/v1/live';
-import { routeDirectionVariants, type RouteDirectionVariant } from '$lib/components/map';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { LiveIndex } from '#lib/v1/live/index.ts';
+import { routeDirectionVariants, type RouteDirectionVariant } from '#lib/components/map/index.ts';
 import type {
 	Alert,
 	RouteDirection,
@@ -12,9 +12,9 @@ import type {
 	StopIndexEntry,
 	Trip,
 	Vehicle,
-} from '$lib/v1/schemas';
-import { formatClock } from '$lib/utils/time';
-import type { AbsenceReasonKey } from '$lib/site/absence';
+} from '#lib/v1/schemas/index.ts';
+import { formatClock } from '#lib/utils/time.ts';
+import type { AbsenceReasonKey } from '#lib/site/absence.ts';
 
 export type MapSelection =
 	| { readonly kind: 'vehicle'; readonly id: string }

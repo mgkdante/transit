@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { IsoUtc, Manifest, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
+import type { IsoUtc, Manifest, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
 import { receiptObservation } from './observation';
 
 const receipt: Receipt = {

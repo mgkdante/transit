@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { intl } from '$lib/i18n';
+	import { intl } from '#lib/i18n/index.ts';
 	import { Chart as LcChart, Svg, Rule, Axis, Grid, Tooltip } from 'layerchart';
 	import { scaleLinear } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import { structuralLabels } from '../structuralLabels';
 	import HistogramBars from './HistogramBars.svelte';

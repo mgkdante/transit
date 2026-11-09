@@ -1,7 +1,13 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
+import { historyViewContract } from '#lib/features/reliability/__fixtures__/historyViewContract.ts';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NetworkFile, NetworkShift, TrendPoint } from '$lib/v1';
-import type { HistoricCollectionIndex, IsoUtc, NetworkHistoryPartition } from '$lib/v1/schemas';
+import type { NetworkFile, NetworkShift, TrendPoint } from '#lib/v1/index.ts';
+import type {
+	HistoricCollectionIndex,
+	IsoUtc,
+	NetworkHistoryPartition,
+} from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 
@@ -200,12 +206,12 @@ const retainedPartitions = [
 
 vi.mock('$app/state', () => ({ page: harness.page }));
 
-vi.mock('$lib/site/urlMirror', () => ({
+vi.mock('#lib/site/urlMirror.ts', () => ({
 	mirrorSearchParams: harness.mirrorSearchParams,
 	mirrorSearchParam: vi.fn(),
 }));
 
-vi.mock('$lib/nav', () => ({
+vi.mock('#lib/nav/index.ts', () => ({
 	layout: { isDesktop: true },
 	openSurface: vi.fn(),
 	routeFor: (target: { kind: string; id?: string; search?: string }) => {
@@ -217,10 +223,11 @@ vi.mock('$lib/nav', () => ({
 	},
 }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: networkManifest, labels: {}, lang: 'en' }),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: (manifest: unknown, options?: unknown) => {
 		createLiveStoreSpy(manifest, options);
 		return {
@@ -241,6 +248,21 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			get ageSeconds() {
 				return harness.liveClock.ageSeconds;
 			},
+			get familyStates() {
+				return {
+					network: {
+						active: true,
+						retainedGeneration: currentNetwork.generated_utc,
+						health: {
+							state: 'live',
+							retained: true,
+							ageSeconds: harness.liveClock.ageSeconds,
+							isStale: false,
+							notice: null,
+						},
+					},
+				};
+			},
 			isStale: false,
 			loading: false,
 			error: null,
@@ -250,14 +272,14 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 		};
 	},
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: vi.fn(),
 	getNetworkHistoryIndex: harness.getNetworkHistoryIndex,
 	loadNetworkHistoryRange: harness.loadNetworkHistoryRange,
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: vi.fn() }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown) => {
 		const source = loader.toString();
 		const isProvenance = /Provenance|provenance/.test(source);
@@ -316,43 +338,6 @@ afterEach(() => {
 });
 
 describe('NetworkSurface retained-history integration', () => {
-	it('keeps the default singleton unchanged while discovery never triggers a partition load', async () => {
-		const view = render(NetworkSurface);
-		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, {
-			families: ['network'],
-		});
-
-		await waitFor(() => expect(harness.getNetworkHistoryIndex).toHaveBeenCalledTimes(1));
-		expect(harness.loadNetworkHistoryRange).not.toHaveBeenCalled();
-		expect(trendRows(view.container)).toHaveLength(2);
-		expect(trendRows(view.container).map(rowOtp)).toEqual(['78%', '81%']);
-		const navigator = view.container.querySelector(
-			'[data-slot="surface-rail"] [data-slot="history-navigator"]',
-		) as HTMLElement;
-		expect(
-			Array.from(navigator.querySelectorAll<HTMLInputElement>('input[type="date"]')).map(
-				(input) => input.value,
-			),
-		).toEqual(['', '']);
-		expect(navigator.querySelector('[data-slot="history-selection"]')).toBeNull();
-		expect(
-			within(navigator).queryByRole('button', { name: 'Return to current snapshot' }),
-		).toBeNull();
-	});
-
-	it('does not flash the current historic chart while an explicit deep link is pending', async () => {
-		const pending = deferred<NetworkHistoryPartition[]>();
-		harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-02-01');
-		harness.loadNetworkHistoryRange.mockReturnValue(pending.promise);
-		const view = render(NetworkSurface);
-
-		await waitFor(() => expect(harness.loadNetworkHistoryRange).toHaveBeenCalledTimes(1));
-		expect(trendRows(view.container)).toHaveLength(0);
-		expect(
-			view.container.querySelector('[data-toc="net-historic"] [data-slot="trend-mark"]'),
-		).toBeNull();
-	});
-
 	it('falls back to the current singleton when optional history discovery is absent', async () => {
 		harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-02-01&focus=keep');
 		harness.getNetworkHistoryIndex.mockResolvedValue(null);
@@ -408,6 +393,10 @@ describe('NetworkSurface retained-history integration', () => {
 		const view = render(NetworkSurface);
 
 		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%', '90%']));
+		const verdict = view.container.querySelector('.network-verdict [data-slot="verdict"]');
+		expect(verdict).toHaveAttribute('data-status', 'tentative');
+		expect(verdict).toHaveTextContent('83%');
+		expect(verdict).toHaveTextContent('100');
 		const change = view.container.querySelector('[data-slot="verdict-delta"]')!;
 		expect(view.container.querySelector('[data-toc="net-historic"]')).toContainElement(
 			change as HTMLElement,
@@ -549,24 +538,29 @@ describe('NetworkSurface retained-history integration', () => {
 		expect(view.queryByRole('radiogroup', { name: 'Delay series' })).toBeNull();
 	});
 
-	it('restores the richest current window after clearing a short retained deep link', async () => {
-		currentDaily.splice(0, currentDaily.length, ...currentDays(90));
-		harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-01-31');
-		harness.loadNetworkHistoryRange.mockResolvedValue([retainedPartitions[0]]);
-		const view = render(NetworkSurface);
+	it.each([7, 30, 90])(
+		'offers the %id chart choice after clearing a short retained deep link',
+		async (days) => {
+			currentDaily.splice(0, currentDaily.length, ...currentDays(90));
+			harness.page.url = new URL('http://localhost/network?from=2026-01-31&to=2026-01-31');
+			harness.loadNetworkHistoryRange.mockResolvedValue([retainedPartitions[0]]);
+			const view = render(NetworkSurface);
 
-		await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
-		const navigator = view.container.querySelector(
-			'[data-slot="surface-rail"] [data-slot="history-navigator"]',
-		) as HTMLElement;
-		await fireEvent.click(
-			within(navigator).getByRole('button', { name: 'Return to current snapshot' }),
-		);
+			await waitFor(() => expect(trendRows(view.container).map(rowOtp)).toEqual(['20%']));
+			const navigator = view.container.querySelector(
+				'[data-slot="surface-rail"] [data-slot="history-navigator"]',
+			) as HTMLElement;
+			await fireEvent.click(
+				within(navigator).getByRole('button', { name: 'Return to current snapshot' }),
+			);
 
-		const windowGroup = await view.findByRole('radiogroup', { name: 'Trend window' });
-		expect(within(windowGroup).getByRole('radio', { name: '90d' })).toBeChecked();
-		await waitFor(() => expect(trendRows(view.container)).toHaveLength(90));
-	});
+			const windowGroup = await view.findByRole('radiogroup', { name: 'Trend window' });
+			expect(within(windowGroup).getByRole('radio', { name: '90d' })).toBeChecked();
+			await fireEvent.click(within(windowGroup).getByRole('radio', { name: `${days}d` }));
+			expect(within(windowGroup).getByRole('radio', { name: `${days}d` })).toBeChecked();
+			await waitFor(() => expect(trendRows(view.container)).toHaveLength(days));
+		},
+	);
 
 	it('does not let an interactive retained range clamp the seeded current window', async () => {
 		currentDaily.splice(0, currentDaily.length, ...currentDays(90));
@@ -657,37 +651,6 @@ describe('NetworkSurface retained-history integration', () => {
 			}),
 		);
 		expect(harness.page.url.searchParams.get('focus')).toBe('keep');
-	});
-
-	it('corrects an invalid pair to current without loading a fallback retained window', async () => {
-		harness.page.url = new URL(
-			'http://localhost/network?grain=month&from=bad&to=2026-02-01&focus=keep',
-		);
-		const view = render(NetworkSurface);
-
-		await waitFor(() => expect(harness.getNetworkHistoryIndex).toHaveBeenCalledTimes(1));
-		expect(harness.loadNetworkHistoryRange).not.toHaveBeenCalled();
-		await waitFor(() =>
-			expect(harness.mirrorSearchParams).toHaveBeenCalledWith({
-				grain: 'month',
-				from: null,
-				to: null,
-			}),
-		);
-		expect(harness.page.url.searchParams.get('focus')).toBe('keep');
-		expect(trendRows(view.container)).toHaveLength(0);
-		const announcement = view.container.querySelector(
-			'[data-slot="history-page-announcement"]',
-		) as HTMLElement;
-		expect(announcement).toHaveAttribute('role', 'status');
-		expect(announcement).toHaveAttribute('aria-live', 'polite');
-		expect(announcement).toHaveTextContent(
-			'The invalid date range was replaced with the current snapshot.',
-		);
-		for (const duplicate of view.container.querySelectorAll('[data-slot="history-announcement"]')) {
-			expect(duplicate).not.toHaveAttribute('role');
-			expect(duplicate).not.toHaveAttribute('aria-live');
-		}
 	});
 
 	it('announces the same correction again after a valid range is selected', async () => {
@@ -806,3 +769,37 @@ interface NetworkReliabilityCopyWithHistory {
 		readonly currentOnly: string;
 	};
 }
+
+historyViewContract('network', {
+	page: harness.page,
+	index: harness.getNetworkHistoryIndex,
+	range: harness.loadNetworkHistoryRange,
+	partitions: retainedPartitions,
+	mount: () => render(NetworkSurface),
+	owned: {
+		read: (container) => trendRows(container).map(rowOtp).join(','),
+		current: '78%',
+		retained: '20%',
+	},
+	current: (container) => {
+		expect(createLiveStoreSpy).toHaveBeenCalledWith(networkManifest, { families: ['network'] });
+		expect(trendRows(container).map(rowOtp)).toEqual(['78%', '81%']);
+		const navigator = container.querySelector(
+			'[data-slot="surface-rail"] [data-slot="history-navigator"]',
+		) as HTMLElement;
+		expect(
+			[...navigator.querySelectorAll<HTMLInputElement>('input[type="date"]')].map(
+				(input) => input.value,
+			),
+		).toEqual(['', '']);
+		expect(navigator.querySelector('[data-slot="history-selection"]')).toBeNull();
+		expect(
+			within(navigator).queryByRole('button', { name: 'Return to current snapshot' }),
+		).toBeNull();
+	},
+	pending: (container) => {
+		expect(
+			container.querySelector('[data-toc="net-historic"] [data-slot="trend-mark"]'),
+		).toBeNull();
+	},
+});

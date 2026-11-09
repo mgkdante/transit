@@ -1,6 +1,7 @@
 <script lang="ts">
+	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Component } from 'svelte';
-	import { trackEvent } from '$lib/site/analytics';
+	import { trackEvent } from '#lib/site/analytics.ts';
 	import MapIcon from '@lucide/svelte/icons/map';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
@@ -13,7 +14,6 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import {
 		type Locale,
 		DEFAULT_LOCALE,
@@ -22,13 +22,13 @@
 		getLocale,
 		localizeHref,
 		localizeUrl,
-	} from '$lib/i18n';
-	import type { ChromeSearchResult, ChromeSearchScope } from '$lib/search/chromeSearch';
-	import type { TransitModeKey } from '$lib/search/stopMode';
+	} from '#lib/i18n/index.ts';
+	import type { ChromeSearchResult, ChromeSearchScope } from '#lib/search/chromeSearch.ts';
+	import type { TransitModeKey } from '#lib/search/stopMode.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import SearchControls, {
 		type SearchScopeKey,
-	} from '$lib/components/surface/SearchControls.svelte';
+	} from '#lib/components/surface/SearchControls.svelte';
 	import {
 		type SurfaceNavItem,
 		type AuditNavItem,
@@ -36,18 +36,20 @@
 		AUDIT_NAV,
 		YESID_HOUSE_LINK,
 		isSurfaceActive,
-	} from '$lib/content/nav';
-	import { navPillCopy } from './navPill.copy';
+	} from '#lib/content/nav.ts';
+	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import { SiteHeader } from '@yesid/ui/layout';
 	import RefreshButton from './RefreshButton.svelte';
-	import { providerHref, type PublicProvider } from '$lib/v1/providers';
-	import { v1Provider } from '$lib/v1/config';
+	import { providerHref, type PublicProvider } from '#lib/v1/providers.ts';
+	import { v1Provider } from '#lib/v1/config.ts';
 
 	interface NavPillProps {
+		navigation: NavigationLifecycle;
 		locale?: Locale;
 		url?: URL;
 		providerId?: string;
 		providers?: PublicProvider[];
+		discoveryError?: boolean;
 		search?: string;
 		onsearch?: (value: string) => void;
 		searchResults?: readonly ChromeSearchResult[];
@@ -58,10 +60,12 @@
 	}
 
 	let {
+		navigation,
 		locale: localeProp,
 		url = new URL('https://transit.local/'),
 		providerId = v1Provider(url),
 		providers = [],
+		discoveryError = false,
 		search = $bindable(''),
 		onsearch,
 		searchResults = [],
@@ -322,6 +326,9 @@
 					<option value={v1Provider()}>{navCopy.defaultNetwork}</option>
 				{/if}
 			{/if}
+			{#if discoveryError}
+				<option value="" disabled>{navCopy.otherNetworksUnavailable}</option>
+			{/if}
 		</select>
 	</label>
 	<RefreshButton {locale} class="nav-refresh" />
@@ -336,7 +343,7 @@
 {/snippet}
 
 <SiteHeader
-	navigation={{ beforeNavigate, onNavigate, afterNavigate }}
+	{navigation}
 	home={localizeHref('/', locale, providerId)}
 	wordmark="Transit"
 	{links}
@@ -347,6 +354,7 @@
 		locales: availableLocales,
 		href: (next) => localizeUrl(selectedUrl, next as Locale),
 		label: navCopy.language,
+		names: navCopy.names,
 		reload: true,
 	}}
 	search={searchField}

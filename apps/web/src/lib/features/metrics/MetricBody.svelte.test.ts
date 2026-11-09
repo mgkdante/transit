@@ -1,8 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/svelte';
 import type { ViteDevServer } from 'vite';
-import type { Locale } from '$lib/i18n';
-import { quietMode } from '@yesid/ui/state';
+import type { Locale } from '#lib/i18n/index.ts';
 import { highlight } from '@yesid/seo-kit/highlight';
 import { METRICS, type MetricEntry } from './metrics.content';
 import { metricsCopy } from './metrics.copy';
@@ -15,8 +14,8 @@ const state = vi.hoisted(() => ({
 vi.mock('./easterWordHover', () => ({
 	easterWordHover: () => ({ destroy() {} }),
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: vi.fn() }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: vi.fn() }));
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		get data() {
 			return state.provenance;
@@ -57,11 +56,9 @@ afterAll(async () => {
 });
 beforeEach(() => {
 	state.provenance = null;
-	quietMode.resetForTest();
 });
 afterEach(() => {
 	sessionStorage.clear();
-	quietMode.resetForTest();
 });
 
 function documentBody(html: string): HTMLDivElement {

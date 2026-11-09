@@ -2,12 +2,16 @@ import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { chromeSearchResults } from '$lib/search/chromeSearch';
-import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '$lib/search/stopMode';
-import type { RouteIndexEntry } from '$lib/v1/schemas';
-import NavPill from './NavPill.svelte';
+import { chromeSearchResults } from '#lib/search/chromeSearch.ts';
+import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.ts';
+import type { RouteIndexEntry } from '#lib/v1/schemas/index.ts';
+import NavPill from './__fixtures__/NavPillHarness.svelte';
+import { createNavigationRouter } from './__fixtures__/navigationRouter';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 vi.mock('$app/navigation', () => ({
 	beforeNavigate: vi.fn(),
 	onNavigate: vi.fn(),
@@ -15,6 +19,53 @@ vi.mock('$app/navigation', () => ({
 }));
 
 afterEach(() => vi.restoreAllMocks());
+
+it.each([
+	['en', 'Other networks unavailable'],
+	['fr', 'Autres réseaux indisponibles'],
+] as const)('explains discovery failure in the %s picker', (locale, label) => {
+	const view = render(NavPill, { props: { locale, discoveryError: true } });
+	expect(view.getByRole('option', { name: label })).toBeDisabled();
+});
+
+it('does not suggest an outage when discovery succeeded', () => {
+	const view = render(NavPill, { props: { locale: 'en' } });
+	expect(view.queryByRole('option', { name: 'Other networks unavailable' })).toBeNull();
+});
+
+describe('NavPill navigation lifecycle integration', () => {
+	it.each([false, true])('uses the Kit 3 fallback with redirect=%s', async (redirected) => {
+		const adapter = createNavigationRouter();
+		const view = render(NavPill, { props: { adapter, locale: 'en' } });
+		await fireEvent.click(view.getByRole('button', { name: 'Open menu' }));
+		const language = view.getByTestId('language-toggle');
+		expect(language).toHaveAttribute('data-sveltekit-reload', 'true');
+		// Model a router-accepted native start. Real reload links depart the document instead.
+		const event = new MouseEvent('click', { bubbles: true });
+		Object.defineProperty(event, 'target', { value: language });
+		const start = {
+			type: 'link' as const,
+			to: { url: new URL('https://transit.local/fr/old') },
+			event,
+		};
+		await adapter.navigate(
+			start,
+			redirected
+				? { type: 'link', to: { url: new URL('https://transit.local/fr/metrics') } }
+				: start,
+		);
+		await tick();
+		if (!redirected) {
+			expect(view.getByRole('dialog')).toBeInTheDocument();
+			expect(language).toHaveFocus();
+			await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+			await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+		} else {
+			await waitFor(() => expect(view.queryByRole('dialog')).toBeNull());
+			expect(language).not.toHaveFocus();
+		}
+	});
+});
 
 describe('NavPill — search', () => {
 	it.each([

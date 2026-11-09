@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AbsentValue from '$lib/components/edge/AbsentValue.svelte';
+	import AbsentValue from '#lib/components/edge/AbsentValue.svelte';
 	import TrendMark from './marks/TrendMark.svelte';
 	import HistogramMark from './marks/HistogramMark.svelte';
 	import DotStripMark from './marks/DotStripMark.svelte';

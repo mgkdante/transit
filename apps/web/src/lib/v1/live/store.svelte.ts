@@ -1,7 +1,7 @@
-import { browser } from '$app/environment';
-import { ageSeconds } from '$lib/utils/time';
-import { adapter, type AdapterCtx } from '$lib/v1/adapter';
-import { getV1Runtime } from '$lib/v1/runtime';
+import { browser } from '$app/env';
+import { DEFAULT_LIVE_TTL_S, freshnessAgeSeconds } from '#lib/v1/freshness.ts';
+import { adapter, type AdapterCtx } from '#lib/v1/adapter/index.ts';
+import { getV1Runtime } from '#lib/v1/runtime.ts';
 import { untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type {
@@ -11,12 +11,12 @@ import type {
 	StopDeparturesFile,
 	TripsFile,
 	VehiclesFile,
-} from '$lib/v1/schemas';
+} from '#lib/v1/schemas/index.ts';
+import { livePollDelayMs } from './polling';
 import { buildLiveIndex, type LiveIndex } from './index';
 
-const DEFAULT_LIVE_TTL_S = 30;
-
 const STALE_TTL_MULTIPLIER = 3;
+const CAPTURE_STALE_SECONDS = { alerts: 900, trips: 300, departures: 300 } as const;
 
 export const LIVE_FAMILIES = ['vehicles', 'trips', 'departures', 'alerts', 'network'] as const;
 
@@ -24,7 +24,24 @@ export type LiveFamily = (typeof LIVE_FAMILIES)[number];
 
 export type LiveFamilyPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
-export interface LiveFamilyState {
+export type FeedHealthState =
+	| 'never-loaded'
+	| 'live'
+	| 'retained-stale'
+	| 'retrying'
+	| 'failed-no-data';
+
+export interface FeedHealth {
+	readonly ageSource: 'publication' | 'serving-capture' | null;
+	readonly ageTimestamp: string | null;
+	readonly state: FeedHealthState;
+	readonly ageSeconds: number | null;
+	readonly isStale: boolean;
+	readonly retained: boolean;
+	readonly notice: 'stale' | 'refresh-unavailable' | null;
+}
+
+interface FamilyState {
 	readonly phase: LiveFamilyPhase;
 	readonly active: boolean;
 	readonly lastGoodAt: number | null;
@@ -32,6 +49,10 @@ export interface LiveFamilyState {
 	readonly consecutiveFailures: number;
 	readonly error: Error | null;
 	readonly successRevision: number;
+}
+
+export interface LiveFamilyState extends Omit<FamilyState, 'consecutiveFailures'> {
+	readonly health: FeedHealth;
 }
 
 export interface LiveStoreOptions {
@@ -49,12 +70,6 @@ export interface LiveStore {
 	readonly network: NetworkFile | null;
 	readonly index: LiveIndex;
 	readonly familyStates: Readonly<Record<LiveFamily, LiveFamilyState>>;
-	readonly generatedUtc: string | null;
-	readonly ageSeconds: number | null;
-	readonly isStale: boolean;
-	readonly vehiclesGeneratedUtc: string | null;
-	readonly vehiclesAgeSeconds: number | null;
-	readonly vehiclesIsStale: boolean;
 	readonly loading: boolean;
 	readonly error: Error | null;
 	start(): void;
@@ -96,7 +111,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		alerts: 0,
 		network: 0,
 	};
-	const familyStatesValue = $state<Record<LiveFamily, LiveFamilyState>>({
+	const familyStatesValue = $state<Record<LiveFamily, FamilyState>>({
 		vehicles: initialFamilyState(familyRefCounts.vehicles > 0),
 		trips: initialFamilyState(familyRefCounts.trips > 0),
 		departures: initialFamilyState(familyRefCounts.departures > 0),
@@ -104,7 +119,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		network: initialFamilyState(familyRefCounts.network > 0, initialNetwork?.generated_utc ?? null),
 	});
 
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	const nextPollAt = new SvelteMap<LiveFamily, number>();
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let clockDispose: (() => void) | null = null;
 	let refreshInFlight: Promise<void> | null = null;
 	const activeControllers = new SvelteSet<AbortController>();
@@ -113,36 +129,72 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	let started = false;
 
 	const index = $derived(buildLiveIndex({ vehicles, trips, stopDepartures: departures }));
-
-	const generatedUtc = $derived.by<string | null>(() => {
-		let oldest: string | null = null;
-		let oldestMs = Number.POSITIVE_INFINITY;
+	const familyStates = $derived.by(() => {
+		const result = {} as Record<LiveFamily, LiveFamilyState>;
 		for (const family of LIVE_FAMILIES) {
-			const state = familyStatesValue[family];
-			if (!state.active || state.retainedGeneration == null) continue;
-			const generationMs = Date.parse(state.retainedGeneration);
-			if (!Number.isNaN(generationMs) && generationMs < oldestMs) {
-				oldest = state.retainedGeneration;
-				oldestMs = generationMs;
-			}
+			const { consecutiveFailures, ...state } = familyStatesValue[family];
+			const payload = currentFamilyPayload(family);
+			const publicationAge = freshnessAgeSeconds(
+				payload?.generated_utc,
+				runtime.clock.serverNow,
+				ttlMs / 1000,
+			);
+			// Missing means the old publisher is still running. Explicit null is unknown.
+			const captureEnabled =
+				payload != null && 'feed_captured_utc' in payload && family in CAPTURE_STALE_SECONDS;
+			const captureAge = captureEnabled
+				? freshnessAgeSeconds(payload.feed_captured_utc, runtime.clock.serverNow, ttlMs / 1000)
+				: null;
+			const age = captureEnabled
+				? publicationAge == null || captureAge == null
+					? null
+					: Math.max(publicationAge, captureAge)
+				: publicationAge;
+			const captureLimit = CAPTURE_STALE_SECONDS[family as keyof typeof CAPTURE_STALE_SECONDS];
+			const ageIsStale =
+				publicationAge == null ||
+				publicationAge >= staleThresholdS ||
+				(captureEnabled && (captureAge == null || captureAge >= captureLimit));
+			const retained = payload != null;
+			const retrying = state.phase === 'loading' && consecutiveFailures > 0;
+			const failed = state.phase === 'failed' || consecutiveFailures > 0;
+			const unknownAge = retained && age == null;
+			let verdict: FeedHealthState;
+			if (!retained) verdict = retrying ? 'retrying' : failed ? 'failed-no-data' : 'never-loaded';
+			else if (retrying) verdict = 'retrying';
+			else if (unknownAge) verdict = 'retained-stale';
+			else verdict = failed || ageIsStale ? 'retained-stale' : 'live';
+			const isStale = retained ? ageIsStale : verdict === 'failed-no-data';
+			let notice: FeedHealth['notice'] = null;
+			if (failed) notice = 'refresh-unavailable';
+			else if (unknownAge) notice = 'stale';
+			else if (retained && isStale) notice = 'stale';
+			const captureIsOlder =
+				captureEnabled &&
+				captureAge != null &&
+				publicationAge != null &&
+				captureAge > publicationAge;
+			const health: FeedHealth = {
+				ageSource: age == null ? null : captureIsOlder ? 'serving-capture' : 'publication',
+				ageTimestamp:
+					age == null
+						? null
+						: captureIsOlder
+							? payload && 'feed_captured_utc' in payload
+								? (payload.feed_captured_utc ?? null)
+								: null
+							: (payload?.generated_utc ?? null),
+				state: verdict,
+				ageSeconds: age,
+				isStale,
+				retained,
+				notice,
+			};
+			result[family] = { ...state, health };
 		}
-		return oldest;
+		return result;
 	});
-	const ageSecondsValue = $derived.by<number | null>(() => {
-		if (!generatedUtc) return null;
-		const age = ageSeconds(generatedUtc, runtime.clock.serverNow);
-		return Number.isNaN(age) ? null : Math.max(0, age);
-	});
-	const isStale = $derived(ageSecondsValue == null ? false : ageSecondsValue >= staleThresholdS);
-	const vehiclesGeneratedUtc = $derived(vehicles?.generated_utc ?? null);
-	const vehiclesAgeSecondsValue = $derived.by<number | null>(() => {
-		if (!vehiclesGeneratedUtc) return null;
-		const age = ageSeconds(vehiclesGeneratedUtc, runtime.clock.serverNow);
-		return Number.isNaN(age) ? null : Math.max(0, age);
-	});
-	const vehiclesIsStale = $derived(
-		vehiclesAgeSecondsValue == null ? false : vehiclesAgeSecondsValue >= staleThresholdS,
-	);
+
 	const loading = $derived(
 		LIVE_FAMILIES.some(
 			(family) => familyStatesValue[family].active && familyStatesValue[family].phase === 'loading',
@@ -166,11 +218,14 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	});
 
 	type LiveFamilyPayload = VehiclesFile | TripsFile | StopDeparturesFile | AlertsFile | NetworkFile;
+	function captureTimestamp(payload: LiveFamilyPayload | null): string | null | undefined {
+		return payload && 'feed_captured_utc' in payload ? payload.feed_captured_utc : undefined;
+	}
 
 	function initialFamilyState(
 		active: boolean,
 		retainedGeneration: string | null = null,
-	): LiveFamilyState {
+	): FamilyState {
 		const hasSeed = active && retainedGeneration != null;
 		return {
 			phase: hasSeed ? 'ready' : 'idle',
@@ -183,10 +238,10 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		};
 	}
 
-	function inactiveOrSettledPhase(state: LiveFamilyState): LiveFamilyPhase {
+	function inactiveOrSettledPhase(state: FamilyState): LiveFamilyPhase {
 		if (!state.active) return 'idle';
 		if (state.error != null) return 'failed';
-		return state.retainedGeneration == null ? 'idle' : 'ready';
+		return state.successRevision === 0 ? 'idle' : 'ready';
 	}
 
 	function activeFamilies(): LiveFamily[] {
@@ -285,11 +340,24 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 	): Promise<void> {
 		if (!requestIsCurrent(family, token, generation, controller)) {
 			pendingFamilies.delete(family);
+			if (requestIsCurrent(family, token, generation, controller) && !nextPollAt.has(family)) {
+				nextPollAt.set(family, Date.now() + ttlMs);
+			}
+			schedulePolling();
 			return;
 		}
 
 		try {
-			const payload = await readFamily(family, context);
+			let delayMs = ttlMs;
+			const payload = await readFamily(family, {
+				...context,
+				onResponseHeaders: (headers) => {
+					delayMs = livePollDelayMs(headers, ttlMs);
+				},
+			});
+			if (requestIsCurrent(family, token, generation, controller)) {
+				nextPollAt.set(family, Date.now() + delayMs);
+			}
 			if (!requestIsCurrent(family, token, generation, controller)) return;
 
 			const retained = currentFamilyPayload(family);
@@ -298,7 +366,8 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			const changed =
 				retained == null ||
 				payloadGeneration == null ||
-				retained.generated_utc !== payloadGeneration;
+				retained.generated_utc !== payloadGeneration ||
+				captureTimestamp(retained) !== captureTimestamp(payload);
 			if (changed) replaceFamilyPayload(family, payload);
 
 			const state = familyStatesValue[family];
@@ -306,7 +375,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 				...state,
 				phase: 'ready',
 				lastGoodAt: runtime.clock.serverNow,
-				retainedGeneration: payloadGeneration ?? state.retainedGeneration,
+				retainedGeneration: payloadGeneration,
 				consecutiveFailures: 0,
 				error: null,
 				successRevision: changed ? state.successRevision + 1 : state.successRevision,
@@ -324,12 +393,21 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			failFamily(family, asError(value));
 		} finally {
 			pendingFamilies.delete(family);
+			if (requestIsCurrent(family, token, generation, controller) && !nextPollAt.has(family)) {
+				nextPollAt.set(family, Date.now() + ttlMs);
+			}
+			schedulePolling();
 		}
 	}
 
 	async function runBatch(requestedFamilies: readonly LiveFamily[]): Promise<void> {
 		const selectedFamilies = [
-			...new SvelteSet(requestedFamilies.filter((family) => familyStatesValue[family].active)),
+			...new SvelteSet(
+				requestedFamilies.filter(
+					(family) =>
+						familyStatesValue[family].active && familyStatesValue[family].phase !== 'loading',
+				),
+			),
 		];
 		if (selectedFamilies.length === 0) return;
 
@@ -340,6 +418,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		const batchTokens = new SvelteMap<LiveFamily, number>();
 		let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 		for (const family of selectedFamilies) {
+			nextPollAt.delete(family);
 			const token = familyRequestTokens[family] + 1;
 			familyRequestTokens[family] = token;
 			batchTokens.set(family, token);
@@ -375,6 +454,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 							continue;
 						}
 						familyRequestTokens[family] += 1;
+						nextPollAt.set(family, Date.now() + ttlMs);
 						failFamily(family, timeout);
 					}
 					controller.abort();
@@ -386,6 +466,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 		} finally {
 			if (deadlineTimer != null) clearTimeout(deadlineTimer);
 			activeControllers.delete(controller);
+			schedulePolling();
 		}
 	}
 
@@ -451,16 +532,36 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 
 	function pausePolling(): void {
 		if (pollTimer) {
-			clearInterval(pollTimer);
+			clearTimeout(pollTimer);
 			pollTimer = null;
 		}
 	}
 
+	function schedulePolling(): void {
+		pausePolling();
+		if (!started || !canPoll()) return;
+		const due = activeFamilies()
+			.filter((family) => familyStatesValue[family].phase !== 'loading')
+			.map((family) => nextPollAt.get(family) ?? Date.now() + ttlMs);
+		if (due.length === 0) return;
+		pollTimer = setTimeout(
+			() => {
+				pollTimer = null;
+				void runBatch(
+					activeFamilies().filter(
+						(family) =>
+							familyStatesValue[family].phase !== 'loading' &&
+							(nextPollAt.get(family) ?? 0) <= Date.now(),
+					),
+				).then(schedulePolling);
+			},
+			Math.max(0, Math.min(...due) - Date.now()),
+		);
+	}
+
 	function resumePolling(): void {
 		if (!started || pollTimer || !canPoll()) return;
-		pollTimer = setInterval(() => {
-			void refresh();
-		}, ttlMs);
+		schedulePolling();
 		void refresh();
 	}
 
@@ -545,25 +646,7 @@ export function createLiveStore(manifest: Manifest, options: LiveStoreOptions = 
 			return index;
 		},
 		get familyStates() {
-			return familyStatesValue;
-		},
-		get generatedUtc() {
-			return generatedUtc;
-		},
-		get ageSeconds() {
-			return ageSecondsValue;
-		},
-		get isStale() {
-			return isStale;
-		},
-		get vehiclesGeneratedUtc() {
-			return vehiclesGeneratedUtc;
-		},
-		get vehiclesAgeSeconds() {
-			return vehiclesAgeSecondsValue;
-		},
-		get vehiclesIsStale() {
-			return vehiclesIsStale;
+			return familyStates;
 		},
 		get loading() {
 			return loading;

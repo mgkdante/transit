@@ -15,11 +15,6 @@ Thumbs.db
 AGENTS.local.md
 .claude/settings.local.json
 
-# Power BI Project (PBIP) — user-local + cache cruft
-**/.pbi/
-**/cache.abf
-**/localSettings.json
-
 # Local working artifacts, proofs & tool dirs (regenerable, not committed)
 artifacts/
 .superpowers/

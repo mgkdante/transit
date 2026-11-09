@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { clock } from '@yesid/ui/state';
+	import { publicationPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { Badge } from '@yesid/ui/badge';
-	import { intl } from '$lib/i18n';
-	import type { Locale } from '$lib/i18n';
-	import { FreshnessStamp } from '$lib/components/surface';
+	import { intl } from '#lib/i18n/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { FreshnessStamp } from '#lib/components/surface/index.ts';
 	import { TerminalPanel, StatusDot } from '@yesid/ui/brand';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import type { LaneRow } from '../selectors/laneHealth';
 	import type { HealthCopy } from '../health.copy';
 
@@ -16,6 +18,7 @@
 	let { rows, copy, locale }: SectionLanesProps = $props();
 
 	const t = $derived(copy.lanes);
+	$effect(() => clock.subscribe());
 </script>
 
 <TerminalPanel title={t.terminal.title} tag={t.terminal.tag}>
@@ -42,7 +45,15 @@
 						<div class="lane-meta">
 							<div class="lane-cell" data-slot="lane-last-publish">
 								<span class="lane-cell-label">{t.lastPublishLabel}</span>
-								<FreshnessStamp variant="updated" generatedUtc={row.lastPublishUtc} {locale} />
+								<FreshnessStamp
+									variant="updated"
+									presentation={publicationPresentation(
+										row.lastPublishUtc,
+										clock.serverNow,
+										locale,
+									)}
+									{locale}
+								/>
 							</div>
 
 							<div class="lane-cell" data-slot="lane-files">

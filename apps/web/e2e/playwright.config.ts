@@ -27,7 +27,10 @@ const executablePath = process.env.TRANSIT_BROWSER_ROOT
 	? (await verifyInstalledBrowserArtifact()).paths.executablePath
 	: undefined;
 
-const baseURL = 'http://127.0.0.1:4317';
+const port = process.env.TRANSIT_E2E_PORT ?? '4317';
+const dataPort = process.env.TRANSIT_E2E_DATA_PORT ?? '4318';
+const baseURL = `http://127.0.0.1:${port}`;
+const dataURL = `http://127.0.0.1:${dataPort}`;
 
 export default defineConfig({
 	testDir: '.',
@@ -35,26 +38,86 @@ export default defineConfig({
 	tsconfig: './tsconfig.json',
 	outputDir: '../test-results',
 	forbidOnly: Boolean(process.env.CI),
+	// Leave CI's shard sizing alone; keep local browser runs from saturating shared hosts.
+	workers: process.env.CI ? undefined : 2,
 	reporter: process.env.CI
 		? [['line'], ['html', { open: 'never', outputFolder: '../playwright-report' }]]
 		: 'list',
 	use: {
 		baseURL,
+		// Content-interaction specs use a returning expanded visitor; fresh-storage specs override this.
+		storageState: {
+			cookies: [],
+			origins: [
+				{
+					origin: new URL(baseURL).origin,
+					localStorage: [{ name: 'sections-choice', value: 'expanded' }],
+				},
+			],
+		},
 		contextOptions: { reducedMotion: 'reduce' },
 		serviceWorkers: 'block',
 		trace: 'retain-on-failure',
 		launchOptions: { executablePath },
 	},
-	projects: yesidProjects(baseURL),
+	projects: [
+		...yesidProjects(baseURL).map((project) => ({ ...project, testIgnore: /layout.*\.spec\.ts/ })),
+		...(['chromium', 'webkit'] as const).flatMap((browserName) =>
+			(browserName === 'chromium'
+				? [
+						[360, 800],
+						[390, 844],
+						[768, 1024],
+						[1280, 900],
+						[1920, 1080],
+						[844, 390],
+					]
+				: [
+						[390, 844],
+						[1280, 900],
+					]
+			).flatMap(([width, height]) =>
+				(['light', 'dark'] as const).map((colorScheme) => ({
+					name: `layout-${browserName}-${width}-${colorScheme}`,
+					testMatch: /layout.*\.spec\.ts/,
+					use: {
+						browserName,
+						viewport: { width, height },
+						colorScheme,
+						storageState: {
+							cookies: [],
+							origins: [
+								{
+									origin: baseURL,
+									localStorage: [
+										{ name: 'theme', value: colorScheme },
+										{ name: 'sections-choice', value: 'expanded' },
+									],
+								},
+							],
+						},
+						bypassCSP: true,
+						// Findings attach text and geometry; recording known failures across
+						// the matrix is costly and adds no layout assertion evidence.
+						trace: 'off' as const,
+						launchOptions: {
+							executablePath: browserName === 'chromium' ? executablePath : undefined,
+						},
+					},
+				})),
+			),
+		),
+	],
 	webServer: [
 		{
 			command: 'node data.mjs',
-			url: 'http://127.0.0.1:4318/v1/providers.json',
+			url: `${dataURL}/v1/providers.json`,
+			env: { TRANSIT_E2E_DATA_PORT: dataPort, TRANSIT_E2E_ORIGIN: baseURL },
 			reuseExistingServer: !process.env.CI,
 		},
 		// The built worker without bindings, so server-side data comes from the fixture server.
 		{
-			command: 'bun x wrangler dev --config wrangler.json --ip 127.0.0.1 --port 4317',
+			command: `bun x wrangler dev --config wrangler.json --ip 127.0.0.1 --port ${port} --var PUBLIC_V1_BASE:${dataURL}/v1`,
 			url: baseURL,
 			reuseExistingServer: !process.env.CI,
 		},

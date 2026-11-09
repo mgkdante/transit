@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import AbsentValue from './AbsentValue.svelte';
-	import type { AbsenceReasonKey } from '$lib/site/absence';
-	import type { Locale } from '$lib/i18n';
+	import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 
 	export interface MaybeValueProps {
 		value?: string | null;

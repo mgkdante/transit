@@ -1,23 +1,17 @@
 <script lang="ts" generics="K extends string">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
-	import {
-		SectionLabel,
-		TocNav,
-		openCollapsedTocTarget,
-		reconcileActiveToc,
-		revealTocTarget,
-		type TocEntry,
-	} from '@yesid/ui/brand';
-	import { ArticleSummaryLane } from '$lib/components/layout';
-	import { Surface, DetailFrame, Breadcrumb } from '@yesid/ui/layout';
+	import { SectionLabel, TocNav, useSectionJump, type TocEntry } from '@yesid/ui/brand';
+	import { ArticleSummaryLane } from '#lib/components/layout/index.ts';
+	import { Surface, DetailFrame, Breadcrumb, type DetailFrameToc } from '@yesid/ui/layout';
 	import { Separator } from '@yesid/ui/separator';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import { breadcrumbCopy } from './breadcrumb.copy';
-	import { getLocale, getLocalizeHref } from '$lib/i18n';
-	import { resolveBreadcrumbTrail } from '$lib/seo/routeSeo';
-	import { cn } from '$lib/utils';
+	import { getLocale, getLocalizeHref } from '#lib/i18n/index.ts';
+	import { resolveBreadcrumbTrail } from '#lib/seo/routeSeo.ts';
+	import { cn } from '#lib/utils/index.ts';
 
 	interface EntityDetailSharedProps {
 		lede?: string;
@@ -77,11 +71,16 @@
 	let mountedPanes = $state<{ pathname: string; keys: K[] }>(
 		untrack(() => ({ pathname: page.url.pathname, keys: [active] })),
 	);
-	let activeTocId = $state('');
+	const navigation = useSectionJump(afterNavigate);
+	const frameToc = $derived.by((): DetailFrameToc => {
+		const tracking = { entries: articleTocEntries, navigation, landFragments: true };
+		return articleToc
+			? { ...tracking, openAria: articleToc.openAria, closeAria: articleToc.closeAria }
+			: tracking;
+	});
 	let tabViewport = $state<HTMLElement>();
 	let tabsMoreEnd = $state(false);
 	let observedTabViewport: HTMLElement | undefined;
-	let previousTocIds: string[] = [];
 	$effect.pre(() => {
 		const pathname = page.url.pathname;
 		if (mountedPanes.pathname !== pathname) {
@@ -95,21 +94,6 @@
 		return (
 			key === active || (mountedPanes.pathname === pathname && mountedPanes.keys.includes(key))
 		);
-	}
-	$effect(() => {
-		const nextIds = articleTocEntries.map((entry) => entry.id);
-		const currentId = untrack(() => activeTocId);
-		const nextActiveId = reconcileActiveToc(currentId, previousTocIds, nextIds);
-		if (nextActiveId !== currentId) activeTocId = nextActiveId;
-		previousTocIds = nextIds;
-	});
-	function navigateArticleToc(id: string): void {
-		const reduced =
-			typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-		void revealTocTarget(id, {
-			beforeReveal: openCollapsedTocTarget,
-			behavior: reduced ? 'auto' : 'smooth',
-		});
 	}
 
 	function measureTabOverflow(viewport = tabViewport): void {
@@ -252,13 +236,11 @@
 			data-ripple-exempt
 			data-slot="entity-detail-tabs-scroll"
 		>
-			<TabsList variant="line" class="w-full flex-nowrap justify-start">
+			<TabsList variant="line" class="station-tabs w-full flex-nowrap justify-start">
 				{#each tabs as t (t.key)}
 					<TabsTrigger value={t.key}>
 						{#snippet child({ props })}
-							<button {...props} class="station-tab" class:active={t.key === active}
-								>{t.label}</button
-							>
+							<button {...props} class="station-tab">{t.label}</button>
 						{/snippet}
 					</TabsTrigger>
 				{/each}
@@ -292,12 +274,9 @@
 		{#key articleToc.sectionKey}
 			<TocNav
 				entries={articleTocEntries}
-				activeId={activeTocId}
-				onNavigate={navigateArticleToc}
+				{navigation}
 				heading={articleToc.heading}
-				sectionKey={articleToc.sectionKey}
 				counterPrefix={articleToc.counterPrefix}
-				quiet={false}
 			/>
 		{/key}
 	{/if}
@@ -326,13 +305,7 @@
 			left={articleTocEntries.length > 0 ? articleRail : undefined}
 			paneOwnedRail={paneOwnsRail}
 			railScroll
-			toc={{
-				entries: articleTocEntries,
-				openAria: articleToc?.openAria ?? '',
-				closeAria: articleToc?.closeAria ?? '',
-				onNavigate: articleToc ? navigateArticleToc : undefined,
-			}}
-			bind:activeId={activeTocId}
+			toc={frameToc}
 			class={cn('entity-detail-article', className)}
 		>
 			{@render articleCenter()}
@@ -452,45 +425,6 @@
 	}
 	.entity-tabs__fade--visible {
 		opacity: 1;
-	}
-
-	.station-tab {
-		flex: 1 0 max-content;
-		min-width: max-content;
-		min-height: var(--size-tap-min);
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-		padding: 0.5rem 1rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--primary-foreground);
-		background: transparent;
-		border: none;
-		border-bottom: 3px solid transparent;
-		transition:
-			color var(--duration-fast) var(--ease-out),
-			background var(--duration-fast) var(--ease-out);
-	}
-	.station-tab:hover {
-		color: var(--primary-foreground);
-	}
-	.station-tab.active {
-		background: var(--signage-bg);
-		color: var(--signage-text);
-		border-bottom-color: var(--signage-text);
-		font-weight: 700;
-	}
-	.station-tab:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: -2px;
-		border-radius: var(--radius-sm);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.station-tab {
-			transition: none;
-		}
 	}
 
 	.surface-back {

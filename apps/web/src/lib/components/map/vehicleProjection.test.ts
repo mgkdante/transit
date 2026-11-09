@@ -20,7 +20,7 @@ function isoAgo(seconds: number): string {
 
 describe('constants', () => {
 	it('expose the tunable horizon + cutoff', () => {
-		expect(PROJECTION_HORIZON_S).toBe(50);
+		expect(PROJECTION_HORIZON_S).toBe(90);
 		expect(STALE_CUTOFF_S).toBe(150);
 	});
 });
@@ -68,6 +68,9 @@ describe('isVehicleStale', () => {
 });
 
 describe('projectedDistanceM', () => {
+	it('keeps the reported speed between ages 30 and 60 seconds', () => {
+		expect(projectedDistanceM(10, 60) - projectedDistanceM(10, 30)).toBe(300);
+	});
 	const v = 10;
 	const H = PROJECTION_HORIZON_S;
 
@@ -76,26 +79,26 @@ describe('projectedDistanceM', () => {
 		expect(projectedDistanceM(-5, 10)).toBe(0);
 	});
 
-	it('is ~v·a for tiny ages (decay negligible) and below the linear estimate', () => {
+	it('is v·a within the horizon', () => {
 		const a = 1;
 		const d = projectedDistanceM(v, a);
-		expect(d).toBeCloseTo(9.9, 6);
-		expect(d).toBeLessThan(v * a);
+		expect(d).toBeCloseTo(10, 6);
+		expect(d).toBe(v * a);
 	});
 
-	it('pins at v·H/2 exactly at a = H', () => {
-		expect(projectedDistanceM(v, H)).toBeCloseTo((v * H) / 2, 6);
+	it('pins at v·H exactly at a = H', () => {
+		expect(projectedDistanceM(v, H)).toBeCloseTo(v * H, 6);
 	});
 
-	it('stays at v·H/2 for ages beyond the horizon (saturates, no unbounded travel)', () => {
-		const cap = (v * H) / 2;
+	it('stays at v·H for ages beyond the horizon (saturates, no unbounded travel)', () => {
+		const cap = v * H;
 		expect(projectedDistanceM(v, H + 1)).toBeCloseTo(cap, 6);
 		expect(projectedDistanceM(v, H + 9999)).toBeCloseTo(cap, 6);
 		expect(projectedDistanceM(v, Infinity)).toBeCloseTo(cap, 6);
 	});
 
 	it('is continuous at the horizon (limit from below == value at H)', () => {
-		const justBelow = projectedDistanceM(v, H - 0.0001);
+		const justBelow = projectedDistanceM(v, H - 0.000001);
 		const atH = projectedDistanceM(v, H);
 		expect(justBelow).toBeCloseTo(atH, 3);
 	});
@@ -115,8 +118,8 @@ describe('projectedDistanceM', () => {
 
 	it('honours a custom horizon (saturation cap scales with it)', () => {
 		const h = 20;
-		expect(projectedDistanceM(v, h, h)).toBeCloseTo((v * h) / 2, 6);
-		expect(projectedDistanceM(v, 9999, h)).toBeCloseTo((v * h) / 2, 6);
+		expect(projectedDistanceM(v, h, h)).toBeCloseTo(v * h, 6);
+		expect(projectedDistanceM(v, 9999, h)).toBeCloseTo(v * h, 6);
 	});
 });
 
@@ -136,6 +139,48 @@ describe('projectVehicle', () => {
 		const back = projectToPolyline(STRAIGHT, res.coord, lengths)!;
 		const expected = projectedDistanceM(speedMps, ageS);
 		expect(back.s).toBeCloseTo(expected, 0);
+	});
+
+	it('stops at a next stop ahead, but ignores a reported stop at or behind the vehicle', () => {
+		const start = [-73.6, 45.5] as Coord;
+		const ahead = [-73.599, 45.5] as Coord; // ~78 m east
+		const behind = [-73.62, 45.5] as Coord; // ~1.6 km west
+		const free = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+		});
+		const clamped = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: ahead,
+		});
+		const notClamped = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: behind,
+		});
+		const atStop = projectVehicle({
+			coord: start,
+			shape: STRAIGHT,
+			speedMps: 10,
+			ageS: 30,
+			bearing: 90,
+			nextStop: start,
+		});
+		expect(clamped.coord[0]).toBeCloseTo(ahead[0], 5);
+		expect(clamped.frozen).toBe(true);
+		expect(notClamped.coord[0]).toBeCloseTo(free.coord[0], 9);
+		expect(notClamped.frozen).toBe(false);
+		expect(atStop.coord[0]).toBeCloseTo(free.coord[0], 9);
 	});
 
 	it('advances further for a larger age (up to the saturation cap)', () => {

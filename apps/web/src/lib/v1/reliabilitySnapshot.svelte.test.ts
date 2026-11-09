@@ -93,7 +93,7 @@ describe('createReliabilityLoader — cache', () => {
 			expect(snap.phase).toBe('ready');
 		});
 		expect(snap.otpPct).toBe(95);
-		expect(snap.verdict).toBe('on_time');
+		expect(snap.verdict).toBe('tentative');
 		cleanup();
 	});
 });
@@ -346,11 +346,11 @@ describe('createReliabilityLoader — fail-soft', () => {
 		cleanup();
 	});
 
-	it('a file with no day-grain periods is empty, not a fabricated zero', async () => {
+	it('falls back to a weekly summary when no daily summary exists', async () => {
 		stopFetch.mockResolvedValue({
 			generated_utc: '2026-06-18T00:00:00Z',
 			id: 's1',
-			periods: [{ grain: 'week', otp_pct: 88 }],
+			periods: [{ grain: 'week', otp_pct: 88, observation_count: 4000 }],
 		} as StopReliability);
 		let snap = { phase: 'idle', otpPct: null as number | null };
 		const cleanup = $effect.root(() => {
@@ -364,9 +364,9 @@ describe('createReliabilityLoader — fail-soft', () => {
 		});
 		await vi.waitFor(() => {
 			flushSync();
-			expect(snap.phase).toBe('empty');
+			expect(snap.phase).toBe('ready');
 		});
-		expect(snap.otpPct).toBeNull();
+		expect(snap.otpPct).toBe(88);
 		cleanup();
 	});
 });

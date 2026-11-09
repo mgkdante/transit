@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { MapFocus } from '$lib/search/mapFocus';
+import type { MapFocus } from '#lib/search/mapFocus.ts';
 import { isMapFocusReady, type MapFocusReadinessSources } from './mapFocusReadiness';
 
 const base: MapFocusReadinessSources = {

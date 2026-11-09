@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RepeatOffenderEntry } from '$lib/v1/schemas';
+import type { RepeatOffenderEntry } from '#lib/v1/schemas/index.ts';
 import { buildOffenderEvidenceRows } from './offenderEvidence';
 
 const entry = (overrides: Partial<RepeatOffenderEntry>): RepeatOffenderEntry => ({

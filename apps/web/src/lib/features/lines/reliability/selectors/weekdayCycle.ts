@@ -1,7 +1,7 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, LineSpec } from '$lib/components/dataviz/chart';
-import { DELAY_DOW_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { RouteDayOfWeek } from '$lib/v1';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { AbsenceSpec, LineSpec } from '#lib/components/dataviz/chart/index.ts';
+import { DELAY_DOW_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { RouteDayOfWeek } from '#lib/v1/index.ts';
 
 export interface WeekdayCycleLabels {
 	title: string;

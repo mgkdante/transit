@@ -6,10 +6,10 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '$lib/v1/schemas';
-import type { PublicProvider } from '$lib/v1/providers';
-import { quietMode } from '@yesid/ui/state';
+import type { AlertArchiveEntry, AlertArchiveIndex, AlertHistory } from '#lib/v1/schemas/index.ts';
+import type { PublicProvider } from '#lib/v1/providers.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 import { alertHistoryCopy } from './alerts.copy';
 import AlertHistoryScreen from './AlertHistory.svelte';
 
@@ -66,7 +66,7 @@ const archiveState = vi.hoisted(() => ({
 	entries: [] as AlertArchiveEntry[],
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getAlertHistory: ports.getAlertHistory,
 	getAlertArchiveIndex: ports.getAlertArchiveIndex,
 	getAlertArchiveRange: ports.getAlertArchiveRange,
@@ -79,7 +79,7 @@ const nav = vi.hoisted(() => {
 		data: {} as { provider?: PublicProvider },
 	};
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -90,15 +90,15 @@ const nav = vi.hoisted(() => {
 vi.mock('$app/state', () => ({
 	page: nav.page,
 }));
-vi.mock('$app/navigation', () => ({ replaceState: nav.replaceState }));
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState: nav.replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: <T>(
 		fetcher: (signal: AbortSignal) => Promise<T> | T,
 		options?: { enabled?: () => boolean },
@@ -269,7 +269,6 @@ function resetAlertSurfaceState(): void {
 	ports.getAlertArchiveIndex.mockImplementation(() => archiveState.index as never);
 	ports.getAlertArchiveRange.mockImplementation(() => archiveState.entries as never);
 	Element.prototype.scrollIntoView = vi.fn();
-	quietMode.resetForTest();
 }
 
 const alertSurface = createSurfaceHarness({
@@ -329,7 +328,21 @@ it.each(['en', 'fr'] as const)(
 );
 
 describe('AlertHistory article shell', () => {
-	it('renders one article heading, exact metadata copy, and only the two shared reading controls', () => {
+	it.each(['en', 'fr'] as const)(
+		'%s: bulk actions count only content and preserve the real filter panel state',
+		async (locale) => {
+			currentLocale.value = locale;
+			const copy = alertHistoryCopy[locale];
+			const { container } = render(AlertHistoryScreen);
+			await assertRailIndependence({
+				container,
+				panelNames: [copy.filters.railLabel, copy.rail.toc],
+				contentCount: 3,
+			});
+		},
+	);
+
+	it('renders one article heading, exact metadata copy, and only the single page action', () => {
 		const { container } = render(AlertHistoryScreen);
 
 		expect(screen.getAllByRole('heading', { level: 1, name: 'Alerts' })).toHaveLength(1);
@@ -346,12 +359,9 @@ describe('AlertHistory article shell', () => {
 		expect(screen.getByText('2 matches')).toBeInTheDocument();
 		expect(screen.getByText('3 sections')).toBeInTheDocument();
 
-		const controls = screen.getByTestId('quiet-mode-controls');
-		expect(within(controls).getAllByRole('button')).toHaveLength(2);
+		const controls = screen.getByTestId('sections-controls');
+		expect(within(controls).getAllByRole('button')).toHaveLength(1);
 		expect(within(controls).getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
-		expect(
-			within(controls).getByRole('button', { name: 'Always start collapsed' }),
-		).toBeInTheDocument();
 	});
 
 	it('keeps the exact bilingual article, rail, and card copy', () => {
@@ -1223,8 +1233,6 @@ describe('AlertHistory retained archive integration', () => {
 	});
 
 	it('announces a correction once outside collapsed controls before and after the mobile sheet opens', async () => {
-		localStorage.setItem('quiet-mode', 'true');
-		quietMode.init();
 		seedArchive([
 			makeArchiveEntry('archive-current', 'Archive current alert', '2026-06-21', '2026-06-21'),
 		]);
@@ -1235,6 +1243,7 @@ describe('AlertHistory retained archive integration', () => {
 
 		await waitFor(() => expect(nav.page.url.searchParams.has('from')).toBe(false));
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
+		await fireEvent.click(within(rail).getByRole('button', { name: copyEn.filters.railLabel }));
 		await waitFor(() =>
 			expect(within(rail).getByRole('button', { name: copyEn.filters.railLabel })).toHaveAttribute(
 				'aria-expanded',

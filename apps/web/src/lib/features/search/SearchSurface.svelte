@@ -1,36 +1,40 @@
 <script lang="ts">
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+	import { verdictCopy } from '#lib/v1/verdict.copy.ts';
+	import { stopReliabilityCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
-	import { intl, getLocale, type Locale } from '$lib/i18n';
+	import { page } from '$app/state';
+	import { intl, getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { desktop } from '@yesid/ui/state';
-	import { createResource } from '$lib/v1/resource.svelte';
-	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
-	import { getV1Context } from '$lib/v1/boot';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
+	import { getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { createReliabilityLoader } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 	import type {
 		RouteIndexEntry,
 		StopIndexEntry,
 		Vehicle,
 		StatusCode,
 		OccupancyCode,
-	} from '$lib/v1';
+	} from '#lib/v1/index.ts';
 	import {
 		ResourceBoundary,
 		EntityList,
 		EntityRow,
-		SearchInput,
 		ReliabilityBadge,
 		SearchControls,
 		type SearchScopeKey,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import { Masthead, Surface } from '@yesid/ui/layout';
+	import { SearchInput } from '@yesid/ui/brand';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { EdgeState } from '$lib/components/edge';
-	import { FreshnessStamp } from '$lib/components/surface';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricName } from '$lib/metrics';
-	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { EdgeState } from '#lib/components/edge/index.ts';
+	import { FreshnessStamp } from '#lib/components/surface/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import { metricName } from '#lib/metrics.ts';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '#lib/search/normalize.ts';
 	import {
 		stopGroupKey,
 		stopModeHint,
@@ -39,9 +43,9 @@
 		routeModeHint,
 		routeModeKey,
 		type TransitModeKey,
-	} from '$lib/search/stopMode';
-	import { routeColor } from '$lib/search/routeColor';
-	import { STATUS_LABELS, OCCUPANCY_LABELS } from '$lib/v1/enumLabels';
+	} from '#lib/search/stopMode.ts';
+	import { routeColor } from '#lib/search/routeColor.ts';
+	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
 	import VehicleResultRow from './VehicleResultRow.svelte';
 	import { copy } from './search.copy';
 
@@ -58,14 +62,14 @@
 		return () => live.stop();
 	});
 
-	const routeReliability = createReliabilityLoader('route');
-	const stopReliability = createReliabilityLoader('stop');
+	const routeReliability = createReliabilityLoader('route', verdictCopy[locale]);
+	const stopReliability = createReliabilityLoader('stop', stopReliabilityCopy[locale].verdict);
 	const observeRouteReliability = routeReliability.reliability;
 	const observeStopReliability = stopReliability.reliability;
 
 	const MAX_RESULTS = 50;
 
-	let query = $state($page.url.searchParams.get('q') ?? '');
+	let query = $state(new URLSearchParams(page.url.search).get('q') ?? '');
 	const normalized = $derived(foldSearchText(query));
 	const hasQuery = $derived(normalized.length > 0);
 
@@ -112,6 +116,7 @@
 				})
 			: matchedStopsAll,
 	);
+
 	const matchedVehicles = $derived(
 		modeActive ? (modes.has('bus') ? matchedVehiclesAll : []) : matchedVehiclesAll,
 	);
@@ -150,16 +155,14 @@
 	const lineCount = $derived(routes.data?.routes?.length ?? null);
 	const stopCount = $derived(stops.data?.stops?.length ?? null);
 	const numberFmt = $derived(intl.number(locale));
+	const presentation = $derived(
+		livePresentation({ familyStates: live.familyStates, families: LIVE_FAMILIES, locale }),
+	);
 </script>
 
 <Surface class="surface">
 	<Masthead kicker={t.kicker} heading={t.heading} lede={t.lede}>
-		<SearchInput
-			id="surface-search-input"
-			label={t.inputLabel}
-			placeholder={t.inputPlaceholder}
-			bind:value={query}
-		/>
+		<SearchInput label={t.inputLabel} placeholder={t.inputPlaceholder} bind:value={query} />
 
 		<SearchControls
 			notice={t.collectionNotice}
@@ -194,13 +197,7 @@
 								>
 							{/if}
 						</p>
-						<FreshnessStamp
-							variant="live"
-							generatedUtc={live.generatedUtc}
-							ageSeconds={live.ageSeconds}
-							isStale={live.isStale}
-							{locale}
-						/>
+						<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 						<div class="search-census__examples">
 							<span class="search-census__examples-label">{t.census.examplesLabel}</span>
 							<div class="search-census__chips">
@@ -208,10 +205,8 @@
 									<button
 										type="button"
 										class="search-census__chip"
-										onclick={() => (query = example)}
+										onclick={() => (query = example)}>{example}</button
 									>
-										{example}
-									</button>
 								{/each}
 							</div>
 						</div>
@@ -226,6 +221,7 @@
 							<h2 class="search-group-head">
 								<span class="search-group-labelrow">
 									<span class="search-group-label">{t.linesLabel}</span>
+
 									<MetricInfo metricKey="otp" {locale} name="OTP" side="bottom" />
 								</span>
 								<span class="search-group-count">{t.resultCount(matchedRoutes.length)}</span>

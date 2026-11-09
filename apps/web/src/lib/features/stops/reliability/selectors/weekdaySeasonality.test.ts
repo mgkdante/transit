@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectWeekdaySeasonality, MIN_WEEKDAY_SEVERE_OBSERVATIONS } from './weekdaySeasonality';
-import { DELAY_DOW_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { RouteDayOfWeek } from '$lib/v1/schemas';
+import { DELAY_DOW_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { RouteDayOfWeek } from '#lib/v1/schemas/index.ts';
 
 const labels = {
 	severeShare: 'Severe',

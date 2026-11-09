@@ -1,4 +1,5 @@
 export class EnteringIntersectionObserver implements IntersectionObserver {
+	readonly scrollMargin = '0px 0px 0px 0px';
 	readonly root: Element | Document | null;
 	readonly rootMargin: string;
 	readonly thresholds: readonly number[];

@@ -1,5 +1,5 @@
-import type { GeocodePrecision } from '$lib/geocode/types';
-import { isInsideBounds } from '$lib/geocode/types';
+import type { GeocodePrecision } from '#lib/geocode/types.ts';
+import { isInsideBounds } from '#lib/geocode/types.ts';
 
 export interface MapNearTarget {
 	readonly lat: number;

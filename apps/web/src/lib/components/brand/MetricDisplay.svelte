@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { MetricDisplay, type MetricDisplayProps as UiProps } from '@yesid/ui/brand';
-	import { AbsentValue } from '$lib/components/edge';
-	import type { AbsenceReasonKey } from '$lib/site/absence';
-	import type { Locale } from '$lib/i18n';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 
 	export interface MetricDisplayProps extends Omit<UiProps, 'absent'> {
 		absentReason?: AbsenceReasonKey;

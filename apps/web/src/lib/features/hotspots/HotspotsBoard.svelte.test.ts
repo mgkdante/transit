@@ -1,12 +1,15 @@
-import { quietModeCopy } from '$lib/components/shared/quietMode.copy';
+import { sectionsToggleCopy } from '#lib/components/shared/sectionsToggle.copy.ts';
 import { copy } from './hotspots.copy';
-import { observeChartFrames } from '$lib/components/dataviz/chart/__fixtures__/observeChartFrames';
+import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Hotspots, IsoUtc } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
-import type { ChartDatumPopoverModel, MagnitudeDatum } from '$lib/components/dataviz/chart';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Hotspots, IsoUtc } from '#lib/v1/schemas/index.ts';
+import type {
+	ChartDatumPopoverModel,
+	MagnitudeDatum,
+} from '#lib/components/dataviz/chart/index.ts';
 import { EnteringIntersectionObserver } from '../../../tests/enteringIntersectionObserver';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 
 let mockUrl = new URL('http://localhost/hotspots');
 const replaceState = vi.hoisted(() =>
@@ -23,26 +26,26 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ goto: navigate, replaceState }));
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, goto: navigate, replaceState }));
 
 const currentLocale = vi.hoisted(() => ({ value: 'en' as 'en' | 'fr' }));
-vi.mock('$lib/i18n', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/i18n')>();
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/i18n/index.ts')>();
 	return { ...actual, getLocale: () => currentLocale.value };
 });
 
 const { payload } = vi.hoisted(() => ({ payload: { current: null as Hotspots | null } }));
 const capturedLadders = vi.hoisted(() => ({ current: [] as unknown[] }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHotspots: vi.fn(),
 	getHotspotsHistoryIndex: vi.fn(),
 	getHotspotsHistoryDay: vi.fn(),
 }));
-vi.mock('$lib/v1/history/selection', () => ({
+vi.mock('#lib/v1/history/selection.ts', () => ({
 	availabilityFromPointCollectionIndex: vi.fn(() => ({ kind: 'empty' })),
 }));
-vi.mock('$lib/v1/history/dateResource.svelte', () => ({
+vi.mock('#lib/v1/history/dateResource.svelte.ts', () => ({
 	historyDateRequestFromSearchParams: vi.fn(() => ({ hasDate: false, rawDate: null })),
 	createHistoryDateResource: vi.fn(() => ({
 		request: { hasDate: false, rawDate: null },
@@ -67,7 +70,7 @@ vi.mock('$lib/v1/history/dateResource.svelte', () => ({
 		destroy: vi.fn(),
 	})),
 }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		data: payload.current,
 		error: null,
@@ -216,15 +219,6 @@ function cardTrigger(container: HTMLElement, id: string): HTMLButtonElement {
 	) as HTMLButtonElement;
 }
 
-function resetHotspotsState(): void {
-	for (const key of ['hotspots-card-top', 'hotspots-card-lines', 'hotspots-card-stops']) {
-		sessionStorage.removeItem(`persisted:${key}`);
-	}
-	sessionStorage.removeItem('persisted:hotspots-controls');
-	sessionStorage.removeItem('persisted:hotspots-toc');
-	quietMode.resetForTest();
-}
-
 type CapturedMagnitudeDatum = MagnitudeDatum & {
 	readonly tapPopover?: ChartDatumPopoverModel;
 };
@@ -249,22 +243,26 @@ describe('HotspotsBoard article', () => {
 		currentLocale.value = 'en';
 		capturedLadders.current = [];
 		payload.current = seed();
-		resetHotspotsState();
 		Element.prototype.scrollIntoView = vi.fn();
 	});
 
-	afterEach(resetHotspotsState);
-
-	it('renders one article h1 and QuietModeButton controls', () => {
+	it('renders one article h1 and SectionsToggle controls', () => {
 		render(HotspotsBoard);
 		expect(screen.getByRole('heading', { level: 1, name: copy.en.heading })).toBeInTheDocument();
-		const controls = screen.getByTestId('quiet-mode-controls');
+		const controls = screen.getByTestId('sections-controls');
 		expect(
-			within(controls).getByRole('button', { name: quietModeCopy.en.collapse }),
+			within(controls).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
 		).toBeInTheDocument();
-		expect(
-			within(controls).getByRole('button', { name: quietModeCopy.en.remember }),
-		).toBeInTheDocument();
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
+	});
+
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(HotspotsBoard);
+		await assertRailIndependence({
+			container,
+			panelNames: [hotspotsCopy.en.rail.controls, hotspotsCopy.en.rail.toc],
+			contentCount: 3,
+		});
 	});
 
 	it('renders Top hotspot, Lines, and Stops as simultaneous article-summary cards without tabs', () => {
@@ -526,7 +524,8 @@ describe('HotspotsBoard article', () => {
 		).map((reason) => reason.id);
 		expect(reasonIds).toHaveLength(2);
 		expect(new Set(reasonIds)).toHaveLength(2);
-		expect(reasonIds.every((id) => /-(?:desktop|mobile)$/.test(id))).toBe(true);
+		for (const id of reasonIds)
+			expect(container.querySelectorAll(`[aria-describedby="${id}"]`)).toHaveLength(1);
 	});
 
 	it('a TOC jump reveals only its closed Lines card before scrolling', async () => {

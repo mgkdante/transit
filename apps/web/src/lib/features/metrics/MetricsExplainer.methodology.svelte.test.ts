@@ -1,7 +1,7 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { quietMode } from '@yesid/ui/state';
 import MetricsExplainer from './MetricsExplainer.svelte';
 import { metricsCopy } from './metrics.copy';
 
@@ -17,10 +17,10 @@ const { provState } = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance: vi.fn(),
 }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		get data() {
 			return provState.data;
@@ -39,13 +39,15 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 const viewport = window as typeof window & { happyDOM: { setInnerWidth(width: number): void } };
 
 beforeEach(() => {
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
 	viewport.happyDOM.setInnerWidth(1280);
-	quietMode.resetForTest();
 });
 
 afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
 	viewport.happyDOM.setInnerWidth(1280);
-	quietMode.resetForTest();
 	for (const key of ['provenance', 'coverage', 'freshness']) {
 		sessionStorage.removeItem(`persisted:metrics-rail-${key}`);
 	}
@@ -118,7 +120,7 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		expect(screen.getByText(liveMethodology.otp_definition)).toBeInTheDocument();
 	});
 
-	it('adopts current FOCUS on first desktop visit and keeps independent card state across later resizes', async () => {
+	it('starts newly mounted desktop cards at the bulk choice and keeps individual state across later resizes', async () => {
 		viewport.happyDOM.setInnerWidth(390);
 		provState.data = richProvenance;
 		const { container } = render(MetricsExplainer);

@@ -1,13 +1,15 @@
 <script lang="ts">
+	import { stopReliabilityCopy } from './reliability/stops-reliability.copy';
+	import { verdictRank } from '#lib/v1/verdict.ts';
 	import { page } from '$app/state';
-	import { intl, getLocalizeHref, getLocale, type Locale } from '$lib/i18n';
-	import { mapHrefFor } from '$lib/nav';
+	import { intl, getLocalizeHref, getLocale, type Locale } from '#lib/i18n/index.ts';
+	import { mapHrefFor } from '#lib/nav/index.ts';
 	import { desktop } from '@yesid/ui/state';
-	import { createReliabilityLoader } from '$lib/v1/reliabilitySnapshot.svelte';
-	import { getRoute, getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
-	import type { RouteIndexEntry } from '$lib/v1/schemas/routes_index';
-	import type { StopIndexEntry } from '$lib/v1/schemas/stops_index';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { createReliabilityLoader } from '#lib/v1/reliabilitySnapshot.svelte.ts';
+	import { getRoute, getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
+	import type { RouteIndexEntry } from '#lib/v1/schemas/routes_index.ts';
+	import type { StopIndexEntry } from '#lib/v1/schemas/stops_index.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import {
 		ResourceBoundary,
 		EntityList,
@@ -16,24 +18,24 @@
 		ReliabilityBadge,
 		MapDrilldownLink,
 		createReliabilityListingController,
-	} from '$lib/components/surface';
-	import { ListingHeaderStats } from '$lib/components/layout';
+	} from '#lib/components/surface/index.ts';
+	import { ListingHeaderStats } from '#lib/components/layout/index.ts';
 	import { ListingFrame } from '@yesid/ui/layout';
 	import { blueprintScrub } from '@yesid/motion/utils/blueprintScrub';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { FilterGroup, FilterSection, SearchInput } from '@yesid/ui/brand';
 	import { Combobox, type ComboboxOption } from '@yesid/ui/combobox';
-	import { fromSearchParams } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { dedupeBy, foldSearchText, tokenMatchScore } from '$lib/search/normalize';
+	import { fromSearchParams } from '#lib/filters/index.ts';
+	import { mirrorSearchParams } from '#lib/site/urlMirror.ts';
+	import { dedupeBy, foldSearchText, tokenMatchScore } from '#lib/search/normalize.ts';
 	import {
 		stopGroupKey,
 		stopModeHint,
 		stopModeTag,
 		routeModeHint,
 		TRANSIT_MODE_FILTERS,
-	} from '$lib/search/stopMode';
+	} from '#lib/search/stopMode.ts';
 	import { indexCopy } from './stops.copy';
 	import StopsBlueprint from './StopsBlueprint.svelte';
 
@@ -46,7 +48,7 @@
 	const index = createResource(() => getStopsIndex());
 	const routesIndex = createResource(() => getRoutesIndex());
 
-	const reliability = createReliabilityLoader('stop');
+	const reliability = createReliabilityLoader('stop', stopReliabilityCopy[locale].verdict);
 	const observeReliability = reliability.reliability;
 
 	const PAGE_SIZE = 50;
@@ -56,7 +58,7 @@
 	const folded = $derived(foldSearchText(query));
 
 	function seedLineFromUrl(): string | null {
-		const state = fromSearchParams(page.url.searchParams);
+		const state = fromSearchParams(new URLSearchParams(page.url.search));
 		const first = [...state.routes][0];
 		return first ?? null;
 	}
@@ -149,7 +151,6 @@
 
 	type SortKey = 'default' | 'worst';
 	let sort = $state<SortKey>('default');
-	const VERDICT_RANK: Record<string, number> = { severe: 0, late: 1, on_time: 2 };
 	const reliabilityCandidates = $derived.by<readonly StopIndexEntry[]>(() =>
 		lineActive ? lineStopGroups.flatMap((group) => narrowByText(group.stops)) : matches,
 	);
@@ -159,7 +160,7 @@
 		id: (stop) => stop.id,
 		requestWhen: () => sort === 'worst',
 		rankWhen: () => sort === 'worst',
-		rank: (snapshot) => (snapshot.verdict == null ? 99 : (VERDICT_RANK[snapshot.verdict] ?? 99)),
+		rank: (snapshot) => verdictRank(snapshot.verdict),
 	});
 	const visibleGroups = $derived.by<LineStopGroup[]>(() =>
 		lineStopGroups
@@ -280,7 +281,6 @@
 			allLabel={t.sortDefault}
 			allowDeselect={false}
 			collapsible
-			persistKey="stops-filter-sort-group"
 			testIdPrefix="stops-sort"
 			onSelect={(key) => (sort = key === 'worst' ? 'worst' : 'default')}
 		/>
@@ -295,7 +295,6 @@
 	aside={listingStats}
 	onHeaderMount={blueprintScrub}
 	filterLabel={t.controlsLabel}
-	filterPersistKey="stops-listing-filters"
 	search={listingSearch}
 	filters={listingFilters}
 >
@@ -469,7 +468,6 @@
 	.stops-load-more:focus-visible {
 		border-color: var(--primary);
 		color: var(--primary);
-		outline: none;
 	}
 	.stops-browse-more,
 	.stops-batch-controls {

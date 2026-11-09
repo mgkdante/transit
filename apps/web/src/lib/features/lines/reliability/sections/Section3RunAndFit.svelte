@@ -1,28 +1,28 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { absenceShort } from '$lib/site/absence';
-	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '$lib/utils';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { absenceShort } from '#lib/site/absence.ts';
+	import { fmtPct, fmtCount, fmtDelayMin as sharedFmtDelayMin } from '#lib/utils/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
-	import { AbsentValue } from '$lib/components/edge';
-	import { ChartLegend } from '$lib/components/dataviz';
-	import { occupancyVar } from '$lib/components/dataviz/tokens';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import { ChartLegend } from '#lib/components/dataviz/index.ts';
+	import { occupancyVar } from '#lib/components/dataviz/tokens.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import {
 		CANCEL_RATE_DOMAIN,
 		SKIPPED_RATE_DOMAIN,
 		SHARE_DOMAIN,
 		weekdayLabel,
-	} from '$lib/features/reliability/shiftGrains';
-	import { OCCUPANCY_CODES, type OccupancyCode } from '$lib/v1/schemas/types';
+	} from '#lib/features/reliability/shiftGrains.ts';
+	import { OCCUPANCY_CODES, type OccupancyCode } from '#lib/v1/schemas/types.ts';
 	import { selectCrowdingDelay } from '../selectors/crowdingDelay';
-	import { otpTone, selectBullet } from '../selectors/bullet';
+	import { verdictTone, selectBullet } from '../selectors/bullet';
 	import { selectOccupancyShare } from '../selectors/occupancyShare';
 	import { detailCopy } from '../../lines.copy';
 	import type { ServiceDeliveredVM, CrowdingVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
-	import Detail from '$lib/components/shared/Detail.svelte';
+	import Detail from '#lib/components/shared/Detail.svelte';
 	import MetricBullet from './MetricBullet.svelte';
 
 	interface Section3RunAndFitProps {
@@ -177,7 +177,7 @@
 			xLabel: t.serviceCompletenessPct,
 			unit: copy.units.pct,
 			domain: SHARE_DOMAIN,
-			tone: otpTone(serviceCompletenessPct),
+			tone: verdictTone(service.verdictStatus),
 		}),
 	);
 	const dominantBullet = $derived(

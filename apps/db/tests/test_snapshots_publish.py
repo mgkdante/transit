@@ -23,6 +23,9 @@ class FakeResult:
     def all(self):
         return []
 
+    def fetchone(self):
+        return None
+
     def __iter__(self):
         return iter([])
 
@@ -123,6 +126,13 @@ def test_publish_live_uploads_all_files_manifest_last() -> None:
     assert store.keys.index("live/stop_departures.json") < store.keys.index("manifest.json")
     assert store.keys.index("status/data_health.json") < store.keys.index("manifest.json")
     assert store.tiers == ["live"] * len(expected_keys)
+
+    # New publishers emit explicit unknown capture time, not a legacy absent field.
+    for key in ("live/alerts.json", "live/trips.json", "live/stop_departures.json"):
+        payload = store.get_json(key)
+        assert payload is not None
+        assert "feed_captured_utc" in payload
+        assert payload["feed_captured_utc"] is None
 
     assert isinstance(res, PublishResult)
     assert res.provider_id == "stm"

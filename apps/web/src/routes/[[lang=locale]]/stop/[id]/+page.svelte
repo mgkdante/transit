@@ -1,5 +1,5 @@
 <script lang="ts">
-	import StopDetail from '$lib/features/stops/StopDetail.svelte';
+	import StopDetail from '#lib/features/stops/StopDetail.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

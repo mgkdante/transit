@@ -4,13 +4,13 @@ import {
 	OCCUPANCY_CODES,
 	type StatusCode,
 	type OccupancyCode,
-} from '$lib/v1/schemas/types';
+} from '#lib/v1/schemas/types.ts';
 import {
 	STATUS_GLYPH,
 	occupancyGlyph,
 	occupancyVar,
 	statusVar,
-} from '$lib/components/dataviz/tokens';
+} from '#lib/components/dataviz/tokens.ts';
 
 export const VEHICLE_MARKER_GEOMETRY = Object.freeze({
 	box: 26,

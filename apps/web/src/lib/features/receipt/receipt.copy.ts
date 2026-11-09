@@ -1,7 +1,7 @@
-import { serviceComparisonCopy } from '$lib/v1/serviceComparison';
-import { intl, defineCopy, type Locale } from '$lib/i18n/copy';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import type { SurfaceHeadCopy } from '$lib/components/surface';
+import { serviceComparisonCopy } from '#lib/v1/serviceComparison.ts';
+import { intl, defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const copy = defineCopy({
 	en: {

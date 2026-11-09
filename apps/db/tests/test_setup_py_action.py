@@ -20,6 +20,7 @@ EXPECTED_CALLERS = {
     ("historic-publish-recovery.yml", "publish-historic-recovery"),
     ("historic-snapshot-gc.yml", "mark"),
     ("refresh-basemap.yml", "providers"),
+    ("worker-start-probe.yml", "probe"),
 }
 
 
@@ -70,7 +71,9 @@ def test_python_minor_line_is_selected_and_proved_by_ci() -> None:
     classifier = next(
         step for step in workflow["jobs"]["classify"]["steps"] if step.get("id") == "classify"
     )
-    assert '".python-version"' in classifier["with"]["rules-json"]
+    assert classifier["run"] == "node .github/scripts/ci-paths.mjs classify"
+    rules = (REPO_ROOT / ".github/scripts/ci-paths.mjs").read_text(encoding="utf-8")
+    assert '".python-version"' in rules
 
 
 def test_setup_py_composite_has_the_exact_workflow_job_map() -> None:

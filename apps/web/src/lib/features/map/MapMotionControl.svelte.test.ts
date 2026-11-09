@@ -1,8 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+import type { Writable } from 'svelte/store';
+
+vi.mock('@yesid/motion/stores/reducedMotion', async () => {
+	const { writable } = await import('svelte/store');
+	return { prefersReducedMotion: writable(false) };
+});
 import { render, screen, cleanup } from '@testing-library/svelte';
 import MapMotionControl from './MapMotionControl.svelte';
 import { copy } from './map.copy';
-import { motionMode } from '$lib/stores';
+import { motionMode } from '#lib/stores/index.ts';
 
 afterEach(() => {
 	cleanup();
@@ -11,9 +18,28 @@ afterEach(() => {
 beforeEach(() => {
 	localStorage.clear();
 	motionMode.set('raw');
+	(prefersReducedMotion as Writable<boolean>).set(false);
 });
 
 describe('MapMotionControl', () => {
+	it.each(['en', 'fr'] as const)(
+		'explains reduced-motion unavailability in %s and preserves the preference',
+		async (locale) => {
+			motionMode.set('smooth');
+			(prefersReducedMotion as Writable<boolean>).set(true);
+			const { rerender } = render(MapMotionControl, { locale, copy: copy[locale] });
+			const sw = screen.getByRole('switch');
+			expect(sw).toBeDisabled();
+			expect(sw).toHaveAttribute('aria-checked', 'false');
+			expect(sw).toHaveTextContent(copy[locale].motion.unavailableLabel);
+			expect(screen.getByText(copy[locale].motion.unavailable)).toBeVisible();
+			expect(motionMode.current).toBe('smooth');
+			(prefersReducedMotion as Writable<boolean>).set(false);
+			await rerender({ locale, copy: copy[locale] });
+			expect(sw).toBeEnabled();
+			expect(sw).toHaveAttribute('aria-checked', 'true');
+		},
+	);
 	it('renders a real role="switch", unchecked (RAW) by default', () => {
 		render(MapMotionControl, { locale: 'en', copy: copy.en });
 		const sw = screen.getByTestId('map-motion-switch');

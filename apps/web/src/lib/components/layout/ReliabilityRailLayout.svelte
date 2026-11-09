@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { SurfaceRail, type SurfaceRailContext } from '@yesid/ui/layout';
 	import ArticleSummaryLane from './ArticleSummaryLane.svelte';
 

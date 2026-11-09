@@ -66,16 +66,23 @@
 </script>
 
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { measureMapFocusInset } from '#lib/features/map/mapFocusInset.ts';
+	import { browser, dev } from '$app/env';
 	import { onMount, tick } from 'svelte';
-	import { cn } from '$lib/utils';
-	import type { BasemapFile } from '$lib/v1/schemas';
+	import { cn } from '#lib/utils/index.ts';
+	import type { BasemapFile } from '#lib/v1/schemas/index.ts';
 	import { applyBasemapTheme, resolveBasemapStyle, type BasemapTheme } from './basemap';
 	import { constructRecoverableMap } from './maplibreConstructorCleanup';
-	import { mapViewportOptions, type MapFitPadding } from './viewport';
+	import { type MapFitPadding } from './viewport';
+	import {
+		createMapCamera,
+		type CameraRecoveryView,
+		type CameraLifecycle,
+	} from '#lib/features/map/mapCamera.ts';
 	import type { Map as MapLibreMap, MapEventType, StyleSpecification } from 'maplibre-gl';
 
 	interface MapStageProps {
+		camera?: CameraLifecycle;
 		center?: [number, number];
 		zoom?: number;
 		basemap?: BasemapFile | null | undefined;
@@ -100,7 +107,8 @@
 	}
 
 	let {
-		center = [-73.5673, 45.5017],
+		camera = createMapCamera(),
+		center,
 		zoom = 11,
 		basemap = undefined,
 		basemapLoader,
@@ -126,30 +134,26 @@
 	let container = $state<HTMLDivElement | null>(null);
 	let map = $state.raw<MapLibreMap | null>(null);
 
+	function cameraInputs() {
+		if (!container) return { center, zoom, bounds, maxBounds, fitPadding };
+		const inset = measureMapFocusInset({ getContainer: () => container! });
+		if (!inset.containerWidth || !inset.containerHeight)
+			return { center, zoom, bounds, maxBounds, fitPadding };
+		return {
+			center,
+			zoom,
+			bounds,
+			maxBounds,
+			size: { width: inset.containerWidth, height: inset.containerHeight },
+			fitPadding: container.closest('.map-hero') ? inset.fitPadding : fitPadding,
+		};
+	}
 	let styleInited = false;
 	let activeStyleKey: string | null = null;
 	let activeTheme: BasemapTheme | null = null;
 
 	function styleKey(file: BasemapFile | null): string {
 		return file?.url ?? 'minimal';
-	}
-
-	function cameraKey(nextCenter: [number, number], nextZoom: number): string {
-		return `${nextCenter[0]},${nextCenter[1]},${nextZoom}`;
-	}
-
-	function fitPaddingKey(nextPadding: MapFitPadding): string {
-		if (typeof nextPadding === 'number') return `${nextPadding}`;
-		return [
-			nextPadding.top ?? '',
-			nextPadding.right ?? '',
-			nextPadding.bottom ?? '',
-			nextPadding.left ?? '',
-		].join(',');
-	}
-
-	function fitKey(nextBounds: readonly number[] | undefined, nextPadding: MapFitPadding): string {
-		return `${nextBounds?.join(',') ?? 'fallback'}:${fitPaddingKey(nextPadding)}`;
 	}
 
 	interface BootAttempt {
@@ -167,24 +171,11 @@
 		consumerReleasePromise: Promise<void> | null;
 	}
 
-	type CameraOwner = 'fit' | 'user' | 'focus';
 	type RecoveryFocus =
 		| { kind: 'canvas' }
 		| { kind: 'attribution'; href: string | null; expanded: boolean }
 		| null;
-	interface RecoveryView {
-		center: [number, number];
-		zoom: number;
-		bearing: number;
-		pitch: number;
-		roll: number;
-		padding: ReturnType<MapLibreMap['getPadding']>;
-		owner: CameraOwner;
-		fitInputsKey: string;
-		layoutInputsKey: string;
-		cameraInputsKey: string;
-		focus: RecoveryFocus;
-	}
+	type RecoveryView = CameraRecoveryView & { focus: RecoveryFocus };
 
 	let attemptKey = $state(0);
 	let mounted = false;
@@ -431,18 +422,8 @@
 
 	async function recoverAttempt(attempt: BootAttempt, instance: MapLibreMap): Promise<void> {
 		if (!isCurrentAttempt(attempt) || attempt.map !== instance) return;
-		const position = instance.getCenter();
 		const view: RecoveryView = {
-			center: [position.lng, position.lat],
-			zoom: instance.getZoom(),
-			bearing: instance.getBearing(),
-			pitch: instance.getPitch(),
-			roll: instance.getRoll(),
-			padding: { ...instance.getPadding() },
-			owner: cameraOwner,
-			fitInputsKey: `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`,
-			layoutInputsKey: fitPaddingKey(fitPadding),
-			cameraInputsKey: cameraKey(center, zoom),
+			...camera.capture(instance, cameraInputs()),
 			focus: captureRecoveryFocus(attempt, instance),
 		};
 		activeRecoveryView = view;
@@ -529,11 +510,13 @@
 			consumerReleasePromise: null,
 		};
 		activeAttempt = attempt;
+
 		const basemapPromise = Promise.resolve()
 			.then(() =>
 				basemapLoader ? basemapLoader({ signal: attempt.controller.signal }) : (basemap ?? null),
 			)
 			.catch(() => null);
+
 		let failureKind: MapStageFailureKind = 'importer';
 		try {
 			const [maplibreModule] = await Promise.all([importers.maplibre(), importers.css()]);
@@ -557,7 +540,7 @@
 
 			failureKind = 'construct';
 			preflightWebgl();
-			const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
+			const viewport = camera.initial(cameraInputs());
 			const runtimeContainer = document.createElement('div');
 			runtimeContainer.style.width = '100%';
 			runtimeContainer.style.height = '100%';
@@ -571,8 +554,6 @@
 					{
 						container: runtimeContainer,
 						style,
-						center,
-						zoom,
 						...viewport,
 						canvasContextAttributes: { desynchronized: true },
 						locale,
@@ -585,32 +566,23 @@
 				throw error;
 			}
 			attempt.map = instance;
-			const currentFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
-			const currentCameraKey = cameraKey(center, zoom);
-			const fitInputsChanged =
-				recoveryView?.owner === 'fit' &&
-				(recoveryView.fitInputsKey !== currentFitKey ||
-					recoveryView.cameraInputsKey !== currentCameraKey);
-			if (recoveryView && !fitInputsChanged) {
-				instance.jumpTo({
-					center: recoveryView.center,
-					zoom: recoveryView.zoom,
-					bearing: recoveryView.bearing,
-					pitch: recoveryView.pitch,
-					roll: recoveryView.roll,
-					padding: recoveryView.padding,
+			// Read-only geometry inspection, omitted from production builds.
+			if (dev || import.meta.env.MODE === 'e2e') {
+				const inspectMap = () => ({
+					project: (coord: [number, number]) => instance.project(coord),
+					moving: instance.isMoving(),
+					loaded: instance.loaded(),
 				});
-			} else if (recoveryView && fitInputsChanged) {
-				instance.jumpTo({
-					...(recoveryView.cameraInputsKey !== currentCameraKey ? { center, zoom } : {}),
-					bearing: recoveryView.bearing,
-					pitch: recoveryView.pitch,
-					roll: recoveryView.roll,
-					...(recoveryView.layoutInputsKey === fitPaddingKey(fitPadding)
-						? { padding: recoveryView.padding }
-						: {}),
+				Object.defineProperty(window, '__transitMap', {
+					configurable: true,
+					get: inspectMap,
+				});
+				attempt.disposers.push(() => {
+					if (Object.getOwnPropertyDescriptor(window, '__transitMap')?.get === inspectMap)
+						Reflect.deleteProperty(window, '__transitMap');
 				});
 			}
+			camera.attach(instance, cameraInputs(), recoveryView);
 			ownMapControl(
 				attempt,
 				instance,
@@ -620,11 +592,6 @@
 				}),
 				'bottom-right',
 			);
-			activeLayoutSig = fitPaddingKey(fitPadding);
-			activeBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
-			activeCameraKey = currentCameraKey;
-			cameraOwner = recoveryView?.owner ?? 'fit';
-			if (recoveryView) activeFitKey = currentFitKey;
 			map = instance;
 
 			failureKind = 'setup';
@@ -669,17 +636,18 @@
 			releaseStyleData = ownMapListener(attempt, instance, 'styledata', collapseAttribution);
 			releaseSourceData = ownMapListener(attempt, instance, 'sourcedata', collapseAttribution);
 			const claimCamera = (value: unknown) => {
-				const event = value as { originalEvent?: unknown; cameraIntent?: unknown };
-				if (event.cameraIntent === 'focus') cameraOwner = 'focus';
-				else if (event.originalEvent) cameraOwner = 'user';
+				camera.claim(value);
 			};
 			const claimBoxZoom = () => {
-				cameraOwner = 'user';
+				camera.interact();
 			};
 			ownMapListener(attempt, instance, 'movestart', claimCamera);
 			ownMapListener(attempt, instance, 'boxzoomend', claimBoxZoom);
 			attempt.observer = new ResizeObserver(() => {
-				if (isCurrentAttempt(attempt)) instance.resize();
+				if (isCurrentAttempt(attempt)) {
+					instance.resize();
+					camera.update(instance, cameraInputs());
+				}
 			});
 			attempt.observer.observe(attempt.container);
 			attempt.initializing = false;
@@ -700,41 +668,8 @@
 		};
 	});
 
-	let cameraOwner: CameraOwner = 'fit';
-	let activeFitKey: string | null = null;
-	let activeLayoutSig: string | null = null;
-	let activeBoundsSig: string | null = null;
-	let activeCameraKey: string | null = null;
-
 	$effect(() => {
-		const m = map;
-		if (!m) return;
-		const nextFitKey = `${fitKey(bounds, fitPadding)}|${maxBounds?.join(',') ?? ''}`;
-		if (activeFitKey === nextFitKey) return;
-		activeFitKey = nextFitKey;
-		const nextLayoutSig = fitPaddingKey(fitPadding);
-		const nextBoundsSig = `${bounds?.join(',') ?? 'fallback'}|${maxBounds?.join(',') ?? ''}`;
-		const layoutChanged = activeLayoutSig !== nextLayoutSig;
-		const boundsChanged = activeBoundsSig !== nextBoundsSig;
-		if (!layoutChanged && !boundsChanged) return;
-		activeLayoutSig = nextLayoutSig;
-		activeBoundsSig = nextBoundsSig;
-		const viewport = mapViewportOptions(bounds, fitPadding, maxBounds);
-		if (boundsChanged) m.setMaxBounds(viewport.maxBounds);
-		if (cameraOwner === 'fit') {
-			m.fitBounds(viewport.bounds, { ...viewport.fitBoundsOptions, duration: 0 });
-		}
-	});
-
-	$effect(() => {
-		const m = map;
-		if (!m) return;
-		const nextCenter = center;
-		const nextZoom = zoom;
-		const nextCameraKey = cameraKey(nextCenter, nextZoom);
-		if (activeCameraKey === nextCameraKey) return;
-		activeCameraKey = nextCameraKey;
-		if (cameraOwner === 'fit') m.jumpTo({ center: nextCenter, zoom: nextZoom });
+		if (map) camera.update(map, cameraInputs());
 	});
 
 	$effect(() => {

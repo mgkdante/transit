@@ -1,9 +1,9 @@
-import { browser } from '$app/environment';
-import type { Manifest } from '$lib/v1/schemas';
+import { browser } from '$app/env';
+import type { Manifest } from '#lib/v1/schemas/index.ts';
 import { dataRefresh } from './refresh.svelte';
 
 async function loadGetManifestFresh(): Promise<() => Promise<Manifest>> {
-	const mod = await import('$lib/v1/repositories/manifest');
+	const mod = await import('#lib/v1/repositories/manifest.ts');
 	return mod.getManifestFresh;
 }
 

@@ -91,21 +91,29 @@ const round = (value, digits = 1) => {
 };
 const pct = (numerator, denominator, digits = 1) =>
 	numerator != null && denominator > 0 ? round((100 * numerator) / denominator, digits) : null;
-const verdictCount = (otp, n, onTime) => {
-	if (!(n > 0)) return null;
+const verdictCount = (otp, n, onTime, wilsonLo, wilsonHi) => {
+	if (otp == null || n == null || n < 0) return null;
 	if (n < 30) return n;
-	const successes = onTime ?? Math.round((otp / 100) * n);
-	const z2 = 1.959963984540054 ** 2;
+	if (onTime == null) {
+		if (
+			wilsonLo == null ||
+			wilsonHi == null ||
+			!Number.isFinite(wilsonLo) ||
+			!Number.isFinite(wilsonHi) ||
+			wilsonLo < 0 ||
+			wilsonLo > wilsonHi ||
+			wilsonHi > 100
+		)
+			return n;
+		return (wilsonLo >= 80 && Math.round(otp) >= 80) || wilsonHi < 80 ? null : n;
+	}
+	const successes = onTime;
+	const z2 = 1.96 ** 2;
 	const center = (successes / n + z2 / (2 * n)) / (1 + z2 / n);
 	const margin =
-		(1.959963984540054 *
-			Math.sqrt(((successes / n) * (1 - successes / n)) / n + z2 / (4 * n * n))) /
+		(1.96 * Math.sqrt(((successes / n) * (1 - successes / n)) / n + z2 / (4 * n * n))) /
 		(1 + z2 / n);
-	const band = (value) => (value >= 80 ? 2 : value >= 60 ? 1 : 0);
-	return margin * 2 >= 0.3 ||
-		band(Math.round(100 * (center - margin))) !== band(Math.round(100 * (center + margin)))
-		? n
-		: null;
+	return (center - margin >= 0.8 && Math.round(otp) >= 80) || center + margin < 0.8 ? null : n;
 };
 const latestDated = (rows) =>
 	rows
@@ -529,6 +537,18 @@ function routeFile(fixture) {
 	return rawFile(fixture, 'historic/route_reliability/24.json');
 }
 
+export function expectedDefaultLineHeadline(fixture) {
+	const windows = ['day', 'week', 'month'].map(
+		(grain) =>
+			(routeFile(fixture).periods ?? [])
+				.filter((window) => window.grain === grain)
+				.slice()
+				.sort((left, right) => String(left.date ?? '').localeCompare(String(right.date ?? '')))
+				.at(-1) ?? null,
+	);
+	return windows.find((window) => finite(window?.observation_count) >= 30) ?? windows[0];
+}
+
 export function expectedScheduleTruth(fixture) {
 	const route = routeFile(fixture);
 	const date = latestDated((route.periods ?? []).filter((row) => row.grain === 'day'))?.date;
@@ -624,7 +644,7 @@ function lineOracle(fixture, locale, view) {
 				severe_pct: pct(sumField(retained, 'delay', 'severe_count'), delayN),
 				observation_count: sumField(retained, 'delay', 'observation_count'),
 			}
-		: latestDated((raw.periods ?? []).filter((row) => row.grain === 'day'));
+		: expectedDefaultLineHeadline(fixture);
 	const cancellation = retained.length
 		? Object.fromEntries(
 				[
@@ -899,7 +919,13 @@ function lineOracle(fixture, locale, view) {
 		observation('line.day.severe_pct', finite(day?.severe_pct)),
 		observation(
 			'line.day.observation_count',
-			verdictCount(finite(day?.otp_pct), finite(day?.observation_count), finite(day?.on_time)),
+			verdictCount(
+				finite(day?.otp_pct),
+				finite(day?.observation_count),
+				finite(day?.on_time),
+				finite(day?.wilson_lo),
+				finite(day?.wilson_hi),
+			),
 		),
 		observation('line.day.cancellation_pct', cancellationPct),
 		observation('line.day.skipped_pct', skippedPct),
@@ -1133,7 +1159,13 @@ function stopOracle(fixture, locale, view) {
 		),
 		observation(
 			'stop.day.observation_count',
-			finite(day?.otp_pct) == null ? null : finite(day?.observation_count),
+			verdictCount(
+				finite(day?.otp_pct),
+				finite(day?.observation_count),
+				null,
+				finite(day?.wilson_lo),
+				finite(day?.wilson_hi),
+			),
 		),
 		observation(
 			'stop.daily.rows',
@@ -1471,6 +1503,89 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	expectLiteral(
+		verdictCount(87, 120, null, 80, 92),
+		null,
+		'published reliable stop omits hedge count',
+	);
+	expectLiteral(
+		verdictCount(85, 230, null, 79.6, 88.9),
+		230,
+		'published tentative stop retains hedge count',
+	);
+	expectLiteral(
+		verdictCount(80, 1_000_000, null, 79.6, 79.8),
+		null,
+		'published patchy stop omits hedge count',
+	);
+	expectLiteral(
+		verdictCount(85, 230, 195, 80.1, 88.9),
+		230,
+		'exact counts precede published bounds',
+	);
+	for (const [lo, hi] of [
+		[undefined, undefined],
+		[null, null],
+		[80, null],
+		[90, 70],
+		[-1, 90],
+		[70, 101],
+		[NaN, 90],
+	]) {
+		expectLiteral(
+			verdictCount(87, 120, null, lo, hi),
+			120,
+			'missing or invalid bounds stay uncertain',
+		);
+	}
+	expectLiteral(
+		verdictCount(80, 120, null, 79.9, 80),
+		120,
+		'upper bound exactly 80 stays uncertain',
+	);
+	expectLiteral(
+		expectedDomainObservationsFromFixture(FIXTURES.rich, 'stop', 'en').find(
+			(row) => row.id === 'stop.day.observation_count',
+		)?.value,
+		null,
+		'rich stop reliable verdict omits observation count',
+	);
+	for (const [otp, n, onTime, expected] of [
+		[50, 30, 15, null],
+		[55, 200, 110, null],
+		[85, 100, 85, 100],
+		[80, 1000, 800, 1000],
+	]) {
+		expectLiteral(verdictCount(otp, n, onTime), expected, `${otp}% at n=${n} hedge count`);
+	}
+	for (const [fixture, expected] of [
+		[FIXTURES.rich, ['day', 80, 100]],
+		[FIXTURES.sparse, ['day', 0, 0]],
+	]) {
+		const window = expectedDefaultLineHeadline(fixture);
+		expectLiteral(
+			[window?.grain, window?.otp_pct, window?.observation_count],
+			expected,
+			`${fixture.name} independent current headline`,
+		);
+	}
+	const thinCurrentDay = structuredClone(FIXTURES.rich);
+	routeFile(thinCurrentDay).periods.find(
+		(window) => window.grain === 'day' && window.date === '2026-08-29',
+	).observation_count = 29;
+	const fallbackWindow = expectedDefaultLineHeadline(thinCurrentDay);
+	expectLiteral(
+		[fallbackWindow?.grain, fallbackWindow?.otp_pct, fallbackWindow?.observation_count],
+		['week', 76, 290],
+		'thin current day uses qualifying week',
+	);
+	expectLiteral(
+		expectedDomainObservations('sparse', 'line').find(
+			(row) => row.id === 'line.day.observation_count',
+		)?.value,
+		0,
+		'thin-sample hedge preserves the reported zero observation count',
+	);
 	for (const [iso, locale, expected] of [
 		['2026-11-01T05:30:00Z', 'en', 'Nov 1, 2026, 01:30:00 GMT-4'],
 		['2026-11-01T06:30:00Z', 'en', 'Nov 1, 2026, 01:30:00 GMT-5'],

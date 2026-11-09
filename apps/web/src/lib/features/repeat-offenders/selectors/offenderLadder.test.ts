@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { selectOffenderLadder } from './offenderLadder';
-import type { RepeatOffenderEntry } from '$lib/v1/schemas';
-import { SEVERE_DOMAIN } from '$lib/features/reliability/domains';
-import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+import type { RepeatOffenderEntry } from '#lib/v1/schemas/index.ts';
+import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
+import type { ChartDatumPopoverModel } from '#lib/components/dataviz/chart/index.ts';
 
 const labels = {
 	title: 'Worst offenders',

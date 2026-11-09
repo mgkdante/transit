@@ -1,3 +1,4 @@
+import { clock } from '@yesid/ui/state';
 import {
 	fireEvent,
 	render as renderSvelte,
@@ -6,21 +7,27 @@ import {
 	within,
 } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '$lib/v1';
-import { STATUS_LABELS } from '$lib/v1/enumLabels';
-import type { IdentitySeed } from '$lib/v1/serverContext';
-import { quietMode } from '@yesid/ui/state';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RouteFile, RouteReliability, StopPrediction, Vehicle } from '#lib/v1/index.ts';
+import { STATUS_LABELS } from '#lib/v1/enumLabels.ts';
+import type { IdentitySeed } from '#lib/v1/serverContext.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import RouteDetail from './RouteDetail.svelte';
 import { detailCopy } from './lines.copy';
+import { adapter } from '#lib/v1/adapter/index.ts';
+import {
+	AlertsFileSchema,
+	VehiclesFileSchema,
+	TripsFileSchema,
+	NetworkFileSchema,
+} from '#lib/v1/schemas/index.ts';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
 const routeDetailNav = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/lines/161'), state: {} };
 	const defaultReplaceState = (url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 	};
 	return {
 		page,
@@ -30,9 +37,16 @@ const routeDetailNav = vi.hoisted(() => {
 });
 const routeManifest = vi.hoisted(() => ({}));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
+const routeProvider = vi.hoisted(() => ({
+	value: undefined as import('#lib/v1/providers.ts').PublicProvider | undefined,
+	realLive: false,
+}));
 
 vi.mock('$app/state', () => ({ page: routeDetailNav.page }));
-vi.mock('$app/navigation', () => ({ replaceState: routeDetailNav.replaceState }));
+vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
+	replaceState: routeDetailNav.replaceState,
+}));
 
 const ROUTE_FILE = {
 	generated_utc: '2026-06-15T12:00:00Z',
@@ -111,7 +125,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'early',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '161',
 		trip: 'tEarly',
 		next_stop: 'sB',
@@ -122,7 +136,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'severe',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '161',
 		trip: 'tLate',
 		next_stop: 'sA',
@@ -133,7 +147,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'unknown',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '161',
 		trip: 'tNone',
 		delay_min: null,
@@ -143,7 +157,7 @@ const VEHICLES: Vehicle[] = [
 		lat: 45.5,
 		lon: -73.6,
 		status: 'on_time',
-		updated_utc: '2026-06-15T12:00:00Z',
+		updated_utc: new Date(clock.serverNow).toISOString(),
 		route: '999',
 		trip: 'tOther',
 		delay_min: 0,
@@ -175,6 +189,14 @@ const liveStore = {
 	},
 	generatedUtc: '2026-06-15T12:00:00Z',
 	ageSeconds: 12,
+	familyStates: {
+		vehicles: {
+			active: true,
+			retainedGeneration: '2026-06-15T12:00:00Z',
+			health: { state: 'live', retained: true, ageSeconds: 12, isStale: false, notice: null },
+		},
+		alerts: { health: { ageSeconds: 300 as number | null } },
+	},
 	isStale: false,
 	start: vi.fn(),
 	stop: vi.fn(),
@@ -260,6 +282,8 @@ let routesIndexData: { generated_utc: string; routes: { id: string; reliability?
 };
 
 function resetRouteSurfaceState(): void {
+	routeProvider.value = undefined;
+	routeProvider.realLive = false;
 	routeDetailNav.replaceState.mockReset().mockImplementation(routeDetailNav.defaultReplaceState);
 	liveAlerts = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS };
 	liveIndex = buildIndex(VEHICLES);
@@ -274,7 +298,6 @@ function resetRouteSurfaceState(): void {
 	createLiveStoreSpy.mockReset();
 	liveStore.start.mockReset();
 	liveStore.stop.mockReset();
-	quietMode.resetForTest();
 }
 
 const routeSurface = createSurfaceHarness({
@@ -287,12 +310,6 @@ const routeSurface = createSurfaceHarness({
 			window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 		},
 	},
-	storage: [
-		{
-			port: sessionStorage,
-			keys: ['persisted:reliability-controls', 'persisted:reliability-toc'],
-		},
-	],
 	resetters: [resetRouteSurfaceState],
 	mount: renderSvelte,
 });
@@ -300,30 +317,43 @@ const routeSurface = createSurfaceHarness({
 const renderRoute = (id = '161', name?: string) =>
 	routeSurface.mount(RouteDetail, { props: { id, seed: routeSeed(id, name) } });
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: () => routeFileData,
 	getRoutesIndex: async () => routesIndexData,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getRouteReliability: (id: string) => getRouteReliabilitySpy(id),
 	getLineHistoryIndex: lineHistoryHarness.getLineHistoryIndex,
 	loadLineHistoryRange: lineHistoryHarness.loadLineHistoryRange,
 }));
-vi.mock('$lib/v1/repositories/provenance', () => ({ getProvenance: () => provenanceData }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
-	createLiveStore: (manifest: unknown, options?: unknown) => {
-		createLiveStoreSpy(manifest, options);
-		return liveStore;
-	},
-}));
-vi.mock('$lib/v1/live/routeStopPredictions', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({ getProvenance: () => provenanceData }));
+vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/v1/live/store.svelte.ts')>();
+	return {
+		LIVE_FAMILIES: actual.LIVE_FAMILIES,
+		createLiveStore: (
+			manifest: Parameters<typeof actual.createLiveStore>[0],
+			options?: Parameters<typeof actual.createLiveStore>[1],
+		) => {
+			createLiveStoreSpy(manifest, options);
+			if (routeProvider.realLive) return actual.createLiveStore(manifest, options);
+			return liveStore;
+		},
+	};
+});
+vi.mock('#lib/v1/live/routeStopPredictions.ts', () => ({
 	deriveRouteStopPredictions: () => PREDICTIONS,
 }));
-vi.mock('$lib/v1/boot', () => ({
-	getV1Context: () => ({ manifest: routeManifest, labels: {}, lang: 'en' }),
+vi.mock('#lib/v1/boot.ts', () => ({
+	getV1Context: () => ({
+		manifest: routeManifest,
+		provider: routeProvider.value,
+		labels: {},
+		lang: 'en',
+	}),
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (loader: () => unknown) => {
 		const value = loader();
 		if (value instanceof Promise) {
@@ -353,13 +383,80 @@ vi.mock('$lib/v1/resource.svelte', () => ({
 	},
 }));
 
-beforeEach(() => routeSurface.reset());
+beforeEach(() => {
+	// Content interactions use a returning expanded reader; boot is outside this unit harness.
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
+	routeSurface.reset();
+});
+afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 afterAll(() => {
-	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(52);
+	// Three additional mounts cover EN/FR alert age and unknown age.
+	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(56);
 });
 
 describe('RouteDetail article cover and focus scope', () => {
+	it('keeps a fresh OC Transpo line live with explicit-null unsupported alerts', async () => {
+		routeProvider.realLive = true;
+		routeProvider.value = {
+			id: 'octranspo',
+			labels: {
+				en: { city: 'Ottawa', operator: 'OC Transpo' },
+				fr: { city: 'Ottawa', operator: 'OC Transpo' },
+			},
+			inputs: { i3_alerts: false, service_alerts: false },
+			alert_links: {},
+		};
+		const generated_utc = new Date().toISOString();
+		const spies = [
+			vi
+				.spyOn(adapter.live, 'vehicles')
+				.mockResolvedValue(VehiclesFileSchema.parse({ generated_utc, vehicles: [] })),
+			vi
+				.spyOn(adapter.live, 'trips')
+				.mockResolvedValue(
+					TripsFileSchema.parse({ generated_utc, feed_captured_utc: generated_utc, trips: {} }),
+				),
+			vi
+				.spyOn(adapter.live, 'alerts')
+				.mockResolvedValue(
+					AlertsFileSchema.parse({ generated_utc, feed_captured_utc: null, alerts: [] }),
+				),
+			vi.spyOn(adapter.live, 'network').mockResolvedValue(
+				NetworkFileSchema.parse({
+					generated_utc,
+					vehicles_in_service: 0,
+					on_time_pct: null,
+					status_dist: {},
+					delay_p50_min: null,
+					delay_p90_min: null,
+					non_responding: 0,
+					feed_freshness_s: 0,
+					coverage_pct: null,
+				}),
+			),
+		];
+		try {
+			const view = renderRoute();
+			await waitFor(() => expect(spies[0]).toHaveBeenCalled());
+			await waitFor(() =>
+				expect(view.container.querySelector('[data-slot="freshness-stamp"]')).toHaveAttribute(
+					'data-stale',
+					'false',
+				),
+			);
+			expect(spies[2]).not.toHaveBeenCalled();
+			expect(createLiveStoreSpy).toHaveBeenCalledWith(routeManifest, {
+				families: ['vehicles', 'trips', 'network'],
+			});
+		} finally {
+			spies.forEach((spy) => spy.mockRestore());
+		}
+	});
 	it('requests only the live families used by route detail', () => {
 		renderRoute('161', '161 Van Horne');
 
@@ -462,7 +559,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		expect(routeDetailNav.page.url.searchParams.get('window')).toBe('am');
 	});
 
-	it('keeps the tabs fixed above a cohesive disclosure sequence and carries bulk state across panes', async () => {
+	it('keeps the tabs fixed above a cohesive disclosure sequence and preserves mounted panes while new panes use the bulk choice', async () => {
 		const view = renderRoute();
 		const toolbar = view.container.querySelector('[data-slot="detail-shell-toolbar"]');
 		const tabs = view.container.querySelector<HTMLElement>('[data-slot="entity-detail-tabs"]');
@@ -475,7 +572,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		for (const card of detailCards) {
 			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute('aria-expanded', 'true');
 		}
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		await waitFor(() => {
 			for (const card of detailCards) {
 				expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
@@ -577,22 +674,28 @@ describe('RouteDetail article cover and focus scope', () => {
 
 		expect(actionRow).not.toBeNull();
 		expect(actionRow?.querySelector('a')).not.toBeNull();
-		expect(controlRow).toContainElement(screen.getByTestId('quiet-mode-controls'));
+		expect(controlRow).toContainElement(screen.getByTestId('sections-controls'));
 		expect(Array.from(headerContent.children).at(-1)).toBe(controlRow);
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		expect(screen.getByTestId('quiet-mode-toggle')).toBeVisible();
+		expect(screen.getByTestId('sections-toggle')).toBeVisible();
 		expect(profile).toHaveAttribute('aria-expanded', 'true');
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
-		await fireEvent.click(screen.getByTestId('quiet-mode-toggle'));
+		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		await waitFor(() => expect(profile).toHaveAttribute('aria-expanded', 'false'));
+		await view.rerender({ id: 'A/B', seed: routeSeed('A/B') });
+		await waitFor(() =>
+			expect(
+				view.container.querySelector('[data-toc="line-detail-profile"] [data-section-trigger]'),
+			).toHaveAttribute('aria-expanded', 'false'),
+		);
 	});
 });
 
 describe('RouteDetail reliability fetch — the route page trusts the FILE', () => {
 	async function routePageReliability(id: string): Promise<unknown> {
-		const historic = (await import('$lib/v1/repositories/historic')) as unknown as {
+		const historic = (await import('#lib/v1/repositories/historic.ts')) as unknown as {
 			getRouteReliability: (id: string) => Promise<unknown>;
 		};
 		return historic.getRouteReliability(id);
@@ -743,7 +846,19 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 });
 
 describe('RouteDetail always-visible verdict history scope', () => {
-	it('reserves no summary gap when the archive cannot publish a percentage verdict', async () => {
+	it('keeps no summary gap for an absent verdict', () => {
+		reliabilityResourceState = {
+			data: { ...CURRENT_RELIABILITY, periods: [] },
+			error: null,
+			loading: false,
+			settled: true,
+		};
+		const view = renderRoute();
+		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
+		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+	});
+
+	it('shows a hedge in the header and reliability rail for a thin sample', async () => {
 		reliabilityResourceState = {
 			data: SMALL_SAMPLE_RELIABILITY,
 			error: null,
@@ -752,15 +867,23 @@ describe('RouteDetail always-visible verdict history scope', () => {
 		};
 		const view = renderRoute();
 
-		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
-		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
+		expect(
+			view.container.querySelector('.route-verdict-banner [data-slot="verdict"]'),
+		).toHaveAttribute('data-status', 'tentative');
+		expect(view.container.querySelector('.verdict__ban')).toBeNull();
+		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).not.toBeNull();
 
 		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
-		expect(view.container.querySelector('.route-verdict-banner')).toBeNull();
-		expect(view.container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
 		await import('./reliability/RouteReliabilityClusters.svelte');
 		await tick();
-		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull();
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="reliability-clusters"]')).not.toBeNull(),
+		);
+		expect(
+			view.container.querySelector('.route-verdict-banner [data-slot="verdict"]'),
+		).toHaveAttribute('data-status', 'tentative');
+		expect(view.container.querySelector('.verdict__ban')).toBeNull();
+		expect(view.container.querySelector('[data-slot="reliability-rail-summary"]')).not.toBeNull();
 	});
 
 	it('keeps one centered line reliability banner aligned with the active tab rail', async () => {
@@ -884,7 +1007,7 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 
 		expect(screen.getByText('2 min late')).toBeInTheDocument();
 
-		const stop = screen.getByRole('link', { name: 'View stop Second stop' });
+		const stop = screen.getByRole('link', { name: /^View stop 2 Second stop / });
 		const absence = stop.querySelector('[data-slot="absent-value"]');
 		expect(absence).not.toBeNull();
 		expect(absence).toHaveAttribute('data-density', 'row');
@@ -894,7 +1017,7 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 	it('states no prediction without inferring whether a live bus exists', () => {
 		renderRoute();
 
-		const stop = screen.getByRole('link', { name: 'View stop Third stop' });
+		const stop = screen.getByRole('link', { name: /^View stop 3 Third stop / });
 		const absence = stop.querySelector('[data-slot="absent-value"]');
 		expect(absence).toHaveAttribute('data-density', 'row');
 		expect(absence).toHaveTextContent('No estimate · no prediction available');
@@ -910,6 +1033,25 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 });
 
 describe('RouteDetail Detail tab: service alerts affecting this route', () => {
+	it.each([
+		['en', 'Alerts checked 5 minutes ago'],
+		['fr', 'Alertes vérifiées il y a 5 minutes'],
+	] as const)('shows the separate alerts age in %s', (locale, note) => {
+		routeSurface.mount(RouteDetail, {
+			props: { id: '161', seed: routeSeed() },
+			context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+		});
+		expect(screen.getByText(note)).toBeInTheDocument();
+	});
+	it('omits an unknown alerts age', () => {
+		liveStore.familyStates.alerts.health.ageSeconds = null;
+		try {
+			renderRoute();
+			expect(screen.queryByText(/Alerts checked/)).not.toBeInTheDocument();
+		} finally {
+			liveStore.familyStates.alerts.health.ageSeconds = 300;
+		}
+	});
 	it('surfaces alerts whose routes[] lists this route and hides unrelated ones', () => {
 		renderRoute();
 

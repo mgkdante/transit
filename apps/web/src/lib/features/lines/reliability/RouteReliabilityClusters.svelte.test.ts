@@ -1,15 +1,17 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import RouteReliabilityClusters from './RouteReliabilityClusters.svelte';
 import { reliabilityCopy } from './reliability.copy';
-import type { RouteReliability, IsoUtc } from '$lib/v1';
+import type { RouteReliability, IsoUtc } from '#lib/v1/index.ts';
+import { assertRailIndependence } from '../../../../tests/railIndependence';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+vi.mock('#lib/v1/index.ts', async () => ({
+	...(await import('#lib/v1/history/index.ts')),
+	wilsonBounds: (await import('#lib/v1/stats.ts')).wilsonBounds,
 }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
@@ -133,6 +135,18 @@ const activeWindowText = (container: HTMLElement): string =>
 	container.querySelector('[data-slot="active-window"]')?.textContent?.trim() ?? '';
 
 describe('RouteReliabilityClusters', () => {
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(RouteReliabilityClusters, {
+			props: { data: populated, locale: 'en' },
+		});
+		await assertRailIndependence({
+			container,
+			panelNames: [copy.controls.viewLabel, copy.controls.toc],
+			contentCount: 5,
+			bulkAction: 'store',
+		});
+	});
+
 	it.each(['en', 'fr'] as const)('names the severe reading population in %s', async (locale) => {
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: populated, locale },
@@ -493,7 +507,6 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		const reasonIds = reasons.map((reason) => reason.id);
 		expect(reasonIds).toHaveLength(1);
 		expect(new Set(reasonIds).size).toBe(reasonIds.length);
-		expect(reasonIds[0]).toMatch(/-(?:desktop|mobile)$/);
 
 		const monthRadios = screen.getAllByRole('radio', { name: copy.controls.thisMonth });
 		expect(monthRadios).toHaveLength(1);

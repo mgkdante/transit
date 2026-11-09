@@ -10,12 +10,9 @@ const pageState = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe(run: (value: typeof pageState.value) => void) {
-			run(pageState.value);
-			return () => {};
-		},
+vi.mock('$app/state', () => ({
+	get page() {
+		return pageState.value;
 	},
 }));
 
@@ -43,10 +40,8 @@ describe('error route', () => {
 		expect(screen.getByTestId('terminal-line')).toHaveTextContent('route --status 404');
 		expect(container.querySelectorAll('[data-testid="hazard-tape"]')).toHaveLength(1);
 		expect(document.title).toBe('404 · This station is under construction · Transit');
-		expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute(
-			'content',
-			'noindex,nofollow',
-		);
+		// The layout owns robots; the built-page spec verifies the single noindex tag.
+		expect(document.head.querySelector('meta[name="robots"]')).toBeNull();
 	});
 
 	it('localizes the 404 copy and all Transit destination paths in French', () => {

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
+import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 import LinesIndex from './LinesIndex.svelte';
 
 const snapshots = new SvelteMap<string, ReliabilitySnapshot>();
@@ -23,11 +23,8 @@ const ROUTES = [
 	{ id: '99', short: '99', long: 'Villeray', type: 3 },
 ];
 
-vi.mock('$lib/v1/repositories/static', () => ({ getRoutesIndex: vi.fn() }));
-vi.mock('$lib/v1/reliabilityVerdict', () => ({
-	isProblemVerdict: (verdict: string | null) => verdict === 'late' || verdict === 'severe',
-}));
-vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({ getRoutesIndex: vi.fn() }));
+vi.mock('#lib/v1/reliabilitySnapshot.svelte.ts', () => ({
 	createReliabilityLoader: () => {
 		const record = (target: string | { id: string; known?: boolean }) => {
 			const id = typeof target === 'string' ? target : target.id;
@@ -46,9 +43,9 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 		};
 	},
 }));
-vi.mock('$lib/v1/repositories/historic', () => historyCalls);
+vi.mock('#lib/v1/repositories/historic.ts', () => historyCalls);
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		data: { generated_utc: '2026-06-16T02:00:00Z', routes: ROUTES },
 		error: null,
@@ -214,7 +211,7 @@ describe('LinesIndex map drilldown', () => {
 describe('LinesIndex reliability badge', () => {
 	it('renders the OTP% badge for a route whose reliability has loaded', () => {
 		reset();
-		snapshots.set('161', snap({ phase: 'ready', otpPct: 82, verdict: 'late' }));
+		snapshots.set('161', snap({ phase: 'ready', otpPct: 82, verdict: 'reliable' }));
 		render(LinesIndex);
 
 		expect(screen.getByText('82%')).toBeInTheDocument();
@@ -238,11 +235,11 @@ describe('LinesIndex reliability badge', () => {
 });
 
 describe('LinesIndex worst-first sort', () => {
-	it('reorders severe → late → on_time when sorting by least reliable', async () => {
+	it('reorders unreliable → patchy → reliable when sorting by least reliable', async () => {
 		reset();
-		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'on_time' }));
-		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'severe' }));
-		snapshots.set('99', snap({ phase: 'ready', otpPct: 80, verdict: 'late' }));
+		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'reliable' }));
+		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'unreliable' }));
+		snapshots.set('99', snap({ phase: 'ready', otpPct: 72, verdict: 'patchy' }));
 		render(LinesIndex);
 
 		const rowName = (li: HTMLElement) => within(li).getAllByRole('link')[0].textContent;
@@ -271,26 +268,26 @@ describe('LinesIndex worst-first sort', () => {
 			'Calculating reliability ranking for the filtered lines…',
 		);
 
-		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'severe' }));
+		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'unreliable' }));
 		await waitFor(() => expect(screen.getByText('55%')).toBeInTheDocument());
 		expect(lineOrder()).toEqual(['/lines/24', '/lines/99', '/lines/161']);
 		expect(screen.getByRole('status')).toHaveTextContent(
 			'Calculating reliability ranking for the filtered lines…',
 		);
 
-		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'on_time' }));
-		snapshots.set('99', snap({ phase: 'ready', otpPct: 80, verdict: 'late' }));
+		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'reliable' }));
+		snapshots.set('99', snap({ phase: 'ready', otpPct: 72, verdict: 'patchy' }));
 		await waitFor(() => expect(lineOrder()).toEqual(['/lines/161', '/lines/99', '/lines/24']));
 		expect(screen.getByRole('status')).toHaveTextContent('');
 	});
 });
 
 describe('LinesIndex reliability status filter', () => {
-	it('narrows to problem lines (late/severe) and hides the healthy ones', async () => {
+	it('narrows to problem lines (patchy/unreliable) and hides the healthy ones', async () => {
 		reset();
-		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'on_time' }));
-		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'severe' }));
-		snapshots.set('99', snap({ phase: 'ready', otpPct: 80, verdict: 'late' }));
+		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'reliable' }));
+		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'unreliable' }));
+		snapshots.set('99', snap({ phase: 'ready', otpPct: 72, verdict: 'patchy' }));
 		render(LinesIndex);
 
 		await screen.getByTestId('lines-status-problem').click();
@@ -302,7 +299,7 @@ describe('LinesIndex reliability status filter', () => {
 
 	it('keeps a row whose verdict has not loaded yet (never blanks the list on load)', async () => {
 		reset();
-		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'on_time' }));
+		snapshots.set('24', snap({ phase: 'ready', otpPct: 96, verdict: 'reliable' }));
 		render(LinesIndex);
 
 		await screen.getByTestId('lines-status-problem').click();
@@ -335,7 +332,7 @@ describe('LinesIndex reliability status filter', () => {
 		);
 
 		snapshots.set('24', snap({ phase: 'empty' }));
-		snapshots.set('99', snap({ phase: 'ready', otpPct: 96, verdict: 'on_time' }));
+		snapshots.set('99', snap({ phase: 'ready', otpPct: 96, verdict: 'reliable' }));
 		await waitFor(() => {
 			expect(screen.queryByRole('link', { name: /24.*Sherbrooke/i })).toBeNull();
 			expect(screen.queryByRole('link', { name: /99.*Villeray/i })).toBeNull();
@@ -351,3 +348,18 @@ describe('LinesIndex reliability status filter', () => {
 		expect(screen.getByRole('status')).toHaveTextContent('');
 	});
 });
+
+it.each(['tentative', 'absent'] as const)(
+	'does not flag a %s line as a problem',
+	async (verdict) => {
+		reset();
+		snapshots.set('24', snap({ phase: 'ready', otpPct: 85, verdict }));
+		snapshots.set('161', snap({ phase: 'ready', otpPct: 55, verdict: 'unreliable' }));
+		snapshots.set('99', snap({ phase: 'ready', otpPct: 72, verdict: 'patchy' }));
+		render(LinesIndex);
+		await screen.getByTestId('lines-status-problem').click();
+		expect(screen.queryByRole('link', { name: /24.*Sherbrooke/i })).toBeNull();
+		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /99.*Villeray/i })).toBeInTheDocument();
+	},
+);

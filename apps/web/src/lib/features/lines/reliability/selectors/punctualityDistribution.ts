@@ -1,11 +1,11 @@
-import type { Locale } from '$lib/i18n';
+import type { Locale } from '#lib/i18n/index.ts';
 import type {
 	AbsenceSpec,
 	AbsoluteDomain,
 	HistogramBin,
 	HistogramSpec,
-} from '$lib/components/dataviz/chart';
-import { DELAY_HISTOGRAM_DOMAIN } from '$lib/features/reliability/domains';
+} from '#lib/components/dataviz/chart/index.ts';
+import { DELAY_HISTOGRAM_DOMAIN } from '#lib/features/reliability/domains.ts';
 import type { PunctualityVM } from '../clusters';
 
 export interface PunctualityDistributionLabels {

@@ -1,14 +1,14 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { RouteReliability } from '$lib/v1';
-import type { Resource } from '$lib/v1/resource.svelte';
+import type { RouteReliability } from '#lib/v1/index.ts';
+import type { Resource } from '#lib/v1/resource.svelte.ts';
 import type { LineHistoryResource } from './reliability/data/lineHistoryResource.svelte';
 import LazyRouteReliabilityPane, {
 	type RouteReliabilityClustersModule,
 } from './LazyRouteReliabilityPane.svelte';
 
-vi.mock('$lib/nav', () => ({ layout: { isDesktop: false } }));
+vi.mock('#lib/nav/index.ts', () => ({ layout: { isDesktop: false } }));
 
 const reliability = (id: string): RouteReliability =>
 	({

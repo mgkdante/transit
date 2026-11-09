@@ -1,71 +1,79 @@
 <script lang="ts">
-	import { createArticleNavigation } from '$lib/site/articleNavigation.svelte';
+	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
+	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { routeFor, type SurfaceKind, type SurfaceTarget } from '$lib/nav';
-	import { fromSearchParams, toSearchParams, emptyFilterState, type WorstN } from '$lib/filters';
-	import { mirrorSearchParams } from '$lib/site/urlMirror';
-	import { absenceSentence } from '$lib/site/absence';
-	import { fmtCount, fmtDelayMin, fmtDelayMin as sharedFmtDelayMin, fmtPct } from '$lib/utils';
-	import { formatDateKey, formatUtc } from '$lib/utils/time';
-	import { availabilityFromPointCollectionIndex } from '$lib/v1/history/selection';
-	import { createHistoryCorrectionPresentation } from '$lib/v1/history/datePresentation.svelte';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { routeFor, type SurfaceKind, type SurfaceTarget } from '#lib/nav/index.ts';
+	import {
+		fromSearchParams,
+		toSearchParams,
+		emptyFilterState,
+		type WorstN,
+	} from '#lib/filters/index.ts';
+	import {
+		fmtCount,
+		fmtDelayMin,
+		fmtDelayMin as sharedFmtDelayMin,
+		fmtPct,
+	} from '#lib/utils/index.ts';
+	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
+	import { availabilityFromPointCollectionIndex } from '#lib/v1/history/selection.ts';
+	import { createHistoryCorrectionPresentation } from '#lib/v1/history/datePresentation.svelte.ts';
 	import {
 		createHistoryDateResource,
 		historyDateRequestFromSearchParams,
-	} from '$lib/v1/history/dateResource.svelte';
+	} from '#lib/v1/history/dateResource.svelte.ts';
 	import {
 		getRepeatOffenders,
 		getRepeatOffendersHistoryDay,
 		getRepeatOffendersHistoryIndex,
-	} from '$lib/v1/repositories/historic';
-	import type { RepeatOffenderEntry, Offender } from '$lib/v1/schemas';
+	} from '#lib/v1/repositories/historic.ts';
+	import type { RepeatOffenderEntry, Offender } from '#lib/v1/schemas/index.ts';
 	import type {
 		HistoricCollectionIndex,
 		RepeatOffenders as RepeatOffendersData,
-	} from '$lib/v1/schemas';
-	import type { ChartDatumPopoverModel } from '$lib/components/dataviz/chart';
+	} from '#lib/v1/schemas/index.ts';
+	import type { ChartDatumPopoverModel } from '#lib/components/dataviz/chart/index.ts';
 	import {
 		ArticleControlStack,
 		HistoryNavigator,
 		ResourceBoundary,
 		GrainPicker,
 		type GrainSegment,
-	} from '$lib/components/surface';
+	} from '#lib/components/surface/index.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import {
 		DashboardGrid,
 		ArticleHeader,
 		DetailFrame,
 		SurfaceRail,
 		type SurfaceRailContext,
-		type SurfaceRailPresentation,
 	} from '@yesid/ui/layout';
-	import { AbsentValue } from '$lib/components/edge';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
-	import { TypedInformationCard } from '$lib/components/shared';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
+	import { TypedInformationCard } from '#lib/components/shared/index.ts';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
-	import { RankedRow } from '$lib/components/dataviz';
-	import { DELAY_DIST_DOMAIN } from '$lib/features/reliability/domains';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
+	import { DELAY_DIST_DOMAIN } from '#lib/features/reliability/domains.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 
 	import {
 		ladderGrains,
 		OFFENDER_GRAINS,
 		type OffenderGrainKey,
-	} from '$lib/reliability/ladderGrains';
+	} from '#lib/reliability/ladderGrains.ts';
 	import {
 		worstNCap,
 		DEFAULT_WORST_N,
 		worstNSegments as buildWorstNSegments,
 		SMALLEST_WORST_N,
-	} from '$lib/reliability/ladderCap';
+	} from '#lib/reliability/ladderCap.ts';
 	import { selectOffenderLadder, type OffenderPopoverEvidence } from './selectors/offenderLadder';
 	import { buildOffenderEvidenceRows } from './selectors/offenderEvidence';
 	import { buildOffenderLedger } from './selectors/offenderLedger';
@@ -85,7 +93,7 @@
 			loadDate: (date, index, signal) => getRepeatOffendersHistoryDay(date, index, { signal }),
 		},
 		{
-			initialRequest: historyDateRequestFromSearchParams(page.url.searchParams),
+			initialRequest: historyDateRequestFromSearchParams(new URLSearchParams(page.url.search)),
 		},
 	);
 	onDestroy(() => offenders.destroy());
@@ -122,65 +130,28 @@
 	const ladders = $derived(grains.ladders);
 	const present = $derived(grains.present);
 
-	let grainKey = $state<OffenderGrainKey>(
-		(() => {
-			const seeded = fromSearchParams(page.url.searchParams).grain;
-			return seeded === 'month' ? 'month' : 'week';
-		})(),
-	);
-
-	const grainLabels = $derived<Partial<Record<OffenderGrainKey, string>>>({
-		week: t.grain.week,
-		month: t.grain.month,
+	const grainLabels = $derived({ week: t.grain.week, month: t.grain.month });
+	const view = createReliabilityViewState({
+		snapshot: () => offenders.data,
+		grains: { keys: OFFENDER_GRAINS, labels: () => grainLabels, present: () => present },
+		locale: () => locale,
+		url: () => {
+			const state = emptyFilterState();
+			if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
+			const date =
+				offenders.request.hasDate && offenders.resolved == null
+					? offenders.request.rawDate
+					: offenders.canonicalDate;
+			return { date, n: toSearchParams(state).get('n') };
+		},
 	});
-	const uid = $props.id();
-	const disabledReason = $derived(absenceSentence('no-observations', locale));
-	const grainSegments = $derived<GrainSegment<OffenderGrainKey>[]>(
-		OFFENDER_GRAINS.map((key) => {
-			const available = present.has(key);
-			return {
-				key,
-				label: grainLabels[key] ?? key,
-				available,
-				...(available ? {} : { describedById: `${uid}-reason-${key}`, title: disabledReason }),
-			};
-		}),
+	const grainKey = $derived<OffenderGrainKey>(view.grain);
+
+	let worstN = $state<WorstN>(
+		fromSearchParams(new URLSearchParams(page.url.search)).worstN ?? DEFAULT_WORST_N,
 	);
-	function grainSegmentsFor(
-		presentation: SurfaceRailPresentation,
-	): GrainSegment<OffenderGrainKey>[] {
-		return grainSegments.map((segment) =>
-			segment.describedById
-				? { ...segment, describedById: `${segment.describedById}-${presentation}` }
-				: segment,
-		);
-	}
-
-	$effect(() => {
-		if (present.size > 0 && !present.has(grainKey)) grainKey = grains.defaultGrain;
-	});
-
-	let worstN = $state<WorstN>(fromSearchParams(page.url.searchParams).worstN ?? DEFAULT_WORST_N);
 	const cap = $derived(worstNCap(worstN));
 	const worstSegments = $derived<GrainSegment<WorstN>[]>(buildWorstNSegments(t.worstN.all));
-
-	const wire = $derived.by<{ date: string | null; grain: string | null; n: string | null }>(() => {
-		const state = emptyFilterState();
-		if (worstN !== DEFAULT_WORST_N) state.worstN = worstN;
-		const grainParam =
-			grainKey === 'week'
-				? null
-				: ((): string | null => {
-						state.grain = grainKey;
-						return toSearchParams(state).get('grain');
-					})();
-		const dateParam =
-			offenders.request.hasDate && offenders.resolved == null
-				? offenders.request.rawDate
-				: offenders.canonicalDate;
-		return { date: dateParam, grain: grainParam, n: toSearchParams(state).get('n') };
-	});
-	$effect(() => mirrorSearchParams(wire));
 
 	function hrefFor(e: RepeatOffenderEntry): string | null {
 		const route = e.route?.trim();
@@ -406,7 +377,6 @@
 	const sectionDefs = $derived([
 		{
 			id: 'repeat-worst',
-			sectionKey: 'repeat-card-worst',
 			number: 1,
 			title: t.cards.worst.title,
 			subtitle:
@@ -415,7 +385,6 @@
 		},
 		{
 			id: 'repeat-trips',
-			sectionKey: 'repeat-card-trips',
 			number: 2,
 			title: t.cards.trips.title,
 			subtitle: t.cards.trips.subtitle,
@@ -423,7 +392,6 @@
 		},
 		{
 			id: 'repeat-vehicles',
-			sectionKey: 'repeat-card-vehicles',
 			number: 3,
 			title: t.cards.vehicles.title,
 			subtitle: t.cards.vehicles.subtitle,
@@ -434,7 +402,7 @@
 		behavior: () => ($prefersReducedMotion ? 'auto' : 'smooth'),
 	});
 	const tocEntries = $derived(navigation.entries);
-	const { cardOpenSignal, navigate } = navigation;
+	const { navigate } = navigation;
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (generatedUtc) {
@@ -449,8 +417,7 @@
 	});
 </script>
 
-{#snippet combinedRail({ closeSheet, presentation }: SurfaceRailContext)}
-	{@const presentedGrainSegments = grainSegmentsFor(presentation)}
+{#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
 		{#key historyCorrection.revision}
 			<HistoryNavigator
@@ -471,22 +438,12 @@
 	{/snippet}
 	{#snippet primaryControls()}
 		<GrainPicker
-			segments={presentedGrainSegments}
-			bind:value={grainKey}
+			segments={view.segments}
+			value={view.grain}
+			onSelect={view.selectGrain}
 			label={t.grain.label}
 			variant="time-grid"
 		/>
-		{#each presentedGrainSegments as segment (segment.key)}
-			{#if segment.describedById}
-				<span
-					id={segment.describedById}
-					class="repeat-grain-reason sr-only"
-					data-slot="controls-reason"
-				>
-					{disabledReason}
-				</span>
-			{/if}
-		{/each}
 	{/snippet}
 	{#snippet secondaryControls()}
 		<GrainPicker segments={worstSegments} bind:value={worstN} label={t.worstN.label} />
@@ -498,7 +455,7 @@
 	{/snippet}
 
 	{#if hasGrains || hasHistoryNavigator}
-		<CollapsibleSection title={t.rail.controls} sectionKey="repeat-offenders-controls">
+		<CollapsibleSection independent title={t.rail.controls}>
 			<ArticleControlStack
 				history={hasHistoryNavigator ? historyControls : undefined}
 				primary={hasGrains ? primaryControls : undefined}
@@ -511,10 +468,9 @@
 		<div class="repeat-rail-toc" data-slot="section-toc">
 			<TocNav
 				entries={tocEntries}
-				activeId={navigation.activeId}
+				navigation={navigation.navigation}
 				heading={t.rail.toc}
 				counterPrefix={t.rail.counterPrefix}
-				sectionKey="repeat-offenders-toc"
 				onNavigate={(id) => {
 					closeSheet();
 					void navigate(id);
@@ -538,9 +494,12 @@
 <DetailFrame
 	class="repeat-offenders-detail"
 	railScroll
-	bind:activeId={() => navigation.activeId, (id) => (navigation.activeId = id)}
 	rail={showCombinedRail ? railCell : undefined}
-	toc={{ entries: tocEntries, pillEntries: [], openAria: '', closeAria: '' }}
+	toc={{
+		navigation: navigation.navigation,
+		landFragments: true,
+		entries: navigation.registeredEntries,
+	}}
 >
 	{#snippet header()}
 		<ArticleHeader
@@ -555,7 +514,7 @@
 			titleId="repeat-offenders-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -583,10 +542,8 @@
 							subtitle={section.subtitle}
 							headerVariant="article-summary"
 							anchor={section.id}
-							sectionKey={section.sectionKey}
 							index={section.number - 1}
 							open={true}
-							openSignal={cardOpenSignal(section.id)}
 						>
 							{#if section.id === 'repeat-worst' && hasGrains}
 								<div class="repeat-offenders-article-prose">

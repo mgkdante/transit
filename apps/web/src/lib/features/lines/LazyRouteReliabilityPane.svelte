@@ -1,8 +1,8 @@
 <script module lang="ts">
 	import type { Component, Snippet } from 'svelte';
-	import type { Locale } from '$lib/i18n';
-	import type { RouteReliability } from '$lib/v1';
-	import type { Resource } from '$lib/v1/resource.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import type { RouteReliability } from '#lib/v1/index.ts';
+	import type { Resource } from '#lib/v1/resource.svelte.ts';
 	import type { LineHistoryResource } from './reliability/data/lineHistoryResource.svelte';
 
 	type ClustersProps = {
@@ -46,9 +46,9 @@
 
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { EdgeState } from '$lib/components/edge';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { ResourceBoundary } from '$lib/components/surface';
+	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import { desktop } from '@yesid/ui/state';
 	import { Button } from '@yesid/ui/button';
 

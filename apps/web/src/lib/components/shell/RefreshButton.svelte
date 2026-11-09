@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { navPillCopy } from './navPill.copy';
-	import { cn } from '$lib/utils';
-	import { dataRefresh } from '$lib/stores';
-	import type { Locale } from '$lib/i18n';
+	import { navPillCopy } from '#lib/i18n/messages.ts';
+	import { Button } from '@yesid/ui/button';
+	import { cn } from '#lib/utils/index.ts';
+	import { dataRefresh } from '#lib/stores/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 
 	interface Props {
 		locale: Locale;
@@ -21,9 +22,10 @@
 </script>
 
 <div class={cn('refresh-control', className)} data-slot="refresh-control">
-	<button
+	<Button
 		type="button"
-		class="refresh-btn tap-press"
+		variant="ghost"
+		size="icon-tap"
 		aria-label={label}
 		title={label}
 		onclick={onClick}
@@ -53,7 +55,7 @@
 				stroke-linejoin="round"
 			/>
 		</svg>
-	</button>
+	</Button>
 </div>
 
 <style>
@@ -61,32 +63,6 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.375rem;
-	}
-	.refresh-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		height: 2.75rem;
-		width: 2.75rem;
-		padding: 0;
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: var(--secondary-foreground);
-		border-radius: var(--radius-lg);
-		transition: color var(--duration-fast) var(--ease-default);
-	}
-	.refresh-btn:hover {
-		color: var(--primary);
-		background: var(--muted);
-	}
-	.refresh-btn:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 1px;
-	}
-	.refresh-btn:disabled {
-		cursor: default;
-		color: var(--muted-foreground);
 	}
 
 	.refresh-icon.spin {
@@ -99,9 +75,6 @@
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.refresh-btn {
-			transition: none;
-		}
 		.refresh-icon.spin {
 			animation: none;
 		}

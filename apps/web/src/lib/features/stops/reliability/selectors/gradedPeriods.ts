@@ -1,5 +1,5 @@
-import type { ReliabilityPeriodVM } from '$lib/components/surface';
-import type { StopReliabilityPeriod } from '$lib/v1/schemas';
+import type { ReliabilityPeriodVM } from '#lib/components/surface/index.ts';
+import type { StopReliabilityPeriod } from '#lib/v1/schemas/index.ts';
 
 export function selectGradedPeriods(
 	periods: readonly StopReliabilityPeriod[] | null | undefined,

@@ -1,5 +1,5 @@
 export type { FilterState, EntityKind, AlertEntityKind, AlertAffects, WorstN } from './state';
-export type { DateWindow } from '$lib/v1/history/window';
+export type { DateWindow } from '#lib/v1/history/window.ts';
 export { WORST_N_LADDER, normalizeWindow, emptyFilterState } from './state';
 
 export { FILTER_SEARCH_PARAM_KEYS, fromSearchParams, toSearchParams, toSearchString } from './url';

@@ -7,13 +7,14 @@ const { state, createLiveStoreSpy } = vi.hoisted(() => ({
 	state: { locale: 'en' as 'en' | 'fr', desktop: true, city: 'Montréal' },
 	createLiveStoreSpy: vi.fn(),
 }));
-vi.mock('$lib/i18n', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/i18n')>()),
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/i18n/index.ts')>()),
 	getLocale: () => state.locale,
 }));
-vi.mock('$lib/nav', async () => {
-	const { routeFor } =
-		await vi.importActual<typeof import('$lib/nav/intent.svelte')>('$lib/nav/intent.svelte');
+vi.mock('#lib/nav/index.ts', async () => {
+	const { routeFor } = await vi.importActual<typeof import('#lib/nav/intent.svelte.ts')>(
+		'#lib/nav/intent.svelte.ts',
+	);
 	return { routeFor };
 });
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
@@ -24,7 +25,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 		},
 	},
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({ createLiveStore: createLiveStoreSpy }));
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({ createLiveStore: createLiveStoreSpy }));
 
 function pageData() {
 	const label = { city: state.city, operator: 'Fixture Transit' };

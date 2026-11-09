@@ -3,8 +3,8 @@
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Sheet from '@yesid/ui/sheet';
 	import { desktop } from '@yesid/ui/state';
-	import type { FilterStore } from '$lib/filters';
-	import type { Locale } from '$lib/i18n';
+	import type { FilterStore } from '#lib/filters/index.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { copy as MAP_COPY } from './map.copy';
 
 	interface Props {
@@ -203,10 +203,10 @@
 		overscroll-behavior: contain;
 	}
 	:global([data-m6b-controls-drawer][data-slot='sheet-content'][data-state='open']) {
-		animation: m6b-controls-drawer-in var(--duration-slow) var(--ease-out) both;
+		animation: transit-sheet-in var(--duration-slow) var(--ease-out) both;
 	}
 	:global([data-m6b-controls-drawer][data-slot='sheet-content'][data-state='closed']) {
-		animation: m6b-controls-drawer-out var(--duration-normal) var(--ease-out) both;
+		animation: transit-sheet-out var(--duration-normal) var(--ease-out) both;
 	}
 	:global([data-m6b-controls-drawer] .map-filters) {
 		width: 100%;
@@ -247,27 +247,6 @@
 		border: 1px solid var(--primary);
 		border-radius: var(--radius-pill);
 		cursor: pointer;
-	}
-
-	@keyframes m6b-controls-drawer-in {
-		from {
-			opacity: 0;
-			transform: translateY(0.75rem) scale(0.985);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0) scale(1);
-		}
-	}
-	@keyframes m6b-controls-drawer-out {
-		from {
-			opacity: 1;
-			transform: translateY(0) scale(1);
-		}
-		to {
-			opacity: 0;
-			transform: translateY(0.5rem) scale(0.99);
-		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {

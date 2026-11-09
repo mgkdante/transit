@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { Chart as LcChart, Svg, Tooltip } from 'layerchart';
 	import { scaleLinear, scaleBand } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import StackedShareBar, { type ShareSeg } from './StackedShareBar.svelte';
-	import { occupancyVar, statusVar } from '$lib/components/dataviz/tokens';
+	import { occupancyVar, statusVar } from '#lib/components/dataviz/tokens.ts';
 	import type { StackedShareSpec } from '../ChartSpec';
-	import type { OccupancyCode, StatusCode } from '$lib/v1/schemas';
+	import type { OccupancyCode, StatusCode } from '#lib/v1/schemas/index.ts';
 
 	export interface StackedShareMarkProps {
 		spec: StackedShareSpec;

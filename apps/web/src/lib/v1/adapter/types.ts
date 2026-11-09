@@ -1,9 +1,10 @@
-import type { FetchFn } from '$lib/v1/http';
-import type { Manifest } from '$lib/v1/schemas/manifest';
+import type { FetchFn } from '#lib/v1/http.ts';
+import type { Manifest } from '#lib/v1/schemas/manifest.ts';
 
 export interface AdapterCtx {
 	readonly providerId?: string;
 	fetch?: FetchFn;
+	onResponseHeaders?: (headers: Headers) => void;
 	manifest?: Manifest;
 	cache?: Map<string, unknown>;
 	signal?: AbortSignal;

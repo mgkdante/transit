@@ -1,5 +1,5 @@
 import { untrack } from 'svelte';
-import { getV1Runtime } from '$lib/v1/runtime';
+import { getV1Runtime } from '#lib/v1/runtime.ts';
 
 export interface ResourceSeed<T> {
 	readonly key: unknown;

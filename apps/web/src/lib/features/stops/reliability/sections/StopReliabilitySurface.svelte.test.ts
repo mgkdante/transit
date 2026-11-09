@@ -2,8 +2,9 @@ import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { StopReliability, IsoUtc } from '$lib/v1';
-import { quietMode } from '@yesid/ui/state';
+import type { StopReliability, IsoUtc } from '#lib/v1/index.ts';
+import { assertRailIndependence } from '../../../../../tests/railIndependence';
+import { stopReliabilityCopy } from '../stops-reliability.copy';
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 
@@ -21,10 +22,10 @@ vi.mock('$app/state', () => ({
 		state: {},
 	},
 }));
-vi.mock('$app/navigation', () => ({ replaceState }));
-vi.mock('$lib/v1', async () => ({
-	...(await import('$lib/v1/history')),
-	wilsonBounds: (await import('$lib/v1/stats')).wilsonBounds,
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {}, replaceState }));
+vi.mock('#lib/v1/index.ts', async () => ({
+	...(await import('#lib/v1/history/index.ts')),
+	wilsonBounds: (await import('#lib/v1/stats.ts')).wilsonBounds,
 }));
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {
@@ -101,7 +102,6 @@ const disclosureTrigger = (container: HTMLElement, id: string, name: string): HT
 	within(disclosure(container, id)).getByRole('button', { name });
 
 beforeEach(() => {
-	quietMode.resetForTest();
 	sessionStorage.clear();
 	motion.reduced = false;
 });
@@ -131,11 +131,13 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 		expect(week).toHaveAttribute('aria-checked', 'true');
 	});
 
-	it('clamps an UNAVAILABLE seeded grain (month) back to day', () => {
+	it('keeps an unavailable explicitly selected month absent', () => {
 		mockUrl = new URL('http://localhost/stop/57191?grain=month');
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
-		const day = within(desktopGroup(container)).getByRole('radio', { name: 'Day' });
-		expect(day).toHaveAttribute('aria-checked', 'true');
+		const month = within(desktopGroup(container)).getByRole('radio', { name: 'Month' });
+		expect(month).toHaveAttribute('aria-checked', 'true');
+		expect(month).toBeDisabled();
+		expect(container.querySelector('[data-slot="stop-reliability-pane"]')).toBeNull();
 	});
 
 	it('falls back to day for an unknown ?grain (enum-guard, never a cast)', () => {
@@ -158,7 +160,7 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 		expect(container.querySelector('[data-slot="stop-percentiles"]')).toBeNull();
 	});
 
-	it('mirrors a grain change to ?grain and OMITS the day default (clean URL)', async () => {
+	it('mirrors an explicit grain choice including day', async () => {
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 		expect(replaceState).not.toHaveBeenCalled();
 
@@ -168,7 +170,7 @@ describe('StopReliabilitySurface — grain seed + availability (S8A)', () => {
 
 		const day = within(desktopGroup(container)).getByRole('radio', { name: 'Day' });
 		await fireEvent.click(day);
-		expect(mockUrl.searchParams.get('grain')).toBeNull();
+		expect(mockUrl.searchParams.get('grain')).toBe('day');
 	});
 
 	it('preserves an existing ?tab when mirroring grain (mirror merges, single-key)', async () => {
@@ -187,6 +189,17 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 		replaceState.mockClear();
 	});
 
+	it('counts only content and preserves independent rail state through bulk collapse and expand', async () => {
+		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
+		const copy = stopReliabilityCopy.en;
+		await assertRailIndependence({
+			container,
+			panelNames: [copy.controlsLabel, copy.nav.toc],
+			contentCount: 5,
+			bulkAction: 'store',
+		});
+	});
+
 	it('uses instant ToC navigation when reduced motion is requested', async () => {
 		const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 		const scrollIntoView = vi.fn();
@@ -195,6 +208,11 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 			value: scrollIntoView,
 		});
 		motion.reduced = true;
+		vi.stubGlobal('matchMedia', () => ({
+			matches: true,
+			addEventListener() {},
+			removeEventListener() {},
+		}));
 
 		try {
 			const { container } = render(StopReliabilitySurface, {
@@ -207,6 +225,7 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 			);
 		} finally {
 			motion.reduced = false;
+			vi.unstubAllGlobals();
 			if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original);
 			else Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
 		}
@@ -324,17 +343,16 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 			value: scrollIntoView,
 		});
 		motion.reduced = true;
-		quietMode.toggle();
 
 		try {
 			const { container } = render(StopReliabilitySurface, {
 				props: { data, locale: 'en' },
 			});
 			trigger = disclosureTrigger(container, 'stop-rel-trend', 'Daily trend');
+			await fireEvent.click(trigger);
 			expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
 			const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
-			await fireEvent.click(within(rail).getByRole('button', { name: 'Jump to a section' }));
 			await fireEvent.click(within(rail).getByRole('button', { name: 'Daily trend' }));
 
 			await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
@@ -396,12 +414,44 @@ describe('StopReliabilitySurface — daily trend + range verdict (S8A)', () => {
 
 describe('StopReliabilitySurface prediction-share verdict', () => {
 	it.each(['en', 'fr'] as const)(
+		'keeps the known count without fabricating bounds in %s',
+		(locale) => {
+			const { container } = render(StopReliabilitySurface, {
+				props: {
+					locale,
+					data: { ...data, periods: [{ grain: 'day', otp_pct: 87, observation_count: 120 }] },
+				},
+			});
+			const banner = container.querySelector(
+				'[data-slot="stop-reliability-pane"] [data-slot="verdict"]',
+			);
+			expect(banner).toHaveAttribute('data-status', 'tentative');
+			const sentence = banner?.querySelector('p')?.textContent ?? '';
+			expect(sentence).toContain('120');
+			expect(sentence).toContain(
+				locale === 'en' ? 'no usable uncertainty range' : 'aucune plage d’incertitude exploitable',
+			);
+			expect(sentence).not.toMatch(/Wilson|95/);
+		},
+	);
+	it.each(['en', 'fr'] as const)(
 		'describes the stop proxy and nominal bounds in %s',
 		async (locale) => {
 			const { container } = render(StopReliabilitySurface, {
 				props: {
 					locale,
-					data: { ...data, periods: [{ grain: 'day', otp_pct: 87, observation_count: 120 }] },
+					data: {
+						...data,
+						periods: [
+							{
+								grain: 'day',
+								otp_pct: 87,
+								observation_count: 120,
+								wilson_lo: 79.4,
+								wilson_hi: 91.6,
+							},
+						],
+					},
 				},
 			});
 			const banner = container.querySelector(

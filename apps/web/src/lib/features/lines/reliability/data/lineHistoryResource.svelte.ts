@@ -2,16 +2,16 @@ import {
 	createRetainedHistoryResource,
 	loadRetainedHistorySeed,
 	type RetainedHistoryResourceOptions,
-} from '$lib/v1/history/retainedHistoryResource.svelte';
-import type { AdapterCtx } from '$lib/v1/adapter';
-import { getLineHistoryIndex, loadLineHistoryRange } from '$lib/v1/repositories/historic';
+} from '#lib/v1/history/retainedHistoryResource.svelte.ts';
+import type { AdapterCtx } from '#lib/v1/adapter/index.ts';
+import { getLineHistoryIndex, loadLineHistoryRange } from '#lib/v1/repositories/historic.ts';
 import type {
 	HistoricCollectionIndex,
 	HistoryRangeResource,
 	HistoryRangeSeed,
 	LineHistoryPartition,
 	RawHistoryRangeRequest,
-} from '$lib/v1';
+} from '#lib/v1/index.ts';
 import { buildRetainedLineHistory, type RetainedLineHistory } from './retainedHistory';
 
 export type LineHistoryResource = HistoryRangeResource<

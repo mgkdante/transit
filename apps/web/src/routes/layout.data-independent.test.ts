@@ -1,10 +1,9 @@
 import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import { createRawSnippet, settled, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KitNavigationSimulator } from '$lib/features/map/__fixtures__/KitNavigationSimulator';
-import { quietMode } from '@yesid/ui/state';
-import type { V1Context } from '$lib/v1/boot';
-import type { IsoUtc } from '$lib/v1/schemas';
+import { KitNavigationSimulator } from '#lib/features/map/__fixtures__/KitNavigationSimulator.ts';
+import type { V1Context } from '#lib/v1/boot.ts';
+import type { IsoUtc } from '#lib/v1/schemas/index.ts';
 
 const harness = vi.hoisted(() => {
 	const beforeNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
@@ -21,9 +20,10 @@ const harness = vi.hoisted(() => {
 	};
 });
 
-vi.mock('$app/stores', async () => {
+vi.mock('$app/state', async () => {
 	const { writable } = await import('svelte/store');
-	const page = writable({
+	const { createPageState } = await import('../tests/pageState.svelte.ts');
+	const page = createPageState({
 		url: new URL('https://transit.yesid.dev/privacy'),
 		params: {},
 		route: { id: '/[[lang=locale]]/privacy' },
@@ -47,12 +47,11 @@ vi.mock('$app/stores', async () => {
 	};
 	harness.shallowUrl = (pathname: string) => {
 		window.history.replaceState({}, '', pathname);
-		page.update((current) => ({ ...current }));
+		page.update((current) => ({ ...current, state: { ...current.state } }));
 	};
-	return { page };
+	return { page: page.page, updated: { current: false }, navigating: writable(null) };
 });
 
-vi.mock('$app/state', () => ({ updated: { current: false }, page: { state: {} } }));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
 	invalidateAll: vi.fn(),
@@ -66,13 +65,16 @@ vi.mock('$app/navigation', () => ({
 		harness.afterNavigateCallbacks.push(callback);
 	}),
 }));
-vi.mock('$app/environment', () => ({ browser: false }));
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env', () => ({ browser: false }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 
-vi.mock('$lib/components/edge', async () => ({
+vi.mock('#lib/components/edge/index.ts', async () => ({
 	EdgeState: (await import('./__fixtures__/RootLayoutEdgeStateStub.svelte')).default,
 }));
-vi.mock('$lib/seo/routeSeo', () => ({
+vi.mock('#lib/seo/routeSeo.ts', () => ({
 	resolveRouteSeo: () => ({
 		title: 'Legal',
 		description: 'Legal document description.',
@@ -84,38 +86,38 @@ vi.mock('$lib/seo/routeSeo', () => ({
 	breadcrumbItemsForHead: () => [],
 	resolveDatasetSeo: () => ({ name: 'Dataset', description: 'Dataset description.' }),
 }));
-vi.mock('$lib/seo/jsonld', () => ({
+vi.mock('#lib/seo/jsonld.ts', () => ({
 	websiteJsonLd: () => ({}),
 	breadcrumbJsonLd: () => null,
 	organizationJsonLd: () => ({}),
 	datasetJsonLd: () => ({}),
 }));
-vi.mock('$lib/site/config', () => ({
+vi.mock('#lib/site/config.ts', () => ({
 	readPublicSiteConfig: () => ({
 		siteOrigin: 'https://transit.yesid.dev',
 		indexing: false,
 		siteName: 'Transit',
 	}),
 }));
-vi.mock('$lib/site/errorPage', () => ({
+vi.mock('#lib/site/errorPage.ts', () => ({
 	errorDocumentHead: () => ({ title: 'Error', description: 'Error' }),
 }));
-vi.mock('$lib/v1/boot', async (importOriginal) => ({
-	...(await importOriginal<typeof import('$lib/v1/boot')>()),
+vi.mock('#lib/v1/boot.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/v1/boot.ts')>()),
 	bootV1: vi.fn(),
 }));
-vi.mock('$lib/v1/repositories/live', () => ({ getVehicles: vi.fn() }));
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/live.ts', () => ({ getVehicles: vi.fn() }));
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoute: vi.fn(),
 	getRoutesIndex: vi.fn(),
 	getStop: vi.fn(),
 	getStopsIndex: vi.fn(),
 	getStopsIndexSlim: vi.fn(),
 }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({ data: null, error: null, loading: false, settled: false }),
 }));
-vi.mock('$lib/stores', () => ({
+vi.mock('#lib/stores/index.ts', () => ({
 	dataRefresh: {
 		epoch: 0,
 		run: vi.fn(),
@@ -125,8 +127,8 @@ vi.mock('$lib/stores', () => ({
 	dataPulse: { subscribe: vi.fn(() => vi.fn()) },
 	motionMode: { current: 'raw', isSmooth: false, toggle: vi.fn() },
 }));
-vi.mock('$lib/pwa/register', () => ({ registerServiceWorker: vi.fn() }));
-vi.mock('$lib/pwa/appVersion', () => ({
+vi.mock('#lib/pwa/register.ts', () => ({ registerServiceWorker: vi.fn() }));
+vi.mock('#lib/pwa/appVersion.ts', () => ({
 	decideFreshnessReload: () => ({ reload: false, href: null }),
 }));
 vi.mock('@yesid/analytics/vitals', () => ({ startVitals: () => vi.fn() }));
@@ -143,7 +145,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	},
 	desktop: { current: true },
 }));
-vi.mock('$lib/search/chromeSearch', () => ({
+vi.mock('#lib/search/chromeSearch.ts', () => ({
 	chromeSearchResultHref: () => '/map',
 	chromeSearchResults: () => [],
 	scopeForPath: () => 'all',
@@ -220,7 +222,6 @@ function expectLegalDestinationsAbsent(
 
 afterEach(() => {
 	cleanup();
-	quietMode.resetForTest();
 	document.body.style.removeProperty('overflow');
 	document.body.style.removeProperty('pointer-events');
 });
@@ -241,12 +242,6 @@ describe('root layout data-independent legal routes', () => {
 
 		navigate('https://transit.yesid.dev/privacy', 'https://transit.yesid.dev/terms');
 		expect(main.scrollTop).toBe(0);
-	});
-
-	it('restores the remembered quiet mode from the Transit storage key', () => {
-		localStorage.setItem('quiet-mode', 'true');
-		renderWithoutV1('/privacy', 'en');
-		expect(document.documentElement.dataset.quietMode).toBe('true');
 	});
 
 	it.each(['en', 'fr'] as const)(
@@ -284,7 +279,7 @@ describe('root layout data-independent legal routes', () => {
 		const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
 		const cancel = vi.fn();
 		const href = 'https://transit.yesid.dev/network?provider=octranspo';
-		harness.beforeNavigateCallbacks[0]?.({
+		harness.beforeNavigateCallbacks.at(-1)?.({
 			willUnload: false,
 			to: { url: new URL(href) },
 			cancel,
@@ -450,7 +445,7 @@ describe('root layout data-independent legal routes', () => {
 				complete: Promise.resolve(),
 			};
 
-			const blocker = harness.onNavigateCallbacks[0]?.(navigation);
+			const blocker = harness.onNavigateCallbacks.at(-1)?.(navigation);
 
 			expect(harness.runViewTransition).toHaveBeenCalledOnce();
 			expect(harness.runViewTransition).toHaveBeenCalledWith(navigation);

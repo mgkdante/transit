@@ -38,6 +38,7 @@ def history():
         percentile_rows=[],
         occupancy_rows=[],
         generated_utc="2026-08-11T00:00:00Z",
+        provider_id="stm",
     )
     ref, partition = next(plan.iter_partition_items())
     run = historic._HistoricPublishRun(
@@ -52,6 +53,7 @@ def history():
         32,
         today_local=date(2026, 8, 10),
         run_instant_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        provider_id="stm",
     )
     run.plans = {
         "network": SimpleNamespace(source_scopes=HistorySourceScopes(("",), "stm", "network")),
@@ -151,9 +153,7 @@ def test_source_only_scope_is_allowed_and_counted(history):
 def test_scope_class_uses_provider_local_today_instead_of_utc_stamp(history):
     run, _plan, ref, partition = history
     historic._prepare_historic_run(
-        run,
-        tuple(run.plans.values()),
-        provider_timezone="America/Toronto",
+        run, tuple(run.plans.values()), provider_timezone="America/Toronto", provider_id="stm"
     )
     assert run.today_local == date(2026, 8, 10)
     assert historic._observe_historic_partition(run, "stops", ref, partition, 0) == "mutable_edge"
@@ -305,7 +305,7 @@ def test_truncated_inventory_is_fatal():
         }
     )
     with pytest.raises(historic.HistoricPartitionError, match="inventory row count"):
-        build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z")
+        build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")
 
 
 def test_truncated_scope_load_is_fatal():
@@ -317,7 +317,7 @@ def test_truncated_scope_load_is_fatal():
             ],
         }
     )
-    plan = build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z")
+    plan = build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")
     with pytest.raises(historic.HistoricPartitionError, match="scope row count"):
         list(plan.iter_partition_items())
 
@@ -332,7 +332,7 @@ def test_invalid_inventory_id_is_fatal_before_normalization(entity):
         }
     )
     with pytest.raises(historic.HistoricPartitionError, match="ID must be nonempty text"):
-        build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z")
+        build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")
 
 
 @pytest.mark.parametrize(
@@ -407,9 +407,12 @@ def test_scope_telemetry_captures_actual_run_instant_once(
         "2026-08-15T00:00:00Z",
         False,
         32,
+        provider_id="stm",
     )
     plan = _network_history_plan()
-    historic._prepare_historic_run(run, (plan, None, None), provider_timezone="America/Toronto")
+    historic._prepare_historic_run(
+        run, (plan, None, None), provider_timezone="America/Toronto", provider_id="stm"
+    )
     assert clock_calls == [UTC]
     assert run.run_instant_utc == instant
     assert run.today_local == expected_day
@@ -430,6 +433,9 @@ def test_scope_telemetry_fallback_uses_stamp_date_instead_of_actual_instant(time
         False,
         32,
         run_instant_utc=datetime(2026, 8, 20, 17, tzinfo=UTC),
+        provider_id="stm",
     )
-    historic._prepare_historic_run(run, (None, None, None), provider_timezone=timezone)
+    historic._prepare_historic_run(
+        run, (None, None, None), provider_timezone=timezone, provider_id="stm"
+    )
     assert run.today_local == date(2026, 8, 15)

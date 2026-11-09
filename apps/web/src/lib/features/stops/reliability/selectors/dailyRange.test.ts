@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { poolDailyRange } from './dailyRange';
-import { wilsonBoundsProportion } from '$lib/v1/stats';
-import type { StopDailyPoint } from '$lib/v1';
+import { wilsonBoundsProportion } from '#lib/v1/stats.ts';
+import type { StopDailyPoint } from '#lib/v1/index.ts';
 
 const DAILY: StopDailyPoint[] = [
 	{

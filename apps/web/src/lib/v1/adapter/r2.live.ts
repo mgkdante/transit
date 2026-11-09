@@ -1,11 +1,11 @@
-import { resolveUrl } from '$lib/v1/config';
-import { getEntityJson } from '$lib/v1/http';
-import { AlertsFileSchema } from '$lib/v1/schemas/alerts';
-import { DataHealthSchema } from '$lib/v1/schemas/data_health';
-import { NetworkFileSchema } from '$lib/v1/schemas/network';
-import { StopDeparturesFileSchema } from '$lib/v1/schemas/stop_departures';
-import { TripsFileSchema } from '$lib/v1/schemas/trips';
-import { VehiclesFileSchema } from '$lib/v1/schemas/vehicles';
+import { resolveUrl } from '#lib/v1/config.ts';
+import { getEntityJson } from '#lib/v1/http.ts';
+import { AlertsFileSchema } from '#lib/v1/schemas/alerts.ts';
+import { DataHealthSchema } from '#lib/v1/schemas/data_health.ts';
+import { NetworkFileSchema } from '#lib/v1/schemas/network.ts';
+import { StopDeparturesFileSchema } from '#lib/v1/schemas/stop_departures.ts';
+import { TripsFileSchema } from '#lib/v1/schemas/trips.ts';
+import { VehiclesFileSchema } from '#lib/v1/schemas/vehicles.ts';
 import {
 	fetchOf,
 	providerOf,

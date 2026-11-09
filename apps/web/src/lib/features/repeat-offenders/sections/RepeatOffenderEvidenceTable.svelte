@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
+	import type { Locale } from '#lib/i18n/index.ts';
 	import { DataTable, type DataTableColumn } from '@yesid/ui/table';
-	import { MaybeValue } from '$lib/components/edge';
+	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import type { OffenderEvidenceRow } from '../selectors/offenderEvidence';
 	import type { RepeatOffendersCopy } from '../repeatOffenders.copy';
 

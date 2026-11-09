@@ -5,9 +5,9 @@
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { Button } from '@yesid/ui/button';
-	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
+	import { type Locale, DEFAULT_LOCALE, getLocale } from '#lib/i18n/index.ts';
 	import { ScrollArea } from '@yesid/ui/scroll-area';
 	import { SectionLabel } from '@yesid/ui/brand';
 

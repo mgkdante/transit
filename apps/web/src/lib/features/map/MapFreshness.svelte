@@ -1,49 +1,26 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import FreshnessStamp from '$lib/components/surface/FreshnessStamp.svelte';
-	import { copy as MAP_COPY } from './map.copy';
+	import type { StampPresentation } from '#lib/v1/live/livePresentation.ts';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
 
 	interface Props {
-		generatedUtc: string | null;
-		ageSeconds: number | null;
-		ageLabel?: string | null;
-		isStale: boolean;
-		degraded?: boolean;
+		presentation: StampPresentation;
 		locale: Locale;
 		placement: 'head' | 'floating';
 	}
 
-	let {
-		generatedUtc,
-		ageSeconds,
-		ageLabel = null,
-		isStale,
-		degraded = false,
-		locale,
-		placement,
-	}: Props = $props();
-
-	const hasFreshness = $derived(generatedUtc != null || ageSeconds != null || ageLabel != null);
+	let { presentation, locale, placement }: Props = $props();
 </script>
 
-{#if hasFreshness}
+{#if presentation.visible}
 	<div
 		class="map-freshness"
 		data-placement={placement}
-		data-stale={isStale}
-		data-degraded={degraded}
-		data-not-responding={ageLabel ? 'true' : undefined}
+		data-stale={presentation.isStale}
+		data-degraded={presentation.degraded}
+		data-not-responding={presentation.ageLabel ? 'true' : undefined}
 	>
-		<FreshnessStamp
-			variant="live"
-			label={ageLabel ? undefined : MAP_COPY[locale].latestReport}
-			{generatedUtc}
-			{ageSeconds}
-			{ageLabel}
-			{isStale}
-			{degraded}
-			{locale}
-		/>
+		<FreshnessStamp variant="live" {presentation} {locale} />
 	</div>
 {/if}
 

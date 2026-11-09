@@ -1,8 +1,8 @@
 import type { PageLoad } from './$types';
-import { browser } from '$app/environment';
-import { DEFAULT_LOCALE, type Locale } from '$lib/i18n';
-import { detailTabFromSearchParams } from '$lib/site/detailTabs';
-import { formatUtc } from '$lib/utils/time';
+import { browser } from '$app/env';
+import { DEFAULT_LOCALE, type Locale } from '#lib/i18n/index.ts';
+import { detailTabFromSearchParams } from '#lib/site/detailTabs.ts';
+import { formatUtc } from '#lib/utils/time.ts';
 
 export const load: PageLoad = async ({ data, url, parent }) => {
 	let initialClusters;
@@ -10,6 +10,7 @@ export const load: PageLoad = async ({ data, url, parent }) => {
 	let preparedArticleTime:
 		| { routeId: string; iso: string; locale: Locale; text: string }
 		| undefined;
+
 	const explicitRange =
 		url.searchParams.has('from') ||
 		url.searchParams.has('to') ||
@@ -20,6 +21,7 @@ export const load: PageLoad = async ({ data, url, parent }) => {
 		explicitRange ||
 		(grain !== 'week' && grain !== 'month') ||
 		data.reliabilitySeed?.data?.periods?.some((period) => period.grain === grain);
+
 	if (
 		detailTabFromSearchParams(url.searchParams) === 'reliability' &&
 		settledSelection &&
@@ -27,7 +29,7 @@ export const load: PageLoad = async ({ data, url, parent }) => {
 	) {
 		try {
 			initialClusters = (
-				await import('$lib/features/lines/reliability/RouteReliabilityClusters.svelte')
+				await import('#lib/features/lines/reliability/RouteReliabilityClusters.svelte')
 			).default;
 		} catch {
 			initialImportFailed = true;

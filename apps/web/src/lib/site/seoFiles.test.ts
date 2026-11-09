@@ -8,7 +8,7 @@ import {
 	buildSitemapXml,
 	toW3CDate,
 } from './seoFiles';
-import { entityUrl } from '$lib/v1/config';
+import { entityUrl } from '#lib/v1/config.ts';
 
 const SURFACES = [
 	'/',

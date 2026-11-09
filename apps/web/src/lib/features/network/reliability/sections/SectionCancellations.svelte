@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { ExplainedMetricCard } from '$lib/components/dataviz';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { ExplainedMetricCard } from '#lib/components/dataviz/index.ts';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { CancelTrendVM } from '../selectors/cancelTrend';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fireEvent, render, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { previousAvailableDate } from '$lib/v1/history';
+import { previousAvailableDate } from '#lib/v1/history/index.ts';
 import HistoryNavigator from './HistoryNavigator.svelte';
 import { HistoryNavigator as BarrelHistoryNavigator } from './index';
 

@@ -1,4 +1,4 @@
-import { defineCopy, type Locale } from '$lib/i18n';
+import { defineCopy, type Locale } from '#lib/i18n/index.ts';
 import type { AlertMessageProvenance } from './schemas/alert_history';
 
 const FALLBACK = defineCopy({

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
-import { navPillCopy } from '../src/lib/components/shell/navPill.copy';
+import { navPillCopy } from '../src/lib/i18n/messages';
 import { AUDIT_NAV, SURFACE_NAV } from '../src/lib/content/nav';
 import { copy as healthCopy } from '../src/lib/features/health/health.copy';
 import { PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';

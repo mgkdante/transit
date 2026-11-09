@@ -1,7 +1,7 @@
-import type { Locale } from '$lib/i18n';
-import type { AbsenceSpec, TrendDatum, TrendSpec } from '$lib/components/dataviz/chart';
-import { DELAY_POS_DOMAIN, OTP_DOMAIN } from '$lib/features/reliability/domains';
-import { SHIFT_GRAIN_ORDER } from '$lib/features/reliability/shiftGrains';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { AbsenceSpec, TrendDatum, TrendSpec } from '#lib/components/dataviz/chart/index.ts';
+import { DELAY_POS_DOMAIN, OTP_DOMAIN } from '#lib/features/reliability/domains.ts';
+import { SHIFT_GRAIN_ORDER } from '#lib/features/reliability/shiftGrains.ts';
 import type { PunctualityVM } from '../clusters';
 
 const MIN_POINTS_FOR_LINE = 7;

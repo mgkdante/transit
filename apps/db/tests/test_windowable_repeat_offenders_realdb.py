@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -237,9 +236,9 @@ def test_as_of_history_executes_one_closed_spine_stream_and_recomposes_windows(
         ("trip", "T", days[3], 30, 0, 30 * 100),
     ]
     with _seeded(rows, real_db_engine, seed_provider) as conn:
-        payload = list(historic.build_repeat_offenders_history_plan(conn, _PROVIDER).iter_days())[
-            -1
-        ]
+        payload = list(
+            historic.build_repeat_offenders_history_plan(conn, provider_id=_PROVIDER).iter_days()
+        )[-1]
 
     assert payload.date == _ANCHOR.isoformat()
     assert [

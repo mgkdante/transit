@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cn as uiCn } from '@yesid/ui/cn';
-import { configureTransitUi } from '$lib/ui/configure';
-import { cn } from '$lib/ui/configure';
-import { TRANSIT_VOCAB } from './cn-vocab';
+import { configureTransitUi } from '#lib/ui/configure.ts';
+import { cn } from '#lib/ui/configure.ts';
 
 const LEGACY_TRANSIT_DATAVIZ_COLORS = [
 	'dataviz-status-early',
@@ -32,10 +31,9 @@ const LEGACY_TRANSIT_DATAVIZ_COLORS = [
 
 describe('cn legacy behavior', () => {
 	it('classifies every Transit dataviz token as a color', () => {
-		expect(TRANSIT_VOCAB.colors).toEqual(LEGACY_TRANSIT_DATAVIZ_COLORS);
-
-		for (const [index, color] of TRANSIT_VOCAB.colors.entries()) {
-			const nextColor = TRANSIT_VOCAB.colors[(index + 1) % TRANSIT_VOCAB.colors.length];
+		for (const [index, color] of LEGACY_TRANSIT_DATAVIZ_COLORS.entries()) {
+			const nextColor =
+				LEGACY_TRANSIT_DATAVIZ_COLORS[(index + 1) % LEGACY_TRANSIT_DATAVIZ_COLORS.length];
 
 			expect(cn(`text-body text-${color}`)).toBe(`text-body text-${color}`);
 			expect(cn(`text-${color} text-body`)).toBe(`text-${color} text-body`);
@@ -45,7 +43,7 @@ describe('cn legacy behavior', () => {
 });
 
 describe('configureTransitUi', () => {
-	it('teaches package components the Transit dataviz color vocabulary', () => {
+	it('preserves package dataviz merging with default configuration', () => {
 		configureTransitUi();
 
 		expect(uiCn('text-dataviz-status-late text-dataviz-status-on-time')).toBe(
@@ -57,9 +55,9 @@ describe('configureTransitUi', () => {
 describe('app cn configuration ownership', () => {
 	async function freshMergers() {
 		vi.resetModules();
-		const app = await import('$lib/ui/configure');
+		const app = await import('#lib/ui/configure.ts');
 		const ui = await import('@yesid/ui/cn');
-		const { configureTransitUi: configure } = await import('$lib/ui/configure');
+		const { configureTransitUi: configure } = await import('#lib/ui/configure.ts');
 		return { app, ui, configure };
 	}
 
@@ -78,18 +76,14 @@ describe('app cn configuration ownership', () => {
 		expect(app.cn(...classes)).toBe(merged);
 	});
 
-	it.each(['default', 'foreign'] as const)(
-		'preserves standalone output and C1 rejection with an existing %s package configuration',
-		async (kind) => {
-			const { app, ui, configure } = await freshMergers();
-			if (kind === 'default') ui.cn('text-body');
-			else ui.configureUi({ vocab: { colors: ['independent-consumer'] } });
-			expect(app.cn(...classes)).toBe(merged);
-			expect(configure).toThrow('different configuration');
-			expect(app.cn(...classes)).toBe(merged);
-			expect(configure).toThrow('different configuration');
-		},
-	);
+	it('preserves standalone output and C1 rejection with a foreign package configuration', async () => {
+		const { app, ui, configure } = await freshMergers();
+		ui.configureUi({ vocab: { colors: ['independent-consumer'] } });
+		expect(app.cn(...classes)).toBe(merged);
+		expect(configure).toThrow('different configuration');
+		expect(app.cn(...classes)).toBe(merged);
+		expect(configure).toThrow('different configuration');
+	});
 
 	it('switches from isolated calls to the public merger only after explicit successful boot', async () => {
 		const { app, ui, configure } = await freshMergers();
@@ -102,7 +96,7 @@ describe('app cn configuration ownership', () => {
 		configure();
 		expect(app.cn('px-2', 'px-4')).toBe('px-4');
 		expect(shared).toHaveBeenCalledTimes(2);
-		expect(ui.configureUi({ vocab: TRANSIT_VOCAB })).toBe('unchanged');
+		expect(ui.configureUi()).toBe('unchanged');
 	});
 
 	it('reuses the public merger when bootstrap happens before the first app call', async () => {
@@ -111,5 +105,12 @@ describe('app cn configuration ownership', () => {
 		const shared = vi.spyOn(ui, 'cn');
 		expect(app.cn(...classes)).toBe(merged);
 		expect(shared).toHaveBeenCalledExactlyOnceWith(...classes);
+	});
+
+	it('allows bootstrap after a shared component has used the default merger', async () => {
+		const { app, ui, configure } = await freshMergers();
+		ui.cn('text-body');
+		expect(configure).not.toThrow();
+		expect(app.cn(...classes)).toBe(merged);
 	});
 });

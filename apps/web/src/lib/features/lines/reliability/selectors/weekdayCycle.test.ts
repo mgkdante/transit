@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectWeekdayCycle, type WeekdayCycleLabels } from './weekdayCycle';
-import { DELAY_DOW_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { RouteDayOfWeek } from '$lib/v1';
+import { DELAY_DOW_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { RouteDayOfWeek } from '#lib/v1/index.ts';
 
 const WK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const labels: WeekdayCycleLabels = {

@@ -4,9 +4,9 @@
 
 <script lang="ts">
 	import { ToggleChip } from '@yesid/ui/brand';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import type { SvelteSet } from 'svelte/reactivity';
-	import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '$lib/search/stopMode';
+	import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.ts';
 	import GrainPicker, { type GrainSegment } from './GrainPicker.svelte';
 
 	interface SearchControlsProps {

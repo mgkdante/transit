@@ -1,12 +1,12 @@
 import { SvelteSet } from 'svelte/reactivity';
-import type { Locale } from '$lib/i18n';
-import type { RouteFile, StopFile } from '$lib/v1';
-import type { Alert } from '$lib/v1/schemas';
-import type { LiveStore } from '$lib/v1/live/store.svelte';
-import type { FilterStore, Chip } from '$lib/filters';
-import type * as StaticRepositories from '$lib/v1/repositories/static';
-import type { MapFocus } from '$lib/search/mapFocus';
-import { createResource } from '$lib/v1/resource.svelte';
+import type { Locale } from '#lib/i18n/index.ts';
+import type { RouteFile, StopFile } from '#lib/v1/index.ts';
+import type { Alert } from '#lib/v1/schemas/index.ts';
+import type { LiveStore } from '#lib/v1/live/store.svelte.ts';
+import type { FilterStore, Chip } from '#lib/filters/index.ts';
+import type * as StaticRepositories from '#lib/v1/repositories/static.ts';
+import type { MapFocus } from '#lib/search/mapFocus.ts';
+import { createResource } from '#lib/v1/resource.svelte.ts';
 import { createMapSelectionController } from './selectionSession/mapSelectionController.svelte';
 import {
 	resolveMapSelection,
@@ -18,13 +18,12 @@ import { isMapFocusReady } from './selectionSession/mapFocusReadiness';
 import { vehicleAbsence } from './selectionSession/vehicleAbsence';
 import { resolveMapHoverPeek } from './mapHoverPeek';
 import { buildAlertEntitySets, vehicleHasAlert } from './mapAlerts';
-import { mapCopy } from './map.copy';
 import * as ownerCleanup from './mapOwnerCleanup';
 
 export interface MapSelectionSessionOptions {
 	readonly live: Pick<
 		LiveStore,
-		'index' | 'vehicles' | 'alerts' | 'familyStates' | 'vehiclesIsStale' | 'subscribeFamilies'
+		'index' | 'vehicles' | 'alerts' | 'familyStates' | 'subscribeFamilies'
 	>;
 	readonly repositories: Pick<
 		typeof StaticRepositories,
@@ -52,7 +51,6 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 		},
 	};
 	const alertsAvailable = options.alertsAvailable ?? true;
-	const t = mapCopy(locale, '');
 	const selectionController = createMapSelectionController();
 	const selected = $derived(selectionController.selected);
 	const hovered = $derived(selectionController.hovered);
@@ -155,26 +153,6 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 		return out;
 	});
 	const contextStopFiles = $derived(focusedStop.data ? [focusedStop.data] : []);
-	const liveEdgeState = $derived.by<'unavailable' | 'no-vehicles' | null>(() => {
-		const vehicles = live.familyStates.vehicles;
-		if (vehicles.phase === 'failed' && vehicles.retainedGeneration == null) return 'unavailable';
-		if (
-			live.vehicles != null &&
-			!live.vehiclesIsStale &&
-			(live.vehicles.vehicles?.length ?? 0) === 0
-		) {
-			return 'no-vehicles';
-		}
-		return null;
-	});
-	const liveEdgeMessage = $derived(
-		liveEdgeState === 'unavailable'
-			? t.liveUnavailable
-			: liveEdgeState === 'no-vehicles'
-				? t.liveNoVehicles
-				: null,
-	);
-
 	const availableAlerts = $derived(alertsAvailable ? (live.alerts?.alerts ?? null) : null);
 	const alertList = $derived(availableAlerts ?? []);
 	const alertEntitySets = $derived(buildAlertEntitySets(alertList));
@@ -202,7 +180,7 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 					}
 				: null,
 	);
-	const departuresAvailable = $derived(live.familyStates.departures.retainedGeneration != null);
+	const departuresAvailable = $derived(live.familyStates.departures.health.retained);
 	const resolvedSelectedDetail = $derived(
 		resolveMapSelection(selected, {
 			locale,
@@ -253,38 +231,6 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 	const selectionSourceHealth = $derived(
 		selected?.kind === 'vehicle' ? vehicleGraceState.sourceHealth : 'ok',
 	);
-	const liveDegraded = $derived(
-		Object.values(live.familyStates).some(
-			(family) => family.active && (family.phase === 'failed' || family.consecutiveFailures > 0),
-		),
-	);
-	const selectedFamilyFailureMessage = $derived.by<string | null>(() => {
-		if (!selected) return null;
-		const candidates =
-			selected.kind === 'vehicle'
-				? ([
-						['vehicles', t.familyVehicles],
-						['trips', t.familyTrips],
-						['alerts', t.familyAlerts],
-					] as const)
-				: selected.kind === 'stop'
-					? ([
-							['departures', t.familyDepartures],
-							['vehicles', t.familyVehicles],
-							['alerts', t.familyAlerts],
-						] as const)
-					: ([
-							['vehicles', t.familyVehicles],
-							['alerts', t.familyAlerts],
-						] as const);
-		for (const [family, label] of candidates) {
-			const truth = live.familyStates[family];
-			if (truth.active && (truth.phase === 'failed' || truth.consecutiveFailures > 0)) {
-				return t.selectedFamilyFailure(label, truth.retainedGeneration != null);
-			}
-		}
-		return null;
-	});
 	const selectedVehicleAbsence = $derived(vehicleAbsence(selectedDetail, clock.serverNow));
 	const detailSurfaceKey = $derived(
 		selectedDetail ? `${selectedDetail.kind}:${selectedDetail.id}` : 'empty',
@@ -460,18 +406,6 @@ export function createMapSelectionSession(options: MapSelectionSessionOptions) {
 		},
 		get alertStopIds() {
 			return alertEntitySets.stops;
-		},
-		get liveEdgeState() {
-			return liveEdgeState;
-		},
-		get liveEdgeMessage() {
-			return liveEdgeMessage;
-		},
-		get liveDegraded() {
-			return liveDegraded;
-		},
-		get failureMessage() {
-			return selectedFamilyFailureMessage;
 		},
 		select(next: MapSelection, source: 'pick' | 'detail') {
 			if (source === 'pick') commitPickedSelection(next);

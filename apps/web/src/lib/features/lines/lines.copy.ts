@@ -1,7 +1,7 @@
-import { defineCopy, type Locale } from '$lib/i18n/copy';
-import type { AffectedAlertsCopy, SurfaceHeadCopy } from '$lib/components/surface';
-import { articleCopy } from '$lib/components/layout/articleCopy';
-import type { OccupancyCode } from '$lib/v1/schemas';
+import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import type { AffectedAlertsCopy, SurfaceHeadCopy } from '#lib/components/surface/index.ts';
+import { articleCopy } from '#lib/components/layout/articleCopy.ts';
+import type { OccupancyCode } from '#lib/v1/schemas/index.ts';
 
 export const indexCopy = defineCopy({
 	fr: {
@@ -19,7 +19,7 @@ export const indexCopy = defineCopy({
 		sortWorst: 'Moins fiables',
 		statusFilterLabel: 'Fiabilité',
 		statusAll: 'Toutes',
-		statusProblem: 'En retard',
+		statusProblem: 'Inégales ou peu fiables',
 		statusPending: 'Vérification de la fiabilité des lignes filtrées…',
 		rankingPending: 'Calcul du classement de fiabilité des lignes filtrées…',
 		modeFilterLabel: 'Mode',
@@ -51,7 +51,7 @@ export const indexCopy = defineCopy({
 		sortWorst: 'Least reliable',
 		statusFilterLabel: 'Reliability',
 		statusAll: 'All',
-		statusProblem: 'Late',
+		statusProblem: 'Patchy or unreliable',
 		statusPending: 'Checking reliability for the filtered lines…',
 		rankingPending: 'Calculating reliability ranking for the filtered lines…',
 		modeFilterLabel: 'Mode',
@@ -164,7 +164,7 @@ export const detailCopy = defineCopy({
 			count: (n: number) => (n === 1 ? '1 véhicule en service' : `${n} véhicules en service`),
 		},
 		approaching: 'À l’approche',
-		viewStop: (stop: string) => `Voir l’arrêt ${stop}`,
+		viewStop: 'Voir l’arrêt',
 		early: (minutes: number) => `${Math.abs(minutes)} min en avance`,
 		late: (minutes: number) => `${minutes} min en retard`,
 		onTime: "À l'heure",
@@ -261,7 +261,7 @@ export const detailCopy = defineCopy({
 			count: (n) => (n === 1 ? '1 vehicle in service' : `${n} vehicles in service`),
 		},
 		approaching: 'Approaching',
-		viewStop: (stop) => `View stop ${stop}`,
+		viewStop: 'View stop',
 		early: (minutes) => `${Math.abs(minutes)} min early`,
 		late: (minutes) => `${minutes} min late`,
 		onTime: 'On time',

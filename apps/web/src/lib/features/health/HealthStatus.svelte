@@ -2,37 +2,34 @@
 	import { clock } from '@yesid/ui/state';
 	import './sections/health-sections.css';
 
-	import { onMount, tick } from 'svelte';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { freshnessRelative } from '$lib/v1/freshness';
-	import { getDataHealth } from '$lib/v1/repositories/dataHealth';
-	import { getHistoricAvailability } from '$lib/v1/repositories/historic';
-	import { getProvenance } from '$lib/v1/repositories/provenance';
-	import type { DataHealth } from '$lib/v1/schemas/data_health';
-	import type { HistoricAvailabilityIndex } from '$lib/v1/schemas/history';
-	import type { Provenance } from '$lib/v1/schemas/provenance';
-	import { createResource, type ResourceSeed } from '$lib/v1/resource.svelte';
-	import { formatRelativeSeconds, formatUtc } from '$lib/utils/time';
-	import { METHODOLOGY_METRIC_KEY } from '$lib/features/metrics/metrics.content';
+	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { freshnessRelative } from '#lib/v1/freshness.ts';
+	import { getDataHealth } from '#lib/v1/repositories/dataHealth.ts';
+	import { getHistoricAvailability } from '#lib/v1/repositories/historic.ts';
+	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
+	import type { DataHealth } from '#lib/v1/schemas/data_health.ts';
+	import type { HistoricAvailabilityIndex } from '#lib/v1/schemas/history.ts';
+	import type { Provenance } from '#lib/v1/schemas/provenance.ts';
+	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
+	import { formatRelativeSeconds, formatUtc } from '#lib/utils/time.ts';
+	import { METHODOLOGY_METRIC_KEY } from '#lib/features/metrics/metrics.content.ts';
 	import {
 		ArticleKeywords,
 		ArticleSectionStack,
 		type ArticleMetaEntry,
-	} from '$lib/components/layout';
+	} from '#lib/components/layout/index.ts';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
-	import { ResourceBoundary } from '$lib/components/surface';
+	import { ResourceBoundary } from '#lib/components/surface/index.ts';
 	import {
 		TerminalPanel,
 		SectionLabel,
 		CollapsibleSection,
 		SectionIcon,
 		TocNav,
-		tocElement,
-		settleLayout,
 		type TocEntry,
 	} from '@yesid/ui/brand';
-	import QuietModeButton from '$lib/components/shared/QuietModeButton.svelte';
-	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
+	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 
 	import { copy as COPY } from './health.copy';
 	import {
@@ -255,107 +252,21 @@
 		const ok = freshness.filter((f) => verdictFor(f.status).aspect === 'on_time').length;
 		return { total, ok };
 	});
-	let activeId = $state('');
-	let cardOpenSignals = $state<Record<string, number>>({});
-	const cardOpenSignal = (id: string): number => cardOpenSignals[id] ?? 0;
-
-	function openCard(id: string): void {
-		cardOpenSignals = { ...cardOpenSignals, [id]: cardOpenSignal(id) + 1 };
-	}
-
-	const openableAnchors = $derived(new Set(tocEntries.map((entry) => entry.id)));
-	let pendingHash = $state<string | null>(null);
-	let consumingHash = false;
-	let requestedHash: string | null = null;
-	let navigationGeneration = 0;
-
-	function decodedHash(): string | null {
-		const raw = window.location.hash.replace(/^#/, '');
-		if (!raw) return null;
-		try {
-			return decodeURIComponent(raw);
-		} catch {
-			return null;
-		}
-	}
-
-	function queueHash(id: string | null): void {
-		if (id === requestedHash) return;
-		requestedHash = id;
-		navigationGeneration += 1;
-		pendingHash = id;
-	}
-
-	async function reveal(id: string, generation = ++navigationGeneration): Promise<boolean> {
-		if (!openableAnchors.has(id)) return false;
-		openCard(id);
-		await tick();
-		const target = tocElement(id);
-		await settleLayout(target);
-		if (generation !== navigationGeneration) return false;
-		target?.scrollIntoView({
-			behavior: $prefersReducedMotion ? 'auto' : 'smooth',
-			block: 'start',
-		});
-		return true;
-	}
-
-	async function consumePendingHash(): Promise<void> {
-		const id = pendingHash;
-		if (consumingHash || !id || !openableAnchors.has(id)) return;
-		consumingHash = true;
-		try {
-			await tick();
-			if (pendingHash !== id || !openableAnchors.has(id)) return;
-			if ((await reveal(id, navigationGeneration)) && pendingHash === id) pendingHash = null;
-		} finally {
-			consumingHash = false;
-			if (pendingHash && pendingHash !== id && openableAnchors.has(pendingHash)) {
-				void consumePendingHash();
-			}
-		}
-	}
-
-	$effect(() => {
-		const signature = tocEntries.map((entry) => entry.id).join('|');
-		const id = pendingHash;
-		void signature;
-		void id;
-		void consumePendingHash();
-	});
-
-	onMount(() => {
-		let cancelled = false;
-		void (async () => {
-			await tick();
-			if (!cancelled) queueHash(decodedHash());
-		})();
-		const onHashChange = () => {
-			queueHash(decodedHash());
-		};
-		window.addEventListener('hashchange', onHashChange);
-		return () => {
-			cancelled = true;
-			navigationGeneration += 1;
-			window.removeEventListener('hashchange', onHashChange);
-		};
-	});
-
-	async function navigate(id: string): Promise<void> {
-		pendingHash = null;
-		await reveal(id);
-	}
+	const { navigation, navigate } = useAvailableSectionJump(() => tocEntries);
 </script>
 
 <DetailFrame
 	class="health-detail"
 	railScroll
-	bind:activeId
 	toc={{
 		entries: tocEntries,
+		navigation,
+		landFragments: true,
+		onNavigate: (id) => {
+			void navigate(id);
+		},
 		openAria: t.toc.pill.open,
 		closeAria: t.toc.pill.close,
-		onNavigate: navigate,
 	}}
 >
 	{#snippet header()}
@@ -371,7 +282,7 @@
 			titleId="status-title"
 		>
 			{#snippet controls()}
-				<QuietModeButton />
+				<SectionsToggle />
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
@@ -382,11 +293,12 @@
 				{#if tocEntries.length > 0}
 					<TocNav
 						entries={tocEntries}
-						{activeId}
-						onNavigate={navigate}
+						{navigation}
+						onNavigate={(id) => {
+							void navigate(id);
+						}}
 						heading={t.toc.label}
 						counterPrefix={t.toc.counterPrefix}
-						sectionKey="status-toc"
 					/>
 				{/if}
 			</div>
@@ -402,12 +314,7 @@
 	{/snippet}
 
 	<ArticleSectionStack class="health-sections" data-testid="health-sections">
-		<CollapsibleSection
-			title={t.overview.title}
-			headerVariant="article-summary"
-			sectionKey="status-overview"
-			open={true}
-		>
+		<CollapsibleSection title={t.overview.title} headerVariant="article-summary" open={true}>
 			<div class="health-overview">
 				<p class="health-lede">{t.lede}</p>
 				{#if !prov || provenanceIsEmpty(prov)}
@@ -465,9 +372,7 @@
 					headerVariant="article-summary"
 					index={section.number - 1}
 					anchor={section.id}
-					sectionKey={`status-card-${section.id}`}
 					open={true}
-					openSignal={cardOpenSignal(section.id)}
 				>
 					{#if section.id === 'health-lanes'}
 						<SectionLanes rows={laneRows} copy={t} {locale} />
@@ -511,11 +416,7 @@
 {#snippet statCards()}
 	<div class="health-stat-rail">
 		{#if laneStat.total > 0}
-			<CollapsibleSection
-				title={t.statRail.lanes.title}
-				headerVariant="article-summary"
-				sectionKey="status-rail-lanes"
-			>
+			<CollapsibleSection title={t.statRail.lanes.title} headerVariant="article-summary">
 				{#snippet icon()}
 					<SectionIcon name="grid" class="h-4 w-4 shrink-0 text-primary" />
 				{/snippet}
@@ -534,11 +435,7 @@
 			</CollapsibleSection>
 		{/if}
 		{#if feedStat.total > 0}
-			<CollapsibleSection
-				title={t.statRail.feeds.title}
-				headerVariant="article-summary"
-				sectionKey="status-rail-feeds"
-			>
+			<CollapsibleSection title={t.statRail.feeds.title} headerVariant="article-summary">
 				{#snippet icon()}
 					<SectionIcon name="list" class="h-4 w-4 shrink-0 text-primary" />
 				{/snippet}

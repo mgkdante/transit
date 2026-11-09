@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Chart as LcChart, Svg, Bars, Rule, Axis, Tooltip } from 'layerchart';
 	import { scaleBand, scaleLinear } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import type { BulletSpec } from '../ChartSpec';
 

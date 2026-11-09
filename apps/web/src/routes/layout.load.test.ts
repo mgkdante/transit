@@ -5,11 +5,11 @@ const harness = vi.hoisted(() => ({
 	serverV1Context: vi.fn(),
 }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	bootProvider: (...args: unknown[]) => harness.bootProvider(...args),
 }));
 
-vi.mock('$lib/v1/serverContext', () => ({
+vi.mock('#lib/v1/serverContext.ts', () => ({
 	serverV1Context: (...args: unknown[]) => harness.serverV1Context(...args),
 }));
 
@@ -70,6 +70,14 @@ beforeEach(() => {
 });
 
 describe('root server layout boot', () => {
+	it('prevents caching a successful fallback boot when catalog discovery failed', async () => {
+		const request = serverEvent(undefined, '/');
+		const setHeaders = vi.fn();
+		Object.assign(request, { setHeaders });
+		harness.bootProvider.mockResolvedValue({ ...selection(v1('en', 'one')), discoveryError: true });
+		await loadServerLayout(request);
+		expect(setHeaders).toHaveBeenCalledWith({ 'cache-control': 'no-store' });
+	});
 	it.each([true, false])(
 		'boots provider data for child server loaders (binding: %s)',
 		async (binding) => {

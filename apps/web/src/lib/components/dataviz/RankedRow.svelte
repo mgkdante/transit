@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { cn, type WithElementRef } from '$lib/utils';
+	import { cn, type WithElementRef } from '#lib/utils/index.ts';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 	import SeverityBar from './SeverityBar.svelte';
 	import ChartTooltip from './ChartTooltip.svelte';
 	import { createChartTooltip, type ChartTooltipRow } from './useChartTooltip.svelte';
 	import type { ChartLegendItem } from './ChartLegend.svelte';
-	import { AbsentValue } from '$lib/components/edge';
-	import type { AbsenceReasonKey } from '$lib/site/absence';
-	import { defineCopy, type Locale } from '$lib/i18n';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
+	import type { AbsenceReasonKey } from '#lib/site/absence.ts';
+	import { defineCopy, type Locale } from '#lib/i18n/index.ts';
 
 	export interface RankedRowProps extends WithElementRef<HTMLAttributes<HTMLDivElement>> {
 		rank: number;

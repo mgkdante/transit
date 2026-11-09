@@ -1,11 +1,15 @@
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IsoUtc, Receipt, ReceiptsIndex } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
+import type { IsoUtc, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
+import { assertRailIndependence } from '../../../tests/railIndependence';
 
-vi.mock('$env/dynamic/public', () => ({ env: {} }));
+vi.mock('$app/env/public', async () => ({
+	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,
+	...{},
+}));
 vi.mock('$app/state', () => ({
 	page: { url: new URL('http://localhost/receipt'), state: {} },
 }));
@@ -94,8 +98,6 @@ function resetReceiptState(): void {
 	}
 	sessionStorage.removeItem('persisted:receipt-controls');
 	sessionStorage.removeItem('persisted:receipt-toc');
-	localStorage.removeItem('quiet-mode');
-	quietMode.resetForTest();
 }
 
 const ports = vi.hoisted(() => ({
@@ -104,19 +106,19 @@ const ports = vi.hoisted(() => ({
 	getAdvertisedReceipt: vi.fn(),
 }));
 
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { provider: 'stm', display_name: 'STM', tz: 'America/Toronto', files: {} },
 	}),
 }));
 
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getReceipt: ports.getReceipt,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
 		let data: T | null = null;
 		const signal = new AbortController().signal;
@@ -165,7 +167,7 @@ beforeEach(async () => {
 		worst_route: { id: '161', name: 'Van Horne', otp_delta_pts: -8 },
 		worst_stop: { id: '57191', name: 'Rockland', avg_delay_min: 6.1 },
 	};
-	const v1 = await import('$lib/v1/repositories/historic');
+	const v1 = await import('#lib/v1/repositories/historic.ts');
 	vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 	vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 	vi.mocked(v1.getAdvertisedReceipt).mockImplementation(
@@ -177,23 +179,25 @@ beforeEach(async () => {
 afterEach(resetReceiptState);
 
 describe('AccountabilityReceipt article shell', () => {
-	it('renders one article heading and only the exact two shared reading controls', async () => {
+	it('renders one article heading and hides the bulk action for a single content section', async () => {
 		const { container } = render(AccountabilityReceipt);
 		expect(
 			await screen.findAllByRole('heading', { level: 1, name: 'Accountability receipt' }),
 		).toHaveLength(1);
-		const controls = screen.getByTestId('quiet-mode-controls');
-		expect(within(controls).getAllByRole('button')).toHaveLength(2);
-		expect(within(controls).getByRole('button', { name: /Collapse all/ })).toBeInTheDocument();
+		expect(container.querySelectorAll('[data-toc^="receipt-"]')).toHaveLength(1);
+		expect(screen.getByTestId('sections-controls')).toHaveAttribute('data-sections-hidden');
+		expect(container.querySelector('[data-slot="surface-rail"]')).toBeInTheDocument();
 		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 	});
 
 	it('puts the availability-bound day picker and four-entry TOC in one combined rail', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
 		await screen.findByText('82%');
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
+		expect(screen.getByTestId('sections-toggle')).toHaveTextContent('Collapse all');
 
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		expect(rail).not.toBeNull();
@@ -215,10 +219,15 @@ describe('AccountabilityReceipt article shell', () => {
 				card(container, id).querySelector('[data-slot="badge"]')?.textContent?.trim(),
 			),
 		).toEqual(['01', '02', '03', '04']);
+		await assertRailIndependence({
+			container,
+			panelNames: [receiptCopy.en.rail.controls, receiptCopy.en.rail.toc],
+			contentCount: 4,
+		});
 	});
 
 	it('stands optional cards and TOC entries down together while retaining fixed numbers', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		receiptData = {
 			...withAllCuts(),
 			by_shift: undefined,
@@ -243,7 +252,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('applies the delivered and silent gates independently to each card and TOC entry', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		const base = receiptData as Receipt;
 		receiptData = {
 			...base,
@@ -293,7 +302,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('opens a closed TOC target before scrolling without opening another card', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
@@ -314,7 +323,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('reconciles an active Silent destination to the nearest surviving receipt card', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		const base = receiptData as Receipt;
 		const byDate: Record<string, Receipt> = {
 			'2026-06-17': withAllCuts(base),
@@ -371,7 +380,7 @@ describe('AccountabilityReceipt article shell', () => {
 	});
 
 	it('never renders stale cards from the previously selected receipt while a new day resolves', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		receiptData = withAllCuts();
 		vi.mocked(v1.getReceipt).mockImplementation(() => receiptData as never);
 		const { container } = render(AccountabilityReceipt);
@@ -449,7 +458,7 @@ describe('AccountabilityReceipt honesty', () => {
 	});
 
 	it('shows the SPECIFIC empty-index copy when no receipt dates are published', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		indexData = { generated_utc: '2026-06-17T07:00:00Z' as IsoUtc, dates: [] };
 		vi.mocked(v1.getReceiptsIndex).mockImplementation(() => indexData as never);
 		render(AccountabilityReceipt);
@@ -463,7 +472,7 @@ describe('AccountabilityReceipt honesty', () => {
 	});
 
 	it('loads the latest day through the strict advertised-receipt seam', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		render(AccountabilityReceipt);
 		expect(await screen.findByText('82%')).toBeInTheDocument();
 		expect(vi.mocked(v1.getAdvertisedReceipt)).toHaveBeenCalledWith(
@@ -492,7 +501,7 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 	});
 
 	it('stands the worst-of-day panel down and marks the layout no-worst when absent', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		receiptData = {
 			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 			date: '2026-06-17',
@@ -527,7 +536,7 @@ describe('AccountabilityReceipt composed layout (E2)', () => {
 
 describe('AccountabilityReceipt date switching', () => {
 	it('re-fetches the chosen day and renders its figures when a non-default chip is picked', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 
 		const byDate: Record<string, Receipt> = {
 			'2026-06-17': { ...(receiptData as Receipt), date: '2026-06-17', otp_pct: 82 },
@@ -595,7 +604,7 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 	});
 
 	it('bounds the calendar across a GAP day (native pickers cannot disable an interior day)', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		indexData = {
 			generated_utc: '2026-06-17T07:00:00Z' as IsoUtc,
 			dates: ['2026-06-15', '2026-06-17'],
@@ -612,7 +621,7 @@ describe('AccountabilityReceipt smart date picker (S13)', () => {
 
 describe('AccountabilityReceipt S13 re-granulated cuts', () => {
 	it('renders the by-time-of-day, service-delivered, and not-reported cuts when present', async () => {
-		const v1 = await import('$lib/v1/repositories/historic');
+		const v1 = await import('#lib/v1/repositories/historic.ts');
 		receiptData = {
 			...(receiptData as Receipt),
 			by_shift: [

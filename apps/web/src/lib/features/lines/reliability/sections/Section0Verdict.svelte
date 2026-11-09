@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { getLocalizeHref, type Locale } from '$lib/i18n';
-	import { fmtDelayMin, fmtPct } from '$lib/utils';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
 	import { TerminalPanel, SectionLabel } from '@yesid/ui/brand';
 	import CollapsibleSection from './CollapsibleSection.svelte';
-	import { Chart } from '$lib/components/dataviz/chart';
-	import { AbsentValue, MaybeValue } from '$lib/components/edge';
-	import Detail from '$lib/components/shared/Detail.svelte';
-	import { VerdictBanner } from '$lib/components/brand';
+	import { Chart } from '#lib/components/dataviz/chart/index.ts';
+	import { AbsentValue, MaybeValue } from '#lib/components/edge/index.ts';
+	import Detail from '#lib/components/shared/Detail.svelte';
+	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import MetricBullet from './MetricBullet.svelte';
-	import { metricInfoCopy } from '$lib/metrics';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
+	import { metricInfoCopy } from '#lib/metrics.ts';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import {
 		shiftLabel as shiftGrainLabel,
 		shiftLabelShort as shiftGrainLabelShort,
@@ -17,12 +17,15 @@
 		OTP_DOMAIN,
 		DELAY_STOP_DOMAIN,
 		DELAY_DIST_DOMAIN,
-	} from '$lib/features/reliability/shiftGrains';
+	} from '#lib/features/reliability/shiftGrains.ts';
 	import { selectPunctualityTrend } from '../selectors/punctualityTrend';
 	import { selectPunctualityDistribution } from '../selectors/punctualityDistribution';
-	import { selectVerdict } from '$lib/v1/verdict';
-	import { selectBullet, otpTone } from '../selectors/bullet';
-	import { dailyPercentileCaption, type selectDailyPercentiles } from '$lib/site/dailyPercentiles';
+	import { VERDICT_RELIABLE_FLOOR } from '#lib/v1/verdict.ts';
+	import { selectBullet, verdictTone } from '../selectors/bullet';
+	import {
+		dailyPercentileCaption,
+		type selectDailyPercentiles,
+	} from '#lib/site/dailyPercentiles.ts';
 	import type { PunctualityVM } from '../clusters';
 	import type { ReliabilityCopy } from '../reliability.copy';
 
@@ -38,9 +41,11 @@
 	let { vm, locale, copy, mode = 'day', dailyPercentiles = null }: Section0VerdictProps = $props();
 
 	const grain = $derived(mode);
-	const estimatedPercentiles = $derived(mode === 'week' || mode === 'month');
 	const headline = $derived(vm.headline);
-	const verdict = $derived(selectVerdict(headline, mode, locale, copy.verdict));
+	const estimatedPercentiles = $derived(
+		(headline.grain ?? mode) === 'week' || (headline.grain ?? mode) === 'month',
+	);
+	const verdict = $derived(headline);
 	const pct = (v: number | null | undefined): string | null => fmtPct(v);
 	const min = (v: number | null | undefined): string | null =>
 		fmtDelayMin(v, { rounding: 'fixed1' });
@@ -54,9 +59,9 @@
 			xLabel: copy.strip.otpPct,
 			unit: copy.units.pct,
 			domain: OTP_DOMAIN,
-			target: 80,
+			target: VERDICT_RELIABLE_FLOOR,
 			targetLabel: copy.strip.target,
-			tone: otpTone(headline.otpPct),
+			tone: verdictTone(verdict.status),
 			n: headline.observationCount,
 		}),
 	);
@@ -276,7 +281,7 @@
 						{dailyPercentileCaption(dailyPercentiles, locale)}
 					</p>
 				{/if}
-				{#if isDayGrain && !hasDist}
+				{#if isDayGrain && !estimatedPercentiles && !hasDist}
 					<p class="caption" data-slot="percentile-nudge">{copy.strip.percentileNudge}</p>
 				{/if}
 				{#if distSpec.kind === 'histogram'}

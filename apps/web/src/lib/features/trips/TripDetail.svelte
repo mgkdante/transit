@@ -1,26 +1,29 @@
 <script lang="ts">
-	import { breadcrumbCopy } from '$lib/components/surface/breadcrumb.copy';
-	import { getLocale, getLocalizeHref, type Locale } from '$lib/i18n';
-	import { mapHrefFor, routeFor } from '$lib/nav';
-	import { createLiveResource } from '$lib/v1/live/resource';
-	import { getStopsIndex } from '$lib/v1/repositories/static';
-	import { getV1Context } from '$lib/v1/boot';
-	import type { Trip, StopsIndex } from '$lib/v1';
-	import { createResource } from '$lib/v1/resource.svelte';
+	import { liveAbsenceReason } from '#lib/site/absence.ts';
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+	import { breadcrumbCopy } from '#lib/components/surface/breadcrumb.copy.ts';
+	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
+	import { createLiveResource } from '#lib/v1/live/resource.ts';
+	import { getStopsIndex } from '#lib/v1/repositories/static.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import type { Trip, StopsIndex } from '#lib/v1/index.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import { Surface, Breadcrumb, Masthead } from '@yesid/ui/layout';
-	import { ResourceBoundary, FreshnessStamp } from '$lib/components/surface';
-	import type { BreadcrumbTrailItem } from '$lib/seo/routeSeo';
+	import { ResourceBoundary, FreshnessStamp } from '#lib/components/surface/index.ts';
+	import type { BreadcrumbTrailItem } from '#lib/seo/routeSeo.ts';
 	import { SectionLabel, SectionHeading, CornerMeta } from '@yesid/ui/brand';
-	import { cornerMetaLabels } from '$lib/components/brand';
-	import { StatusBadge } from '$lib/components/dataviz';
-	import MapDrilldownLink from '$lib/components/surface/MapDrilldownLink.svelte';
-	import { MaybeValue } from '$lib/components/edge';
+	import { cornerMetaLabels } from '#lib/components/brand/index.ts';
+	import { StatusBadge } from '#lib/components/dataviz/index.ts';
+	import MapDrilldownLink from '#lib/components/surface/MapDrilldownLink.svelte';
+	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import { metricName } from '$lib/metrics';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import { metricName } from '#lib/metrics.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import { formatUtc } from '$lib/utils/time';
-	import { delayMeasurement, delayTone, delayLabel } from '$lib/site/delayPresentation';
+	import { formatUtc } from '#lib/utils/time.ts';
+	import { delayMeasurement, delayTone, delayLabel } from '#lib/site/delayPresentation.ts';
 	import { tripCopy } from './trips.copy';
 
 	const localizeHref = getLocalizeHref();
@@ -39,9 +42,15 @@
 	]);
 	const manifest = getV1Context().manifest;
 	const { live, resource: trips } = createLiveResource(manifest, 'trips');
-	const reportState = $derived(live.familyStates.trips);
-	const reportFailed = $derived(reportState.consecutiveFailures > 0);
 
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'trip',
+		}),
+	);
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
 	const unknownStatusAndDelay = $derived(trip?.status === 'unknown' && trip.delay_min == null);
 	const stopsIndex = createResource<StopsIndex | null>(() => getStopsIndex());
@@ -67,7 +76,7 @@
 
 	const timeLabel = (iso: string): string =>
 		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
-	const generatedUtc = $derived(live.generatedUtc);
+	const generatedUtc = $derived(presentation.publicationUtc);
 	const cm = cornerMetaLabels[locale];
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
 	const cornerGeneratedStamp = $derived(
@@ -82,10 +91,7 @@
 {#snippet reportFreshness()}
 	<FreshnessStamp
 		variant="live"
-		{generatedUtc}
-		ageSeconds={live.ageSeconds}
-		isStale={live.isStale}
-		degraded={reportFailed}
+		presentation={presentation.stamp}
 		class="trip-report-stamp"
 		label={t.latestReport}
 		{locale}
@@ -99,11 +105,11 @@
 				items={trail.map((crumb) => ({ name: crumb.name, href: localizeHref(crumb.path, locale) }))}
 				label={breadcrumbCopy[locale].label}
 			/>
-			{#if reportFailed || live.isStale}
+			{#if presentation.notice.kind !== 'none'}
 				<StateNotice
-					title={reportFailed ? t.refreshUnavailable : t.reportBehind}
-					body={t.retainedReport}
-					tone="warning"
+					title={presentation.notice.message}
+					body={presentation.notice.body}
+					tone={presentation.notice.tone}
 					presentation="silo"
 					role="status"
 					aria-live="polite"
@@ -168,7 +174,7 @@
 									<MaybeValue
 										value={delayMeasurement(trip.delay_min)}
 										variant={unknownStatusAndDelay ? 'row' : 'inline'}
-										reason="not-reported"
+										reason={liveAbsenceReason('trip-delay', { familyStates: live.familyStates })}
 										{locale}
 									/>
 								</span>
@@ -187,7 +193,11 @@
 
 						<div class="trip-summary-cell">
 							<SectionLabel text={t.route} variant="metric" />
-							<MaybeValue present={trip.route != null} reason="not-reported" {locale}>
+							<MaybeValue
+								present={trip.route != null}
+								reason={liveAbsenceReason('trip-route', { familyStates: live.familyStates })}
+								{locale}
+							>
 								<a
 									class="trip-route-link"
 									href={routeHref(trip.route!)}
@@ -206,11 +216,8 @@
 							<ol class="trip-stops" aria-label={t.stopsListLabel}>
 								{#each reportedPredictions as stop, si (stop.stop + '-' + si)}
 									<li class="trip-stop">
-										<a
-											class="trip-stop-link"
-											href={stopHref(stop.stop)}
-											aria-label={t.viewStop(stopNameFor(stop.stop))}
-										>
+										<a class="trip-stop-link" href={stopHref(stop.stop)}>
+											<span class="sr-only">{t.viewStop} </span>
 											<span class="trip-stop-name">{stopNameFor(stop.stop)}</span>
 											<span class="trip-stop-meta">
 												<time class="trip-stop-eta" datetime={stop.eta_utc}>
@@ -218,7 +225,13 @@
 												</time>
 												<span class="trip-stop-prediction">{t.predictionLabel}</span>
 
-												<MaybeValue present={stop.delay_min != null} reason="not-reported" {locale}>
+												<MaybeValue
+													present={stop.delay_min != null}
+													reason={liveAbsenceReason('trip-delay', {
+														familyStates: live.familyStates,
+													})}
+													{locale}
+												>
 													<span class="trip-stop-delay" data-tone={delayTone(stop.delay_min)}>
 														{delayLabel(stop.delay_min, t)}
 													</span>

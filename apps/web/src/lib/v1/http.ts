@@ -1,7 +1,7 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { z } from 'zod';
-import { parsePort } from '$lib/v1/schemas/parse';
-import { getV1Runtime } from '$lib/v1/runtime';
+import { parsePort } from '#lib/v1/schemas/parse.ts';
+import { getV1Runtime } from '#lib/v1/runtime.ts';
 
 const MAX_SERVER_TIME_CALIBRATION_AGE_S = 30;
 
@@ -29,6 +29,7 @@ type JsonRequestInit = {
 	cache?: RequestCache;
 	signal?: AbortSignal;
 	serverErrorRetries?: number;
+	onResponseHeaders?: (headers: Headers) => void;
 };
 
 function isAbortError(error: unknown): boolean {
@@ -60,6 +61,7 @@ async function requestJsonResponse(
 			}
 			throw new Error(`[v1.${label}] HTTP ${res.status} ${res.statusText} for ${url}`);
 		}
+		init?.onResponseHeaders?.(res.headers);
 		return res;
 	}
 }

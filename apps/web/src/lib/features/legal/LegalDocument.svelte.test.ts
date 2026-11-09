@@ -86,13 +86,13 @@ describe('LegalDocument', () => {
 
 	it('binds both localized documents to the actual publication date', () => {
 		expect(LEGAL_EFFECTIVE_DATES).toEqual({
-			privacy: '2026-11-01',
+			privacy: '2026-11-08',
 			terms: '2026-10-29',
 			accessibility: '2026-10-29',
 		});
-		expect(legalDocument('en', 'privacy').effectiveDate).toBe('November 1, 2026');
+		expect(legalDocument('en', 'privacy').effectiveDate).toBe('November 8, 2026');
 		expect(legalDocument('en', 'terms').effectiveDate).toBe('October 29, 2026');
-		expect(legalDocument('fr', 'privacy').effectiveDate).toBe('1er novembre 2026');
+		expect(legalDocument('fr', 'privacy').effectiveDate).toBe('8 novembre 2026');
 		expect(legalDocument('fr', 'terms').effectiveDate).toBe('29 octobre 2026');
 	});
 });

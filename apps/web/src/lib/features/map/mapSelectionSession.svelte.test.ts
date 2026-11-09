@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, settled } from 'svelte';
-import { buildLiveIndex } from '$lib/v1/live';
-import type { LiveFamily, LiveFamilyState } from '$lib/v1/live/store.svelte';
-import { createFilterStore, emptyFilterState, fromSearchParams } from '$lib/filters';
-import { RouteFileSchema, StopFileSchema, VehicleSchema } from '$lib/v1/schemas';
+import { buildLiveIndex } from '#lib/v1/live/index.ts';
+import type { LiveFamily, LiveFamilyState } from '#lib/v1/live/store.svelte.ts';
+import { createFilterStore, emptyFilterState, fromSearchParams } from '#lib/filters/index.ts';
+import { RouteFileSchema, StopFileSchema, VehicleSchema } from '#lib/v1/schemas/index.ts';
 import { createMapSelectionSession } from './mapSelectionSession.svelte';
-import type { SlimStopsIndex } from '$lib/v1/repositories/stopsSlim';
+import type { SlimStopsIndex } from '#lib/v1/repositories/stopsSlim.ts';
 
 const generation = '2026-06-20T12:00:00Z';
 const vehicle = VehicleSchema.parse({
@@ -43,7 +43,15 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 				active: name === 'vehicles' || name === 'alerts',
 				lastGoodAt: null,
 				retainedGeneration: name === 'vehicles' || name === 'alerts' ? generation : null,
-				consecutiveFailures: 0,
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: name === 'vehicles' || name === 'alerts' ? 'live' : 'never-loaded',
+					ageSeconds: name === 'vehicles' || name === 'alerts' ? 0 : null,
+					isStale: false,
+					retained: name === 'vehicles' || name === 'alerts',
+					notice: null,
+				},
 				error: null,
 				successRevision: 1,
 			},
@@ -62,7 +70,6 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 		},
 		alerts: { generated_utc: vehicle.updated_utc, alerts: [] },
 		familyStates,
-		vehiclesIsStale: false,
 		subscribeFamilies: vi.fn(() => release),
 	};
 	const repositories = {
@@ -119,7 +126,11 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 			familyStates.vehicles = {
 				...familyStates.vehicles,
 				phase: 'failed',
-				consecutiveFailures: 1,
+				health: {
+					...familyStates.vehicles.health,
+					state: 'retained-stale',
+					notice: 'refresh-unavailable',
+				},
 				error: new Error('offline'),
 			};
 			flushSync();
@@ -129,7 +140,15 @@ function setup(search = '', stopsRequest?: Promise<SlimStopsIndex>) {
 			familyStates.vehicles = {
 				...familyStates.vehicles,
 				phase: 'ready',
-				consecutiveFailures: 0,
+				health: {
+					ageSource: null,
+					ageTimestamp: null,
+					state: 'live',
+					ageSeconds: 0,
+					isStale: false,
+					retained: true,
+					notice: null,
+				},
 				error: null,
 				successRevision: familyStates.vehicles.successRevision + 1,
 			};
@@ -227,11 +246,9 @@ describe('map selection session', () => {
 		h.fail();
 		expect(h.session.sourceHealth).toBe('failed');
 		expect(h.session.detail?.id).toBe('bus-1');
-		expect(h.session.failureMessage).toContain('vehicle positions');
 		h.recover();
 		expect(h.session.presence).toBe('present');
 		expect(h.session.sourceHealth).toBe('ok');
-		expect(h.session.failureMessage).toBeNull();
 		h.omit();
 		h.omit();
 		expect(h.session.detailOpen).toBe(true);

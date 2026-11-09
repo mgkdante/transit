@@ -1,7 +1,7 @@
-import { HistoryArtifactContractError } from '$lib/v1/history/partitions';
-import { sha256Hex, type RawJsonEntity } from '$lib/v1/http';
-import type { AdapterCtx } from '$lib/v1/adapter';
-import type { HistoricPartitionRef } from '$lib/v1/schemas';
+import { HistoryArtifactContractError } from '#lib/v1/history/partitions.ts';
+import { sha256Hex, type RawJsonEntity } from '#lib/v1/http.ts';
+import type { AdapterCtx } from '#lib/v1/adapter/index.ts';
+import type { HistoricPartitionRef } from '#lib/v1/schemas/index.ts';
 
 export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 

@@ -1,4 +1,4 @@
-import type { StatusCode, OccupancyCode, Grain } from '$lib/v1/schemas';
+import type { StatusCode, OccupancyCode, Grain } from '#lib/v1/schemas/index.ts';
 import {
 	type FilterState,
 	type IdSetKey,

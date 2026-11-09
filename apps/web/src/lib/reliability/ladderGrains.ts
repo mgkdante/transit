@@ -12,7 +12,7 @@ interface GrainLadder {
 export function ladderGrains<K extends string, T extends GrainLadder>(
 	rows: readonly T[] | undefined,
 	known: readonly [K, ...K[]],
-): { ladders: Map<K, T>; present: Set<K>; defaultGrain: K } {
+): { ladders: Map<K, T>; present: Set<K> } {
 	const ladders = new Map<K, T>();
 	for (const row of rows ?? []) {
 		const key = known.find((grain) => grain === row.grain);
@@ -22,5 +22,5 @@ export function ladderGrains<K extends string, T extends GrainLadder>(
 	for (const [key, row] of ladders) {
 		if ((row.entries?.length ?? 0) > 0 || (row.tray?.length ?? 0) > 0) present.add(key);
 	}
-	return { ladders, present, defaultGrain: known.find((key) => present.has(key)) ?? known[0] };
+	return { ladders, present };
 }

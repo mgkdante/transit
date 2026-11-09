@@ -3,8 +3,8 @@ import {
 	AlertArchiveIndexSchema,
 	HistoricCollectionIndexSchema,
 	ReceiptsIndexSchema,
-} from '$lib/v1/schemas';
-import type { DateWindow } from '$lib/v1/history';
+} from '#lib/v1/schemas/index.ts';
+import type { DateWindow } from '#lib/v1/history/index.ts';
 import {
 	addIsoDays,
 	availabilityFromAlertIndex,

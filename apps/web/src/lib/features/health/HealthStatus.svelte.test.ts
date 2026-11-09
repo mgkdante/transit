@@ -1,8 +1,13 @@
-import { quietModeCopy } from '$lib/components/shared/quietMode.copy';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
+import { sectionsToggleCopy } from '#lib/components/shared/sectionsToggle.copy.ts';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render as renderSvelte, screen, within } from '@testing-library/svelte';
-import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
-import { quietMode } from '@yesid/ui/state';
+import type {
+	DataHealth,
+	HistoricAvailabilityIndex,
+	IsoUtc,
+	Provenance,
+} from '#lib/v1/schemas/index.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -203,7 +208,7 @@ let dataHealthState: ResourceState<DataHealth> = ready(richDataHealth);
 let historyState: ResourceState<HistoricAvailabilityIndex> = ready(richHistory);
 const historyReload = vi.fn();
 
-vi.mock('$lib/nav', async () => ({ layout: { isDesktop: true } }));
+vi.mock('#lib/nav/index.ts', async () => ({ layout: { isDesktop: true } }));
 
 const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions } = vi.hoisted(
 	() => ({
@@ -213,17 +218,17 @@ const { getProvenance, getDataHealth, getHistoricAvailability, resourceOptions }
 		resourceOptions: [] as Array<{ kind: string; options: Record<string, unknown> }>,
 	}),
 );
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance,
 }));
-vi.mock('$lib/v1/repositories/dataHealth', () => ({
+vi.mock('#lib/v1/repositories/dataHealth.ts', () => ({
 	getDataHealth,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHistoricAvailability,
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (fetcher: () => unknown, options: Record<string, unknown> = {}) => {
 		getProvenance.mockClear();
 		getDataHealth.mockClear();
@@ -256,7 +261,6 @@ function resetHealthSurfaceState(): void {
 	getDataHealth.mockReset();
 	getHistoricAvailability.mockReset();
 	resourceOptions.length = 0;
-	quietMode.resetForTest();
 }
 
 const healthSurface = createSurfaceHarness({
@@ -272,7 +276,16 @@ const healthSurface = createSurfaceHarness({
 });
 const render = healthSurface.mount;
 
-beforeEach(() => healthSurface.reset());
+beforeEach(() => {
+	// These content/report interactions use a returning reader's expanded choice.
+	localStorage.setItem('sections-choice', 'expanded');
+	document.documentElement.dataset.sectionsChoice = 'expanded';
+	healthSurface.reset();
+});
+afterEach(() => {
+	localStorage.removeItem('sections-choice');
+	delete document.documentElement.dataset.sectionsChoice;
+});
 
 afterAll(() => {
 	expect(vi.mocked(renderSvelte).mock.calls.length).toBeLessThanOrEqual(39);
@@ -305,11 +318,9 @@ describe('HealthStatus — full manifest render', () => {
 		const { container } = render(HealthStatus);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 		expect(
-			within(header).getByRole('button', { name: quietModeCopy.en.collapse }),
+			within(header).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
 		).toBeInTheDocument();
-		expect(
-			within(header).getByRole('button', { name: quietModeCopy.en.remember }),
-		).toBeInTheDocument();
+		expect(screen.getByTestId('sections-controls').querySelectorAll('button')).toHaveLength(1);
 
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		for (const title of [
@@ -326,7 +337,9 @@ describe('HealthStatus — full manifest render', () => {
 			expect(within(center).getByRole('button', { name: title })).toBeInTheDocument();
 		}
 
-		await fireEvent.click(within(header).getByRole('button', { name: quietModeCopy.en.collapse }));
+		await fireEvent.click(
+			within(header).getByRole('button', { name: sectionsToggleCopy.en.collapse }),
+		);
 		for (const title of [
 			en.lanes.section,
 			en.freshness.section,

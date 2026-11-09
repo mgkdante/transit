@@ -1,5 +1,5 @@
-import { DELAY_POS_DOMAIN } from '$lib/features/reliability/shiftGrains';
-import type { SeverityCode, StopByRoute } from '$lib/v1/schemas';
+import { DELAY_POS_DOMAIN } from '#lib/features/reliability/shiftGrains.ts';
+import type { SeverityCode, StopByRoute } from '#lib/v1/schemas/index.ts';
 
 export interface RankedRouteRow {
 	readonly key: string;

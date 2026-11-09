@@ -1,8 +1,8 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
-import type { Vehicle } from '$lib/v1/schemas';
+import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
+import type { Vehicle } from '#lib/v1/schemas/index.ts';
 import SearchSurface from './SearchSurface.svelte';
 
 const ROUTES = [
@@ -55,26 +55,26 @@ function setUrlQuery(q: string) {
 	urlBox.query = q;
 }
 
-vi.mock('$app/stores', () => ({
+vi.mock('$app/state', () => ({
 	page: {
-		subscribe: (run: (value: { url: URL }) => void) => {
-			run({ url: new URL(`http://localhost/search?${urlBox.query}`) });
-			return () => {};
+		get url() {
+			return new URL(`http://localhost/search?${urlBox.query}`);
 		},
 	},
 }));
 
-vi.mock('$lib/v1/repositories/static', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({
 	getRoutesIndex: vi.fn(),
 	getStopsIndex: vi.fn(),
 }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({ manifest: {}, labels: {}, lang: 'en' }),
 }));
-vi.mock('$lib/v1/live/store.svelte', () => ({
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: liveHarness.createLiveStore,
 }));
-vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
+vi.mock('#lib/v1/reliabilitySnapshot.svelte.ts', () => ({
 	createReliabilityLoader: (kind: 'route' | 'stop') => {
 		const store = kind === 'route' ? routeSnaps : stopSnaps;
 		return {
@@ -88,7 +88,7 @@ vi.mock('$lib/v1/reliabilitySnapshot.svelte', () => ({
 	},
 }));
 
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: (fetcher: () => unknown) => {
 		const data = nextResource();
 		void fetcher;
@@ -112,6 +112,13 @@ beforeEach(() => {
 	liveHarness.createLiveStore.mockReset().mockReturnValue({
 		vehicles: { generated_utc: '2026-06-16T00:00:00Z', vehicles: VEHICLES },
 		generatedUtc: '2026-06-16T00:00:00Z',
+		familyStates: {
+			vehicles: {
+				active: true,
+				retainedGeneration: '2026-06-16T00:00:00Z',
+				health: { retained: true, state: 'live', ageSeconds: 0, isStale: false, notice: null },
+			},
+		},
 		ageSeconds: 0,
 		isStale: false,
 		start: vi.fn(),
@@ -120,6 +127,14 @@ beforeEach(() => {
 });
 
 describe('SearchSurface idle state', () => {
+	it('uses the shared listing search with an accessible name and magnifier', () => {
+		const { container } = render(SearchSurface);
+		const box = screen.getByRole('textbox', { name: 'Search lines, stops and buses' });
+		expect(box.closest('[data-slot="listing-search-field"]')).not.toBeNull();
+		expect(box.parentElement?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+		expect(container.querySelector('label[for="surface-search-input"]')).toBeNull();
+	});
+
 	it('shows the instructional idle note before the rider types', () => {
 		setUrlQuery('');
 		render(SearchSurface);
@@ -132,7 +147,7 @@ describe('SearchSurface idle state', () => {
 
 describe('SearchSurface inline reliability', () => {
 	it('renders the OTP% badge on a stop result whose reliability loaded', () => {
-		stopSnaps.set('10146', snap({ phase: 'ready', otpPct: 88, verdict: 'late' }));
+		stopSnaps.set('10146', snap({ phase: 'ready', otpPct: 88, verdict: 'reliable' }));
 		render(SearchSurface);
 		expect(screen.getByText('88%')).toBeInTheDocument();
 	});

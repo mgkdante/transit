@@ -185,7 +185,7 @@ _HOTSPOTS_SQL = named_query(
 )
 
 
-def build_hotspots(conn: Connection, provider_id: str = "stm", *, generated_utc: str) -> Hotspots:
+def build_hotspots(conn: Connection, *, provider_id: str, generated_utc: str) -> Hotspots:
     rows = list(conn.execute(_HOTSPOTS_SQL, {"provider_id": provider_id}).mappings())
     route_names, stop_names = _entity_name_maps(conn, provider_id=provider_id)
     kept = [r for r in rows if str(r["entity_id"]) not in SENTINEL_ENTITY_IDS]
@@ -386,7 +386,7 @@ _REPEAT_OFFENDERS_SQL = named_query(
 
 
 def build_repeat_offenders(
-    conn: Connection, provider_id: str = "stm", *, generated_utc: str
+    conn: Connection, *, provider_id: str, generated_utc: str
 ) -> RepeatOffenders:
     rows = list(conn.execute(_REPEAT_OFFENDERS_SQL, {"provider_id": provider_id}).mappings())
     route_names = {
@@ -660,9 +660,7 @@ _SHIFT_ORDER: tuple[str, ...] = tuple(label for _lo, _hi, label in SHIFT_BOUNDS)
 _SHIFT_RANK: dict[str, int] = {s: i for i, s in enumerate(_SHIFT_ORDER)}
 
 
-def build_receipts(
-    conn: Connection, provider_id: str = "stm", *, generated_utc: str
-) -> dict[str, Receipt]:
+def build_receipts(conn: Connection, *, provider_id: str, generated_utc: str) -> dict[str, Receipt]:
     params = {"provider_id": provider_id}
 
     acct: dict[str, dict] = {}
@@ -916,9 +914,7 @@ def _alert_breakdown(
             AlertBreakdownBucket(
                 key=key,
                 count=counts[key],
-                median_duration_min=(
-                    statistics.median(grouped[key]) if grouped.get(key) else None
-                ),
+                median_duration_min=(statistics.median(grouped[key]) if grouped.get(key) else None),
             )
             for key in counts
         ]
@@ -935,9 +931,7 @@ def _alert_breakdown(
 _ALERT_HISTORY_LIMIT = 500
 
 
-def build_alert_history(
-    conn: Connection, provider_id: str = "stm", *, generated_utc: str
-) -> AlertHistory:
+def build_alert_history(conn: Connection, *, provider_id: str, generated_utc: str) -> AlertHistory:
     from transit_ops.settings import get_settings
 
     retention_days = get_settings().SILVER_I3_CLOSED_RETENTION_DAYS
@@ -1041,7 +1035,8 @@ def build_alert_history(
     unstamped = payload.model_dump(include={"methodology_version", "publish_generation_id"})
     stamp_envelope(
         [("historic/alert_history.json", payload, "historic")],
-        provider_id=provider_id, stamp=generated_utc,
+        provider_id=provider_id,
+        stamp=generated_utc,
     )
     while payload.alerts and len(snapshot_json_bytes(payload)) > ALERT_HISTORY_BYTE_CEILING:
         payload.alerts.pop()

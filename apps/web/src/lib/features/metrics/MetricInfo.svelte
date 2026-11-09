@@ -6,14 +6,14 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { pathLocale, getLocalizeHref, type Locale } from '$lib/i18n';
+	import { pathLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import {
 		metricInfoFor,
 		metricInfoCopy,
 		type MetricKey,
 		type SupplementalMetricKey,
-	} from '$lib/metrics';
-	import { cn } from '$lib/utils';
+	} from '#lib/metrics.ts';
+	import { cn } from '#lib/utils/index.ts';
 
 	const localizeHref = getLocalizeHref();
 
@@ -319,7 +319,7 @@
 		max-inline-size: min(18rem, calc(100vw - 2 * 8px));
 		padding: 0.625rem 0.75rem;
 		border: 1px solid var(--border);
-		border-radius: var(--radius);
+		border-radius: var(--radius-md);
 		background: var(--popover);
 		color: var(--popover-foreground);
 		box-shadow:

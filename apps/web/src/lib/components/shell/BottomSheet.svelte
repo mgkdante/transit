@@ -3,9 +3,9 @@
 	import type { Snippet } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import { Button } from '@yesid/ui/button';
-	import { type Locale, DEFAULT_LOCALE, getLocale } from '$lib/i18n';
+	import { type Locale, DEFAULT_LOCALE, getLocale } from '#lib/i18n/index.ts';
 	import * as Sheet from '@yesid/ui/sheet';
 	import { SectionLabel } from '@yesid/ui/brand';
 
@@ -126,34 +126,12 @@
 
 	@media (prefers-reduced-motion: no-preference) {
 		:global([data-m6c2-detail-sheet][data-slot='bottom-sheet'][data-state='open']) {
-			animation: m6c2-detail-sheet-in var(--duration-slow) var(--ease-out) both;
+			animation: transit-sheet-in var(--duration-slow) var(--ease-out) both;
 			transition: none;
 		}
 		:global([data-m6c2-detail-sheet][data-slot='bottom-sheet'][data-state='closed']) {
-			animation: m6c2-detail-sheet-out var(--duration-normal) var(--ease-out) both;
+			animation: transit-sheet-out var(--duration-normal) var(--ease-out) both;
 			transition: none;
-		}
-	}
-
-	@keyframes m6c2-detail-sheet-in {
-		from {
-			opacity: 0;
-			transform: translateY(0.75rem) scale(0.985);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0) scale(1);
-		}
-	}
-
-	@keyframes m6c2-detail-sheet-out {
-		from {
-			opacity: 1;
-			transform: translateY(0) scale(1);
-		}
-		to {
-			opacity: 0;
-			transform: translateY(0.5rem) scale(0.99);
 		}
 	}
 </style>

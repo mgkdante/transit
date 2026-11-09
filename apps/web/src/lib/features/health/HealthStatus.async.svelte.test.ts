@@ -1,7 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import type { DataHealth, HistoricAvailabilityIndex, IsoUtc, Provenance } from '$lib/v1/schemas';
+import type {
+	DataHealth,
+	HistoricAvailabilityIndex,
+	IsoUtc,
+	Provenance,
+} from '#lib/v1/schemas/index.ts';
 
 const ports = vi.hoisted(() => ({
 	getProvenance: vi.fn(),
@@ -12,26 +17,29 @@ const motion = vi.hoisted(() => ({ reduced: false }));
 const navigation = vi.hoisted(() => {
 	const page = { url: new URL('http://localhost/status'), state: {} };
 	const replaceState = vi.fn((url: string | URL) => {
-		page.url = new URL(url, 'http://localhost');
+		Object.assign(page, { url: new URL(url, 'http://localhost') });
 		window.location.hash = page.url.hash;
 	});
 	return { page, replaceState };
 });
 
 vi.mock('$app/state', () => ({ page: navigation.page }));
-vi.mock('$app/navigation', () => ({ replaceState: navigation.replaceState }));
+vi.mock('$app/navigation', () => ({
+	afterNavigate: () => {},
+	replaceState: navigation.replaceState,
+}));
 
-vi.mock('$lib/v1/repositories/provenance', () => ({
+vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance: ports.getProvenance,
 }));
-vi.mock('$lib/v1/repositories/dataHealth', () => ({
+vi.mock('#lib/v1/repositories/dataHealth.ts', () => ({
 	getDataHealth: ports.getDataHealth,
 }));
-vi.mock('$lib/v1/repositories/historic', () => ({
+vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getHistoricAvailability: ports.getHistoricAvailability,
 }));
 
-vi.mock('$lib/nav', () => ({ layout: { isDesktop: true } }));
+vi.mock('#lib/nav/index.ts', () => ({ layout: { isDesktop: true } }));
 
 vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	prefersReducedMotion: {
@@ -43,13 +51,7 @@ vi.mock('@yesid/motion/stores/reducedMotion', () => ({
 	isPrefersReducedMotion: () => motion.reduced,
 }));
 
-vi.mock('@yesid/ui/brand', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('@yesid/ui/brand')>();
-	return { ...actual, observeActiveToc: () => () => {} };
-});
-
-import { dataRefresh } from '$lib/stores';
-import { quietMode } from '@yesid/ui/state';
+import { dataRefresh } from '#lib/stores/index.ts';
 import { replaceState } from '$app/navigation';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
@@ -114,14 +116,6 @@ let historyGate: ReturnType<typeof deferred<HistoricAvailabilityIndex | null>>;
 const scrollIntoView = vi.fn();
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
 
-function resetStatusStorage(): void {
-	for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
-		const key = sessionStorage.key(index);
-		if (key?.startsWith('persisted:status-')) sessionStorage.removeItem(key);
-	}
-	sessionStorage.removeItem('persisted:health-conformance-members');
-}
-
 async function openHealthToc(left: HTMLElement): Promise<HTMLElement> {
 	const trigger = await waitFor(() =>
 		within(left).getByRole('button', { name: copy.en.toc.label }),
@@ -137,15 +131,15 @@ async function replaceHash(hash: string): Promise<void> {
 
 beforeEach(() => {
 	cleanup();
-	quietMode.resetForTest();
-	resetStatusStorage();
-	localStorage.setItem('quiet-mode', 'true');
-	quietMode.init();
-	sessionStorage.setItem('persisted:status-card-health-lanes', 'false');
 	window.location.hash = '';
 	navigation.page.url = new URL('http://localhost/status');
 	navigation.replaceState.mockClear();
 	motion.reduced = false;
+	vi.stubGlobal('matchMedia', (query: string) => ({
+		matches: query === '(prefers-reduced-motion: reduce)' && motion.reduced,
+		addEventListener() {},
+		removeEventListener() {},
+	}));
 	scrollIntoView.mockReset();
 	Object.defineProperty(Element.prototype, 'scrollIntoView', {
 		configurable: true,
@@ -171,8 +165,6 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
-	quietMode.resetForTest();
-	resetStatusStorage();
 	window.location.hash = '';
 });
 
@@ -185,8 +177,27 @@ afterAll(() => {
 });
 
 describe('HealthStatus — async reveal navigation', () => {
-	it('mounts the history card and ToC together after discovery, honoring quiet mode and Expand all', async () => {
-		sessionStorage.removeItem('persisted:status-card-health-history-coverage');
+	it('keeps a content jump through non-navigating TOC disclosure clicks while layout settles', async () => {
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const target = await waitFor(() =>
+			within(center).getByRole('button', { name: copy.en.lanes.section }),
+		);
+		await fireEvent.click(target);
+		const toc = await openHealthToc(left);
+		await fireEvent.click(within(left).getByRole('button', { name: copy.en.lanes.section }));
+		await fireEvent.click(toc);
+		await fireEvent.click(toc);
+		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+		expect(target).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	it('mounts the history card and ToC together after discovery, with declared defaults and an independent ToC', async () => {
 		const { container } = render(HealthStatus);
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
 		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
@@ -204,8 +215,11 @@ describe('HealthStatus — async reveal navigation', () => {
 			within(center).getByRole('button', { name: copy.en.historyCoverage.section }),
 		);
 		const toc = await waitFor(() => within(left).getByRole('button', { name: copy.en.toc.label }));
+		expect(card).toHaveAttribute('aria-expanded', 'true');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
 		expect(card).toHaveAttribute('aria-expanded', 'false');
-		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		expect(toc).toHaveAttribute('aria-expanded', 'true');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
 		expect(card).toHaveAttribute('aria-expanded', 'true');
@@ -213,6 +227,30 @@ describe('HealthStatus — async reveal navigation', () => {
 		expect(
 			within(left).getByRole('button', { name: copy.en.historyCoverage.section }),
 		).toBeInTheDocument();
+	});
+
+	it('preserves TOC disclosure clicks made while the data is still pending', async () => {
+		const { container } = render(HealthStatus);
+		await waitFor(() => expect(ports.getDataHealth).toHaveBeenCalledTimes(1));
+		historyGate.resolve(historyFixture);
+		const left = container.querySelector('[data-slot="detail-shell-left"]') as HTMLElement;
+		const toc = await openHealthToc(left);
+		await fireEvent.click(toc);
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		expect(container.querySelector('[data-toc="health-lanes"]')).toBeNull();
+		provenanceGate.resolve(provenanceFixture);
+		dataHealthGate.resolve(dataHealthFixture);
+		await waitFor(() =>
+			expect(container.querySelector('[data-toc="health-lanes"]')).not.toBeNull(),
+		);
+		expect(toc).toHaveAttribute('aria-expanded', 'false');
+		await fireEvent.click(toc);
+		await fireEvent.click(within(left).getByRole('button', { name: copy.en.lanes.section }));
+		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+		await fireEvent(window, new HashChangeEvent('hashchange'));
+		await tick();
+		await new Promise((resolve) => setTimeout(resolve, 800));
+		expect(scrollIntoView).toHaveBeenCalledTimes(1);
 	});
 
 	it('opens and scrolls a retained-history hash only after the async card and ToC exist', async () => {
@@ -270,6 +308,7 @@ describe('HealthStatus — async reveal navigation', () => {
 		const target = await waitFor(() =>
 			within(center).getByRole('button', { name: copy.en.lanes.section }),
 		);
+		await fireEvent.click(target);
 		expect(target).toHaveAttribute('aria-expanded', 'false');
 		const expandedAtScroll: Array<string | null> = [];
 		scrollIntoView.mockImplementation(() => {

@@ -1,35 +1,34 @@
 <script lang="ts">
+	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
+	import { measureMapFocusInset } from './mapFocusInset';
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { onMount, tick, untrack } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
-	import type { MapStageFailure } from '$lib/components/map/MapStage.svelte';
-	import { getLocale, type Locale } from '$lib/i18n';
+	import type { MapStageFailure } from '#lib/components/map/MapStage.svelte';
+	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { clock, desktop, theme } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';
-	import { createLiveStore } from '$lib/v1/live/store.svelte';
-	import { getV1Context } from '$lib/v1/boot';
-	import { getBasemap } from '$lib/v1/repositories/basemap';
+	import { Button } from '@yesid/ui/button';
+	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { LIVE_FAMILIES, createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { getBasemap } from '#lib/v1/repositories/basemap.ts';
 	import {
 		getRoute,
 		getRoutesIndex,
 		getStop,
 		getStopsIndexSlim,
-	} from '$lib/v1/repositories/static';
-	import type { SlimStopEntry } from '$lib/v1';
-	import { createFilterStore, fromSearchParams } from '$lib/filters';
-	import { nearTargetFromSearchParams } from '$lib/search/mapNear';
-	import { parseMapFocus } from '$lib/search/mapFocus';
-	import { RightPanel } from '$lib/components/shell';
-	import {
-		MapStage,
-		nearestStops,
-		liveTtlS,
-		type WithDistance,
-		type FixResolver,
-	} from '$lib/components/map';
-	import { createShapeCacheManager } from './mapShapeCache';
-	import { motionMode } from '$lib/stores';
+	} from '#lib/v1/repositories/static.ts';
+	import type { SlimStopEntry } from '#lib/v1/index.ts';
+	import { createFilterStore, fromSearchParams } from '#lib/filters/index.ts';
+	import { nearTargetFromSearchParams } from '#lib/search/mapNear.ts';
+	import { parseMapFocus } from '#lib/search/mapFocus.ts';
+	import { RightPanel } from '#lib/components/shell/index.ts';
+	import { MapStage, nearestStops, type WithDistance } from '#lib/components/map/index.ts';
+	import { createVehicleMotion } from './vehicleMotion';
+	import { motionMode } from '#lib/stores/index.ts';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import MapFilters from './MapFilters.svelte';
 	import MapMotionControl from './MapMotionControl.svelte';
@@ -39,18 +38,16 @@
 	import MapDetailOverlay from './MapDetailOverlay.svelte';
 	import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 	import { zoomForNearMePrecision } from './mapGeo';
-	import { focusCoordinate, fitRouteBounds } from './mapCamera';
+	import { focusCoordinate, fitRouteBounds, initialCamera, createMapCamera } from './mapCamera';
 	import {
 		buildNearTargetSearch,
 		clearNearTargetSearch,
 		buildFocusClearSearch,
 	} from './mapUrlSync';
-	import { motionFeedAnimate } from './motionFeed';
 	import { nearTargetKey } from './mapNearMe';
 	import { createMapNearMeController, type NearMeOrigin } from './mapNearMeController.svelte';
 	import { createMapFocusController } from './mapFocusController.svelte';
 	import { createMapUrlCoordinator, MAP_URL_REWRITE } from './mapUrlCoordinator';
-	import { deriveMapFitPadding, mapCameraFraming } from './mapCameraFraming';
 	import { mapCopy } from './map.copy';
 	import { publishRailOffset, readStoredDetailPanelWidth } from './mapDetailPanes';
 	import { createMapRuntime, type MapRuntimeFeed } from './mapRuntime.svelte';
@@ -70,10 +67,8 @@
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
 	const t = mapCopy(locale, v1.provider?.labels[locale].city ?? manifest.city ?? manifest.provider);
-	const framing = mapCameraFraming(v1);
-	const alertsAvailable = !(
-		v1.provider?.inputs.i3_alerts === false && v1.provider.inputs.service_alerts === false
-	);
+
+	const alertsAvailable = providerHasAlerts(v1.provider);
 	function readMapFilters(params: URLSearchParams) {
 		const state = fromSearchParams(params);
 		return alertsAvailable ? state : { ...state, alerts: [] };
@@ -86,13 +81,13 @@
 	let heroEl = $state<HTMLDivElement | null>(null);
 	let detailDragging = $state(false);
 	const detailResizeAria = $derived(t.detailResizeLabel);
-	const mapFitPadding = $derived(deriveMapFitPadding(desktop.current, mapWidthPx));
-
-	const urlCoordinator = createMapUrlCoordinator($page.url, goto);
+	const framing = $derived(initialCamera(v1, mapWidthPx, desktop.current));
+	const urlCoordinator = createMapUrlCoordinator(new URL(page.url.href), goto);
 	const filters = createFilterStore(
-		readMapFilters($page.url.searchParams),
+		readMapFilters(new URLSearchParams(page.url.search)),
 		urlCoordinator.writeFilters,
 	);
+
 	const nearMeController = createMapNearMeController({
 		providerId: manifest.provider,
 		bbox: manifest.bbox,
@@ -119,17 +114,14 @@
 			);
 		},
 	});
-	type RecoveryCameraIntent =
-		| { kind: 'point'; coord: [number, number]; minZoom: number }
-		| { kind: 'selection'; selection: MapSelection }
-		| { kind: 'url' };
 	let recovering = $state(false);
-	let recoveryCameraIntent: RecoveryCameraIntent | null = null;
+	const camera = createMapCamera<MapSelection>();
+	const cameraIntents = camera.intents;
 	let recoveryFocusTarget: HTMLElement | null = null;
 
 	let ingestedUrlIdentity = '';
 	$effect(() => {
-		const url = $page.url;
+		const url = new URL(page.url.href);
 		const urlIdentity = `${url.pathname}${url.search}`;
 		if (urlIdentity === ingestedUrlIdentity) return;
 		ingestedUrlIdentity = urlIdentity;
@@ -143,13 +135,13 @@
 		const previousFocus = focusController.pending;
 		focusController.syncFromUrl(url.searchParams);
 		if (recovering && focusController.pending !== previousFocus) {
-			if (focusController.pending) recoveryCameraIntent = { kind: 'url' };
-			else if (recoveryCameraIntent?.kind === 'url') recoveryCameraIntent = null;
+			if (focusController.pending) cameraIntents.state({ kind: 'url' });
+			else if (cameraIntents.pending?.kind === 'url') cameraIntents.state(null);
 		}
 	});
 
 	const live = createLiveStore(manifest, {
-		families: ['vehicles', 'alerts'],
+		families: alertsAvailable ? ['vehicles', 'alerts'] : ['vehicles'],
 	});
 	function reportMapCleanupFailure(error: unknown): void {
 		ownerCleanup.reportCleanupFailure('MapHero cleanup failed', error);
@@ -171,11 +163,12 @@
 		return () => releaseMapOwner(unsubscribe);
 	});
 
-	const liveTtl = liveTtlS(manifest.files?.live?.ttl_s);
-
 	let mapFailure = $state<MapStageFailure | null>(null);
 	let hasFirstIdle = $state(false);
-	const shapeCache = createShapeCacheManager(getRoute);
+	const vehicleMotion = createVehicleMotion(getRoute, {
+		now: () => untrack(() => clock.serverNow),
+		continuous: () => untrack(() => clock.serverNowContinuousMs()),
+	});
 	const session = createMapSelectionSession({
 		live,
 		repositories: { getRoute, getStop, getStopsIndexSlim, getRoutesIndex },
@@ -210,14 +203,21 @@
 	const selectedVehicleId = $derived(session.selectedVehicleId);
 	const selectedStopId = $derived(session.selectedStopId);
 	const alertVehicleIds = $derived(session.alertVehicleIds);
-	const liveEdgeState = $derived(session.liveEdgeState);
-	const liveEdgeMessage = $derived(session.liveEdgeMessage);
-	const liveDegraded = $derived(session.liveDegraded);
-	const selectedFamilyFailureMessage = $derived(session.failureMessage);
+	provideLiveAbsenceContext(() => ({ familyStates: live.familyStates }));
+	const presentation = $derived(
+		livePresentation({
+			familyStates: live.familyStates,
+			families: LIVE_FAMILIES,
+			locale,
+			page: 'map',
+			selection: session.selected,
+			vehicleCount: live.vehicles?.vehicles.length ?? null,
+		}),
+	);
 	$effect(() => {
 		const routes = session.loadedRoutes;
 		untrack(() => {
-			for (const route of routes) if (route) shapeCache.remember(route);
+			for (const route of routes) if (route) vehicleMotion.remember(route);
 		});
 	});
 	function commitPickedSelection(next: MapSelection) {
@@ -242,7 +242,7 @@
 
 	function focusSelection(selection: MapSelection, target: MapLibreMap | null = map): boolean {
 		if (recovering) {
-			recoveryCameraIntent = { kind: 'selection', selection };
+			cameraIntents.state({ kind: 'selection', selection });
 			return true;
 		}
 		if (selection.kind === 'stop') return focusStop(selection.id, target);
@@ -278,7 +278,7 @@
 	function focusNearMeOrigin(origin: NearMeOrigin): void {
 		const coord: [number, number] = [origin.lon, origin.lat];
 		const minZoom = zoomForNearMePrecision(origin.precision);
-		if (recovering) recoveryCameraIntent = { kind: 'point', coord, minZoom };
+		if (recovering) cameraIntents.state({ kind: 'point', coord, minZoom });
 		else focusCoordinate(map, coord, minZoom);
 	}
 
@@ -286,7 +286,7 @@
 		commitPickedSelection({ kind: 'stop', id: stop.id });
 		detailCollapsed = false;
 		if (recovering)
-			recoveryCameraIntent = { kind: 'point', coord: [stop.lon, stop.lat], minZoom: 15 };
+			cameraIntents.state({ kind: 'point', coord: [stop.lon, stop.lat], minZoom: 15 });
 		else focusCoordinate(map, [stop.lon, stop.lat], 15);
 	}
 
@@ -296,13 +296,11 @@
 		runtime.ready(m, reportSetupFailure);
 		if (wasRecovering) {
 			recovering = false;
-			const intent = recoveryCameraIntent;
-			recoveryCameraIntent = null;
-			if (intent?.kind === 'point' || intent?.kind === 'selection') {
+			cameraIntents.replay((intent) => {
 				if (focusController.pending) focusController.consumeOnce(() => {});
 				if (intent.kind === 'point') focusCoordinate(m, intent.coord, intent.minZoom);
 				else focusSelection(intent.selection, m);
-			}
+			});
 		} else nearMeController.refocus();
 		onready?.();
 	}
@@ -314,7 +312,7 @@
 			ownedFocus && !ownedFocus.closest('[data-map-runtime]') ? ownedFocus : null;
 		ownedFocus?.blur();
 		recovering = true;
-		recoveryCameraIntent = focusController.pending ? { kind: 'url' } : null;
+		cameraIntents.state(focusController.pending ? { kind: 'url' } : null);
 		onrecovering?.();
 	}
 
@@ -343,51 +341,34 @@
 		onfailure?.(failure);
 	}
 
+	const motionFrame = $derived(
+		vehicleMotion.read(live.vehicles, {
+			preference: motionMode.current,
+			reducedMotion: $prefersReducedMotion,
+			ready: hasFirstIdle,
+			stale: live.familyStates.vehicles.health.isStale,
+			ttlS: manifest.files.live.ttl_s,
+			stops: stopList,
+		}),
+	);
+
+	// Read intent before the map exists so Estimated position can prefetch shapes.
 	$effect(() => {
-		const vehicles = live.vehicles?.vehicles ?? [];
-		if (motionMode.current !== 'smooth' || vehicles.length === 0) return;
-		untrack(() => shapeCache.prefetch(vehicles));
+		void motionFrame;
 	});
 
-	const shapeFor = shapeCache.shapeFor;
-
-	const fixFor: FixResolver = (id) => {
-		const v = live.index.byVehicleId.get(id);
-		if (!v) return null;
-		return {
-			reportedUtc: v.reported_utc,
-			updatedUtc: v.updated_utc,
-			speedMps: v.speed_kmh != null ? v.speed_kmh / 3.6 : null,
-		};
-	};
-
 	function readMapFeed(): MapRuntimeFeed {
-		const reduceMotion = $prefersReducedMotion;
-		const smoothMotion = motionMode.current === 'smooth';
-		const animate = hasFirstIdle && motionFeedAnimate({ smoothMotion, reduceMotion });
-		const serverNow = untrack(() => clock.serverNow);
 		const filter = filters.state;
-		const stale = live.vehiclesIsStale;
-		const vehicleItems = live.vehicles?.vehicles ?? [];
-		const vehicleTickKey = live.vehiclesGeneratedUtc;
 		return {
 			routes: {
 				items: routeLineRoutes,
 				selected: selectedRouteLine,
 			},
 			vehicles: {
-				items: vehicleItems,
+				...motionFrame,
 				filter,
 				alertIds: alertVehicleIds,
 				selectedId: selectedVehicleId,
-				serverNow,
-				ttlS: liveTtl,
-				tickKey: vehicleTickKey,
-				stale,
-				fixFor,
-				shapeFor: animate ? shapeFor : undefined,
-				serverNowFn: () => untrack(() => clock.serverNowContinuousMs()),
-				animate,
 			},
 			stops: {
 				items: stopList,
@@ -409,6 +390,40 @@
 		return () => releaseMapOwner(dispose);
 	});
 
+	// Opening/resizing detail surfaces refits only while the camera is fit-owned.
+	$effect(() => {
+		const instance = map;
+		void detailOpen;
+		void detailWidthPx;
+		void detailCollapsed;
+		void desktop.current;
+		if (!instance) return;
+		let disposed = false;
+		const update = () => {
+			if (disposed) return;
+			if (!heroEl) return;
+			const inset = measureMapFocusInset({ getContainer: () => heroEl! });
+			if (!inset.containerWidth || !inset.containerHeight) return;
+			camera.update(instance, {
+				...framing,
+				size: { width: inset.containerWidth, height: inset.containerHeight },
+				fitPadding: inset.fitPadding,
+			});
+		};
+		const observer = new ResizeObserver(update);
+		void tick().then(() => {
+			if (disposed) return;
+			for (const el of document.querySelectorAll(
+				'.map-head, .map-filter-panel, .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
+			))
+				observer.observe(el);
+			update();
+		});
+		return () => {
+			disposed = true;
+			observer.disconnect();
+		};
+	});
 	function toggleDetailCollapsed(): void {
 		detailCollapsed = !detailCollapsed;
 	}
@@ -416,13 +431,14 @@
 
 {#snippet mapBody()}
 	<MapStage
+		{camera}
 		class="map-hero-stage"
 		basemapLoader={({ signal }) => getBasemap({ signal })}
 		theme={theme.current}
 		center={framing.center}
 		bounds={framing.bounds}
 		maxBounds={framing.maxBounds}
-		fitPadding={mapFitPadding}
+		fitPadding={framing.fitPadding}
 		onready={onMapReady}
 		onrecovering={onMapRecovering}
 		onidle={onMapIdle}
@@ -440,15 +456,30 @@
 {/snippet}
 
 {#snippet detailPanel()}
-	<!-- prettier-ignore --><RightPanel {locale} identity={detailIdentity} footer={detailFooter} surfaceKey={detailSurfaceKey} canGoBack={selectionStack.length > 0} onback={goBackDetail} onclose={closeDetail} collapsed={detailCollapsed} ontogglecollapse={toggleDetailCollapsed} resizable>
+	<!-- prettier-ignore -->
+
+	<RightPanel
+		locale={locale}
+		identity={detailIdentity}
+		footer={detailFooter}
+		surfaceKey={detailSurfaceKey}
+		canGoBack={selectionStack.length > 0}
+		onback={goBackDetail}
+		onclose={closeDetail}
+		collapsed={detailCollapsed}
+		ontogglecollapse={toggleDetailCollapsed}
+		resizable
+	>
 		{#if selectedDetail}
 			<MapSelectionDetail
 				detail={selectedDetail}
-				{locale}
+				alertsStale={live.familyStates.alerts.health.notice !== null}
+				alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}
+				locale={locale}
 				timeZone={v1.manifest.tz}
 				notReporting={selectedVehicleAbsence}
-				{selectionPresence}
-				{selectionSourceHealth}
+				selectionPresence={selectionPresence}
+				selectionSourceHealth={selectionSourceHealth}
 				onrefresh={live.refresh}
 				onselect={selectFromDetail}
 				onpreview={(next) => void session.setHovered(next)}
@@ -459,8 +490,26 @@
 	</RightPanel>
 {/snippet}
 
-{#snippet detailIdentity()}<!-- prettier-ignore --><MapSelectionDetail detail={selectedDetail} {locale} presentation="identity" />{/snippet}
-{#snippet detailFooter()}<!-- prettier-ignore --><MapSelectionDetail detail={selectedDetail} {locale} presentation="action" onfilter={applyDetailFilter} />{/snippet}
+{#snippet detailIdentity()}
+	<!-- prettier-ignore -->
+
+	<MapSelectionDetail
+		detail={selectedDetail}
+		locale={locale}
+		presentation="identity"
+	/>
+{/snippet}
+
+{#snippet detailFooter()}
+	<!-- prettier-ignore -->
+
+	<MapSelectionDetail
+		detail={selectedDetail}
+		locale={locale}
+		presentation="action"
+		onfilter={applyDetailFilter}
+	/>
+{/snippet}
 
 {#snippet motionHeader(collapsed: boolean)}
 	<MapMotionControl {locale} copy={t} {collapsed} />
@@ -480,9 +529,9 @@
 
 {#snippet mapRetry()}
 	{#if mapFailure}
-		<button type="button" class="map-stage-retry" onclick={() => void mapFailure?.retry()}>
+		<Button type="button" size="sm" class="min-h-11" onclick={() => void mapFailure?.retry()}>
 			{t.mapRetry}
-		</button>
+		</Button>
 	{/if}
 {/snippet}
 
@@ -507,11 +556,7 @@
 			<MapOverlayChrome
 				{locale}
 				{t}
-				generatedUtc={live.generatedUtc}
-				ageSeconds={live.ageSeconds}
-				isStale={live.isStale}
-				degraded={liveDegraded}
-				{selectedFamilyFailureMessage}
+				{presentation}
 				bind:nearMeOpen={nearMeController.open}
 				bind:nearMeQuery={nearMeController.query}
 				nearMeLoading={nearMeController.loading}
@@ -526,8 +571,6 @@
 				isDesktop={desktop.current}
 				filtersStore={filters}
 				{detailOpen}
-				{liveEdgeState}
-				{liveEdgeMessage}
 				{hoverPeek}
 				controls={mapControls}
 			/>
@@ -539,7 +582,7 @@
 	class="map-hero"
 	data-selection-presence={selectionPresence}
 	data-selection-source-health={selectionSourceHealth}
-	data-motion-stale={live.vehiclesIsStale}
+	data-motion-stale={live.familyStates.vehicles.health.isStale}
 	data-motion-tick-key={runtime.processedMotion?.tickKey}
 	data-motion-vehicle-count={runtime.processedMotion?.vehicleCount}
 	bind:this={heroEl}
@@ -574,6 +617,8 @@
 			canGoBack={selectionStack.length > 0}
 			onback={goBackDetail}
 			{selectedDetail}
+			alertsStale={live.familyStates.alerts.health.notice !== null}
+			alertsAgeSeconds={live.familyStates.alerts.health.ageSeconds}
 			notReporting={selectedVehicleAbsence}
 			{selectionPresence}
 			{selectionSourceHealth}
@@ -625,17 +670,5 @@
 
 	.map-stage-error :global(.state-notice) {
 		width: min(100%, 30rem);
-	}
-
-	.map-stage-retry {
-		min-height: 2.5rem;
-		padding: 0.5rem 0.875rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		background: var(--primary);
-		color: var(--primary-foreground);
-		font: inherit;
-		font-weight: 700;
-		cursor: pointer;
 	}
 </style>

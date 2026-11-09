@@ -1,3 +1,4 @@
+import kitConfig from './kit.config.js';
 import globalData from '@csstools/postcss-global-data';
 import { fileURLToPath } from 'node:url';
 import customMedia from 'postcss-custom-media';
@@ -15,6 +16,7 @@ export const DEV_BASEMAP_PREVIEW_SOURCE = 'https://data.yesid.dev/v1/stm/static/
 const designTokensCss = fileURLToPath(import.meta.resolve('@yesid/tokens/tokens.css'));
 const CANONICAL_SITE_ORIGIN = 'https://transit.yesid.dev';
 const ssrDataTests = [
+	'src/lib/v1/live/healthPresentation.ssr.test.ts',
 	'src/lib/v1/history/rangeResource.ssr.test.ts',
 	'src/lib/v1/history/dateResource.ssr.test.ts',
 ];
@@ -30,6 +32,7 @@ function canonicalDataUrl(value: unknown): URL | null {
 	if (typeof value !== 'string') return null;
 	try {
 		const url = new URL(value);
+
 		return url.origin === CANONICAL_SITE_ORIGIN && /^\/data\/v1(?:\/|$)/.test(url.pathname)
 			? url
 			: null;
@@ -38,11 +41,10 @@ function canonicalDataUrl(value: unknown): URL | null {
 	}
 }
 
-function mapRuntimeManualChunks(id: string): string | undefined {
-	if (id.endsWith('.css')) return undefined;
-	if (id.includes('/node_modules/') && /\/(maplibre-gl|pmtiles)\//.test(id)) {
-		return 'vendor-maplibre';
-	}
+function isMapRuntimeModule(id: string): boolean {
+	return (
+		!id.endsWith('.css') && id.includes('/node_modules/') && /\/(maplibre-gl|pmtiles)\//.test(id)
+	);
 }
 
 export function previewManifestForIslandCenteredBasemap<T>(manifest: T): T {
@@ -147,7 +149,7 @@ function islandCenteredManifestPreviewPlugin(command: string): Plugin {
 }
 
 // svelteTesting() only activates under VITEST, so it is safe to include always.
-export default defineConfig(({ command, isSsrBuild }) => ({
+export default defineConfig(({ command }) => ({
 	// Relocate Vitest's cache out of node_modules/.vite so CI can cache it safely.
 	css: {
 		postcss: {
@@ -155,15 +157,19 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 		},
 	},
 	cacheDir: process.env.VITEST ? '.vitest/cache' : undefined,
+	resolve: process.env.VITEST
+		? {
+				alias: {
+					'cloudflare:workers': fileURLToPath(
+						new URL('./src/tests/cloudflareWorkers.ts', import.meta.url),
+					),
+				},
+			}
+		: undefined,
 	build: {
 		chunkSizeWarningLimit: 1100,
-		rollupOptions: isSsrBuild
-			? undefined
-			: {
-					output: {
-						manualChunks: mapRuntimeManualChunks,
-					},
-				},
+		// Preserve Vite 7's browser floor during the bundler migration.
+		target: ['chrome107', 'edge107', 'firefox104', 'safari16'],
 	},
 	...(process.env.VITEST
 		? {}
@@ -174,13 +180,22 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 							rollupOptions: {
 								output: {
 									// Keep lazy adapter tiers out of the shell while avoiding tiny precache chunks.
-									experimentalMinChunkSize: 1_500,
+									codeSplitting: {
+										minSize: 1_500,
+										groups: [
+											{
+												name: 'vendor-maplibre',
+												test: isMapRuntimeModule,
+											},
+										],
+									},
 								},
 							},
 						},
 					},
 				},
 			}),
+
 	// Dev-only snapshot proxy. Production keeps serving the same-origin `/data/v1`
 	// contract through transit-data-proxy. Local development bypasses that quota-
 	// limited Worker and reads the public R2 custom domain directly; R2 exposes the
@@ -199,7 +214,8 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 	plugins: [
 		islandCenteredManifestPreviewPlugin(command),
 		tailwindcss(),
-		sveltekit(),
+		// Component SSR tests use Node; worker integration is covered by the real build and Wrangler.
+		sveltekit(process.env.VITEST ? { ...kitConfig, adapter: undefined } : kitConfig),
 		svelteTesting(),
 		// Bundle visualizer — emits dist/stats.html on production build (build-only).
 		visualizer({
@@ -225,7 +241,7 @@ export default defineConfig(({ command, isSsrBuild }) => ({
 				extends: true,
 				test: {
 					name: 'data',
-					include: ['src/lib/**/*.test.ts', 'src/params/**/*.test.ts', 'src/tests/**/*.test.ts'],
+					include: ['src/lib/**/*.test.ts', 'src/params.test.ts', 'src/tests/**/*.test.ts'],
 					exclude: [
 						'src/lib/components/**',
 						'src/lib/stores/**',

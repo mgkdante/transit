@@ -1,9 +1,9 @@
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { STATUS_GLYPH, occupancyGlyph } from '$lib/components/dataviz';
-import { createFilterStore, emptyFilterState } from '$lib/filters';
-import { type OccupancyCode, type StatusCode } from '$lib/v1/schemas';
+import { STATUS_GLYPH, occupancyGlyph } from '#lib/components/dataviz/index.ts';
+import { createFilterStore, emptyFilterState } from '#lib/filters/index.ts';
+import { type OccupancyCode, type StatusCode } from '#lib/v1/schemas/index.ts';
 import MapFilters from './MapFilters.svelte';
 
 describe('MapFilters', () => {

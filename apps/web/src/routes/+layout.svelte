@@ -1,5 +1,5 @@
 <script module lang="ts">
-	import { LEGAL_NAV } from '$lib/content/nav';
+	import { LEGAL_NAV } from '#lib/content/nav.ts';
 
 	export function isDataIndependentRoute(pathname: string): boolean {
 		return LEGAL_NAV.some((item) => item.href === pathname);
@@ -7,18 +7,20 @@
 </script>
 
 <script lang="ts">
-	import { navPillCopy } from '$lib/components/shell/navPill.copy';
+	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
 
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
+	import { createNavigationLifecycle, resetFocusAfterNavigation } from '@yesid/ui/brand';
 	import { updated } from '$app/state';
-	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
-	import { browser } from '$app/environment';
 
-	import { startAnalytics } from '$lib/site/analytics';
+	import { goto, onNavigate, beforeNavigate, afterNavigate, invalidateAll } from '$app/navigation';
+
+	import { browser } from '$app/env';
+	import { startAnalytics } from '#lib/site/analytics.ts';
 	import {
 		setLocaleContext,
 		DEFAULT_LOCALE,
@@ -26,58 +28,65 @@
 		delocalizePath,
 		localizeHref,
 		type Locale,
-	} from '$lib/i18n';
+	} from '#lib/i18n/index.ts';
 	import { SeoHead } from '@yesid/ui/head';
 	import {
 		resolveRouteSeo,
 		isEphemeralPath,
 		breadcrumbItemsForHead,
 		resolveDatasetSeo,
-	} from '$lib/seo/routeSeo';
+	} from '#lib/seo/routeSeo.ts';
 	import {
 		breadcrumbJsonLd,
 		organizationJsonLd,
 		datasetJsonLd,
 		websiteJsonLd,
 		type JsonLdNode,
-	} from '$lib/seo/jsonld';
-	import { readPublicSiteConfig } from '$lib/site/config';
-	import { currentMirrorUrl } from '$lib/site/urlMirror';
-	import { errorDocumentHead } from '$lib/site/errorPage';
-	import { setV1Context } from '$lib/v1/boot';
-	import { v1Provider } from '$lib/v1/config';
-	import { getVehicles } from '$lib/v1/repositories/live';
-	import { getRoutesIndex, getStopsIndex } from '$lib/v1/repositories/static';
-	import { createResource } from '$lib/v1/resource.svelte';
-	import { dataPulse } from '$lib/stores';
-	import { registerServiceWorker } from '$lib/pwa/register';
-	import { decideFreshnessReload } from '$lib/pwa/appVersion';
+	} from '#lib/seo/jsonld.ts';
+	import { readPublicSiteConfig } from '#lib/site/config.ts';
+	import { currentMirrorUrl } from '#lib/site/urlMirror.ts';
+	import { errorDocumentHead } from '#lib/site/errorPage.ts';
+	import { setV1Context } from '#lib/v1/boot.ts';
+	import { v1Provider } from '#lib/v1/config.ts';
+	import { getVehicles } from '#lib/v1/repositories/live.ts';
+	import { getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
+	import { createResource } from '#lib/v1/resource.svelte.ts';
+	import { dataPulse } from '#lib/stores/index.ts';
+	import { registerServiceWorker } from '#lib/pwa/register.ts';
+	import { decideFreshnessReload } from '#lib/pwa/appVersion.ts';
 	import { startVitals } from '@yesid/analytics/vitals';
-	import { env } from '$env/dynamic/public';
+
+	import * as env from '$app/env/public';
+
 	import { viewTransition } from '@yesid/motion/utils/viewTransition';
 	import { initGlobalRipple } from '@yesid/motion/utils/globalRipple';
-	import { initScrollTriggerConfig } from '@yesid/motion/utils/gsap';
 	import { getLenis } from '@yesid/motion/utils/lenis';
-	import { AppShell } from '$lib/components/shell';
-	import BrandCluster from '$lib/components/brand/BrandCluster.svelte';
-	import { footerCopy } from '$lib/components/layout/footer.copy';
-	import { EdgeState } from '$lib/components/edge';
+	import { AppShell } from '#lib/components/shell/index.ts';
+	import BrandCluster from '#lib/components/brand/BrandCluster.svelte';
+	import { footerCopy } from '#lib/components/layout/footer.copy.ts';
+	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { SiteFooter, SiteRoot } from '@yesid/ui/layout';
 	import { ConstructionProps } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
-	import { AUDIT_NAV, mainLandmarkLabel, SURFACE_NAV } from '$lib/content/nav';
-	import { legalCopy } from '$lib/features/legal/legal.copy';
+	import { AUDIT_NAV, mainLandmarkLabel, SURFACE_NAV } from '#lib/content/nav.ts';
+	import { legalCopy } from '#lib/features/legal/legal.copy.ts';
 	import {
 		chromeSearchResultHref,
 		chromeSearchResults,
 		scopeForPath,
 		type ChromeSearchResult,
 		type ChromeSearchScope,
-	} from '$lib/search/chromeSearch';
-	import type { TransitModeKey } from '$lib/search/stopMode';
+	} from '#lib/search/chromeSearch.ts';
+	import type { TransitModeKey } from '#lib/search/stopMode.ts';
 	import { SvelteSet } from 'svelte/reactivity';
-	import type { GeocodeSuggestion } from '$lib/geocode/types';
+	import type { GeocodeSuggestion } from '#lib/geocode/types.ts';
 	import type { LayoutData } from './$types';
+
+	const navigation = createNavigationLifecycle({
+		beforeNavigate,
+		onNavigate,
+		afterNavigate,
+	});
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
@@ -88,12 +97,12 @@
 	);
 
 	const siteConfig = readPublicSiteConfig();
-	const seoPath = $derived(delocalizePath($page.url.pathname));
+	const seoPath = $derived(delocalizePath(page.url.pathname));
 	let constructionEdge = $state<HTMLElement>();
 	let constructionProgress = $state(1);
 	let mainScroller = $state<HTMLElement>();
 
-	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath($page.url.pathname));
+	const noIndex = $derived(!siteConfig.indexing || isEphemeralPath(page.url.pathname));
 
 	const isFullBleed = $derived(seoPath === '/map');
 	const dataIndependentRoute = $derived(isDataIndependentRoute(seoPath));
@@ -126,7 +135,7 @@
 
 	const seo = $derived(
 		resolveRouteSeo(
-			$page.url,
+			new URL(page.url.href),
 			locale,
 			!data.discoveryError && data.provider
 				? {
@@ -137,10 +146,10 @@
 				: undefined,
 		),
 	);
-	const seoSiteName = $derived(seo.siteName);
 
-	const isErrorStatus = $derived(($page.status ?? 200) >= 400);
-	const errorHead = $derived(errorDocumentHead($page.status ?? 500, locale));
+	const seoSiteName = $derived(seo.siteName);
+	const isErrorStatus = $derived((page.status ?? 200) >= 400);
+	const errorHead = $derived(errorDocumentHead(page.status ?? 500, locale));
 	const headTitle = $derived(isErrorStatus ? errorHead.title : seo.title);
 	const headDescription = $derived(isErrorStatus ? errorHead.description : seo.description);
 	const headSiteName = $derived(isErrorStatus ? 'Transit' : seoSiteName);
@@ -158,9 +167,11 @@
 				locale,
 			}),
 		];
+
 		const breadcrumb = breadcrumbJsonLd(
-			breadcrumbItemsForHead($page.url.pathname, locale, siteConfig.siteOrigin, seo.providerId),
+			breadcrumbItemsForHead(page.url.pathname, locale, siteConfig.siteOrigin, seo.providerId),
 		);
+
 		if (breadcrumb) nodes.push(breadcrumb);
 		return nodes;
 	});
@@ -252,10 +263,6 @@
 		};
 	});
 
-	// SiteRoot's initLenis reads ScrollTrigger.isTouch, which is only set once the plugin
-	// is registered. Upstream registers it itself from the next design release.
-	if (browser) initScrollTriggerConfig();
-
 	// The page scrolls inside #page-scroller, which SvelteKit's own scroll reset does not reach.
 	function resetMainScroll(hash: string): void {
 		const target = hash ? document.getElementById(decodeURIComponent(hash.slice(1))) : null;
@@ -301,7 +308,8 @@
 
 	onNavigate(viewTransition);
 
-	afterNavigate(({ from, to, type }) => {
+	afterNavigate(({ from, to, type, shallow }) => {
+		if (shallow && type === 'goto') return;
 		if (!to || type === 'enter' || type === 'popstate') return;
 		if (from?.url.pathname !== to.url.pathname || from.url.hash !== to.url.hash) {
 			resetMainScroll(to.url.hash);
@@ -309,6 +317,8 @@
 	});
 
 	beforeNavigate((navigation) => {
+		if (navigation.shallow && navigation.type === 'goto') return;
+
 		if (
 			!navigation.willUnload &&
 			navigation.to &&
@@ -335,14 +345,16 @@
 
 	async function selectSearchResult(result: ChromeSearchResult): Promise<void> {
 		topSearch = '';
-		void goto(
+		const resetFocus = resetFocusAfterNavigation();
+		await goto(
 			localizeHref(
-				chromeSearchResultHref(result, searchScope, $page.url.searchParams),
+				chromeSearchResultHref(result, searchScope, new URLSearchParams(page.url.search)),
 				locale,
 				data.providerId,
 			),
-			{ noScroll: true },
+			{ reset: false },
 		);
+		resetFocus();
 	}
 
 	async function submitSearch(value: string): Promise<void> {
@@ -393,14 +405,22 @@
 	}
 </script>
 
+<svelte:head>
+	{#if !head.noIndex}
+		<meta name="robots" content="max-image-preview:large" />
+	{/if}
+</svelte:head>
+
 <SiteRoot scroller={{ wrapper: '#page-scroller', content: '#main-flow' }} lang={locale}>
 	<SeoHead {...head} />
 
 	<AppShell
+		{navigation}
 		{locale}
-		url={currentMirrorUrl($page.url)}
+		url={currentMirrorUrl(new URL(page.url.href))}
 		providerId={data.providerId}
 		providers={data.providers}
+		discoveryError={data.discoveryError}
 		bind:search={topSearch}
 		searchResults={topSearchResults}
 		{searchScope}
@@ -448,7 +468,7 @@
 					</main>
 					{#if !isFullBleed}
 						{#if seoPath === '/'}
-							{#key $page.url.pathname}
+							{#key page.url.pathname}
 								<div
 									bind:this={constructionEdge}
 									class="construction-anchor"

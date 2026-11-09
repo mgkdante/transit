@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { RankedRow } from '$lib/components/dataviz';
-	import { AbsentValue } from '$lib/components/edge';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import { RankedRow } from '#lib/components/dataviz/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import type { RankedRouteRow } from '../selectors/rankedRoutes';
 	import type { StopReliabilityCopy } from '../stops-reliability.copy';
 	import StopReliabilityPresenter from './StopReliabilityPresenter.svelte';

@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataRefresh } from '$lib/stores/refresh.svelte';
+import { dataRefresh } from '#lib/stores/refresh.svelte.ts';
 import RefreshButton from './RefreshButton.svelte';
 
 const mocks = vi.hoisted(() => ({ invalidateAll: vi.fn<() => Promise<void>>() }));
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({ invalidateAll: mocks.invalidateAll }));
 
 beforeEach(() => {
@@ -29,6 +29,8 @@ describe('RefreshButton action and recovery', () => {
 			const initialEpoch = dataRefresh.epoch;
 			const { container } = render(RefreshButton, { locale });
 			const button = screen.getByRole('button', { name: label });
+			expect(button).toHaveAttribute('data-slot', 'button');
+			expect(button).toHaveClass('size-11');
 			expect(button).toHaveAttribute('title', label);
 			expect(container.querySelector('[data-slot="refresh-readout"]')).toBeNull();
 			await fireEvent.click(button);

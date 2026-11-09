@@ -1,4 +1,4 @@
-import type { Grain } from '$lib/v1/schemas';
+import type { Grain } from '#lib/v1/schemas/index.ts';
 import type { DateWindow } from './state';
 import { GRAINS, isGrain } from './state';
 

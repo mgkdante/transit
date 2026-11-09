@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
-import { intl } from '$lib/i18n';
-import type { ReliabilitySnapshot } from '$lib/v1/reliabilitySnapshot.svelte';
+import { intl } from '#lib/i18n/index.ts';
+import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 import ReliabilityBadge from './ReliabilityBadge.svelte';
 
 function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
@@ -10,15 +10,15 @@ function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 
 describe('ReliabilityBadge', () => {
 	it.each([
-		['en', 'on time in the latest daily summary'],
-		['fr', 'à l’heure dans le dernier bilan quotidien'],
+		['en', 'on time in the latest summary'],
+		['fr', 'à l’heure dans le dernier bilan'],
 	] as const)(
 		'reports the daily percentage once without a competing verdict in %s',
 		(locale, description) => {
 			const pct = intl.number(locale, { style: 'unit', unit: 'percent' }).format(83);
 			const label = `${pct} ${description}`;
 			const { container } = render(ReliabilityBadge, {
-				props: { snapshot: snap({ phase: 'ready', otpPct: 83, verdict: 'late' }), locale },
+				props: { snapshot: snap({ phase: 'ready', otpPct: 83, verdict: 'reliable' }), locale },
 			});
 			const badges = screen.getAllByRole('img');
 			expect(badges).toHaveLength(1);
@@ -40,3 +40,14 @@ describe('ReliabilityBadge', () => {
 		expect(container.textContent).toBe('');
 	});
 });
+
+it.each(['absent', 'tentative'] as const)(
+	'hedges a %s snapshot without a confident percentage badge',
+	(verdict) => {
+		render(ReliabilityBadge, {
+			props: { snapshot: snap({ phase: 'ready', otpPct: 85, verdict }), locale: 'en' },
+		});
+		expect(screen.queryByRole('img')).toBeNull();
+		expect(screen.getByText('Not enough data to judge reliability')).toBeInTheDocument();
+	},
+);

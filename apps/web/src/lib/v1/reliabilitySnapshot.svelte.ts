@@ -5,10 +5,9 @@ import {
 	getStopReliability,
 } from './repositories/historic';
 import { getRoutesIndex } from './repositories/static';
-import type { ReliabilityPeriod, RouteReliability } from './schemas/route_reliability';
-import type { StopReliability, StopReliabilityPeriod } from './schemas/stop_reliability';
-import { otpVerdict } from './reliabilityVerdict';
-import type { StatusCode } from './schemas/types';
+import type { RouteReliability } from './schemas/route_reliability';
+import type { StopReliability } from './schemas/stop_reliability';
+import { reliabilityVerdict, type VerdictCopy, type VerdictStatus } from './verdict';
 
 export type ReliabilityKind = 'route' | 'stop';
 
@@ -17,8 +16,10 @@ export type ReliabilityPhase = 'idle' | 'loading' | 'ready' | 'empty';
 export interface ReliabilitySnapshot {
 	readonly phase: ReliabilityPhase;
 	readonly otpPct: number | null;
-	readonly verdict: StatusCode | null;
+	readonly verdict: VerdictStatus | null;
 	readonly series: Array<number | null>;
+	readonly observationCount?: number | null;
+	readonly hedge?: string;
 }
 
 const MAX_IN_FLIGHT = 4;
@@ -39,42 +40,27 @@ const NO_DATA_SNAPSHOT: ReliabilitySnapshot = {
 	series: [],
 };
 
-type PeriodLike = Pick<ReliabilityPeriod | StopReliabilityPeriod, 'grain' | 'otp_pct'>;
-
 function summarize(
-	periods: readonly PeriodLike[] | undefined,
-	dateOf?: (p: PeriodLike) => string | null | undefined,
+	file: RouteReliability | StopReliability | null,
+	copy?: VerdictCopy,
 ): ReliabilitySnapshot {
-	const days = (periods ?? []).filter((p) => p.grain === 'day');
-	if (days.length === 0) return NO_DATA_SNAPSHOT;
-
-	const ordered = dateOf
-		? [...days].sort((a, b) => String(dateOf(a) ?? '').localeCompare(String(dateOf(b) ?? '')))
-		: days;
-
-	const tail = ordered.slice(-SERIES_LEN);
-	const series = tail.map((p) => (p.otp_pct == null ? null : p.otp_pct));
-
-	let otpPct: number | null = null;
-	for (let i = ordered.length - 1; i >= 0; i--) {
-		if (ordered[i].otp_pct != null) {
-			otpPct = ordered[i].otp_pct as number;
-			break;
-		}
-	}
-
-	if (otpPct == null) return { phase: 'empty', otpPct: null, verdict: null, series };
-	return { phase: 'ready', otpPct, verdict: otpVerdict(otpPct), series };
-}
-
-function summarizeRoute(file: RouteReliability | null): ReliabilitySnapshot {
 	if (!file) return NO_DATA_SNAPSHOT;
-	return summarize(file.periods, (p) => (p as ReliabilityPeriod).date);
-}
-
-function summarizeStop(file: StopReliability | null): ReliabilitySnapshot {
-	if (!file) return NO_DATA_SNAPSHOT;
-	return summarize(file.periods);
+	const result = reliabilityVerdict(file, {}, copy);
+	const days = (file.periods ?? []).filter((p) => p.grain === 'day');
+	const ordered = [...days].sort((a, b) =>
+		String('date' in a ? (a.date ?? '') : '').localeCompare(
+			String('date' in b ? (b.date ?? '') : ''),
+		),
+	);
+	const series = ordered.slice(-SERIES_LEN).map((p) => p.otp_pct ?? null);
+	return {
+		phase: result.otpPct == null ? 'empty' : 'ready',
+		otpPct: result.otpPct,
+		verdict: result.status,
+		observationCount: result.observationCount,
+		hedge: result.hedge,
+		series,
+	};
 }
 
 export type ReliabilityTarget = string | { id: string; known?: boolean | null };
@@ -96,14 +82,18 @@ export interface ReliabilityLoader {
 	readonly inFlight: number;
 }
 
-export function createReliabilityLoader(kind: ReliabilityKind): ReliabilityLoader {
+export function createReliabilityLoader(
+	kind: ReliabilityKind,
+	copy?: VerdictCopy,
+): ReliabilityLoader {
+	// NavPill's language links reload the document, recreating this route-scoped locale copy.
 	const cache = new SvelteMap<string, ReliabilitySnapshot>();
 	let inFlight = $state(0);
 	const queue: string[] = [];
 	const started = new SvelteSet<string>();
 
 	const fetcher = kind === 'route' ? getRouteReliability : getStopReliability;
-	const summarizeFor = kind === 'route' ? summarizeRoute : summarizeStop;
+	const summarizeFor = (file: RouteReliability | StopReliability | null) => summarize(file, copy);
 
 	const usesIndex = kind === 'route';
 	let indexFlags: SvelteMap<string, boolean> | null = null;

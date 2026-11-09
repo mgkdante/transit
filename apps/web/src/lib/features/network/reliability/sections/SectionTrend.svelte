@@ -1,9 +1,13 @@
 <script lang="ts">
-	import type { Locale } from '$lib/i18n';
-	import { Chart, type ChartSpec, type SparklineSpec } from '$lib/components/dataviz/chart';
+	import type { Locale } from '#lib/i18n/index.ts';
+	import {
+		Chart,
+		type ChartSpec,
+		type SparklineSpec,
+	} from '#lib/components/dataviz/chart/index.ts';
 	import { SectionLabel } from '@yesid/ui/brand';
-	import MetricInfo from '$lib/features/metrics/MetricInfo.svelte';
-	import type { MetricKey } from '$lib/metrics';
+	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
+	import type { MetricKey } from '#lib/metrics.ts';
 	import NetworkTile from './NetworkTile.svelte';
 	import type { NetworkReliabilityCopy } from '../network-reliability.copy';
 

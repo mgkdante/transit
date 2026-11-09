@@ -59,6 +59,33 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from transit_ops.settings import Settings
 
 
+# Only committed serving provenance certifies the payload, never download success.
+# GTFS serving state survives empty feeds and source pruning. Alert observations
+# commit in the Silver load transaction, including successful empty alert loads.
+_FEED_CAPTURE_SQL = named_query(
+    "live.feed_capture",
+    """
+    SELECT captured_at_utc AS captured_utc
+    FROM gold.realtime_serving_state
+    WHERE provider_id = :provider_id AND endpoint_key = :endpoint_key
+    UNION ALL
+    SELECT MAX(observed_at_utc) AS captured_utc
+    FROM raw.alert_feed_observations
+    WHERE provider_id = :provider_id AND :endpoint_key IN ('i3_alerts', 'service_alerts')
+    GROUP BY provider_id
+    """,
+)
+
+
+def _feed_captured_utc(conn: Connection, provider_id: str, endpoint_key: str) -> str | None:
+    row = (
+        conn.execute(_FEED_CAPTURE_SQL, {"provider_id": provider_id, "endpoint_key": endpoint_key})
+        .mappings()
+        .fetchone()
+    )
+    return _opt_iso(row["captured_utc"]) if row else None
+
+
 _VEHICLES_SQL = named_query(
     "live.vehicles",
     """
@@ -81,14 +108,14 @@ _VEHICLES_SQL = named_query(
         AND lvs.realtime_snapshot_id = cvm.realtime_snapshot_id
         AND lvs.entity_index         = cvm.entity_index
     WHERE cvm.provider_id = :provider_id
-    """
+    """,
 )
 
 
 def build_vehicles(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
 ) -> VehiclesFile:
     vehicles: list[Vehicle] = []
@@ -122,7 +149,7 @@ _TRIP_DELAY_SQL = named_query(
     + """ AS status_band
     FROM gold.current_trip_delay_computed
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 # Order trip stops by predicted ETA, then sequence; departure_rank is per stop.
@@ -134,11 +161,11 @@ _TRIP_DEPARTURES_SQL = named_query(
     WHERE provider_id = :provider_id
       AND predicted_departure_utc < now() + interval '60 minutes'
     ORDER BY trip_id, predicted_departure_utc, stop_sequence
-    """
+    """,
 )
 
 
-def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> TripsFile:
+def build_trips(conn: Connection, *, provider_id: str, generated_utc: str) -> TripsFile:
     trips: dict[str, Trip] = {}
 
     for r in conn.execute(_TRIP_DELAY_SQL, {"provider_id": provider_id}).mappings():
@@ -164,7 +191,11 @@ def build_trips(conn: Connection, *, provider_id: str = "stm", generated_utc: st
             )
         )
 
-    return TripsFile(generated_utc=generated_utc, trips=trips)
+    return TripsFile(
+        generated_utc=generated_utc,
+        trips=trips,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "trip_updates"),
+    )
 
 
 # Cap departures per route so frequent routes cannot crowd out corridor neighbors.
@@ -199,14 +230,14 @@ _STOP_DEPARTURES_SQL = named_query(
     ) AS ranked
     WHERE route_rank <= :per_route_cap
     ORDER BY stop_id, predicted_departure_utc, route_id, trip_id
-    """
+    """,
 )
 
 
 def build_stop_departures(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
 ) -> StopDeparturesFile:
     stops: dict[str, list[StopDeparture]] = {}
@@ -220,7 +251,11 @@ def build_stop_departures(
                 delay_min=_delay_min(r["avg_delay_seconds"]),
             )
         )
-    return StopDeparturesFile(generated_utc=generated_utc, stops=stops)
+    return StopDeparturesFile(
+        generated_utc=generated_utc,
+        stops=stops,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "trip_updates"),
+    )
 
 
 _ALERTS_SQL = named_query(
@@ -249,7 +284,7 @@ _ALERTS_SQL = named_query(
 )
 
 
-def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> AlertsFile:
+def build_alerts(conn: Connection, *, provider_id: str, generated_utc: str) -> AlertsFile:
     alerts: list[Alert] = []
     for r in conn.execute(_ALERTS_SQL, {"provider_id": provider_id}).mappings():
         # Synthesize content-stable IDs for alerts without upstream IDs.
@@ -290,7 +325,11 @@ def build_alerts(conn: Connection, *, provider_id: str = "stm", generated_utc: s
                 ),
             )
         )
-    return AlertsFile(generated_utc=generated_utc, alerts=alerts)
+    return AlertsFile(
+        generated_utc=generated_utc,
+        alerts=alerts,
+        feed_captured_utc=_feed_captured_utc(conn, provider_id, "i3_alerts"),
+    )
 
 
 _NETWORK_VEHICLES_SQL = named_query(
@@ -303,7 +342,7 @@ _NETWORK_VEHICLES_SQL = named_query(
         AND lvs.realtime_snapshot_id = cvm.realtime_snapshot_id
         AND lvs.entity_index         = cvm.entity_index
     WHERE cvm.provider_id = :provider_id
-    """
+    """,
 )
 
 _NETWORK_DELAYS_SQL = named_query(
@@ -313,7 +352,7 @@ _NETWORK_DELAYS_SQL = named_query(
     FROM gold.current_trip_delay_computed
     WHERE provider_id = :provider_id
       AND avg_delay_seconds IS NOT NULL
-    """
+    """,
 )
 
 _NETWORK_NON_RESPONDING_BY_ROUTE_SQL = named_query(
@@ -324,7 +363,7 @@ _NETWORK_NON_RESPONDING_BY_ROUTE_SQL = named_query(
     WHERE provider_id = :provider_id
     GROUP BY route_id
     ORDER BY nr_count DESC, route_id ASC
-    """
+    """,
 )
 
 
@@ -360,15 +399,19 @@ def _delay_histogram(delays_min: list[float]) -> list[DelayBucket] | None:
 _NETWORK_FRESHNESS_SQL = named_query(
     "network.live.freshness",
     """
-    SELECT MAX(completed_age_seconds) AS feed_freshness_s
-    FROM gold.feed_freshness_current
-    WHERE provider_id = :provider_id
-      AND endpoint_key IN ('vehicle_positions', 'trip_updates')
-    """
+    SELECT CASE WHEN count(*) FILTER (WHERE capture.captured_at_utc IS NULL) > 0 THEN NULL
+                ELSE MAX(EXTRACT(EPOCH FROM (now() - capture.captured_at_utc)))::integer
+           END AS feed_freshness_s
+    FROM core.feed_endpoints fe
+    LEFT JOIN gold.realtime_serving_state capture
+      ON capture.provider_id = fe.provider_id AND capture.endpoint_key = fe.endpoint_key
+    WHERE fe.provider_id = :provider_id AND fe.is_enabled
+      AND fe.endpoint_key IN ('vehicle_positions', 'trip_updates')
+    """,
 )
 
 
-def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: str) -> NetworkFile:
+def build_network(conn: Connection, *, provider_id: str, generated_utc: str) -> NetworkFile:
     params = {"provider_id": provider_id}
 
     dist = StatusDist()
@@ -391,9 +434,7 @@ def build_network(conn: Connection, *, provider_id: str = "stm", generated_utc: 
 
     occ_total = sum(occ_counts.values())
     occupancy_mix = (
-        OccupancyMix(**{k: v / occ_total for k, v in occ_counts.items()})
-        if occ_total
-        else None
+        OccupancyMix(**{k: v / occ_total for k, v in occ_counts.items()}) if occ_total else None
     )
 
     # Coverage is the share of live vehicles with known punctuality status.
@@ -438,7 +479,7 @@ _MANIFEST_PROVIDER_SQL = named_query(
            min_latitude, max_latitude, min_longitude, max_longitude
     FROM core.providers
     WHERE provider_id = :provider_id
-    """
+    """,
 )
 
 _MANIFEST_VERSION_SQL = named_query(
@@ -451,7 +492,7 @@ _MANIFEST_VERSION_SQL = named_query(
       AND is_current = true
     ORDER BY loaded_at_utc DESC
     LIMIT 1
-    """
+    """,
 )
 
 _MANIFEST_TIER_STATE_SQL = named_query(
@@ -461,7 +502,7 @@ _MANIFEST_TIER_STATE_SQL = named_query(
     FROM core.snapshot_publish_state
     WHERE provider_id = :provider_id
       AND tier IN ('static', 'historic')
-    """
+    """,
 )
 
 
@@ -473,7 +514,7 @@ _MANIFEST_CAPABILITY_ENDPOINTS_SQL = named_query(
     FROM core.feed_endpoints
     WHERE provider_id = :provider_id
       AND is_enabled = true
-    """
+    """,
 )
 
 
@@ -497,7 +538,7 @@ def _derive_capabilities(endpoint_keys: set[str]) -> ProviderCapabilities:
 def build_manifest(
     conn: Connection,
     *,
-    provider_id: str = "stm",
+    provider_id: str,
     generated_utc: str,
     settings: Settings,
 ) -> Manifest:
@@ -591,17 +632,43 @@ _DATA_HEALTH_LANES_SQL = named_query(
     FROM core.snapshot_publish_state
     WHERE provider_id = :provider_id
       AND tier IN ('live', 'static', 'historic')
-    """
+    """,
 )
 
 _DATA_HEALTH_FEEDS_SQL = named_query(
     "data_health.feeds",
     """
-    SELECT endpoint_key, status, completed_age_seconds
-    FROM gold.feed_freshness_current
-    WHERE provider_id = :provider_id
-    ORDER BY endpoint_key
-    """
+    WITH alert_capture AS (
+        SELECT MAX(observed_at_utc) AS captured_at_utc
+        FROM raw.alert_feed_observations WHERE provider_id = :provider_id
+    )
+    SELECT f.endpoint_key, f.status,
+           EXTRACT(EPOCH FROM (now() - CASE
+               WHEN f.endpoint_key IN ('trip_updates', 'vehicle_positions')
+                   THEN serving.captured_at_utc
+               WHEN f.endpoint_key IN ('i3_alerts', 'service_alerts')
+                   THEN alert_capture.captured_at_utc
+               ELSE capture.last_capture
+           END))::integer AS completed_age_seconds
+    FROM gold.feed_freshness_current f
+    LEFT JOIN gold.realtime_serving_state serving
+      ON serving.provider_id = f.provider_id AND serving.endpoint_key = f.endpoint_key
+    CROSS JOIN alert_capture
+    LEFT JOIN LATERAL (
+        SELECT ir.completed_at_utc AS last_capture
+        FROM raw.ingestion_runs ir
+        JOIN core.feed_endpoints fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
+        WHERE ir.provider_id = f.provider_id AND fe.endpoint_key = f.endpoint_key
+          AND f.endpoint_key NOT IN (
+              'trip_updates', 'vehicle_positions', 'i3_alerts', 'service_alerts'
+          )
+          AND ir.status = 'succeeded' AND ir.run_kind <> 'silver_load'
+        ORDER BY ir.started_at_utc DESC, ir.ingestion_run_id DESC
+        LIMIT 1
+    ) capture ON true
+    WHERE f.provider_id = :provider_id
+    ORDER BY f.endpoint_key
+    """,
 )
 
 _DATA_HEALTH_TIER_LABELS: dict[str, str] = {
@@ -630,9 +697,7 @@ def _data_health_gate(row: dict) -> DataHealthGate | None:
     )
 
 
-def build_data_health(
-    conn: Connection, provider_id: str = "stm", *, generated_utc: str
-) -> DataHealth:
+def build_data_health(conn: Connection, *, provider_id: str, generated_utc: str) -> DataHealth:
     params = {"provider_id": provider_id}
 
     rows_by_tier: dict[str, dict] = {}

@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TripsFile } from '$lib/v1';
+import type { TripsFile } from '#lib/v1/index.ts';
 import TripDetail from './TripDetail.svelte';
 import { tripCopy } from './trips.copy';
 const TRIPS_FILE = {
@@ -31,8 +31,9 @@ const TRIPS_FILE = {
 } as unknown as TripsFile;
 let tripsData: TripsFile | null = TRIPS_FILE;
 let reportStale = false;
-let reportFailures = 0;
-vi.mock('$lib/v1/live/store.svelte', () => ({
+let reportNotice: 'stale' | 'refresh-unavailable' | null = null;
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({
+	LIVE_FAMILIES: ['vehicles', 'trips', 'departures', 'alerts', 'network'],
 	createLiveStore: () => ({
 		get trips() {
 			return tripsData;
@@ -45,7 +46,25 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 			return reportStale;
 		},
 		get familyStates() {
-			return { trips: { phase: 'ready', consecutiveFailures: reportFailures } };
+			return {
+				trips: {
+					active: true,
+					retainedGeneration: tripsData?.generated_utc ?? null,
+					phase: 'ready',
+					health: {
+						state:
+							reportNotice === 'refresh-unavailable'
+								? 'retrying'
+								: reportNotice
+									? 'retained-stale'
+									: 'live',
+						ageSeconds: 300,
+						isStale: reportStale,
+						retained: true,
+						notice: reportNotice,
+					},
+				},
+			};
 		},
 		error: null,
 		loading: false,
@@ -54,13 +73,13 @@ vi.mock('$lib/v1/live/store.svelte', () => ({
 		refresh: vi.fn(),
 	}),
 }));
-vi.mock('$lib/v1/repositories/static', () => ({ getStopsIndex: vi.fn() }));
-vi.mock('$lib/v1/boot', () => ({
+vi.mock('#lib/v1/repositories/static.ts', () => ({ getStopsIndex: vi.fn() }));
+vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: { short_name: 'STM', display_name: 'STM', dataset_version: 'test' },
 	}),
 }));
-vi.mock('$lib/v1/resource.svelte', () => ({
+vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: () => ({
 		get data() {
 			return tripsData;
@@ -88,7 +107,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 beforeEach(() => {
 	tripsData = TRIPS_FILE;
 	reportStale = false;
-	reportFailures = 0;
+	reportNotice = null;
 });
 
 describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
@@ -194,7 +213,7 @@ describe('TripDetail: a broadcasting trip', () => {
 		render(TripDetail, { props: { id: 't161' } });
 
 		const stops = screen.getByRole('list', { name: 'Reported predictions for this trip' });
-		expect(within(stops).getByRole('link', { name: 'View stop sA' })).toHaveAttribute(
+		expect(within(stops).getByRole('link', { name: /^View stop sA / })).toHaveAttribute(
 			'href',
 			'/stop/sA',
 		);
@@ -256,6 +275,10 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 	const context = new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
 	it('counts prediction rows and names the last reported stop without inferring a terminal', () => {
 		const { container } = render(TripDetail, { props: { id: 't161' }, context });
+		const stop = screen.getByRole('link', { name: /sA/ });
+		expect(stop).toHaveAccessibleName(
+			`${locale === 'en' ? 'View stop' : 'Voir l’arrêt'} sA ${stop.querySelector('time')!.textContent} ${tripCopy[locale].predictionLabel} ${locale === 'en' ? '4 min late' : '4 min en retard'}`,
+		);
 		expect(container.querySelector('.trip-last-stop-name')).toHaveTextContent('sB');
 		expect(container.querySelector('.trip-prediction-count')).toHaveTextContent(
 			locale === 'fr' ? '2 prédictions communiquées' : '2 predictions reported',
@@ -267,6 +290,7 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 	});
 	it.each([false, true])('retains report-specific absence and timestamp when stale=%s', (stale) => {
 		reportStale = stale;
+		reportNotice = stale ? 'stale' : null;
 		render(TripDetail, { props: { id: 'tGhost' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
 		expect(stamp).toHaveAttribute('data-stale', String(stale));
@@ -274,7 +298,7 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		expect(screen.queryByTestId('trip-report-notice') !== null).toBe(stale);
 	});
 	it('warns on failed refresh without classifying a recent retained report as stale', () => {
-		reportFailures = 1;
+		reportNotice = 'refresh-unavailable';
 		render(TripDetail, { props: { id: 't161' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
 		expect(stamp).toHaveAttribute('data-degraded', 'true');
@@ -284,4 +308,28 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		);
 		expect(document.querySelectorAll('.trip-stop-link')).toHaveLength(2);
 	});
+});
+
+describe.each(['en', 'fr'] as const)('missing trip fields follow health (%s)', (locale) => {
+	for (const notice of ['stale', 'refresh-unavailable'] as const)
+		it(notice, () => {
+			reportNotice = notice;
+			reportStale = notice === 'stale';
+			const { container } = render(TripDetail, {
+				props: { id: 'tBlank' },
+				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+			});
+			const missing = container.querySelector('[data-slot="absent-value"]');
+			expect(missing).toHaveAccessibleName(
+				expect.stringContaining(
+					locale === 'en'
+						? notice === 'stale'
+							? 'Report behind'
+							: 'Refresh unavailable'
+						: notice === 'stale'
+							? 'Rapport en retard'
+							: 'Indisponible',
+				),
+			);
+		});
 });

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { Chart as LcChart, Svg, Points, Rule, Axis, Grid, Highlight, Tooltip } from 'layerchart';
 	import { scaleBand, scaleLinear } from 'd3-scale';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils/index.ts';
 	import ChartFrame from '../ChartFrame.svelte';
 	import { structuralLabels } from '../structuralLabels';
 	import type { DotStripDatum, DotStripSpec } from '../ChartSpec';
-	import type { SeverityCode } from '$lib/v1/schemas';
+	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 	export interface DotStripMarkProps {
 		spec: DotStripSpec;
