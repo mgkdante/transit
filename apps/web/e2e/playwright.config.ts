@@ -32,6 +32,8 @@ const dataPort = process.env.TRANSIT_E2E_DATA_PORT ?? '4318';
 const baseURL = `http://127.0.0.1:${port}`;
 const dataURL = `http://127.0.0.1:${dataPort}`;
 
+const httpSpecs = /(?:head-ssr|health|favicon)\.spec\.ts/;
+
 export default defineConfig({
 	testDir: '.',
 	// One tsconfig for every file the specs import, including app modules under src/.
@@ -61,7 +63,15 @@ export default defineConfig({
 		launchOptions: { executablePath },
 	},
 	projects: [
-		...yesidProjects(baseURL).map((project) => ({ ...project, testIgnore: /layout.*\.spec\.ts/ })),
+		{
+			name: 'http',
+			testMatch: httpSpecs,
+			use: { baseURL, storageState: { cookies: [], origins: [] } },
+		},
+		...yesidProjects(baseURL).map((project) => ({
+			...project,
+			testIgnore: [/layout.*\.spec\.ts/, httpSpecs],
+		})),
 		...(['chromium', 'webkit'] as const).flatMap((browserName) =>
 			(browserName === 'chromium'
 				? [
