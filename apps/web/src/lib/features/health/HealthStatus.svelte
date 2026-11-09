@@ -458,6 +458,14 @@
 {/snippet}
 
 <style>
+	:global(.health-detail .section-title) {
+		white-space: normal;
+		overflow-wrap: normal;
+		word-break: normal;
+	}
+	:global(.health-detail .section-title-group) {
+		min-width: 0;
+	}
 	.health-overview {
 		display: flex;
 		flex-direction: column;
