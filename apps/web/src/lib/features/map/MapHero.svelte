@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
 	import { hasOccupancy } from '#lib/site/transitDisplay.ts';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
@@ -461,7 +462,7 @@
 		onthemerepaint={runtime.repaint}
 		onerror={onMapFailure}
 		onbeforeremove={runtime.release}
-		customAttribution={manifest.attribution}
+		customAttribution={providerAttribution(manifest.provider, manifest.attribution, locale)}
 		locale={{
 			'Map.Title': t.mapCanvasLabel,
 			'AttributionControl.ToggleAttribution': t.attributionToggle,

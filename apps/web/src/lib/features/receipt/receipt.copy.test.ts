@@ -98,7 +98,7 @@ describe('Daily Receipt article copy', () => {
 			silent: {
 				title: 'Planifiés mais jamais apparus',
 				subtitle:
-					'Les lignes dont des voyages planifiés ne sont jamais apparus dans le flux en direct',
+					'Les lignes dont des trajets planifiés ne sont jamais apparus dans le flux en direct',
 			},
 		});
 		expect(copy.fr.caveatLabel).toBe('Mise en garde');
