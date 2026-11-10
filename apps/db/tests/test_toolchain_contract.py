@@ -500,7 +500,10 @@ def test_wrangler_has_one_installed_owner_and_no_ad_hoc_versions() -> None:
 TRUSTED_WEB_NODE_MATERIALIZER = r"""$ErrorActionPreference = 'Stop'
 git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
 if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
-$base = (git rev-parse refs/remotes/origin/main).Trim()
+$main = (git rev-parse refs/remotes/origin/main).Trim()
+if ($LASTEXITCODE -ne 0 -or $main -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid trusted main SHA' }
+$base = $main
+$forceFull = 'false'
 if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
   $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
   $base = $event.pull_request.base.sha
@@ -512,7 +515,21 @@ if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
 }
 if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
 git merge-base --is-ancestor $base refs/remotes/origin/main
-if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+$ancestryStatus = $LASTEXITCODE
+if ($ancestryStatus -eq 1 -and $env:GITHUB_EVENT_NAME -eq 'merge_group') {
+  # A later queue entry can be based on an earlier temporary group.
+  # Load policy only from main, after validating both queued ancestors.
+  $head = $env:GITHUB_SHA
+  if ($head -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid queued HEAD SHA' }
+  git merge-base --is-ancestor $base $head
+  if ($LASTEXITCODE -ne 0) { throw 'Merge-group base is not an ancestor of queued HEAD' }
+  git merge-base --is-ancestor $main $head
+  if ($LASTEXITCODE -ne 0) { throw 'Trusted main is not an ancestor of queued HEAD' }
+  $base = $main
+  $forceFull = 'true'
+} elseif ($ancestryStatus -ne 0) {
+  throw "Policy base is not reachable from origin/main (git exit $ancestryStatus)"
+}
 $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $policy | Out-Null
 foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
@@ -523,6 +540,7 @@ foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
 $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
 if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
 "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+"WEB_CI_FORCE_FULL=$forceFull" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 """  # noqa: E501 - preserve the exact reviewed workflow body
 
@@ -600,7 +618,10 @@ def test_node_setup_rejects_other_env_or_literal_versions(
     ("old", "new"),
     [
         ("git merge-base --is-ancestor", "git merge-base"),
-        ("if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }", ""),
+        ("$ancestryStatus = $LASTEXITCODE", "$ancestryStatus = 1"),
+        ("$ancestryStatus -eq 1", "$ancestryStatus -ne 0"),
+        ("git merge-base --is-ancestor $base $head", "git merge-base --is-ancestor $base $base"),
+        ("git merge-base --is-ancestor $main $head", "git merge-base --is-ancestor $main $main"),
         ('git show "${base}:$path"', 'git show "HEAD:$path"'),
         ("$event.merge_group.base_sha", "$event.merge_group.head_sha"),
         ("(Join-Path $policy '.nvmrc')", "(Join-Path $policy '.bun-version')"),
@@ -715,13 +736,14 @@ def test_external_container_images_are_readable_and_immutable() -> None:
 
 def test_protected_ci_executes_container_runtime_proof_without_renaming_contexts() -> None:
     ci = _yaml(WORKFLOWS / "ci.yml")
-    real_db_runs = _step_runs(ci["jobs"]["real-db-tests-work"])
+    runtime_proof_runs = _step_runs(ci["jobs"]["offline-tests-work"])
     contexts = {
         row["context"] for row in ci["jobs"]["required-contexts"]["strategy"]["matrix"]["include"]
     }
 
     assert (REPO_ROOT / "apps/db/scripts/verify-runtime-images.sh").is_file()
-    assert "verify-runtime-images.sh" in real_db_runs
+    assert "verify-runtime-images.sh" in runtime_proof_runs
+    assert "offline-tests-work" in ci["jobs"]["required-contexts"]["needs"]
     assert contexts == {"offline-tests", "alembic-single-head", "real-db-tests"}
     assert _yaml(WORKFLOWS / "web.yml")["jobs"]["ci"]["name"] == "ci"
     assert _yaml(WORKFLOWS / "secret-scan.yml")["jobs"]["gitleaks"]["name"] == "gitleaks"

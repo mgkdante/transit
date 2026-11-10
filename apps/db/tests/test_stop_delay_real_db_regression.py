@@ -559,18 +559,8 @@ finally:
         process.kill()
         process.wait(timeout=3)
 
-        deadline = time.monotonic() + 3
         with real_db_engine.connect() as monitor:
-            while time.monotonic() < deadline:
-                monitor.execute(text("SELECT pg_stat_clear_snapshot()"))
-                remaining = monitor.execute(
-                    text("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = :name"),
-                    {"name": application_name},
-                ).scalar_one()
-                if remaining == 0:
-                    break
-                time.sleep(0.02)
-            assert remaining == 0
+            _assert_backend_gone(monitor, application_name)
             assert monitor.execute(
                 text("SELECT COUNT(*) FROM core.providers WHERE provider_id = :provider"),
                 {"provider": timeout_provider},
@@ -601,6 +591,43 @@ finally:
                 text("DELETE FROM core.providers WHERE provider_id = :provider"),
                 {"provider": timeout_provider},
             )
+
+
+def _assert_backend_gone(monitor, application_name):
+    # Client close does not acknowledge server-process exit. Reuse the existing
+    # three-second observer budget and refresh Postgres' transaction-cached view.
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        monitor.execute(text("SELECT pg_stat_clear_snapshot()"))
+        remaining = monitor.execute(
+            text("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = :name"),
+            {"name": application_name},
+        ).scalar_one()
+        if remaining == 0:
+            break
+        time.sleep(0.02)
+    assert remaining == 0
+
+
+def test_backend_exit_observer_refreshes_activity_snapshot(real_db_engine):
+    application_name = f"dwr-test-exit-{secrets.token_hex(8)}"
+    isolated_engine = create_engine(
+        real_db_engine.url, poolclass=NullPool,
+        connect_args={"application_name": application_name},
+    )
+    connection = isolated_engine.connect()
+    try:
+        with real_db_engine.connect() as monitor:
+            assert monitor.execute(
+                text("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = :name"),
+                {"name": application_name},
+            ).scalar_one() == 1
+            connection.close()
+            isolated_engine.dispose()
+            _assert_backend_gone(monitor, application_name)
+    finally:
+        connection.close()
+        isolated_engine.dispose()
 
 
 def test_rollup_statement_timeout_is_57014_and_nullpool_rolls_back(
@@ -641,10 +668,7 @@ def test_rollup_statement_timeout_is_57014_and_nullpool_rolls_back(
             text("SELECT COUNT(*) FROM core.providers WHERE provider_id = :provider"),
             {"provider": timeout_provider},
         ).scalar_one() == 0
-        assert monitor.execute(
-            text("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = :name"),
-            {"name": application_name},
-        ).scalar_one() == 0
+        _assert_backend_gone(monitor, application_name)
 
 
 def test_rollup_lock_timeout_and_advisory_probe_fail_fast(real_db_engine) -> None:  # noqa: ANN001
