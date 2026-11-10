@@ -19,6 +19,8 @@ test('unknown/shared/deleted spec paths fail closed; clean tree and --all are ex
 	}
 	assert.deepEqual(selectSpecs([], available, rules).specs, []);
 	assert.deepEqual(selectSpecs([], available, rules, true).specs, available);
+	assert.throws(() => selectSpecs(['unknown.ts'], [], rules), /empty fallback/);
+	assert.throws(() => selectSpecs([], [], rules, true), /empty fallback/);
 	assert.throws(() => selectSpecs(['src/a/foo'], available, [{ prefix: 'src/a/', specs: ['missing.spec.ts'] }]));
 });
 test('workspace selection includes transitive consumers and conservative root fallback', () => {

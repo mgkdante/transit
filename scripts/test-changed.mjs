@@ -19,6 +19,7 @@ export function changedFiles(root, baseRef = 'origin/main') {
 }
 
 export function selectSpecs(files, available, rules, all = false) {
+	if ((files.length || all) && !available.length) throw new Error('No browser specs available; refusing an empty fallback');
 	const selected = new Set();
 	const reasons = [];
 	for (const raw of files) {
