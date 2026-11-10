@@ -770,3 +770,22 @@ def test_hosted_runner_series_and_gitleaks_installer_are_explicit() -> None:
     secret_scan = (WORKFLOWS / "secret-scan.yml").read_text(encoding="utf-8")
     assert "install-gitleaks.sh" in secret_scan
     assert "gitleaks_${GITLEAKS_VERSION}" not in secret_scan
+
+
+def test_pr_and_deployed_layout_share_the_complete_measured_grid() -> None:
+    jobs = yaml.safe_load((WORKFLOWS / "web.yml").read_text(encoding="utf-8"))["jobs"]
+    before = jobs["layout"]
+    after = jobs["post-deploy-layout"]
+    assert before["strategy"]["matrix"]["shard"] == list(range(1, 13))
+    assert after["strategy"] == before["strategy"]
+    assert after["steps"] == before["steps"]
+    assert after["needs"] == ["deploy-production"]
+    assert "identity_verified == 'true'" in after["if"]
+    result = jobs["post-deploy-result"]
+    audit = next(step for step in result["steps"] if step.get("id") == "coverage")
+    assert audit["if"] == "needs.post-deploy-layout.result == 'success'"
+    assert 'layout-shards.mjs verify "$RUNNER_TEMP/layout-coverage" 12' in audit["run"]
+    report = result["steps"][-1]
+    assert report["if"] == "${{ always() }}"
+    assert "steps.coverage.outcome != 'success'" in report["env"]["LAYOUT_RESULT"]
+    assert "'coverage-failure'" in report["env"]["LAYOUT_RESULT"]
