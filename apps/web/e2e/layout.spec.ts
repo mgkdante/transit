@@ -124,6 +124,26 @@ for (const locale of ['en', 'fr'] as const)
 				};
 			});
 			expect(geometry.height).toBeLessThanOrEqual(geometry.lineHeight * 2 + 1);
+			// The header is centred, so every wrapped line of its actions is too.
+			const offCentre = await page.locator('.trip-head-actions').evaluate((row) => {
+				const edge = row.getBoundingClientRect();
+				const lines = new Map<number, DOMRect[]>();
+				for (const child of row.children) {
+					const box = child.getBoundingClientRect();
+					if (box.width === 0) continue;
+					const middle = Math.round((box.top + box.bottom) / 2);
+					lines.set(middle, [...(lines.get(middle) ?? []), box]);
+				}
+				return [...lines.values()].map((boxes) =>
+					Math.abs(
+						Math.min(...boxes.map((b) => b.left)) -
+							edge.left -
+							(edge.right - Math.max(...boxes.map((b) => b.right))),
+					),
+				);
+			});
+			expect(offCentre.length).toBeGreaterThan(0);
+			for (const gap of offCentre) expect(gap).toBeLessThanOrEqual(2);
 			if (page.viewportSize()!.width >= 1280) {
 				expect(geometry.timeTop).toBeLessThan(geometry.nameBottom);
 				expect(geometry.timeBottom).toBeGreaterThan(geometry.nameTop);
