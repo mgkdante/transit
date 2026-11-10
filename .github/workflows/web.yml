@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: web-${{ github.ref }}
-  cancel-in-progress: true
+  group: web-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
   run:
@@ -112,10 +112,14 @@ jobs:
 
   ci-work:
     outputs:
-      artifact_id: ${{ steps.upload_build.outputs.artifact-id }}
-      manifest_sha256: ${{ steps.seal_build.outputs.manifest_sha256 }}
-      producer_attempt: ${{ steps.seal_build.outputs.producer_attempt }}
+      artifact_id: ${{ steps.promote.outputs.artifact_id || steps.upload_build.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.promote.outputs.manifest_sha256 || steps.seal_build.outputs.manifest_sha256 }}
+      producer_attempt: ${{ steps.promote.outputs.producer_attempt || steps.seal_build.outputs.producer_attempt }}
+      producer_run_id: ${{ steps.promote.outputs.run_id || github.run_id }}
       build_target: ${{ steps.build_target.outputs.target }}
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -143,7 +147,7 @@ jobs:
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/deploy-scope.test.mjs
+        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
@@ -192,11 +196,41 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node .github/scripts/web-build-artifact.mjs configure
 
+      - name: Select verified queue artifact
+        id: promote
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/web-artifact-promotion.mjs
+
+      - name: Download verified queue artifact
+        if: steps.promote.outputs.promoted == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.promote.outputs.artifact_id }}
+          run-id: ${{ steps.promote.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore verified queue build
+        if: steps.promote.outputs.promoted == 'true'
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_BUILD_TARGET: production
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.promote.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ steps.promote.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ steps.promote.outputs.run_id }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
       - name: Build (adapter-cloudflare)
+        # A successful exact-SHA merge group already sealed these production bytes.
+        if: steps.promote.outputs.promoted != 'true'
         run: bun run build
 
       - name: Seal deployment build
-        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        if: ${{ steps.build_target.outputs.target != 'verification' && steps.promote.outputs.promoted != 'true' }}
         id: seal_build
         working-directory: ${{ github.workspace }}
         env:
@@ -227,15 +261,17 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           TRANSIT_BUILD_TARGET: ${{ steps.build_target.outputs.target }}
-          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.seal_build.outputs.manifest_sha256 }}
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.promote.outputs.manifest_sha256 || steps.seal_build.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ steps.promote.outputs.producer_attempt || steps.seal_build.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ steps.promote.outputs.run_id || github.run_id }}
         run: node .github/scripts/web-build-artifact.mjs verify-source "$RUNNER_TEMP/transit-web-build"
 
       - name: Upload verified deployment build
-        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        if: ${{ steps.build_target.outputs.target != 'verification' && steps.promote.outputs.promoted != 'true' }}
         id: upload_build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}
+          name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}-${{ steps.seal_build.outputs.manifest_sha256 }}
           path: ${{ runner.temp }}/transit-web-build/
           include-hidden-files: true
           if-no-files-found: error
@@ -281,7 +317,15 @@ jobs:
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
 
       - name: e2e
-        run: bun run test:e2e --shard=${{ matrix.shard }}/3
+        env:
+          RUN_EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$RUN_EVENT" = pull_request ]; then
+            bun run test:e2e --shard=${{ matrix.shard }}/3
+          else
+            bun run build
+            bun x playwright test -c e2e/playwright.config.ts --project=http --project=phone --project=desktop --shard=${{ matrix.shard }}/3
+          fi
 
       - name: Upload e2e failure evidence
         if: ${{ failure() && !cancelled() }}
@@ -294,7 +338,7 @@ jobs:
 
   layout:
     needs: [classify]
-    if: ${{ !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_layout != 'false') }}
+    if: ${{ github.event_name == 'pull_request' && !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_layout != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -417,6 +461,14 @@ jobs:
               throw "${job}: $($needs[$job].result)"
             }
           }
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            if ($needs.classify.outputs.run_e2e -notin @('true', 'false')) { throw 'Invalid fast-lane classification' }
+            foreach ($job in @('classify', 'prerelease-guard', 'ci-work', 'unit', 'e2e')) {
+              $deliberateSkip = $job -eq 'e2e' -and $needs.classify.outputs.run_e2e -ceq 'false' -and $needs[$job].result -eq 'skipped'
+              if ($needs[$job].result -ne 'success' -and -not $deliberateSkip) { throw "${job}: fast lane did not succeed" }
+            }
+            exit 0
+          }
           # Older base policies have no run_layout output and permit docs-only skips.
           # Require explicit base classification even when that policy predates layout gating.
           if ($needs.layout.result -eq 'skipped' -and $needs.classify.outputs.run_layout -cne 'false') {
@@ -426,7 +478,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   deploy_scope:
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -443,12 +495,11 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Resolve deployable event diff
+      - name: Resolve deployment against live Worker SHA
         id: scope
         working-directory: ${{ github.workspace }}
         env:
           TRANSIT_DEPLOY_EVENT: ${{ github.event_name }}
-          TRANSIT_DEPLOY_BEFORE: ${{ github.event.before }}
           TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
         run: node .github/scripts/deploy-scope.mjs >> "$GITHUB_OUTPUT"
 
@@ -494,6 +545,12 @@ jobs:
 
   deploy-production:
     name: deploy production
+    permissions:
+      contents: read
+      actions: read
+    concurrency:
+      group: transit-data-edge-production
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [ci, deploy_scope, ci-work]
@@ -519,17 +576,21 @@ jobs:
           TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
           TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
           TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
           TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
         run: |
           [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
           [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_PRODUCER_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
 
       - name: Download the producer artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.ci-work.outputs.producer_run_id }}
           path: ${{ runner.temp }}/transit-web-build
           merge-multiple: true
           digest-mismatch: error
@@ -539,6 +600,7 @@ jobs:
         env:
           TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
           TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
         run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
 
       - name: Apply public snapshot CORS
@@ -562,6 +624,95 @@ jobs:
           ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
           ${PUBLIC_CF_BEACON_TOKEN:+--var "PUBLIC_CF_BEACON_TOKEN:$PUBLIC_CF_BEACON_TOKEN"}
 
+      - name: Verify deployed source identity
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/post-deploy-layout.mjs verify
+
       - name: Verify shared production routes
         working-directory: apps/data-proxy
         run: bash smoke.sh
+
+  post-deploy-layout:
+    needs: [deploy-production]
+    if: ${{ needs.deploy-production.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Install authenticated Chromium
+        env:
+          TRANSIT_BROWSER_ROOT: ${{ runner.temp }}/transit-browser-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
+          node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
+          printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
+
+      # WebKit needs ~114 MB of Ubuntu packages. The Ubuntu mirror sometimes serves them
+      # at a few hundred kB/s, which stalls a shard for minutes, so keep the packages and
+      # the WebKit build between runs. apt still verifies every cached package.
+      - name: Restore WebKit cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/transit-apt-archives
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-webkit-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-webkit-
+
+      - name: Install WebKit dependencies
+        run: |
+          archives="$HOME/.cache/transit-apt-archives"
+          mkdir -p -- "$archives/partial"
+          printf 'Dir::Cache::archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\nAPT::Sandbox::User "root";\n' "$archives" \
+            | sudo tee /etc/apt/apt.conf.d/99transit-archives > /dev/null
+          bun x playwright install --with-deps webkit
+          sudo rm -f -- "$archives/lock"
+          sudo chown -R "$(id -u):$(id -g)" -- "$archives"
+
+      - name: layout
+        run: bun run test:e2e:layout --shard=${{ matrix.shard }}/4
+
+      - name: Upload e2e failure evidence
+        if: ${{ failure() && !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: transit-post-deploy-layout-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  post-deploy-result:
+    needs: [deploy-production, post-deploy-layout]
+    if: ${{ always() && needs.deploy-production.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Check out deployed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Report layout result and rollback command
+        env:
+          LAYOUT_RESULT: ${{ needs.post-deploy-layout.result }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/post-deploy-layout.mjs report

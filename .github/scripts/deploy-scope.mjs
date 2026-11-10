@@ -26,9 +26,16 @@ function matches(path, exact, prefixes) {
 	return exact.has(path) || prefixes.some((prefix) => path.startsWith(prefix));
 }
 
-export function deploymentEligible({ eventName, diffResolved, paths } = {}) {
+export function deploymentEligible({
+	eventName,
+	diffResolved,
+	paths,
+	sameRevision,
+} = {}) {
 	if (eventName === 'workflow_dispatch') return true;
-	if (eventName !== 'push' || diffResolved !== true || !Array.isArray(paths)) return true;
+	if (eventName === 'push' && sameRevision === true) return false;
+	if (eventName !== 'push' || diffResolved !== true || !Array.isArray(paths))
+		return true;
 	if (paths.length === 0) return true;
 
 	let onlyKnownNonDeployable = true;
@@ -52,10 +59,14 @@ function resolvePushDiff(before, after, cwd) {
 	}
 
 	try {
-		const output = execFileSync('git', ['diff', '--name-only', '-z', before, after], {
-			cwd,
-			stdio: ['ignore', 'pipe', 'ignore'],
-		});
+		const output = execFileSync(
+			'git',
+			['diff', '--name-only', '-z', before, after],
+			{
+				cwd,
+				stdio: ['ignore', 'pipe', 'ignore'],
+			},
+		);
 		return {
 			diffResolved: true,
 			paths: output
@@ -68,17 +79,53 @@ function resolvePushDiff(before, after, cwd) {
 	}
 }
 
-export function main(env = process.env, stdout = process.stdout, cwd = process.cwd()) {
+export function main(
+	env = process.env,
+	stdout = process.stdout,
+	cwd = process.cwd(),
+) {
 	const eventName = env.TRANSIT_DEPLOY_EVENT;
 	const diff =
 		eventName === 'workflow_dispatch'
 			? { diffResolved: true, paths: [] }
-			: resolvePushDiff(env.TRANSIT_DEPLOY_BEFORE, env.TRANSIT_DEPLOY_AFTER, cwd);
-	const deployWeb = deploymentEligible({ eventName, ...diff });
+			: resolvePushDiff(
+					env.TRANSIT_DEPLOY_LIVE_SHA,
+					env.TRANSIT_DEPLOY_AFTER,
+					cwd,
+				);
+	const sameRevision =
+		diff.diffResolved &&
+		env.TRANSIT_DEPLOY_LIVE_SHA === env.TRANSIT_DEPLOY_AFTER;
+	const deployWeb = deploymentEligible({ eventName, ...diff, sameRevision });
 	stdout.write(`deploy_web=${deployWeb ? 'true' : 'false'}\n`);
 	return 0;
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-	process.exitCode = main();
+export async function liveProductionSha(fetcher = fetch) {
+	try {
+		const response = await fetcher('https://transit.yesid.dev/health', {
+			redirect: 'error',
+			signal: AbortSignal.timeout(5_000),
+			headers: { 'cache-control': 'no-cache' },
+		});
+		const body = await response.json();
+		return [200, 503].includes(response.status) &&
+			body?.service === 'transit-web' &&
+			/^[a-f0-9]{40}$/.test(body.commit ?? '')
+			? body.commit
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+if (
+	process.argv[1] &&
+	pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+) {
+	const liveSha =
+		process.env.TRANSIT_DEPLOY_EVENT === 'push'
+			? await liveProductionSha()
+			: undefined;
+	process.exitCode = main({ ...process.env, TRANSIT_DEPLOY_LIVE_SHA: liveSha });
 }

@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -95,7 +95,7 @@ function fixture(t) {
   git("commit", "--quiet", "--message=Artifact fixture");
   const env = {
     ...process.env,
-    PATH: `${join(root, "bin")}:${process.env.PATH}`,
+    PATH: `${join(root, "bin")}${delimiter}${process.env.PATH}`,
     GITHUB_REPOSITORY: "owner/transit",
     GITHUB_SHA: git("rev-parse", "HEAD"),
     GITHUB_RUN_ID: "123",
@@ -122,6 +122,7 @@ function fixture(t) {
 test("configure binds each eligible event to the deployment environment", (t) => {
   const f = fixture(t);
   const cases = [
+    ["merge_group", "refs/heads/gh-readonly-queue/main/pr-1", "production"],
     ["push", "refs/heads/main", "production"],
     ["workflow_dispatch", "refs/heads/main", "production"],
     ["workflow_dispatch", "refs/heads/topic", "verification"],
@@ -149,6 +150,18 @@ test("configure binds each eligible event to the deployment environment", (t) =>
         "PUBLIC_SITE_ORIGIN=https://transit.yesid.dev\nPUBLIC_V1_BASE=https://data.yesid.dev/v1\nPUBLIC_INDEXING=true\n",
       );
   }
+});
+
+test("cross-run restoration requires the selected producer run identity and keeps SHA validation", (t) => {
+  const f = fixture(t);
+  f.seal();
+  f.env.GITHUB_RUN_ID = "999";
+  assert.throws(() => restore(f.stage, f.options), /Build context mismatch/);
+  f.env.TRANSIT_PRODUCER_RUN_ID = "123";
+  assert.equal(restore(f.stage, f.options).context.run_id, "123");
+  assert.equal(verifySource(f.stage, f.options).context.run_id, "123");
+  f.env.GITHUB_SHA = "b".repeat(40);
+  assert.throws(() => restore(f.stage, f.options), /Checkout HEAD mismatch/);
 });
 
 test("seals, verifies, and restores hidden files while preserving fresh dependencies and other generated output", (t) => {
