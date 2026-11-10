@@ -143,7 +143,7 @@ jobs:
 
       - name: Web CI policy contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs .github/scripts/layout-timing.test.mjs
+        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs .github/scripts/layout-timing.test.mjs .github/scripts/layout-shards.test.mjs
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
@@ -351,7 +351,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -373,8 +373,10 @@ jobs:
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/layout-timing/report.json
         run: |
-          mkdir -p "$RUNNER_TEMP/layout-timing"
-          bun run test:e2e:layout --shard=${{ matrix.shard }}/4
+          mkdir -p "$RUNNER_TEMP/layout-timing" "$RUNNER_TEMP/layout-plan"
+          env -u PLAYWRIGHT_JSON_OUTPUT_NAME bun x playwright test -c e2e/playwright.config.ts --project=layout-* --workers=2 --list --reporter=json > "$RUNNER_TEMP/layout-plan/catalog.json"
+          node ../../.github/scripts/layout-shards.mjs plan "$RUNNER_TEMP/layout-plan/catalog.json" "$RUNNER_TEMP/layout-plan" 12
+          bun run test:e2e:layout --test-list="$RUNNER_TEMP/layout-plan/shard-${{ matrix.shard }}.txt"
 
       - name: Record layout timing provenance
         if: ${{ always() }}
@@ -382,8 +384,11 @@ jobs:
         env:
           TRANSIT_LAYOUT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           TRANSIT_LAYOUT_SHARD: ${{ matrix.shard }}
-          TRANSIT_LAYOUT_SHARDS: "4"
-        run: node .github/scripts/layout-timing.mjs record "$RUNNER_TEMP/layout-timing"
+          TRANSIT_LAYOUT_SHARDS: "12"
+          TRANSIT_LAYOUT_PLAN: ${{ runner.temp }}/layout-plan/plan.json
+        run: |
+          node .github/scripts/layout-timing.mjs record "$RUNNER_TEMP/layout-timing"
+          cp "$RUNNER_TEMP/layout-plan/plan.json" "$RUNNER_TEMP/layout-timing/plan.json"
 
       - name: Upload complete layout timings
         if: ${{ always() }}
@@ -456,6 +461,21 @@ jobs:
         with:
           node-version: ${{ env.WEB_CI_NODE }}
           package-manager-cache: false
+
+      - name: Download layout coverage reports
+        if: needs.layout.result == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: layout-timing-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/layout-coverage
+          merge-multiple: false
+
+      - name: Verify the full layout selection ran once
+        if: needs.layout.result == 'success'
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_LAYOUT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node .github/scripts/layout-shards.mjs verify "$RUNNER_TEMP/layout-coverage" 12
 
       - name: Require selected jobs to succeed
         working-directory: ${{ github.workspace }}

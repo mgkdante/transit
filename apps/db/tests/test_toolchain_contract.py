@@ -75,6 +75,7 @@ COMPATIBILITY_PROOFS = {
     "apps/web/src/tests/map-poster-assets.test.ts",
 }
 PUBLIC_RECEIPTS = {
+    ".github/scripts/layout-duration-baseline.json",
     "apps/web/static/map/basemap-montreal-posters.json",
     "apps/web/static/map/basemap-ottawa-posters.json",
     "apps/web/wrangler.toml",
@@ -299,6 +300,28 @@ def test_container_inventory_rejects_unreviewed_playwright_versions_and_digests(
     assert any("tool version" in item for item in _inventory_violations({
         ".github/workflows/web.yml": source,
     }))
+
+
+def test_layout_duration_receipt_matches_its_recorded_grid_and_toolchain() -> None:
+    receipt = _json(".github/scripts/layout-duration-baseline.json")
+    assert receipt["schema"] == 1
+    assert receipt["workers"] == 2
+    assert receipt["playwright"] == _json("package.json")["devDependencies"]["@playwright/test"]
+    assert receipt["columns"] == ["project", "file", "cases", "duration_ms"]
+    rows = receipt["groups"]
+    assert len({(row[0], row[1]) for row in rows}) == len(rows)
+    assert all(isinstance(row[2], int) and row[2] > 0 and row[3] > 0 for row in rows)
+    assert sum(row[2] for row in rows) == receipt["selected_cases"]
+    assert receipt["measured_cases"] + receipt["not_applicable_cases"] == receipt["selected_cases"]
+    reports = receipt["reports"]
+    assert {row["shard"] for row in reports} == set(range(1, len(reports) + 1))
+    assert all(row["source_sha"] == receipt["source_sha"] for row in reports)
+    assert all(re.fullmatch(r"[a-f0-9]{64}", row["report_sha256"]) for row in reports)
+    assert sum(row["passed"] for row in reports) == receipt["measured_cases"]
+    assert sum(row["not_applicable"] for row in reports) == receipt["not_applicable_cases"]
+    assert receipt["run_url"] == (
+        "https://github.com/yesid-dev/transit/actions/runs/" + receipt["run_id"]
+    )
 
 
 @pytest.mark.parametrize(
