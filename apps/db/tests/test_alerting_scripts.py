@@ -42,7 +42,7 @@ def _stubbed_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         "  exit 0\n"
         "fi\n"
         'if [[ "$1" == "issue" && "$2" == "create" ]]; then\n'
-        '  echo "https://github.com/mgkdante/transit/issues/456"\n'
+        '  echo "https://github.com/yesid-dev/transit/issues/456"\n'
         "  exit 0\n"
         "fi\n"
         'printf \'gh %s\\n\' "$*"\n',
@@ -203,7 +203,7 @@ def test_alert_issue_fire_creates_labeled_issue_when_none_open(tmp_path) -> None
     env.update(
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
-        GH_REPO="mgkdante/transit",
+        GH_REPO="yesid-dev/transit",
         GH_ISSUE_LIST_OUTPUT="",
     )
 
@@ -222,7 +222,7 @@ def test_alert_issue_notifies_owner_before_attempting_assignment(tmp_path, body)
     env, _bin = _stubbed_env(tmp_path)
     log = tmp_path / "cmd.log"
     log.write_text("", encoding="utf-8")
-    env.update(COMMAND_LOG=str(log), GH_TOKEN="t", GH_REPO="mgkdante/transit",
+    env.update(COMMAND_LOG=str(log), GH_TOKEN="t", GH_REPO="yesid-dev/transit",
                GH_ISSUE_LIST_OUTPUT="")
 
     result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stale", body], env)
@@ -233,17 +233,17 @@ def test_alert_issue_notifies_owner_before_attempting_assignment(tmp_path, body)
     assert "--body @mgkdante" in create
     assert body in log.read_text(encoding="utf-8")
     assignment = next(line for line in lines if line.startswith("gh|issue edit"))
-    assert "https://github.com/mgkdante/transit/issues/456" in assignment
+    assert "https://github.com/yesid-dev/transit/issues/456" in assignment
     assert "--add-assignee mgkdante" in assignment
     assert lines.index(create) < lines.index(assignment)
-    assert "https://github.com/mgkdante/transit/issues/456" in result.stdout
+    assert "https://github.com/yesid-dev/transit/issues/456" in result.stdout
 
 
 def test_alert_issue_assignment_failure_preserves_created_alert_and_mention(tmp_path) -> None:
     env, _bin = _stubbed_env(tmp_path)
     log = tmp_path / "cmd.log"
     log.write_text("", encoding="utf-8")
-    env.update(COMMAND_LOG=str(log), GH_TOKEN="t", GH_REPO="mgkdante/transit",
+    env.update(COMMAND_LOG=str(log), GH_TOKEN="t", GH_REPO="yesid-dev/transit",
                GH_ISSUE_LIST_OUTPUT="", GH_FAIL_PATTERN="issue edit")
 
     result = _run(ALERT_ISSUE, ["fire", "freshness", "[alert] stale", "details"], env)
@@ -253,7 +253,7 @@ def test_alert_issue_assignment_failure_preserves_created_alert_and_mention(tmp_
     assert sum(line.startswith("gh|issue create") for line in lines) == 1
     assert "--body @mgkdante" in log.read_text(encoding="utf-8")
     assert "could not assign" in result.stderr
-    assert "https://github.com/mgkdante/transit/issues/456" in result.stdout
+    assert "https://github.com/yesid-dev/transit/issues/456" in result.stdout
     assert not any(line.startswith("gh|issue close") for line in lines)
 
 
@@ -264,7 +264,7 @@ def test_alert_issue_fire_is_noop_when_issue_already_open(tmp_path) -> None:
     env.update(
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
-        GH_REPO="mgkdante/transit",
+        GH_REPO="yesid-dev/transit",
         GH_ISSUE_LIST_OUTPUT="123",
     )
 
@@ -283,7 +283,7 @@ def test_alert_issue_resolve_comments_and_closes(tmp_path) -> None:
     env.update(
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
-        GH_REPO="mgkdante/transit",
+        GH_REPO="yesid-dev/transit",
         GH_ISSUE_LIST_OUTPUT="123",
     )
 
@@ -302,7 +302,7 @@ def test_alert_issue_resolve_noop_without_open_issue(tmp_path) -> None:
     env.update(
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
-        GH_REPO="mgkdante/transit",
+        GH_REPO="yesid-dev/transit",
         GH_ISSUE_LIST_OUTPUT="",
     )
 
@@ -321,7 +321,7 @@ def test_alert_issue_propagates_gh_failure(tmp_path) -> None:
     env.update(
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
-        GH_REPO="mgkdante/transit",
+        GH_REPO="yesid-dev/transit",
         GH_ISSUE_LIST_OUTPUT="",
         GH_FAIL_PATTERN="issue create",
     )
@@ -367,7 +367,7 @@ def _probe_env(tmp_path: Path):
     env.update(
         COMMAND_LOG=str(log),
         GH_TOKEN="t",
-        GH_REPO="mgkdante/transit",
+        GH_REPO="yesid-dev/transit",
         DATABASE_URL="postgresql://u:p@h/db",
         SNAPSHOT_PUBLIC_BASE_URL="https://transit.example/data",
         CHECK_GLOBAL_FAILED_RUNS="false",

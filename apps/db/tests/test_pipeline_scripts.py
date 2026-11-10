@@ -121,8 +121,8 @@ def test_pause_pipeline_leaves_oracle_postgres_running_without_external_compute_
 
     log_lines = _read_log(log_path)
     assert log_lines == [
-        "gh|workflow disable Daily Static Pipeline --repo mgkdante/transit",
-        "gh|workflow disable Daily Warm Rollups --repo mgkdante/transit",
+        "gh|workflow disable Daily Static Pipeline --repo yesid-dev/transit",
+        "gh|workflow disable Daily Warm Rollups --repo yesid-dev/transit",
         "docker|compose --env-file .env -f docker-compose.yml stop worker octranspo-worker",
     ]
     assert not any(line.startswith("curl|") for line in log_lines)
@@ -144,8 +144,8 @@ def test_resume_pipeline_leaves_oracle_postgres_running_without_external_compute
 
     log_lines = _read_log(log_path)
     assert log_lines == [
-        "gh|workflow enable Daily Static Pipeline --repo mgkdante/transit",
-        "gh|workflow enable Daily Warm Rollups --repo mgkdante/transit",
+        "gh|workflow enable Daily Static Pipeline --repo yesid-dev/transit",
+        "gh|workflow enable Daily Warm Rollups --repo yesid-dev/transit",
         "docker|compose --env-file .env -f docker-compose.yml up -d worker octranspo-worker",
     ]
     assert not any(line.startswith("curl|") for line in log_lines)

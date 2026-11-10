@@ -11,7 +11,7 @@ artifacts.
 Install Node from [.nvmrc](.nvmrc) and Bun from [.bun-version](.bun-version), then:
 
 ```sh
-git clone https://github.com/mgkdante/transit.git
+git clone https://github.com/yesid-dev/transit.git
 cd transit
 bun install --frozen-lockfile
 bun run setup:hooks
@@ -49,7 +49,7 @@ manifests, which cover linux-x64 and win32-x64.
 
 CI also checks the social cards, icons, map posters and deploy dry runs. Shared
 design changes belong in
-[yesid.design](https://github.com/mgkdante/yesid.design); the `@yesid/*`
+[yesid.design](https://github.com/yesid-dev/yesid.design); the `@yesid/*`
 URLs in `apps/web/package.json` pin the release in use.
 
 ## Python pipeline
