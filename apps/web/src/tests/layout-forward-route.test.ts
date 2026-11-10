@@ -30,3 +30,20 @@ it('preserves real fetch failures even when the page is closed', async () => {
 it('completes a successful handler', async () => {
 	await expect(forwardRoute({ isClosed: () => false }, async () => {})).resolves.toBeUndefined();
 });
+
+it('tolerates request context disposal after explicit page closure', async () => {
+	await expect(
+		forwardRoute({ isClosed: () => true }, async () => {
+			throw new Error('route.fetch: Request context disposed.');
+		}),
+	).resolves.toBeUndefined();
+});
+
+it('preserves request context disposal while the page is live', async () => {
+	const error = new Error('route.fetch: Request context disposed.');
+	await expect(
+		forwardRoute({ isClosed: () => false }, async () => {
+			throw error;
+		}),
+	).rejects.toBe(error);
+});

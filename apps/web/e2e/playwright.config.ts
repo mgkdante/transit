@@ -104,6 +104,10 @@ export default defineConfig({
 						fullyParallel: true,
 						testMatch: /layout.*\.spec\.ts/,
 						testIgnore: [
+							// Route lifecycle depends on the engine, not viewport or theme.
+							...(width === 1440 && colorScheme === 'light'
+								? []
+								: [/layout-route-(?:lifecycle|close)\.spec\.ts/]),
 							// These specs own every size/container boundary they exercise.
 							// Keep both engines and themes; project viewport adds no coverage.
 							...(width === 1440

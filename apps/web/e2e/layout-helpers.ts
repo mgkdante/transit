@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 // Explicit page closure can dispose a fetched response. The shared fixture drains
 // normal teardown; failures on a live page must still fail the test.
 const TEARDOWN =
-	/has been disposed|Target page, context or browser has been closed|Route is already handled/;
+	/has been disposed|Request context disposed|Target page, context or browser has been closed|Route is already handled/;
 export async function forwardRoute(
 	page: Pick<Page, 'isClosed'>,
 	handle: () => Promise<void>,
