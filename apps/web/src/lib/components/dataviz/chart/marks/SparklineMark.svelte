@@ -40,6 +40,7 @@
 	class={cn('dv-sparkline m-0 inline-block', className)}
 	aria-label={summary}
 	data-slot="sparkline-mark"
+	data-ripple-exempt
 	style:width={width === '100%' ? '100%' : undefined}
 	style:max-width="100%"
 >

@@ -75,6 +75,7 @@
 		class="m6b-controls-drawer inset-x-auto top-auto h-auto w-auto max-w-none gap-0 overflow-y-auto rounded-lg border p-0"
 		data-m6b-controls-drawer=""
 		data-testid="map-filter-drawer"
+		data-ripple-exempt
 		onOpenAutoFocus={focusTitle}
 		onCloseAutoFocus={focusDesktopControls}
 	>

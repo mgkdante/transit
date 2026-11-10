@@ -58,6 +58,7 @@
 	style:height
 	style:--chart-frame-h={height}
 	data-slot="chart-frame"
+	data-ripple-exempt
 >
 	{#if ready}{@render children?.()}{/if}
 </div>

@@ -135,6 +135,7 @@
 		{id}
 		role="tooltip"
 		class="chart-tooltip"
+		data-ripple-exempt
 		class:chart-tooltip--open={open && placed}
 		class:chart-tooltip--animate={animate}
 		aria-hidden={!open}
