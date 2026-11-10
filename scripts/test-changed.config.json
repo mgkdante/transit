@@ -1,0 +1,55 @@
+{
+  "playwright": "e2e/playwright.changed.config.ts",
+  "rules": [
+    {
+      "specs": [
+        "search.spec.ts",
+        "layout.spec.ts"
+      ],
+      "prefix": "apps/web/src/lib/features/search/"
+    },
+    {
+      "specs": [
+        "map.spec.ts",
+        "layout-map.spec.ts",
+        "layout-map-controls.spec.ts"
+      ],
+      "prefix": "apps/web/src/lib/features/map/"
+    }
+  ],
+  "specDir": "apps/web/e2e",
+  "browserGroups": [
+    {
+      "projects": [
+        "layout-chromium-390-light",
+        "layout-webkit-1440-light"
+      ],
+      "allProjects": [
+        "*"
+      ],
+      "match": "/layout[^/]*\\.spec\\.ts$",
+      "build": [
+        "--mode",
+        "e2e"
+      ]
+    },
+    {
+      "projects": [
+        "phone",
+        "desktop"
+      ],
+      "allProjects": [
+        "*"
+      ],
+      "match": "/(?!layout)[^/]+\\.spec\\.ts$",
+      "build": [
+        "--mode",
+        "e2e"
+      ]
+    }
+  ],
+  "app": "apps/web",
+  "unitEnv": {
+    "TRANSIT_E2E_PANEL_SIZES": "1"
+  }
+}
