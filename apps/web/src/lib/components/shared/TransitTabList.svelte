@@ -13,7 +13,11 @@
 	} = $props();
 </script>
 
-<TabsList variant="line" class="station-tabs w-full flex-nowrap justify-start" aria-label={label}>
+<TabsList
+	variant="line"
+	class="station-tabs transit-tab-list w-full min-w-0 max-w-full flex-nowrap justify-start"
+	aria-label={label}
+>
 	{#each tabs as tab (tab.key)}
 		<TabsTrigger value={tab.key} onclick={() => onselect?.(tab.key)}>
 			{#snippet child({ props })}<button
@@ -26,6 +30,12 @@
 </TabsList>
 
 <style>
+	/* A tab row never widens its page: extra tabs scroll within the row. */
+	:global(.transit-tab-list) {
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+		scrollbar-width: thin;
+	}
 	.transit-tab-compact {
 		flex: none;
 		padding-inline: calc(var(--spacing) * 3);
