@@ -58,8 +58,14 @@ function fixture(t) {
   git("init", "--quiet", "--initial-branch=main");
   for (const p of BUILD_INPUTS) write(p, "{}");
   write(".nvmrc", process.versions.node);
-  write(".bun-version", "1.4.4");
-  write("package.json", '{"devDependencies":{"wrangler":"4.115.0"}}');
+  write(
+    ".bun-version",
+    readFileSync(new URL("../../.bun-version", import.meta.url)),
+  );
+  write(
+    "package.json",
+    readFileSync(new URL("../../package.json", import.meta.url)),
+  );
   for (const name of ["web-build-artifact.mjs", "web-queue-gate.mjs"])
     write(
       `.github/scripts/${name}`,
@@ -131,8 +137,9 @@ function sealed(f) {
       },
       tools: {
         node: readFileSync(join(f.root, ".nvmrc"), "utf8").trim(),
-        bun: "1.4.4",
-        wrangler: "4.115.0",
+        bun: readFileSync(join(f.root, ".bun-version"), "utf8").trim(),
+        wrangler: JSON.parse(readFileSync(join(f.root, "package.json"), "utf8"))
+          .devDependencies.wrangler,
       },
       inputs: BUILD_INPUTS.map((p) => record(f.root, p)),
     },
@@ -145,7 +152,9 @@ function sealed(f) {
 
 test("real sealed-artifact preflight works without dependencies and never weakens deployment restore", (t) => {
   const f = fixture(t);
-  f.write(".nvmrc", "0.0.1");
+  const differentNode = process.versions.node.split(".");
+  differentNode[0] = String(Number(differentNode[0]) + 1);
+  f.write(".nvmrc", differentNode.join("."));
   f.git("commit", "--quiet", "-am", "Different pinned runtime");
   f.env.GITHUB_SHA = f.git("rev-parse", "HEAD");
   const { stage, proof } = sealed(f);
