@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
 	refresh: { kind: 'refresh' },
 	configureRuntime: vi.fn(),
 	configureUi: vi.fn(),
+	preciseClock: vi.fn((clock: unknown) => ({ precise: clock })),
 }));
 
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
@@ -14,6 +15,7 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 vi.mock('#lib/stores/index.ts', () => ({ dataRefresh: mocks.refresh }));
 vi.mock('#lib/v1/runtime.ts', () => ({ configureV1Runtime: mocks.configureRuntime }));
 vi.mock('#lib/ui/configure.ts', () => ({ configureTransitUi: mocks.configureUi }));
+vi.mock('#lib/v1/preciseClock.ts', () => ({ preciseServerClock: mocks.preciseClock }));
 
 import { init } from '../hooks.client';
 
@@ -32,8 +34,10 @@ describe('client init', () => {
 		vi.stubGlobal('window', { fetch: vi.fn(), location: { origin: 'https://transit.test' } });
 		init();
 
+		// Live ages read the real time, not the shared clock's last tick.
+		expect(mocks.preciseClock).toHaveBeenCalledWith(mocks.clock);
 		expect(mocks.configureRuntime).toHaveBeenCalledWith({
-			clock: mocks.clock,
+			clock: { precise: mocks.clock },
 			refresh: mocks.refresh,
 		});
 		expect(mocks.configureUi).toHaveBeenCalledOnce();
