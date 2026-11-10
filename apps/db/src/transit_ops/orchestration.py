@@ -729,14 +729,22 @@ def _run_realtime_cycle(
         last_attempt_at = last_attempts.get(endpoint_key) if last_attempts is not None else None
         if last_attempt_at is not None:
             last_capture_at = max(last_capture_at or last_attempt_at, last_attempt_at)
+        # Successful unphased captures follow cycle time, so preceding work cannot
+        # stretch their cadence. Failed attempts and source phases use real attempt time.
+        due_at_utc = (
+            attempt_started_at_utc
+            if last_attempt_at is not None
+            or getattr(manifest.feeds[endpoint_key], "refresh_phase_seconds", None) is not None
+            else started_at_utc
+        )
         if interval_seconds is not None:
             elapsed_seconds = (
-                (attempt_started_at_utc - last_capture_at).total_seconds()
+                (due_at_utc - last_capture_at).total_seconds()
                 if last_capture_at is not None
                 else 0.0
             )
             if (last_captures is not None or last_attempts is not None) and not endpoint_due(
-                manifest.feeds[endpoint_key], attempt_started_at_utc, last_capture_at
+                manifest.feeds[endpoint_key], due_at_utc, last_capture_at
             ):
                 logger.info(
                     (
@@ -779,6 +787,8 @@ def _run_realtime_cycle(
         endpoint_results.append(endpoint_result)
         if last_captures is not None and endpoint_result.status == "succeeded":
             last_captures[endpoint_key] = started_at_utc
+            if last_attempts is not None:
+                last_attempts.pop(endpoint_key, None)
     step_timings_seconds = {
         f"capture_{endpoint_result.endpoint_key}": endpoint_result.capture_duration_seconds
         for endpoint_result in endpoint_results
