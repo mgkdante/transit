@@ -17,7 +17,7 @@ dependencies = [
   "psycopg[binary]>=3.3.4,<4.0",
   "pyyaml>=6.0,<7.0",
   "python-dotenv>=1.0,<2.0",
-  "sqlalchemy>=2.0.51,<2.1",
+  "sqlalchemy>=2.0.51,<2.2",
   "typer>=0.27.0,<1.0",
   "pyshp>=3.1.6,<4.0",
   "httpx>=0.28.1",
@@ -32,8 +32,8 @@ Documentation = "https://github.com/yesid-dev/transit#readme"
 
 [dependency-groups]
 dev = [
-  "boto3-stubs[s3]==1.43.123",
-  "botocore-stubs==1.43.123",
+  "boto3-stubs[s3]==1.43.126",
+  "botocore-stubs==1.43.126",
   "mypy-boto3-s3==1.43.106",
   "mypy>=2.3.0,<3.0",
   "pytest-xdist>=3.8,<4",
