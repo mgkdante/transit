@@ -4,7 +4,13 @@ import { forwardRoute } from './layout-helpers';
 
 for (const target of ['page', 'context'] as const)
 	test(`tolerates explicit ${target} closure while fetching a route`, async ({ page }) => {
+		// Close only once the fetch has reached the server. A close issued between
+		// route.fetch() and its dispatch can leave Playwright's call pending forever,
+		// which is a different scenario from closing while a route is fetching.
+		let received!: () => void;
+		const reached = new Promise<void>((resolve) => (received = resolve));
 		const server = createServer((_request, response) => {
+			received();
 			setTimeout(() => response.end('fixture response'), 200);
 		});
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -28,7 +34,7 @@ for (const target of ['page', 'context'] as const)
 				}).then(settled, failed);
 			});
 			await page.evaluate((url) => void fetch(url).catch(() => {}), url);
-			await fetching;
+			await Promise.all([fetching, reached]);
 			await Promise.all([target === 'page' ? page.close() : page.context().close(), completed]);
 		} finally {
 			await new Promise<void>((resolve, reject) =>
