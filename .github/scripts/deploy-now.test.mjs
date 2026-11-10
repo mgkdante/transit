@@ -56,7 +56,7 @@ test('deployment summaries use actual Wrangler versions and reject missing deplo
 
 test('older application refs use deployment control files preserved from the main dispatch revision', () => {
   const directory = mkdtempSync(join(tmpdir(), 'transit-deploy-control-'));
-  const assets = ['.github/actions/setup/action.yml', 'apps/data-proxy/r2-cors.json', 'apps/data-proxy/scripts/configure-data-edge.mjs'];
+  const assets = ['.nvmrc', '.bun-version', 'apps/data-proxy/r2-cors.json', 'apps/data-proxy/scripts/configure-data-edge.mjs'];
   function step(name) {
     const block = workflow.split(`      - name: ${name}\n`)[1]?.split('\n      - name:')[0];
     assert.ok(block, `Missing ${name}`);
@@ -78,12 +78,25 @@ test('older application refs use deployment control files preserved from the mai
         cwd: root, env: { ...process.env, RUNNER_TEMP: temporary }, stdio: 'pipe',
       });
     };
+    writeFileSync(join(root, 'package.json'), JSON.stringify({devDependencies:{wrangler:'4.154.0'}}));
+    writeFileSync(join(root, '.nvmrc'), '22.23.2\n');
+    writeFileSync(join(root, '.bun-version'), '1.3.11\n');
     run('Preserve main deployment controls');
     // Model checkout of a historical ref that has none of these controls.
     for (const asset of assets) rmSync(join(root, asset));
-    run('Restore main setup action');
-    assert.equal(readFileSync(join(root, assets[0]), 'utf8'), `main control: ${assets[0]}`);
-    for (const asset of assets.slice(1)) {
+    // Actual old metadata: no Node file and Wrangler lives in data-proxy.
+    const historical = readFileSync(new URL('./fixtures/deploy-now-historical-package.json', import.meta.url), 'utf8');
+    writeFileSync(join(root, 'package.json'), historical);
+    assert.equal(JSON.parse(historical).devDependencies?.wrangler, undefined);
+    const control = join(temporary, 'transit-deploy-control');
+    assert.equal(readFileSync(join(control, '.nvmrc'), 'utf8').trim(), '22.23.2');
+    assert.equal(readFileSync(join(control, '.bun-version'), 'utf8').trim(), '1.3.11');
+    assert.equal(JSON.parse(readFileSync(join(control, 'package.json'), 'utf8')).dependencies.wrangler, '4.154.0');
+    assert.match(workflow, /node-version-file: \$\{\{ runner.temp \}\}\/transit-deploy-control\/.nvmrc/);
+    assert.match(workflow, /bun-version-file: \$\{\{ runner.temp \}\}\/transit-deploy-control\/.bun-version/);
+    assert.match(workflow, /run: bun install --frozen-lockfile/);
+    assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/);
+    for (const asset of assets.slice(2)) {
       assert.equal(readFileSync(join(temporary, 'transit-deploy-control', asset), 'utf8'), `main control: ${asset}`);
     }
     assert.match(workflow, /--file "\$RUNNER_TEMP\/transit-deploy-control\/apps\/data-proxy\/r2-cors.json"/);

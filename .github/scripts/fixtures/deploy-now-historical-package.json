@@ -1,0 +1,29 @@
+{
+	"name": "transit",
+	"private": true,
+	"type": "module",
+	"description": "Transit — STM transit operations analytics turborepo: apps/db (Python pipeline) + apps/web (SvelteKit citizen dashboard) + apps/data-proxy (Cloudflare /v1 snapshot worker). Workflow contract: AGENTS.md; long-form context lives in Notion.",
+	"packageManager": "bun@1.3.11",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev": "cd apps/web && bun run dev",
+		"build": "turbo run build",
+		"test": "turbo run test",
+		"check": "turbo run check",
+		"lint": "turbo run lint",
+		"tokens:build": "bun run --cwd apps/web tokens:build",
+		"deploy:web": "cd apps/web && bun run build && bunx wrangler deploy",
+		"deploy:data-proxy": "cd apps/data-proxy && bunx wrangler deploy",
+		"smoke": "bash apps/data-proxy/smoke.sh"
+	},
+	"devDependencies": {
+		"turbo": "^2.5.0"
+	},
+	"engines": {
+		"bun": ">=1.3.0",
+		"node": ">=22.0.0"
+	}
+}
