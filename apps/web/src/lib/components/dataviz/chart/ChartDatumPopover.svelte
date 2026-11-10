@@ -144,6 +144,7 @@
 			bind:this={surface}
 			id={controller.id}
 			class="chart-datum-popover"
+			data-ripple-exempt
 			class:chart-datum-popover--placed={placed}
 			role="dialog"
 			aria-modal="false"

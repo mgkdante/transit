@@ -624,6 +624,7 @@
 
 <div
 	class="map-hero"
+	data-ripple-exempt
 	data-selection-presence={selectionPresence}
 	data-selection-source-health={selectionSourceHealth}
 	data-motion-stale={live.familyStates.vehicles.health.isStale}

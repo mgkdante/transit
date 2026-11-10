@@ -889,6 +889,21 @@ describe('MapHero stage lifecycle', () => {
 		expect(screen.getByTestId('map-stage-stub')).toHaveAttribute('data-retry-count', '1');
 	});
 
+	it('keeps the global click ripple off the map controls and the open detail pane', async () => {
+		render(MapHero);
+
+		expect(
+			screen.getByRole('button', { name: 'Stops near me' }).closest('[data-ripple-exempt]'),
+		).not.toBeNull();
+		await fireEvent.click(await screen.findByTestId('map-stage-stub-pick-vehicle'));
+		const pane = await waitFor(() => {
+			const sheet = document.querySelector('[data-slot="bottom-sheet"]');
+			expect(sheet).not.toBeNull();
+			return sheet!;
+		});
+		expect(pane.closest('[data-ripple-exempt]')).not.toBeNull();
+	});
+
 	it('passes the exact English MapLibre locale dictionary to the stage', () => {
 		render(MapHero);
 

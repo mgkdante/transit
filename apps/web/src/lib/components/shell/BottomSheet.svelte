@@ -91,6 +91,7 @@
 		showCloseButton={false}
 		class={cn('gap-0 p-0', className)}
 		data-slot="bottom-sheet"
+		data-ripple-exempt
 		data-m6c2-detail-sheet=""
 	>
 		<div

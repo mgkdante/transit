@@ -47,6 +47,7 @@
 <div
 	class="chart-output"
 	data-slot="chart-output"
+	data-ripple-exempt
 	data-card-interactive
 	data-chart-layout={layout}
 	data-scrollable={scrollable}

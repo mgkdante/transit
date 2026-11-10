@@ -94,6 +94,15 @@ describe('ChartDatumPopover activation and content', () => {
 		expect(harness).toHaveAttribute('data-model-key', '');
 	});
 
+	it('keeps the global click ripple off the open popover', async () => {
+		render(ChartDatumPopoverHarness);
+
+		await activate('linked-trigger', 'touch');
+
+		const dialog = await screen.findByRole('dialog', { name: LINKED_HEADING });
+		expect(dialog.closest('[data-ripple-exempt]')).not.toBeNull();
+	});
+
 	it.each(['touch', 'pen'])('opens for %s activation and reports success', async (pointerType) => {
 		render(ChartDatumPopoverHarness);
 

@@ -14,6 +14,17 @@ afterEach(() => {
 });
 
 describe('MapFilterPill', () => {
+	it('keeps the global click ripple off the controls drawer', async () => {
+		render(MapFilterPillHarness, {
+			props: { store: createFilterStore(emptyFilterState(), () => {}), locale: 'en' },
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+
+		const drawer = await screen.findByTestId('map-filter-drawer');
+		expect(drawer.closest('[data-ripple-exempt]')).not.toBeNull();
+	});
+
 	it('keeps four live filter mutations inside the Sheet until one Done close', async () => {
 		let pushed = '';
 		let writes = 0;

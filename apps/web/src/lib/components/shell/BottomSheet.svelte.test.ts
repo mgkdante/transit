@@ -49,6 +49,13 @@ describe('BottomSheet', () => {
 		},
 	);
 
+	it('keeps the global click ripple off the open sheet', async () => {
+		render(BottomSheet, { props: { open: true, locale: 'en', title: 'Stop 52618' } });
+
+		const heading = await screen.findByRole('heading', { level: 2, name: 'Stop 52618' });
+		expect(heading.closest('[data-ripple-exempt]')).not.toBeNull();
+	});
+
 	it('uses the supplied identity snippet as the Sheet title', async () => {
 		const identity = createRawSnippet(() => ({ render: () => '<span>Route 161</span>' }));
 		render(BottomSheet, { props: { open: true, locale: 'en', identity } });
