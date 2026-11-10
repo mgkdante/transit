@@ -150,6 +150,8 @@ export async function lockedDeploymentDecision(
 			return false;
 	}
 	const live = await liveProductionSha(fetcher);
+	if (automatic && !live)
+		throw new Error('Cannot read live production SHA for automatic deployment');
 	if (automatic && live && live !== candidate) {
 		try {
 			git('cat-file', '-e', `${live}^{commit}`);

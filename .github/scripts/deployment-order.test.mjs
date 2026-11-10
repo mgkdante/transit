@@ -54,6 +54,21 @@ test("inside the production lock, a newer deployment cannot be overwritten by an
     assert.equal(typeof scope.lockedDeploymentDecision, "function");
     assert.equal(await scope.lockedDeploymentDecision(env, root, live), false);
     git("branch", "-f", "main", a);
+    const unavailable = async () => {
+      throw new Error("identity unavailable");
+    };
+    await assert.rejects(
+      scope.lockedDeploymentDecision(env, root, unavailable),
+      /Cannot read live production SHA/,
+    );
+    assert.equal(
+      await scope.lockedDeploymentDecision(
+        { ...env, TRANSIT_DEPLOY_EVENT: "workflow_dispatch" },
+        root,
+        unavailable,
+      ),
+      true,
+    );
     assert.equal(await scope.lockedDeploymentDecision(env, root, live), false);
     assert.equal(
       await scope.lockedDeploymentDecision(
