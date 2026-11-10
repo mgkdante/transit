@@ -22,6 +22,34 @@ Bun workspaces and Turborepo run the JavaScript apps. Design tokens, motion and
 shared UI come from pinned
 [yesid.design](https://github.com/yesid-dev/yesid.design) releases.
 
+## How it works
+
+- **Providers are configuration.** Each agency is one file in
+  [apps/db/config/providers](apps/db/config/providers): feeds and their capture
+  cadence, map bounds and framing, basemap, the lines that publish no live data
+  (`lines_without_live_data`) and how late its live feed arrives
+  (`live_source_lag_seconds`). Its `public` block decides whether and how the
+  dashboard shows it.
+- **Live capture.** Two realtime workers, one per provider, poll each feed at its
+  declared cadence: STM vehicle positions every 20 seconds, two seconds after
+  STM rebuilds them; trip updates and OC Transpo vehicle positions every
+  30 seconds; STM service alerts every 5 minutes. OC Transpo publishes no
+  alerts feed.
+- **Live publication.** Each cycle rebuilds only the live files whose input
+  feeds were captured again, then rewrites the manifest last. Live files are
+  cached for 20 seconds, and the web app refetches when that cache expires.
+- **Freshness on screen.** Live age comes from vehicle positions and trip
+  updates; alerts show their own "checked" time. Estimated positions are
+  opt-in. They keep each vehicle moving along its route until the next report
+  is due, and a vehicle shows as Not reporting after a cutoff that grows by the
+  provider's source lag.
+- **Map.** MapLibre draws a per-provider [Protomaps](https://protomaps.com)
+  basemap that the [refresh-basemap](.github/workflows/refresh-basemap.yml)
+  workflow rebuilds monthly and publishes beside the snapshots.
+
+[GLOSSARY.md](GLOSSARY.md) defines the terms used in the code and the UI, such
+as Live age, Estimated position and Silent trip.
+
 ## Quickstart
 
 Install Node from [.nvmrc](.nvmrc) and Bun from [.bun-version](.bun-version), then:
@@ -72,16 +100,3 @@ the page is served from that host.
 The source is under the [MIT License](LICENSE). Agency data, map data, fonts and
 GSAP keep their own terms, listed in [NOTICE](NOTICE). Transit is not affiliated
 with STM, OC Transpo or any other transit agency.
-
-## Fast local tests
-
-Run `bun run test:changed` from the root on Windows or Linux after installing
-repository dependencies and Playwright browsers. It uses the merge base with
-`origin/main` plus staged, unstaged and untracked files; fetch main to refresh it.
-Vitest follows affected module graphs. Data, assets and generators use full
-owning suites; filesystem-based checks are retained explicitly. The tested browser map selects changed/related
-specs at phone and desktop sizes; unknown/shared paths select all specs there.
-Selection reasons, runner results and elapsed times are printed. Existing project
-filters and skips apply. Use `--all` for full suites, including theme/motion
-variants, or `--base HEAD` to benchmark a small edit against a candidate commit.
-This local loop supplements the full CI gates; failures propagate.

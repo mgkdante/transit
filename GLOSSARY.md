@@ -68,8 +68,16 @@ A trip the schedule says should be running now that has no vehicle reporting for
 _Avoid_: non-responding trip, ghost bus, missing vehicle
 
 **Not reporting**:
-A vehicle that has sent no report for more than 150 seconds. It concerns one vehicle; a silent trip concerns a scheduled trip.
+A vehicle that has sent no report for 150 seconds or more, plus its provider's source lag (210 seconds for OC Transpo). It concerns one vehicle; a silent trip concerns a scheduled trip.
 _Avoid_: silent vehicle, stale vehicle, offline
+
+**Source lag**:
+How much older than its publication time a provider's live data already is when Transit captures it, declared per provider (`live_source_lag_seconds`). It extends how long Estimated positions keep moving and when a vehicle counts as Not reporting.
+_Avoid_: delay (delay is schedule adherence), latency
+
+**Line without live data**:
+A line its provider declares publishes no vehicle positions, such as the STM metro or the O-Train. Its trips are never counted as silent trips. If live data appears for it, the pipeline treats it as live and flags the outdated declaration.
+_Avoid_: dead line, offline line
 
 **Out-of-service vehicle**:
 A vehicle that reports a position but is not assigned to any trip, usually parked or returning to the garage. It does not count toward coverage or the fleet in service.
