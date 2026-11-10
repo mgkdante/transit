@@ -42,6 +42,9 @@
       "projects": [
         "layout-chromium-390-light",
         "layout-webkit-1440-light"
+      ],
+      "args": [
+        "--workers=2"
       ]
     }
   ],
@@ -75,6 +78,13 @@
       "tests": [
         "src/lib/i18n/frenchCopy.test.ts",
         "src/lib/components/shared/controlCohesion.test.ts"
+      ],
+      "workspace": "apps/web"
+    },
+    {
+      "prefix": "apps/web/src/routes/",
+      "tests": [
+        "src/lib/content/nav.test.ts"
       ],
       "workspace": "apps/web"
     }

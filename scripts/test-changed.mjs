@@ -135,6 +135,11 @@ function runUnitFiles(root, files, packages) {
 	}
 }
 
+export function browserArgs(group, all, filters) {
+	return ['x', '--no-install', 'playwright', 'test', '-c', all ? config.fullPlaywright : config.playwright,
+		...(all ? group.allProjects : group.projects).map(name => `--project=${name}`), ...(group.args ?? []), ...filters];
+}
+
 function runBrowsers(root, selection, all) {
 	for (const group of config.browserGroups) {
 		const specs = selection.specs.filter(path => new RegExp(group.match).test(path));
@@ -144,8 +149,7 @@ function runBrowsers(root, selection, all) {
 		if (group.build) run(root, config.app, ['run', 'build', ...group.build], env);
 		// Playwright CLI arguments are regexes: escape filenames (including brackets and dots).
 		const filters = all ? [] : specs.map(path => relative(resolve(root, config.app), resolve(root, path)).replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-		run(root, config.app, ['x', '--no-install', 'playwright', 'test', '-c', all ? config.fullPlaywright : config.playwright,
-			...(all ? group.allProjects : group.projects).map(name => `--project=${name}`), ...filters], env);
+		run(root, config.app, browserArgs(group, all, filters), env);
 	}
 }
 

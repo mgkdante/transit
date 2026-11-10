@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { changedFiles, selectSpecs, selectUnits, changedUnitArgs, selectUnitFileTests } from './test-changed.mjs';
+import { changedFiles, selectSpecs, selectUnits, changedUnitArgs, selectUnitFileTests, browserArgs } from './test-changed.mjs';
 import config from './test-changed.config.json' with { type: 'json' };
 
 const available = ['tests/a.spec.ts', 'tests/b.spec.ts'];
@@ -142,4 +142,16 @@ test('source scans remain selected for ordinary web module edits', () => {
     const tests = jobs.flatMap(job => job.tests);
     assert.ok(tests.includes('src/lib/i18n/frenchCopy.test.ts'));
     assert.ok(tests.includes('src/lib/components/shared/controlCohesion.test.ts'));
+});
+test('route deletions and renames retain filesystem navigation tests', () => {
+    const files = ['apps/web/src/routes/[[lang=locale]]/privacy/+page.svelte', 'apps/web/src/routes/[[lang=locale]]/new/+page.svelte'];
+    assert.ok(selectUnitFileTests(files, config.unitFileTests).some(rule => rule.tests.includes('src/lib/content/nav.test.ts')));
+});
+
+test('full layout invocation preserves the owning two-worker limit under CI', () => {
+    const layout = config.browserGroups.find(group => group.allProjects.includes('layout-*'));
+    const args = browserArgs(layout, true, []);
+    assert.ok(args.includes('--workers=2'));
+    assert.ok(args.includes('e2e/playwright.config.ts'));
+    assert.equal(args.filter(arg => arg.startsWith('--workers')).length, 1);
 });
