@@ -8,9 +8,6 @@ const epoch = Date.parse(
 	JSON.parse(readFileSync(new URL('./departures.json', import.meta.url), 'utf8')).generated_utc,
 );
 test.describe.configure({ mode: 'parallel' });
-test.afterEach(async ({ page }) => {
-	await page.unrouteAll({ behavior: 'wait' });
-});
 for (const locale of ['en', 'fr'])
 	for (const provider of ['stm', 'octranspo'])
 		for (const viewportWidth of [1280, 1440, 1920]) {

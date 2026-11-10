@@ -37,7 +37,7 @@ for (const locale of ['en', 'fr'] as const)
 				await page.clock.setFixedTime(epoch + (state === 'stale' ? 900_000 : 30_000));
 				await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 				await page.route('**/v1/**', (route) =>
-					forwardRoute(async () => {
+					forwardRoute(page, async () => {
 						const url = new URL(route.request().url());
 						url.pathname = `/__layout/${state}${url.pathname}`;
 						await route.fulfill({ response: await route.fetch({ url: url.href }) });
@@ -136,7 +136,7 @@ for (const locale of ['en', 'fr'] as const)
 			await page.clock.setFixedTime(epoch + 30_000);
 			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 			await page.route('**/v1/**', (route) =>
-				forwardRoute(async () => {
+				forwardRoute(page, async () => {
 					const url = new URL(route.request().url());
 					url.pathname = `/__layout/fresh${url.pathname.replace('/octranspo/', '/stm/')}`;
 					await route.fulfill({ response: await route.fetch({ url: url.href }) });

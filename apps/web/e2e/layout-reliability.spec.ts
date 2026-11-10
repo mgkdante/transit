@@ -9,7 +9,7 @@ for (const locale of ['en', 'fr'] as const)
 		await page.clock.setFixedTime(Date.parse('2026-06-15T12:00:30Z'));
 		await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 		await page.route('**/v1/**', (route) =>
-			forwardRoute(async () => {
+			forwardRoute(page, async () => {
 				const url = new URL(route.request().url());
 				const state =
 					url.pathname.endsWith('/historic/route_reliability/24.json') ||

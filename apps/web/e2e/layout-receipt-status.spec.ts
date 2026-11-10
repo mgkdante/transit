@@ -12,7 +12,7 @@ for (const provider of ['stm', 'octranspo'])
 			test(`${provider} ${locale} ${surface} rider layout`, async ({ page }) => {
 				await page.clock.setFixedTime(Date.parse('2026-08-29T12:00:30Z'));
 				await page.route('**/v1/**', (route) =>
-					forwardRoute(async () => {
+					forwardRoute(page, async () => {
 						const url = new URL(route.request().url());
 						if (!/^\/(?:data\/)?v1\//.test(url.pathname)) {
 							await route.fallback();

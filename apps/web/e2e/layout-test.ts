@@ -22,6 +22,12 @@ export const test = base.extend({
 					);
 				await route.fulfill({ response, headers });
 			});
-		await use(page);
+		try {
+			await use(page);
+		} finally {
+			// Drain every spec's handlers while their page and fetched responses still
+			// exist. Waiting preserves real route failures instead of discarding them.
+			await page.unrouteAll({ behavior: 'wait' });
+		}
 	},
 });
