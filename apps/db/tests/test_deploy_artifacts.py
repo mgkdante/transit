@@ -514,7 +514,8 @@ def test_real_db_ci_uses_a_disposable_postgres_service() -> None:
     assert [step["run"].strip() for step in runs] == [
         "bash scripts/verify-runtime-images.sh",
         scrub + "uv run alembic upgrade head",
-        scrub + "uv run pytest tests",
+        scrub + "uv run pytest tests -n ${{ matrix.workers }} --dist worksteal "
+        "--max-worker-restart=0 --durations=20",
     ]
     assert all(step["working-directory"] == "apps/db" for step in runs)
 

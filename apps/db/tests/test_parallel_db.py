@@ -74,3 +74,28 @@ def test_clones_are_distinct_and_partial_setup_is_cleaned(monkeypatch: pytest.Mo
     assert len(statements) == 5
     assert all(statement.startswith("DROP DATABASE") for statement in statements[3:])
     assert make_url(base).database == "transit_ci"
+
+
+def test_cleanup_attempts_every_database_and_reports_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = "postgresql+psycopg://transit_ci@localhost/transit_ci"
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_DISPOSABLE", "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE"
+    )
+    databases = [make_url(f"{base}_xdist_0123456789abcdef_gw{i}") for i in range(3)]
+    config = SimpleNamespace(stash={parallel_db._DATABASES: databases})
+    statements = []
+
+    def execute(url: str, statement: str) -> None:
+        statements.append(statement)
+        if "gw2" in statement:
+            raise RuntimeError("drop failed")
+
+    monkeypatch.setattr(parallel_db, "_execute", execute)
+    with pytest.raises(ExceptionGroup, match="worker database cleanup"):
+        parallel_db._cleanup(config, base)
+    assert len(statements) == 3
+    assert "gw2" in statements[0]
+    assert "gw1" in statements[1]
+    assert "gw0" in statements[2]

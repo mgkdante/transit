@@ -69,10 +69,16 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def _cleanup(config: pytest.Config, base: str) -> None:
     quote = make_url(base).get_dialect()().identifier_preparer.quote_identifier
+    errors: list[Exception] = []
     for url in reversed(config.stash[_DATABASES]):
-        rendered = url.render_as_string(hide_password=False)
-        assert_disposable_test_url(rendered, os.environ)
-        _execute(base, f"DROP DATABASE {quote(url.database)} WITH (FORCE)")
+        try:
+            rendered = url.render_as_string(hide_password=False)
+            assert_disposable_test_url(rendered, os.environ)
+            _execute(base, f"DROP DATABASE {quote(url.database)} WITH (FORCE)")
+        except Exception as error:
+            errors.append(error)
+    if errors:
+        raise ExceptionGroup("worker database cleanup failed", errors)
 
 
 @pytest.hookimpl(optionalhook=True)
