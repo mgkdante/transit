@@ -203,11 +203,11 @@ const documents = {
 					],
 					links: [
 						{
-							href: 'https://github.com/mgkdante/transit/blob/main/LICENSE',
+							href: 'https://github.com/yesid-dev/transit/blob/main/LICENSE',
 							label: 'Transit MIT License',
 						},
 						{
-							href: 'https://github.com/mgkdante/transit/blob/main/NOTICE',
+							href: 'https://github.com/yesid-dev/transit/blob/main/NOTICE',
 							label: 'Transit notices and attribution',
 						},
 						{
@@ -225,7 +225,7 @@ const documents = {
 					],
 					links: [
 						{
-							href: 'https://github.com/mgkdante/transit/security/policy',
+							href: 'https://github.com/yesid-dev/transit/security/policy',
 							label: 'Transit Security Policy',
 						},
 					],
@@ -468,11 +468,11 @@ const documents = {
 					],
 					links: [
 						{
-							href: 'https://github.com/mgkdante/transit/blob/main/LICENSE',
+							href: 'https://github.com/yesid-dev/transit/blob/main/LICENSE',
 							label: 'Licence MIT de Transit',
 						},
 						{
-							href: 'https://github.com/mgkdante/transit/blob/main/NOTICE',
+							href: 'https://github.com/yesid-dev/transit/blob/main/NOTICE',
 							label: 'Mentions et attributions de Transit',
 						},
 						{
@@ -490,7 +490,7 @@ const documents = {
 					],
 					links: [
 						{
-							href: 'https://github.com/mgkdante/transit/security/policy',
+							href: 'https://github.com/yesid-dev/transit/security/policy',
 							label: 'Politique de sécurité de Transit',
 						},
 					],
