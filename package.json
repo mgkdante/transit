@@ -24,7 +24,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
     "@playwright/test": "1.62.0",
-    "@yesid/config": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0-rc.1/yesid-config-0.41.0-rc.1.tgz",
+    "@yesid/config": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0/yesid-config-0.41.0.tgz",
     "turbo": "^2.5.0",
     "wrangler": "4.154.0"
   },
@@ -33,9 +33,9 @@
     "node": ">=22.17.0 <23"
   },
   "overrides": {
-    "@yesid/motion": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0-rc.1/yesid-motion-0.41.0-rc.1.tgz",
-    "@yesid/seo-kit": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0-rc.1/yesid-seo-kit-0.41.0-rc.1.tgz",
-    "@yesid/tokens": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0-rc.1/yesid-tokens-0.41.0-rc.1.tgz",
+    "@yesid/motion": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0/yesid-motion-0.41.0.tgz",
+    "@yesid/seo-kit": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0/yesid-seo-kit-0.41.0.tgz",
+    "@yesid/tokens": "https://github.com/yesid-dev/yesid.design/releases/download/v0.41.0/yesid-tokens-0.41.0.tgz",
     "brace-expansion": "5.0.9",
     "nanoid": "3.3.18",
     "postcss": "8.5.26",
