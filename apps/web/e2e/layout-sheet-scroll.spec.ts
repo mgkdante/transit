@@ -65,6 +65,9 @@ for (const locale of ['en', 'fr'])
 				const geometry = await sheet.evaluate((el) => {
 					const box = el.getBoundingClientRect();
 					const body = el.querySelector<HTMLElement>('[data-slot="bottom-sheet-body"]')!;
+					const chrome = ['[data-testid="nav-pill"]', '.nav-provider'].map(
+						(selector) => document.querySelector(selector)!.getBoundingClientRect().bottom,
+					);
 					return {
 						top: box.top,
 						height: box.height,
@@ -72,14 +75,18 @@ for (const locale of ['en', 'fr'])
 						scroll: body.scrollHeight,
 						headerBottom: el.querySelector('[data-slot="sheet-header"]')!.getBoundingClientRect()
 							.bottom,
+						chromeBottom: Math.max(...chrome),
 					};
 				});
 				expect(geometry.top, JSON.stringify(geometry)).toBeGreaterThanOrEqual(0);
 				expect(geometry.height).toBeLessThanOrEqual(viewport.height);
-				expect(geometry.height).toBeCloseTo(
-					detent === 'peek' ? 168 : viewport.height * (detent === 'half' ? 0.5 : 0.9),
-					0,
-				);
+				if (detent === 'full') {
+					// Full stops one 0.5rem chrome gap below the site nav and provider control.
+					const gap = geometry.top - geometry.chromeBottom;
+					expect(gap, JSON.stringify(geometry)).toBeGreaterThanOrEqual(8);
+					expect(gap, JSON.stringify(geometry)).toBeLessThanOrEqual(10);
+				} else
+					expect(geometry.height).toBeCloseTo(detent === 'peek' ? 168 : viewport.height * 0.5, 0);
 				expect(geometry.headerBottom).toBeLessThan(viewport.height);
 				expect(geometry.body, JSON.stringify(geometry)).toBeGreaterThan(0);
 				await expect

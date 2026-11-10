@@ -49,12 +49,36 @@
 	// Peek holds the 44 px handle, the header (44 px controls, 24 px padding, a border,
 	// with room for a two-line identity) and a 34 px home-indicator inset, so the
 	// back and close controls stay clear of it. The rider's last height survives reopening.
+	const PEEK_PX = 168;
+	// Full stops below the site header, so the nav and provider control stay visible and usable.
+	let fullPx = $state<number | null>(null);
 	const detents = $derived<SheetDetent[]>([
-		{ id: 'peek', size: '168px', label: sheetCopy[locale].peek },
+		{ id: 'peek', size: `${PEEK_PX}px`, label: sheetCopy[locale].peek },
 		{ id: 'half', size: '50%', label: sheetCopy[locale].half },
-		{ id: 'full', size: '90%', label: sheetCopy[locale].full },
+		{ id: 'full', size: fullPx === null ? '90%' : `${fullPx}px`, label: sheetCopy[locale].full },
 	]);
 	let detent = $state('half');
+
+	$effect(() => {
+		if (!open) return;
+		const measure = () => (fullPx = fullHeightBelowHeader());
+		measure();
+		window.addEventListener('resize', measure);
+		return () => window.removeEventListener('resize', measure);
+	});
+
+	// Mirrors AppShell's --chrome-offset: the header's fixed top, the pill plus provider
+	// row (--pill-h, measured by NavPill) and the shell's 0.5rem chrome gap.
+	function fullHeightBelowHeader(): number | null {
+		const header = document.querySelector('[data-slot="site-header"]');
+		const pill = Number.parseFloat(
+			getComputedStyle(document.documentElement).getPropertyValue('--pill-h'),
+		);
+		if (!header || !Number.isFinite(pill)) return null;
+		const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+		const covered = header.getBoundingClientRect().top + pill + rem / 2;
+		return Math.max(PEEK_PX + 1, Math.floor(window.innerHeight - covered));
+	}
 </script>
 
 <Sheet.Root bind:open>
@@ -144,9 +168,6 @@
 		max-height: 100dvh;
 	}
 
-	:global(body:has([data-m6c2-detail-sheet][data-state='open']) [data-testid='nav-pill']) {
-		visibility: hidden;
-	}
 	.bottom-sheet-body {
 		container: right-panel / inline-size;
 	}

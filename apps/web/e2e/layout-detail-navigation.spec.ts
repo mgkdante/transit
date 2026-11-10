@@ -32,14 +32,32 @@ async function captureDetail(
 	if (width === 390) {
 		const handle = page.locator('[data-sheet-handle]');
 		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'half');
+		await expectChromeClear(page);
 		await handle.press('End');
 		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'full');
+		await expectChromeClear(page);
 		await page.screenshot({ animations: 'disabled', path: prefix + '-full.png' });
 		await handle.press('Home');
 		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'peek');
 		await page.screenshot({ animations: 'disabled', path: prefix + '-peek.png' });
 		await handle.press('ArrowUp');
 	}
+}
+// The site nav and provider control stay visible above an open detail sheet, at every height.
+async function expectChromeClear(page: Page) {
+	const navPill = page.getByTestId('nav-pill');
+	await expect(navPill).toBeVisible();
+	await expect(navPill.locator('.nav-provider')).toBeVisible();
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const sheet = document.querySelector('[data-slot="bottom-sheet"]')!.getBoundingClientRect();
+				const pill = document.querySelector('[data-testid="nav-pill"]')!.getBoundingClientRect();
+				const provider = document.querySelector('.nav-provider')!.getBoundingClientRect();
+				return sheet.top - Math.max(pill.bottom, provider.bottom);
+			}),
+		)
+		.toBeGreaterThanOrEqual(0);
 }
 type Probe = { loaded: boolean; project(c: number[]): { x: number; y: number } };
 // A long unbroken alert is what once pushed detail content past the panel edge.
