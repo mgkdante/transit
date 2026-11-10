@@ -207,7 +207,7 @@ jobs:
         run: ../../node_modules/.bin/wrangler deploy --dry-run
 
       - name: Browser toolchain contract
-        run: node --test scripts/install-browser-toolchain.test.mjs
+        run: node --test scripts/install-browser-toolchain.test.mjs ../../.github/scripts/install-layout-unzip.test.mjs
 
       - name: Install authenticated Chromium
         env:
@@ -314,13 +314,15 @@ jobs:
 
       - name: Set up JS workspace
         uses: ./.github/actions/setup
+        with:
+          layout-container: "true"
 
       - name: Install authenticated Chromium
         env:
           TRANSIT_BROWSER_ROOT: ${{ runner.temp }}/transit-browser-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
-          node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
+          env -u PLAYWRIGHT_BROWSERS_PATH node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
 
       - name: layout

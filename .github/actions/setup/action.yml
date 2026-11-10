@@ -2,6 +2,10 @@ name: Setup Transit JS workspace
 description: Install and verify the pinned Node, Bun, and Wrangler workspace.
 
 inputs:
+  layout-container:
+    description: Provision the pinned ZIP extractor needed by the Noble layout container.
+    required: false
+    default: "false"
   cache-vitest:
     description: Whether to restore and save the Vitest cache.
     required: false
@@ -15,6 +19,12 @@ runs:
       with:
         node-version-file: .nvmrc
         package-manager-cache: false
+
+    - name: Provision layout ZIP extractor before Bun
+      if: ${{ inputs.layout-container == 'true' }}
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: node .github/scripts/install-layout-unzip.mjs
 
     - name: Set up Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

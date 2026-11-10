@@ -257,6 +257,37 @@ def test_layout_uses_the_approved_playwright_container_without_host_browser_inst
     assert "ImageOS" not in json.dumps(job)
     assert "--shard=${{ matrix.shard }}/4" in runs
     assert job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    setup = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/setup")
+    assert setup["with"]["layout-container"] == "true"
+    installer = next(
+        step for step in job["steps"] if step.get("name") == "Install authenticated Chromium"
+    )
+    assert (
+        'env -u PLAYWRIGHT_BROWSERS_PATH node scripts/install-browser-toolchain.mjs'
+        in installer["run"]
+    )
+    assert "PLAYWRIGHT_BROWSERS_PATH" not in installer.get("env", {})
+    assert "PLAYWRIGHT_BROWSERS_PATH" not in job.get("env", {})
+
+
+def test_layout_extractor_is_provisioned_after_pinned_node_but_before_bun() -> None:
+    action = _yaml(REPO_ROOT / ".github/actions/setup/action.yml")
+    steps = action["runs"]["steps"]
+    node = next(
+        i for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("actions/setup-node@")
+    )
+    bun = next(
+        i for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("oven-sh/setup-bun@")
+    )
+    extractor = next(
+        i for i, step in enumerate(steps)
+        if step.get("run") == "node .github/scripts/install-layout-unzip.mjs"
+    )
+    assert node < extractor < bun
+    assert steps[extractor]["if"] == "${{ inputs.layout-container == 'true' }}"
+    assert action["inputs"]["layout-container"]["default"] == "false"
 
 
 @pytest.mark.parametrize("image", [
