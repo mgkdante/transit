@@ -75,6 +75,7 @@ COMPATIBILITY_PROOFS = {
     "apps/web/src/tests/map-poster-assets.test.ts",
 }
 PUBLIC_RECEIPTS = {
+    ".github/scripts/layout-duration-baseline.json",
     "apps/web/static/map/basemap-montreal-posters.json",
     "apps/web/static/map/basemap-ottawa-posters.json",
     "apps/web/wrangler.toml",
@@ -246,8 +247,11 @@ def test_tracked_toolchain_inventory_has_only_reviewed_owners_and_images() -> No
     assert _inventory_violations(_tracked_sources()) == []
 
 
-def test_layout_uses_the_approved_playwright_container_without_host_browser_installation() -> None:
-    job = _yaml(WORKFLOWS / "web.yml")["jobs"]["layout"]
+@pytest.mark.parametrize("job_name", ["layout", "post-deploy-layout"])
+def test_layout_uses_the_approved_playwright_container_without_host_browser_installation(
+    job_name: str,
+) -> None:
+    job = _yaml(WORKFLOWS / "web.yml")["jobs"][job_name]
     assert job["container"]["image"] == PLAYWRIGHT_CONTAINER
     assert job["container"]["options"] == "--ipc=host"
     assert _json("package.json")["devDependencies"]["@playwright/test"] == PLAYWRIGHT_VERSION
@@ -255,8 +259,9 @@ def test_layout_uses_the_approved_playwright_container_without_host_browser_inst
     assert "playwright install" not in runs
     assert "apt" not in runs
     assert "ImageOS" not in json.dumps(job)
-    assert "--shard=${{ matrix.shard }}/4" in runs
-    assert job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    assert '--test-list="$RUNNER_TEMP/layout-plan/shard-${{ matrix.shard }}.txt"' in runs
+    assert "--shard=" not in runs
+    assert job["strategy"]["matrix"]["shard"] == list(range(1, 13))
     setup = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/setup")
     assert setup["with"]["layout-container"] == "true"
     installer = next(
@@ -299,6 +304,28 @@ def test_container_inventory_rejects_unreviewed_playwright_versions_and_digests(
     assert any("tool version" in item for item in _inventory_violations({
         ".github/workflows/web.yml": source,
     }))
+
+
+def test_layout_duration_receipt_matches_its_recorded_grid_and_toolchain() -> None:
+    receipt = _json(".github/scripts/layout-duration-baseline.json")
+    assert receipt["schema"] == 1
+    assert receipt["workers"] == 2
+    assert receipt["playwright"] == _json("package.json")["devDependencies"]["@playwright/test"]
+    assert receipt["columns"] == ["project", "file", "cases", "duration_ms"]
+    rows = receipt["groups"]
+    assert len({(row[0], row[1]) for row in rows}) == len(rows)
+    assert all(isinstance(row[2], int) and row[2] > 0 and row[3] > 0 for row in rows)
+    assert sum(row[2] for row in rows) == receipt["selected_cases"]
+    assert receipt["measured_cases"] + receipt["not_applicable_cases"] == receipt["selected_cases"]
+    reports = receipt["reports"]
+    assert {row["shard"] for row in reports} == set(range(1, len(reports) + 1))
+    assert all(row["source_sha"] == receipt["source_sha"] for row in reports)
+    assert all(re.fullmatch(r"[a-f0-9]{64}", row["report_sha256"]) for row in reports)
+    assert sum(row["passed"] for row in reports) == receipt["measured_cases"]
+    assert sum(row["not_applicable"] for row in reports) == receipt["not_applicable_cases"]
+    assert receipt["run_url"] == (
+        "https://github.com/yesid-dev/transit/actions/runs/" + receipt["run_id"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -769,3 +796,24 @@ def test_hosted_runner_series_and_gitleaks_installer_are_explicit() -> None:
     secret_scan = (WORKFLOWS / "secret-scan.yml").read_text(encoding="utf-8")
     assert "install-gitleaks.sh" in secret_scan
     assert "gitleaks_${GITLEAKS_VERSION}" not in secret_scan
+
+
+def test_pr_and_deployed_layout_share_the_complete_measured_grid() -> None:
+    jobs = yaml.safe_load((WORKFLOWS / "web.yml").read_text(encoding="utf-8"))["jobs"]
+    before = jobs["layout"]
+    after = jobs["post-deploy-layout"]
+    assert before["strategy"]["matrix"]["shard"] == list(range(1, 13))
+    assert after["strategy"] == before["strategy"]
+    assert after["container"] == before["container"]
+    assert after["defaults"] == before["defaults"]
+    assert after["steps"] == before["steps"]
+    assert after["needs"] == ["deploy-production"]
+    assert "identity_verified == 'true'" in after["if"]
+    result = jobs["post-deploy-result"]
+    audit = next(step for step in result["steps"] if step.get("id") == "coverage")
+    assert audit["if"] == "needs.post-deploy-layout.result == 'success'"
+    assert 'layout-shards.mjs verify "$RUNNER_TEMP/layout-coverage" 12' in audit["run"]
+    report = result["steps"][-1]
+    assert report["if"] == "${{ always() }}"
+    assert "steps.coverage.outcome != 'success'" in report["env"]["LAYOUT_RESULT"]
+    assert "'coverage-failure'" in report["env"]["LAYOUT_RESULT"]
