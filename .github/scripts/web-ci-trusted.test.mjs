@@ -300,6 +300,28 @@ test("push and dispatch select everything without executing checkout policy", (t
   }
 });
 
+test("main and merge-group fast aggregate accepts a skipped layout and rejects failed core work", (t) => {
+  const f = fixture(t);
+  const input = needs("success");
+  input.layout.result = "skipped";
+  for (const event of ["push", "merge_group"]) {
+    const run = (value) =>
+      f.run("ci", "Require selected jobs to succeed", {
+        GITHUB_EVENT_NAME: event,
+        NEEDS_JSON: JSON.stringify(value),
+        WEB_CI_POLICY: "must-not-execute-layout-policy",
+      });
+    let result = run(input);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    for (const job of ["ci-work", "unit", "e2e", "prerelease-guard"]) {
+      result = run({ ...input, [job]: { result: "failure" } });
+      assert.notEqual(result.status, 0);
+    }
+    result = run({ ...input, classify: { result: "success", outputs: {} } });
+    assert.notEqual(result.status, 0);
+  }
+});
+
 for (const [version, source] of Object.entries(policies)) {
   test(
     "aggregate enforces explicit layout selection with " + version + " base",

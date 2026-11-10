@@ -59,8 +59,9 @@ function publicEnvironment(target) {
 }
 
 function targetFor(env) {
-  return ["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME) &&
-    env.GITHUB_REF === "refs/heads/main"
+  return env.GITHUB_EVENT_NAME === "merge_group" ||
+    (["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME) &&
+      env.GITHUB_REF === "refs/heads/main")
     ? "production"
     : "verification";
 }
@@ -157,7 +158,7 @@ function inventory(root, staging = false) {
   );
 }
 
-function context(root, env, producerAttempt) {
+function context(root, env, producerAttempt, producerRun = env.GITHUB_RUN_ID) {
   const git = (...args) =>
     execFileSync("git", args, {
       cwd: root,
@@ -210,7 +211,7 @@ function context(root, env, producerAttempt) {
       /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
     ),
     sha,
-    run_id: required(env, "GITHUB_RUN_ID", /^[1-9][0-9]*$/),
+    run_id: required({ producerRun }, "producerRun", /^[1-9][0-9]*$/),
     producer_attempt: required(
       { producerAttempt },
       "producerAttempt",
@@ -286,7 +287,16 @@ function verify(stage, root, env, attempt) {
     readFileSync(join(stage, "manifest.json"), "utf8"),
   );
   same(manifest.schema, 1, "Manifest schema");
-  same(manifest.context, context(root, env, attempt), "Build context");
+  same(
+    manifest.context,
+    context(
+      root,
+      env,
+      attempt,
+      env.TRANSIT_PRODUCER_RUN_ID ?? env.GITHUB_RUN_ID,
+    ),
+    "Build context",
+  );
   same(inventory(stage, true), manifest.files, "Artifact inventory");
   return manifest;
 }
@@ -300,7 +310,11 @@ export function verifySource(
     stage,
     root,
     env,
-    required(env, "GITHUB_RUN_ATTEMPT", /^[1-9][0-9]*$/),
+    required(
+      { attempt: env.TRANSIT_PRODUCER_ATTEMPT ?? env.GITHUB_RUN_ATTEMPT },
+      "attempt",
+      /^[1-9][0-9]*$/,
+    ),
   );
   same(inventory(root), manifest.files, "Source build");
   return manifest;

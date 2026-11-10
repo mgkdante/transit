@@ -1,0 +1,33 @@
+name: Roll back production web
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Worker version ID (blank selects previous version)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    concurrency:
+      group: transit-data-edge-production
+      cancel-in-progress: false
+    steps:
+      - name: Check out main controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+      - name: Roll back Worker and record confirmation
+        id: rollback
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ROLLBACK_VERSION: ${{ inputs.version }}
+        run: node .github/scripts/worker-rollback.mjs
