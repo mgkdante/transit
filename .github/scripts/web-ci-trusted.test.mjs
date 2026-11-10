@@ -205,6 +205,72 @@ for (const [version, source] of Object.entries(policies)) {
   }
 }
 for (const job of ["classify", "ci"]) {
+  test(`${job} materializes the merge-group base rather than the head or latest main`, (t) => {
+    const f = fixture(t);
+    writeFileSync(
+      join(f.root, ".github/scripts/web-ci-paths.mjs"),
+      'throw new Error("Wrong policy executed");',
+    );
+    f.git("add", ".github/scripts/web-ci-paths.mjs");
+    f.git("commit", "--quiet", "-m", "Newer main policy");
+    const head = f.git("rev-parse", "HEAD");
+    f.git("branch", "-f", "main", head);
+    writeFileSync(
+      f.env.GITHUB_EVENT_PATH,
+      JSON.stringify({ merge_group: { base_sha: f.base, head_sha: head } }),
+    );
+    const event = { GITHUB_EVENT_NAME: "merge_group" };
+    const materialized = f.run(job, "Materialize trusted web policy", event);
+    assert.equal(
+      materialized.status,
+      0,
+      materialized.stderr + materialized.stdout,
+    );
+    const policy = readFileSync(f.env.GITHUB_ENV, "utf8")
+      .trim()
+      .split("WEB_CI_POLICY=")[1];
+    assert.equal(
+      readFileSync(join(policy, "web-ci-paths.mjs"), "utf8"),
+      policies.current.toString(),
+    );
+    const result = f.run(
+      job,
+      job === "classify"
+        ? "Classify web paths"
+        : "Require selected jobs to succeed",
+      {
+        ...event,
+        WEB_CI_POLICY: policy,
+        NEEDS_JSON: JSON.stringify(needs("success")),
+      },
+    );
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    if (job === "classify")
+      assert.equal(
+        readFileSync(f.env.GITHUB_OUTPUT, "utf8"),
+        "run_e2e=true\nrun_layout=true\n",
+      );
+  });
+
+  test(`${job} rejects missing and unreachable merge-group trusted bases`, (t) => {
+    const f = fixture(t);
+    f.git("commit", "--quiet", "--allow-empty", "-m", "Untrusted group base");
+    for (const base of [undefined, f.git("rev-parse", "HEAD")]) {
+      writeFileSync(
+        f.env.GITHUB_EVENT_PATH,
+        JSON.stringify({ merge_group: { base_sha: base, head_sha: f.base } }),
+      );
+      const result = f.run(job, "Materialize trusted web policy", {
+        GITHUB_EVENT_NAME: "merge_group",
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr,
+        /Invalid policy base SHA|not reachable from origin\/main/,
+      );
+    }
+  });
+
   test(`${job} rejects a base outside origin/main`, (t) => {
     const f = fixture(t);
     f.git("commit", "--quiet", "--allow-empty", "-m", "Untrusted base");
