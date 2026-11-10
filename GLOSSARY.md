@@ -76,7 +76,7 @@ How much older than its publication time a provider's live data already is when 
 _Avoid_: delay (delay is schedule adherence), latency
 
 **Line without live data**:
-A line its provider declares publishes no vehicle positions, such as the STM metro or the O-Train. Its trips are never counted as silent trips. If live data appears for it, the pipeline treats it as live and flags the outdated declaration.
+A line its provider declares publishes no vehicle positions, such as the STM metro or the O-Train. Its trips are left out of the live silent trip count. If live data appears for it, the pipeline treats it as live and flags the outdated declaration.
 _Avoid_: dead line, offline line
 
 **Out-of-service vehicle**:
