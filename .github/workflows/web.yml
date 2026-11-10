@@ -312,8 +312,28 @@ jobs:
           node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
 
+      # WebKit needs ~114 MB of Ubuntu packages. The Ubuntu mirror sometimes serves them
+      # at a few hundred kB/s, which stalls a shard for minutes, so keep the packages and
+      # the WebKit build between runs. apt still verifies every cached package.
+      - name: Restore WebKit cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/transit-apt-archives
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-webkit-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-webkit-
+
       - name: Install WebKit dependencies
-        run: bun x playwright install --with-deps webkit
+        run: |
+          archives="$HOME/.cache/transit-apt-archives"
+          mkdir -p -- "$archives/partial"
+          printf 'Dir::Cache::archives "%s/";\nAPT::Keep-Downloaded-Packages "true";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\nAPT::Sandbox::User "root";\n' "$archives" \
+            | sudo tee /etc/apt/apt.conf.d/99transit-archives > /dev/null
+          bun x playwright install --with-deps webkit
+          sudo rm -f -- "$archives/lock"
+          sudo chown -R "$(id -u):$(id -g)" -- "$archives"
 
       - name: layout
         run: bun run test:e2e:layout --shard=${{ matrix.shard }}/4
