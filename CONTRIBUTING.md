@@ -44,8 +44,9 @@ bun run --cwd apps/web build
 
 Browser tests build the app and drive it with Playwright. From `apps/web`,
 install Chromium once with `bunx playwright install chromium`, then run
-`bun run test:e2e`. CI uses a pinned Chromium from the browser toolchain
-manifests, which cover linux-x64 and win32-x64.
+`bun run test:e2e`. Core e2e uses pinned Chromium from the browser toolchain
+manifests, which cover linux-x64 and win32-x64. The CI layout job uses the
+pinned Playwright container.
 
 CI also checks the social cards, icons, map posters and deploy dry runs. Shared
 design changes belong in
@@ -82,7 +83,9 @@ CI, covers them.
 ## Deploys and operations
 
 Deploys and the scheduled pipeline run from [GitHub Actions](.github/workflows)
-with the maintainer's Cloudflare, storage and database access. Never point tests
+with the maintainer's Cloudflare, storage and database access. Production web deployment waits
+for the build, unit tests and core e2e. The full layout grid runs after deployment
+on that same SHA. Never point tests
 or migrations at production. Pull requests from branches of this repository get
 a noindex web preview at `pr-<number>-transit-web.<subdomain>.workers.dev`,
 linked from the PR's `preview` deployment; fork pull requests skip it.
