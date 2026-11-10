@@ -116,19 +116,11 @@ assert_range_preflight() {
 }
 
 assert_missing_edge_bypass() {
-  local url="$1" headers attempt curl_exit
+  local url="$1" headers attempt
 
   for attempt in 1 2; do
-    if headers="$(response_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")"; then
-      :
-    else
-      curl_exit=$?
-      echo "wait: $url missing-object cache probe curl exit $curl_exit (attempt $attempt/2)" >&2
-      if [ "$attempt" -eq 2 ]; then
-        fail "$url missing-object cache probe exhausted 2 attempts (last curl exit $curl_exit)"
-      fi
-      continue
-    fi
+    headers="$(response_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")" \
+      || fail "$url missing-object cache probe failed"
     grep -Eq '^HTTP/[^ ]+ 404' <<<"$headers" \
       || fail "$url missing-object cache probe did not return 404"
     if grep -qi '^cf-cache-status: HIT$' <<<"$headers"; then

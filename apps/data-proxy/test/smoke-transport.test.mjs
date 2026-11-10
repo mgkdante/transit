@@ -39,52 +39,38 @@ esac
   return { ...result, attempts: Number(readFileSync(join(directory, "count"), "utf8")) };
 }
 
+const retired = 'assert_retired_provider "https://example.test/retired" 404';
+
+test("retired provider absorbs a transport failure then accepts 404", options, (t) => {
+  const result = probe(t, retired, ["exit 56", "printf 404"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.attempts, 2);
+  assert.match(result.stderr, /wait: https:\/\/example\.test\/retired.*curl exit 56.*attempt 1\/3/);
+});
+
+test("retired provider fails with diagnostics after exactly its attempt limit", options, (t) => {
+  const result = probe(t, retired, []);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.attempts, 3);
+  assert.match(result.stderr, /FAIL: .*last curl exit 56/);
+  assert.equal((result.stderr.match(/wait: .*curl exit 56/g) || []).length, 3);
+});
+
 test("retired provider reports the last HTTP status after a transport failure", options, (t) => {
-  const result = probe(t, 'assert_retired_provider "https://example.test/retired" 404',
-    ["exit 56", "printf 503", "printf 502"]);
+  const result = probe(t, retired, ["exit 56", "printf 503", "printf 502"]);
   assert.equal(result.status, 1);
   assert.equal(result.attempts, 3);
   assert.match(result.stderr, /FAIL: .*last status 502/);
 });
 
-for (const [name, response] of [
-  ["wrong status", "HTTP/2 200\\n"],
-  ["cache HIT", "HTTP/2 404\\nCF-Cache-Status: HIT\\n"],
-  ["positive Age", "HTTP/2 404\\nAge: 1\\n"],
-]) {
-  test(`missing object still rejects ${name} after a transport failure`, options, (t) => {
-    const result = probe(t, 'assert_missing_edge_bypass "https://example.test/missing"',
-      ["exit 56", `printf '${response}'`]);
-    assert.equal(result.status, 1);
-    assert.equal(result.attempts, 2);
-    assert.match(result.stderr, /FAIL:/);
-  });
-}
-
-test("missing object fails if its last probe has a transport error", options, (t) => {
-  const result = probe(t, 'assert_missing_edge_bypass "https://example.test/missing"',
-    ["printf 'HTTP/2 404\\n'", "exit 56"]);
+test("missing object probe stays fail-fast on a transport error", options, (t) => {
+  // Its two probes prove a repeated request is not served from cache, so a
+  // dropped request must not let a single probe stand in for both.
+  const result = probe(t, 'assert_missing_edge_bypass "https://example.test/missing"', [
+    "exit 56",
+    "printf 'HTTP/2 404\\n'",
+  ]);
   assert.equal(result.status, 1);
-  assert.equal(result.attempts, 2);
-  assert.match(result.stderr, /FAIL: .*last curl exit 56/);
+  assert.equal(result.attempts, 1);
+  assert.match(result.stderr, /FAIL: .*missing-object cache probe failed/);
 });
-
-for (const [name, call, success, maximum] of [
-  ["retired provider", 'assert_retired_provider "https://example.test/retired" 404', "printf 404", 3],
-  ["missing object", 'assert_missing_edge_bypass "https://example.test/missing"', "printf 'HTTP/2 404\\n'", 2],
-]) {
-  test(`${name} absorbs a transport failure then accepts 404`, options, (t) => {
-    const result = probe(t, call, ["exit 56", success]);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.attempts, 2);
-    assert.match(result.stderr, /wait: https:\/\/example\.test\/\w+.*curl exit 56.*attempt 1\//);
-  });
-
-  test(`${name} fails with diagnostics after exactly its attempt limit`, options, (t) => {
-    const result = probe(t, call, []);
-    assert.equal(result.status, 1, result.stderr);
-    assert.equal(result.attempts, maximum);
-    assert.match(result.stderr, /FAIL: .*curl exit 56/);
-    assert.equal((result.stderr.match(/wait: .*curl exit 56/g) || []).length, maximum);
-  });
-}
