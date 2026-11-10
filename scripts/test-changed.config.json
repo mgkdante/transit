@@ -1,0 +1,92 @@
+{
+  "playwright": "e2e/playwright.changed.config.ts",
+  "rules": [
+    {
+      "specs": [
+        "favicon.spec.ts"
+      ],
+      "path": "apps/web/static/favicon.ico"
+    }
+  ],
+  "specDir": "apps/web/e2e",
+  "browserGroups": [
+    {
+      "build": [],
+      "match": "/(?!layout)[^/]+\\.spec\\.ts$",
+      "allProjects": [
+        "http",
+        "phone",
+        "tablet",
+        "desktop",
+        "reduced-motion",
+        "light",
+        "dark"
+      ],
+      "projects": [
+        "phone",
+        "desktop"
+      ]
+    },
+    {
+      "changedEnv": {
+        "TRANSIT_E2E_PANEL_SIZES": "1"
+      },
+      "build": [
+        "--mode",
+        "e2e"
+      ],
+      "match": "/layout[^/]*\\.spec\\.ts$",
+      "allProjects": [
+        "layout-*"
+      ],
+      "projects": [
+        "layout-chromium-390-light",
+        "layout-webkit-1440-light"
+      ],
+      "args": [
+        "--workers=2"
+      ]
+    }
+  ],
+  "app": "apps/web",
+  "fullPlaywright": "e2e/playwright.config.ts",
+  "generatedInputs": [
+    {
+      "workspaces": [
+        "apps/web"
+      ],
+      "prefix": "apps/web/src/lib/v1/schemas/json/"
+    },
+    {
+      "workspaces": [
+        "apps/web"
+      ],
+      "prefix": "apps/web/scripts/gen-contract.mjs"
+    }
+  ],
+  "consumerInputs": [
+    {
+      "workspaces": [
+        "apps/web"
+      ],
+      "prefix": "apps/data-proxy/src/"
+    }
+  ],
+  "unitFileTests": [
+    {
+      "prefix": "apps/web/src/lib/",
+      "tests": [
+        "src/lib/i18n/frenchCopy.test.ts",
+        "src/lib/components/shared/controlCohesion.test.ts"
+      ],
+      "workspace": "apps/web"
+    },
+    {
+      "prefix": "apps/web/src/routes/",
+      "tests": [
+        "src/lib/content/nav.test.ts"
+      ],
+      "workspace": "apps/web"
+    }
+  ]
+}

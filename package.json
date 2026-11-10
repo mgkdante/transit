@@ -8,11 +8,13 @@
     "apps/*"
   ],
   "scripts": {
+    "test:changed": "node scripts/test-changed.mjs",
+    "test:changed:selection": "node --test scripts/test-changed.test.mjs",
     "setup:hooks": "git config core.hooksPath .githooks",
     "test:commands": "node --test .github/scripts/deploy-commands.test.mjs",
     "dev": "cd apps/web && bun run dev",
     "build": "turbo run build",
-    "test": "turbo run test",
+    "test": "bun run test:changed:selection && turbo run test",
     "check": "turbo run check",
     "lint": "turbo run lint",
     "deploy:web": "cd apps/web && bun run build && node ../../node_modules/wrangler/bin/wrangler.js deploy",
