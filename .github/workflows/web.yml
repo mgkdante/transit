@@ -641,7 +641,7 @@ jobs:
         if: needs.layout.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: layout-timing-${{ github.run_id }}-${{ github.run_attempt }}-*
+          pattern: layout-timing-${{ github.run_id }}-*
           path: ${{ runner.temp }}/layout-coverage
           merge-multiple: false
 
@@ -926,7 +926,7 @@ jobs:
         if: needs.post-deploy-layout.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: layout-timing-${{ github.run_id }}-${{ github.run_attempt }}-*
+          pattern: layout-timing-${{ github.run_id }}-*
           path: ${{ runner.temp }}/layout-coverage
           merge-multiple: false
 
