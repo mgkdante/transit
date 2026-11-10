@@ -50,7 +50,9 @@
 	// with room for a two-line identity) and a 34 px home-indicator inset, so the
 	// back and close controls stay clear of it. The rider's last height survives reopening.
 	const PEEK_PX = 168;
-	// Full stops below the site header, so the nav and provider control stay visible and usable.
+	// Full reaches almost the top of the screen, covering the site header; one short drag
+	// down to half brings the nav and provider control back. Peek and half stay below them.
+	const FULL_TOP_GAP_PX = 12;
 	let fullPx = $state<number | null>(null);
 	const detents = $derived<SheetDetent[]>([
 		{ id: 'peek', size: `${PEEK_PX}px`, label: sheetCopy[locale].peek },
@@ -61,23 +63,21 @@
 
 	$effect(() => {
 		if (!open) return;
-		const measure = () => (fullPx = fullHeightBelowHeader());
+		const measure = () => (fullPx = nearFullHeight());
 		measure();
 		window.addEventListener('resize', measure);
 		return () => window.removeEventListener('resize', measure);
 	});
 
-	// Mirrors AppShell's --chrome-offset: the header's fixed top, the pill plus provider
-	// row (--pill-h, measured by NavPill) and the shell's 0.5rem chrome gap.
-	function fullHeightBelowHeader(): number | null {
-		const header = document.querySelector('[data-slot="site-header"]');
-		const pill = Number.parseFloat(
-			getComputedStyle(document.documentElement).getPropertyValue('--pill-h'),
-		);
-		if (!header || !Number.isFinite(pill)) return null;
-		const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-		const covered = header.getBoundingClientRect().top + pill + rem / 2;
-		return Math.max(PEEK_PX + 1, Math.floor(window.innerHeight - covered));
+	// The viewport less the top safe area (notch or status bar) and a small gap.
+	function nearFullHeight(): number {
+		const probe = document.createElement('div');
+		probe.style.cssText =
+			'position:fixed;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top, 0px)';
+		document.body.append(probe);
+		const safeTop = Number.parseFloat(getComputedStyle(probe).paddingTop) || 0;
+		probe.remove();
+		return Math.max(PEEK_PX + 1, Math.floor(window.innerHeight - safeTop - FULL_TOP_GAP_PX));
 	}
 </script>
 
@@ -166,6 +166,11 @@
 <style>
 	:global([data-m6c2-detail-sheet][data-slot='bottom-sheet']) {
 		max-height: 100dvh;
+	}
+
+	/* At full height the sheet covers the site header instead of sliding under it. */
+	:global([data-m6c2-detail-sheet][data-slot='bottom-sheet'][data-detent='full']) {
+		z-index: calc(var(--z-nav) + 1) !important;
 	}
 
 	.bottom-sheet-body {
