@@ -30,6 +30,10 @@
 	let preview = $state<number | null>(null);
 	let start: { x: number; width: number } | null = null;
 	const current = $derived(collapsed ? 56 : clampDetailPanelWidth(widthPx));
+	// A drag that will snap to the rail shows the rail now, not a clipped strip of content.
+	const railPreview = $derived(
+		!collapsed && preview != null && snapSize(preview, RIGHT_SIZES, 400) === 56,
+	);
 	$effect(() => {
 		// Collapse buttons and separator share one persisted device choice.
 		writeStoredDetailPanelWidth(current);
@@ -126,6 +130,7 @@
 	data-slot="map-detail-overlay"
 	data-detail-collapsed={collapsed ? 'true' : 'false'}
 	data-detail-dragging={dragging ? 'true' : 'false'}
+	data-detail-rail-preview={railPreview ? 'true' : undefined}
 >
 	<div
 		class={collapsed ? 'map-detail-rail' : 'map-detail-content-frame'}
@@ -197,12 +202,20 @@
 	.map-detail-overlay[data-detail-collapsed='false'] .map-detail-content-frame {
 		position: relative;
 		flex: none;
-		width: max(100%, 300px);
+		/* Never narrower than the smallest open snap, so content keeps its layout while the width animates. */
+		width: max(100%, 320px);
 		opacity: 1;
 		transition-property: opacity;
 		transition-duration: var(--duration-fast);
 		transition-timing-function: var(--ease-out);
 		transition-delay: calc(var(--duration-normal) / 2);
+	}
+	.map-detail-overlay[data-detail-rail-preview='true'] .map-detail-content-frame {
+		opacity: 0;
+		transition-delay: 0ms;
+	}
+	.map-detail-overlay[data-detail-rail-preview='true'] {
+		background: var(--card);
 	}
 	.map-detail-overlay[data-detail-collapsed='true'] .map-detail-rail {
 		position: relative;

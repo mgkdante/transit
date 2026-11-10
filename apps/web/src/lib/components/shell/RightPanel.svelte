@@ -96,8 +96,8 @@
 >
 	<div
 		class={cn(
-			'flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle',
-			collapsed ? 'justify-center px-0' : 'px-4',
+			'right-panel-head flex shrink-0 items-center gap-1 border-b border-border-subtle',
+			collapsed ? 'h-14 justify-center px-0' : 'min-h-16 py-2 pl-4 pr-2',
 		)}
 	>
 		<Button
@@ -134,7 +134,7 @@
 
 		<h2
 			id={panelHeadingId}
-			class={cn('right-panel-identity m-0 min-w-0 flex-1', collapsed && 'sr-only')}
+			class={cn('right-panel-identity m-0 min-w-0 flex-1 pr-1', collapsed && 'sr-only')}
 		>
 			{#if identity}
 				{@render identity()}
@@ -160,7 +160,7 @@
 		{/if}
 	</div>
 
-	{#if navigation && !collapsed}<div class="shrink-0 border-b border-border-subtle px-4 py-2">
+	{#if navigation && !collapsed}<div class="shrink-0 border-b border-border-subtle">
 			{@render navigation()}
 		</div>{/if}
 	{#if collapsed}<div class="flex justify-center py-4" aria-hidden="true">
@@ -205,15 +205,12 @@
 		box-shadow: var(--shadow-detail-panel);
 		container: right-panel / inline-size;
 	}
+	/* The identity snippet owns its type; the heading only reserves the room. */
 	.right-panel-identity {
 		display: flex;
 		align-items: center;
-		gap: 0.5rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-caption);
-		letter-spacing: var(--tracking-eyebrow, 0.1em);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
+		min-width: 0;
+		color: var(--foreground);
 	}
 
 	.right-panel[data-open='false'] {
@@ -231,6 +228,11 @@
 
 	.right-panel-body-inner {
 		scrollbar-gutter: stable;
+	}
+	/* Scroll content must take the panel width, never its widest child's. */
+	.right-panel :global([data-slot='right-panel-body'] [data-scroll-area-content]) {
+		min-width: 0;
+		width: 100%;
 	}
 	.swap-volet {
 		animation: volet-in var(--duration-normal) var(--ease-out) both;

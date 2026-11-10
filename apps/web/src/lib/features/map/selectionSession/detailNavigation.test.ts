@@ -17,9 +17,29 @@ describe('detail navigation', () => {
 	});
 	it('does not wrap endpoints or navigate a missing item', () => {
 		const items = ['a', 'b', 'c'].map((id) => ({ kind: 'stop' as const, id }));
-		expect(neighbors(items[0], items)).toEqual({ previous: null, next: items[1] });
-		expect(neighbors(items[1], items)).toEqual({ previous: items[0], next: items[2] });
-		expect(neighbors(items[2], items)).toEqual({ previous: items[1], next: null });
-		expect(neighbors({ kind: 'stop', id: 'gone' }, items)).toEqual({ previous: null, next: null });
+		expect(neighbors(items[0], items)).toEqual({
+			previous: null,
+			next: items[1],
+			position: 1,
+			total: 3,
+		});
+		expect(neighbors(items[1], items)).toEqual({
+			previous: items[0],
+			next: items[2],
+			position: 2,
+			total: 3,
+		});
+		expect(neighbors(items[2], items)).toEqual({
+			previous: items[1],
+			next: null,
+			position: 3,
+			total: 3,
+		});
+		expect(neighbors({ kind: 'stop', id: 'gone' }, items)).toEqual({
+			previous: null,
+			next: null,
+			position: null,
+			total: 3,
+		});
 	});
 });

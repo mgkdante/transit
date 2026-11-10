@@ -2,12 +2,14 @@
 	import { Button } from '@yesid/ui/button';
 	import { Tabs, TabsContent } from '@yesid/ui/tabs';
 	import TransitTabList from '#lib/components/shared/TransitTabList.svelte';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { onMount } from 'svelte';
-	import { getLocalizeHref } from '#lib/i18n/index.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { MapSelectionSession } from './mapSelectionSession.svelte';
 	import { MAP_SELECTION_DETAIL_COPY } from './mapSelectionDetail.copy';
-	import { detailActions } from './mapSelectionDetail.logic';
 	import { acceptsItemArrow } from './selectionSession/detailNavigation';
 	let {
 		locale,
@@ -16,9 +18,13 @@
 		onfocus,
 	}: { locale: Locale; session: MapSelectionSession; desktop: boolean; onfocus?: () => void } =
 		$props();
-	const localizeHref = getLocalizeHref();
 	const t = $derived(MAP_SELECTION_DETAIL_COPY[locale]);
-	const action = $derived(session.detail ? detailActions(session.detail, locale) : null);
+	const vehicleKind = $derived(session.selected?.kind === 'vehicle');
+	// Routes have no siblings; a lone item has nothing to step through.
+	const stepper = $derived(
+		session.selected?.kind !== 'route' &&
+			(session.adjacent.previous != null || session.adjacent.next != null),
+	);
 	let root: HTMLElement;
 	let width = $state(0);
 	let lastSurfaceKey: string | undefined;
@@ -120,58 +126,69 @@
 	class:mobile={!desktop}
 >
 	<div class="detail-navigation-actions">
-		<Button
-			variant="ghost"
-			size="sm"
-			type="button"
-			aria-label={t.back}
-			title={t.back}
-			disabled={!session.stack.length}
-			onclick={() => {
-				session.back();
-				onfocus?.();
-			}}>←</Button
-		>
-		<Button
-			variant="ghost"
-			size="sm"
-			type="button"
-			aria-label={t.forward}
-			title={t.forward}
-			disabled={!session.canGoForward}
-			onclick={() => {
-				session.forward();
-				onfocus?.();
-			}}>→</Button
-		>
-		{#if session.selected?.kind !== 'route'}
+		<div class="detail-control-group" role="group" aria-label={t.history}>
 			<Button
 				variant="ghost"
-				size="sm"
+				size="icon-tap"
 				type="button"
-				aria-label={session.selected?.kind === 'vehicle' ? t.previousVehicle : t.previousStop}
-				disabled={!session.adjacent.previous}
-				onclick={() => step(-1)}>‹</Button
+				aria-label={t.back}
+				title={t.back}
+				disabled={!session.stack.length}
+				onclick={() => {
+					session.back();
+					onfocus?.();
+				}}><ArrowLeftIcon size={16} strokeWidth={2.25} aria-hidden="true" /></Button
 			>
 			<Button
 				variant="ghost"
-				size="sm"
+				size="icon-tap"
 				type="button"
-				aria-label={session.selected?.kind === 'vehicle' ? t.nextVehicle : t.nextStopItem}
-				disabled={!session.adjacent.next}
-				onclick={() => step(1)}>›</Button
+				aria-label={t.forward}
+				title={t.forward}
+				disabled={!session.canGoForward}
+				onclick={() => {
+					session.forward();
+					onfocus?.();
+				}}><ArrowRightIcon size={16} strokeWidth={2.25} aria-hidden="true" /></Button
 			>
+		</div>
+		{#if stepper}
+			<div
+				class="detail-control-group detail-stepper"
+				role="group"
+				aria-label={vehicleKind ? t.vehicleSiblings : t.stopSiblings}
+			>
+				<Button
+					variant="ghost"
+					size="icon-tap"
+					type="button"
+					aria-label={vehicleKind ? t.previousVehicle : t.previousStop}
+					title={vehicleKind ? t.previousVehicle : t.previousStop}
+					disabled={!session.adjacent.previous}
+					onclick={() => step(-1)}
+					><ChevronLeftIcon size={16} strokeWidth={2.25} aria-hidden="true" /></Button
+				>
+				{#if desktop && session.adjacent.position != null}<span
+						class="detail-stepper-position"
+						title={vehicleKind ? t.vehicleSiblings : t.stopSiblings}
+						>{t.position(session.adjacent.position, session.adjacent.total)}</span
+					>{/if}
+				<Button
+					variant="ghost"
+					size="icon-tap"
+					type="button"
+					aria-label={vehicleKind ? t.nextVehicle : t.nextStopItem}
+					title={vehicleKind ? t.nextVehicle : t.nextStopItem}
+					disabled={!session.adjacent.next}
+					onclick={() => step(1)}
+					><ChevronRightIcon size={16} strokeWidth={2.25} aria-hidden="true" /></Button
+				>
+			</div>
 		{/if}
-		{#if action}<Button
-				variant="ghost"
-				size="sm"
-				href={localizeHref(action.href, locale)}
-				aria-label={action.label}
-				title={action.label}>↗</Button
-			>{/if}
 	</div>
 	<div class="detail-section-links">
 		<Tabs
+			class="detail-section-tabs"
 			value={active}
 			onValueChange={(key) => {
 				active = key;
@@ -181,8 +198,8 @@
 		>
 			<TransitTabList
 				tabs={sections}
-				compact
-				label={t.navigation}
+				compact={!desktop}
+				label={t.sections}
 				onselect={(key) => {
 					const section = sections.find((s) => s.key === key);
 					if (section) scrollToSection(section.element);
@@ -196,51 +213,98 @@
 </nav>
 
 <style>
+	/* Desktop: a toolbar row, then the station band edge to edge. */
 	:global(.detail-navigation) {
+		display: grid;
 		min-width: 0;
 	}
-	/* Keep navigation in the fixed header even at the 168 px peek detent. */
+	:global(.detail-navigation-actions) {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		min-width: 0;
+		padding: 0.375rem 1rem;
+	}
+	/* One hairline frame per group: what moves together reads together. */
+	:global(.detail-control-group) {
+		display: inline-flex;
+		flex: none;
+		align-items: center;
+		border-radius: var(--radius-md);
+		box-shadow: inset 0 0 0 1px var(--border-subtle);
+	}
+	:global(.detail-control-group > [data-slot='button']) {
+		border-radius: 0;
+		color: var(--muted-foreground);
+	}
+	:global(.detail-control-group > [data-slot='button']:first-child) {
+		border-start-start-radius: var(--radius-md);
+		border-end-start-radius: var(--radius-md);
+	}
+	:global(.detail-control-group > [data-slot='button']:last-child) {
+		border-start-end-radius: var(--radius-md);
+		border-end-end-radius: var(--radius-md);
+	}
+	:global(.detail-control-group > * + *) {
+		box-shadow: inset 1px 0 0 var(--border-subtle);
+	}
+	:global(.detail-control-group > [data-slot='button']:not(:disabled):hover) {
+		color: var(--foreground);
+		background: var(--muted);
+	}
+	:global(.detail-control-group > [data-slot='button']:disabled) {
+		opacity: 0.35;
+	}
+	:global(.detail-control-group > [data-slot='button']:focus-visible) {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
+	}
+	:global(.detail-stepper) {
+		margin-inline-start: auto;
+	}
+	:global(.detail-stepper-position) {
+		align-self: stretch;
+		display: inline-grid;
+		place-items: center;
+		min-width: 4.5rem;
+		padding-inline: 0.5rem;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	:global(.detail-section-links) {
+		min-width: 0;
+	}
+	:global(.detail-section-tabs) {
+		display: block;
+		width: 100%;
+		min-width: 0;
+	}
+	:global(.detail-section-links .station-tab) {
+		font-size: var(--text-caption);
+	}
+	/* Phone: one 44 px row so the header still fits the 168 px peek detent;
+	   the band bleeds to the sheet edge so it reads as signage, not a block. */
 	.detail-navigation.mobile {
 		display: flex;
+		align-items: center;
 		gap: 0.5rem;
 	}
 	.mobile .detail-navigation-actions {
 		flex: none;
+		gap: 0.5rem;
+		padding: 0;
+	}
+	.mobile .detail-stepper {
+		margin-inline-start: 0;
 	}
 	.mobile .detail-section-links {
-		min-width: 0;
-	}
-	:global(.detail-navigation-actions),
-	:global(.detail-section-links) {
+		flex: 1 1 auto;
+		align-self: stretch;
 		display: flex;
-		gap: 0.25rem;
-	}
-	:global(.detail-navigation-actions) {
-		justify-content: flex-start;
-	}
-	:global(.detail-navigation-actions button),
-	:global(.detail-navigation-actions a) {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 44px;
-		min-height: 44px;
-		padding: 0.5rem;
-		border-radius: var(--radius-sm);
-	}
-	:global(.detail-navigation-actions a) {
-		margin-left: auto;
-	}
-	:global(.detail-navigation button:disabled) {
-		opacity: 0.4;
-	}
-	:global(.detail-navigation button:focus-visible),
-	:global(.detail-navigation a:focus-visible) {
-		outline: 2px solid var(--ring);
-		outline-offset: -2px;
-	}
-	:global(.detail-section-links) {
-		overflow-x: auto;
-		font-size: var(--text-caption);
+		margin-inline-end: -1rem;
+		background: var(--primary);
 	}
 </style>

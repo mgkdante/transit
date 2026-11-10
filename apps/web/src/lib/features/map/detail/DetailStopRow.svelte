@@ -6,6 +6,7 @@
 	import { stopDisplayName, timeLabel } from '../mapSelectionDetail.logic';
 	import type { MapStopRef } from '../mapSelectionSession.svelte';
 	import DetailEntityName from './DetailEntityName.svelte';
+	import '#lib/components/surface/compact-row.css';
 
 	interface Props {
 		stop: MapStopRef;
@@ -36,7 +37,7 @@
 	variant="ghost"
 	size="sm"
 	type="button"
-	class="detail-stop-row map-stop-action"
+	class="detail-stop-row compact-row map-stop-action"
 	data-detail-stop-id={stop.id}
 	data-detail-focus-key={`stop:${stop.id}`}
 	data-previewing={previewing}
@@ -47,59 +48,62 @@
 	onfocus={() => preview(pointerPreview, true)}
 	onblur={() => preview(pointerPreview, false)}
 >
-	<span aria-label={stop.seq == null ? seqUnknownAria : undefined}>{stop.seq ?? ''}</span>
-	<strong><DetailEntityName ref={stop} {locale} /></strong>
-	{#if stop.etaUtc}<small><time>{timeLabel(stop.etaUtc, locale, timeZone)}</time></small>{/if}
-	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+	<span class="detail-stop-seq" aria-label={stop.seq == null ? seqUnknownAria : undefined}
+		>{stop.seq ?? '–'}</span
+	>
+	<span class="detail-stop-name"><DetailEntityName ref={stop} {locale} /></span>
+	{#if stop.etaUtc}<time class="detail-stop-time">{timeLabel(stop.etaUtc, locale, timeZone)}</time
+		>{/if}
+	<ChevronRightIcon size={14} strokeWidth={2.25} aria-hidden="true" />
 </Button>
 
 <style>
-	:global(.detail-stop-row) {
-		height: auto;
-		white-space: normal;
-	}
+	/* Same rhythm as the line page's stop list: sequence, name, time, on one line. */
 	:global(.detail-stop-row) {
 		display: grid;
-		grid-template-columns: 1.9rem minmax(0, 1fr) auto;
-		gap: 0.625rem;
-		width: 100%;
-		min-height: 2.75rem;
-		min-block-size: 2.75rem;
-		align-items: center;
-		padding: calc(var(--spacing) * 2) 0;
+		grid-template-columns: 2ch minmax(0, 1fr) auto 1rem;
+		width: calc(100% + 1rem);
+		height: auto;
+		min-block-size: var(--size-tap-min);
 		border: 0;
-		border-bottom: 1px solid var(--border-subtle);
 		background: transparent;
+		font: inherit;
 		text-align: left;
-		color: var(--foreground);
+		white-space: normal;
 		cursor: pointer;
-		transition:
-			background-color var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-out);
 	}
-	:global(.detail-stop-row:hover),
-	:global(.detail-stop-row[data-previewing='true']) {
-		border-bottom-color: var(--border);
-		background: var(--muted);
+	:global(.detail-stop-row .detail-stop-seq) {
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+		color: var(--muted-foreground);
 	}
-	:global(.detail-stop-row:focus-visible) {
-		outline: 2px solid var(--ring);
-		outline-offset: -2px;
+	:global(.detail-stop-row .detail-stop-name) {
+		grid-column: 2;
+		min-width: 0;
+		font-size: var(--text-small);
+		font-weight: 500;
+		line-height: 1.35;
+	}
+	:global(.detail-stop-row .detail-stop-time) {
+		grid-column: 3;
+		font-family: var(--font-mono);
+		font-size: var(--text-caption);
+		font-variant-numeric: tabular-nums;
+		color: var(--muted-foreground);
 	}
 	:global(.detail-stop-row svg) {
-		grid-column: 3;
-		grid-row: 1 / span 2;
+		grid-column: 4;
+		color: var(--muted-foreground);
 	}
-	:global(.detail-stop-row strong) {
-		min-width: 0;
-	}
-	:global(.detail-stop-row small) {
-		grid-column: 2;
-		font-family: var(--font-mono);
+	:global(.detail-stop-row:hover svg),
+	:global(.detail-stop-row[data-previewing='true'] svg) {
+		color: var(--primary);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		:global(.detail-stop-row) {
-			transition-duration: 0.01ms;
+			transition: none;
 		}
 	}
 </style>

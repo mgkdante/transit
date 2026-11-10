@@ -15,6 +15,7 @@
 	import { MaybeValue } from '#lib/components/edge/index.ts';
 	import StatusBadge from '#lib/components/dataviz/StatusBadge.svelte';
 	import { delayMeasurement } from '#lib/site/delayPresentation.ts';
+	import '#lib/components/surface/compact-row.css';
 
 	interface Props {
 		vehicle: Vehicle;
@@ -55,7 +56,7 @@
 	variant="ghost"
 	size="sm"
 	type="button"
-	class="detail-bus-row map-vehicle-action"
+	class="detail-bus-row compact-row map-vehicle-action"
 	data-previewing={previewing}
 	aria-label={accessibleName}
 	onclick={() => onselect(vehicle.id)}
@@ -64,8 +65,10 @@
 	onfocus={() => preview(pointerPreview, true)}
 	onblur={() => preview(pointerPreview, false)}
 >
-	<strong>{vehicle.id}</strong>
-	<span>{vehicle.route ? `${t.route} ${line(vehicle.route)}` : t.bus}</span>
+	<span class="detail-bus-head"
+		><strong>{vehicle.id}</strong>
+		<span>{vehicle.route ? `${t.route} ${line(vehicle.route)}` : t.bus}</span></span
+	>
 	<small>
 		{#if !isInService(vehicle)}{vehicleServiceCopy[locale].status}{:else}
 			<StatusBadge
@@ -84,61 +87,60 @@
 			/>
 		{/if}</small
 	>
-	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+	<ChevronRightIcon size={14} strokeWidth={2.25} aria-hidden="true" />
 </Button>
 
 <style>
-	:global(.detail-bus-row) {
-		height: auto;
-		white-space: normal;
-	}
+	/* Identity and line on the first line, live status under it, as on the stop rows. */
 	:global(.detail-bus-row) {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.25rem 0.5rem;
-		width: 100%;
-		min-height: 2.75rem;
-		min-block-size: 2.75rem;
-		align-items: center;
-		padding: calc(var(--spacing) * 2) 0;
+		row-gap: 0.125rem;
+		width: calc(100% + 1rem);
+		height: auto;
+		min-block-size: var(--size-tap-min);
 		border: 0;
-		border-bottom: 1px solid var(--border-subtle);
 		background: transparent;
+		font: inherit;
 		text-align: left;
-		color: var(--foreground);
+		white-space: normal;
 		cursor: pointer;
-		transition:
-			background-color var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-out);
 	}
-	:global(.detail-bus-row:hover),
-	:global(.detail-bus-row[data-previewing='true']) {
-		border-bottom-color: var(--border);
-		background-color: var(--muted);
-	}
-	:global(.detail-bus-row:focus-visible) {
-		outline: 2px solid var(--ring);
-		outline-offset: -1px;
-	}
-	:global(.detail-bus-row > strong),
-	:global(.detail-bus-row > span),
+	:global(.detail-bus-row > .detail-bus-head),
 	:global(.detail-bus-row > small) {
 		grid-column: 1;
 		min-width: 0;
 		overflow-wrap: anywhere;
 	}
-	:global(.detail-bus-row strong) {
+	:global(.detail-bus-row .detail-bus-head) {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 0.625rem;
+		font-size: var(--text-small);
+	}
+	:global(.detail-bus-row .detail-bus-head strong) {
 		font-family: var(--font-mono);
+		font-weight: 600;
+	}
+	:global(.detail-bus-row .detail-bus-head span) {
+		color: var(--muted-foreground);
 	}
 	:global(.detail-bus-row small) {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.375rem;
 		color: var(--muted-foreground);
 	}
-	:global(.detail-bus-row svg) {
+	:global(.detail-bus-row > svg) {
 		grid-column: 2;
-		grid-row: 1 / span 3;
+		grid-row: 1 / span 2;
+		color: var(--muted-foreground);
+	}
+	:global(.detail-bus-row:hover > svg),
+	:global(.detail-bus-row[data-previewing='true'] > svg) {
+		color: var(--primary);
 	}
 	@media (prefers-reduced-motion: reduce) {
 		:global(.detail-bus-row) {
