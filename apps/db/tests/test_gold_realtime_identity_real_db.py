@@ -186,7 +186,7 @@ def test_failed_trip_load_cannot_renew_predictions_while_vehicles_publish(
         with engine.connect() as conn:
             for build in (build_trips, build_stop_departures):
                 payload = build(conn, provider_id=PROVIDER, generated_utc=failed[3].isoformat())
-                expected = trip.captured_at_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+                expected = trip.captured_at_utc.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
                 assert payload.feed_captured_utc == expected
 
 
@@ -258,7 +258,9 @@ def test_known_empty_survives_late_cycle_and_source_retention(capture, engine, s
     with engine.connect() as conn:
         for build in (build_trips, build_stop_departures):
             payload = build(conn, provider_id=PROVIDER, generated_utc='2026-11-04T12:00:00Z')
-            assert payload.feed_captured_utc == empty.captured_at_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+            assert payload.feed_captured_utc == empty.captured_at_utc.astimezone(UTC).strftime(
+                '%Y-%m-%dT%H:%M:%SZ'
+            )
     assert not _rows(engine, "latest_trip_delay_snapshot")
     with engine.begin() as conn:
         _prune_silver(conn, empty.realtime_snapshot_id)

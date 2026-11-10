@@ -108,10 +108,6 @@ jobs:
   real-db-tests-work:
     needs: [classify]
     if: ${{ needs.classify.outputs.run_db == 'true' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        workers: [2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     services:
@@ -152,7 +148,7 @@ jobs:
       - name: Run real-DB test suite
         run: |
           unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
-          uv run pytest tests -n ${{ matrix.workers }} --dist worksteal --max-worker-restart=0 --durations=20
+          uv run pytest tests -n 4 --dist worksteal --max-worker-restart=0 --durations=20
         working-directory: apps/db
 
   required-contexts:

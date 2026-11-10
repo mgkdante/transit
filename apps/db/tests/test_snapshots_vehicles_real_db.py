@@ -135,8 +135,11 @@ def test_vehicle_next_stop_index_paths_are_available(conn, record_property):
     _vehicle(conn)
     _add_trip_update(conn, entity_index=0, trip_id="capture-order-trip", route_id="51")
     _stop(conn, entity_index=0, stu_index=0, stop_id="next-stop", seq=1, mins=5)
-    # Tiny fixtures normally favor sequential scans. Disable them only to verify
-    # index eligibility; this is not evidence of production cost or planner choice.
+    # Tiny fixtures favor sequential scans, and statistics from earlier tests can
+    # favor the provider/stop index instead of the PK. Isolate PK eligibility from
+    # that competing path; the fixture rolls this DDL back with the seeded rows.
+    # This is not evidence of production cost or planner choice.
+    conn.execute(text("DROP INDEX silver.ix_silver_rt_trip_update_stop_times_provider_stop"))
     conn.execute(text("SET LOCAL enable_seqscan = off"))
     plan = conn.execute(
         text("EXPLAIN (FORMAT JSON) " + str(_VEHICLES_SQL)), {"provider_id": PROVIDER}
