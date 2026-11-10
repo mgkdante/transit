@@ -44,9 +44,13 @@ async function captureDetail(
 type Probe = { loaded: boolean; project(c: number[]): { x: number; y: number } };
 for (const provider of ['stm', 'octranspo'])
 	for (const locale of ['en', 'fr'])
-		for (const width of [390, 1440]) {
+		for (const { width, height } of [
+			{ width: 390, height: 844 },
+			{ width: 844, height: 390 },
+			{ width: 1280, height: 900 },
+		]) {
 			test(`${provider} ${locale} ${width} detail navigation @layout`, async ({ page }) => {
-				await page.setViewportSize({ width, height: 900 });
+				await page.setViewportSize({ width, height });
 				await page.clock.setFixedTime(epoch + 30000);
 				await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 				await page.route('**/v1/**', async (route) => {
@@ -82,10 +86,24 @@ for (const provider of ['stm', 'octranspo'])
 					provider,
 				);
 				await page.locator('.maplibregl-canvas').click({ position: point });
-				const selector = width === 390 ? '[data-slot="bottom-sheet"]' : '[data-slot="right-panel"]';
+				const selector = width < 1024 ? '[data-slot="bottom-sheet"]' : '[data-slot="right-panel"]';
 				const panel = page.locator(selector);
 				await expect(panel).toBeVisible();
 				const nav = panel.getByRole('navigation');
+				if (width < 1024) {
+					await expect(nav).toBeInViewport({ ratio: 1 });
+					const geometry = await nav.evaluate((el) => {
+						const actions = el.querySelector('.detail-navigation-actions')!.getBoundingClientRect();
+						const tabs = el.querySelector('[role="tablist"]')!.getBoundingClientRect();
+						return {
+							actionsTop: actions.top,
+							tabsTop: tabs.top,
+							height: el.getBoundingClientRect().height,
+						};
+					});
+					expect(geometry.tabsTop).toBeCloseTo(geometry.actionsTop, 0);
+					expect(geometry.height).toBeLessThanOrEqual(44);
+				}
 				const back = nav.getByRole('button', {
 					name: locale === 'fr' ? 'Retour' : 'Back',
 					exact: true,
@@ -113,7 +131,7 @@ for (const provider of ['stm', 'octranspo'])
 				await expect(nextVehicle).toBeEnabled();
 				await nextVehicle.click();
 				await expect(panel.locator('[data-slot="detail-identity"]')).toContainText('layout-bus-2');
-				if (width === 1440)
+				if (width >= 1024)
 					await nav
 						.getByRole('button', {
 							name:
@@ -125,7 +143,7 @@ for (const provider of ['stm', 'octranspo'])
 						.press('ArrowLeft');
 				else await back.click();
 				await expect(panel.locator('[data-slot="detail-identity"]')).toHaveText(/layout-bus$/);
-				if (width === 390) {
+				if (width < 1024) {
 					const stops = nav.getByRole('tab', {
 						name: locale === 'fr' ? 'Arrêts' : 'Stops',
 						exact: true,

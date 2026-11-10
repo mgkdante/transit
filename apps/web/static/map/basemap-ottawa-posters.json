@@ -1,18 +1,18 @@
 {
   "schema_version": 2,
   "provider_id": "octranspo",
-  "rendered_utc": "2026-11-09T04:19:24.158Z",
+  "rendered_utc": "2026-11-09T23:22:15.647Z",
   "source": {
     "pmtiles_url": "/data/v1/octranspo/static/basemap/ottawa.pmtiles",
-    "sha256": "1f44bac08e067e03fbdf06bfa80b41ad0551ba14fc9a8f9b399b43f15f45f2f5",
-    "bytes": 57346797,
+    "sha256": "45ae63071c10619e0500654ff5fd66f320fe8e01e72be7fd0cda965945a4e21d",
+    "bytes": 187632265,
     "bounds": [
-      -76.15,
-      45,
-      -75.24,
-      45.65
+      -77.2,
+      44.5,
+      -74.2,
+      46.3
     ],
-    "osm_updated_utc": "2026-10-02T04:00:00Z",
+    "osm_updated_utc": "2026-11-08T04:00:00Z",
     "attribution": "c OpenStreetMap contributors, c Protomaps",
     "min_zoom": 0,
     "max_zoom": 15
@@ -28,15 +28,15 @@
     },
     {
       "path": "scripts/build-map-posters.ts",
-      "sha256": "3bfb2acb0bb19c6876d244534fe21d34951483325a5acc6fcc2476eb988d435e"
+      "sha256": "5ce9fbaa594a5865d18e73a13e516b5f353242777cb557591352953796a032ae"
     },
     {
       "path": "src/lib/components/map/basemap.ts",
-      "sha256": "573b618c0b34dd3d604e8865cbe003ff9031d830ff1cdd95eb3d94fb98a433d9"
+      "sha256": "7bc4fd936886fd10358a850d6fe2d3393f5442be8995516d5c0bec1de24ce0a7"
     },
     {
       "path": "src/lib/components/map/viewport.ts",
-      "sha256": "0a13e4a67a8237765a22542af75f8b27244cd5a09d361e5955f132373305f37a"
+      "sha256": "12c594eb14ea8c324f2f2f63c0208b08dbc12e59281a28c2867f945f6f0a0145"
     },
     {
       "path": "src/lib/features/map/mapCameraFraming.ts",
@@ -44,45 +44,45 @@
     },
     {
       "path": "../db/config/providers/octranspo.yaml",
-      "sha256": "1374c9a0551d268ae7fae1bad8500ad5ca01dbe94ec4b0b7fa96818b5d1abea6"
+      "sha256": "36793453342f589479bc73db3d57731dddc015ec1724d0424cdeaef70a7c31b9"
     }
   ],
   "posters": [
     {
-      "filename": "basemap-ottawa-dark-mobile-20261109.avif",
+      "filename": "basemap-ottawa-dark-mobile-45ae63071c10.avif",
       "theme": "dark",
       "width": 390,
       "height": 844,
       "format": "avif",
-      "bytes": 21945,
-      "sha256": "6b8d463eadefc125787505c5cec9cbe73e0541037a151c2f8263072c93fd3f98"
+      "bytes": 21951,
+      "sha256": "bfb17f1b379d74e5f7a5f59ff53bfa7956397a4b9f78c1ec1b5281cedb9db239"
     },
     {
-      "filename": "basemap-ottawa-dark-desktop-20261109.avif",
+      "filename": "basemap-ottawa-dark-desktop-45ae63071c10.avif",
       "theme": "dark",
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 83218,
-      "sha256": "c45c074cb2d8b929ce60921785e96ed6dd587ff860590c509fa247b9d409a8f0"
+      "bytes": 85919,
+      "sha256": "92952a0c6a670279041c531cc563d4e773d089f2dbfe3670179a2c50b011c1e2"
     },
     {
-      "filename": "basemap-ottawa-light-mobile-20261109.avif",
+      "filename": "basemap-ottawa-light-mobile-45ae63071c10.avif",
       "theme": "light",
       "width": 390,
       "height": 844,
       "format": "avif",
-      "bytes": 23985,
-      "sha256": "24c73749b1ee4989dfc1ae02c4a7e04d621baba98af59438b8c73c6fd65fa4d3"
+      "bytes": 24054,
+      "sha256": "3b7d703ea64d1bf982f89d3387e8729c2ed6dd4bdf29fa2697e7898ab19ad780"
     },
     {
-      "filename": "basemap-ottawa-light-desktop-20261109.avif",
+      "filename": "basemap-ottawa-light-desktop-45ae63071c10.avif",
       "theme": "light",
       "width": 1280,
       "height": 720,
       "format": "avif",
-      "bytes": 98390,
-      "sha256": "bff800ef0b0a9c5a20a343e6e54ad24eb664f0228d8e835cc1ac44e6e4262cdd"
+      "bytes": 100301,
+      "sha256": "3967f857ea3cfdac26a965b0a084c337cd43215baa108b095c970f6ba737864c"
     }
   ]
 }

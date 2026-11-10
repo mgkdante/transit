@@ -111,7 +111,10 @@
 				{#if navigation}{@render navigation()}{/if}
 			</Sheet.Header>
 
-			<div class="bottom-sheet-body min-h-0 flex-1 overflow-y-auto" data-slot="bottom-sheet-body">
+			<div
+				class="bottom-sheet-body min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain"
+				data-slot="bottom-sheet-body"
+			>
 				{#key surfaceKey}
 					<div class="p-4">
 						{#if children}
@@ -123,21 +126,24 @@
 						{/if}
 					</div>
 				{/key}
+				{#if footer}
+					<div
+						class="empty:hidden shrink-0 border-t border-border-subtle bg-popover px-4 py-3"
+						data-slot="bottom-sheet-footer"
+					>
+						{@render footer()}
+					</div>
+				{/if}
 			</div>
-
-			{#if footer}
-				<div
-					class="empty:hidden shrink-0 border-t border-border-subtle bg-popover px-4 py-3"
-					data-slot="bottom-sheet-footer"
-				>
-					{@render footer()}
-				</div>
-			{/if}
 		</div>
 	</Sheet.Content>
 </Sheet.Root>
 
 <style>
+	:global([data-m6c2-detail-sheet][data-slot='bottom-sheet']) {
+		max-height: 100dvh;
+	}
+
 	:global(body:has([data-m6c2-detail-sheet][data-state='open']) [data-testid='nav-pill']) {
 		visibility: hidden;
 	}

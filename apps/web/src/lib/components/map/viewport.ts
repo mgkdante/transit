@@ -55,6 +55,7 @@ export function mapViewportOptions(
 	// fit bounds when not supplied.
 	let maxBounds = maxBbox ? boundsFromProviderBbox(maxBbox) : bounds;
 	let minZoom = 9;
+	let offset: [number, number] = [0, 0];
 	if (size && size.width > 0 && size.height > 0) {
 		const pad =
 			typeof fitPadding === 'number'
@@ -68,13 +69,32 @@ export function mapViewportOptions(
 			east = x(bounds[1][0]);
 		const north = y(bounds[1][1]),
 			south = y(bounds[0][1]);
+		// Prefer the screen centre, moving only enough to clear an open panel.
+		// If that zoom cannot clear both edges, retain the uncovered-area fit.
+		const margin = Math.min(pad.left, pad.right);
+		const screenScale = Math.min(
+			Math.max(1, size.width - 2 * margin) / (east - west),
+			Math.max(1, size.height - pad.top - pad.bottom) / (south - north),
+			512 * 2 ** 16,
+		);
+		const projectedWidth = (east - west) * screenScale;
+		if (projectedWidth <= size.width - pad.left - pad.right) {
+			const target = Math.max(
+				pad.left + projectedWidth / 2,
+				Math.min(size.width / 2, size.width - pad.right - projectedWidth / 2),
+			);
+			offset = [target - size.width / 2, 0];
+			pad.left = margin;
+			pad.right = margin;
+			fitPadding = pad;
+		}
 		const scale = Math.min(
 			Math.max(1, size.width - pad.left - pad.right) / (east - west),
 			Math.max(1, size.height - pad.top - pad.bottom) / (south - north),
 			512 * 2 ** 16,
 		);
 		minZoom = Math.log2(scale / 512);
-		const cx = (west + east) / 2 - (pad.left - pad.right) / (2 * scale);
+		const cx = (west + east) / 2 - ((pad.left - pad.right) / 2 + offset[0]) / scale;
 		const cy = (north + south) / 2 - (pad.top - pad.bottom) / (2 * scale);
 		// Include the full viewport at fit zoom so MapLibre's constrain cannot
 		// zoom in or shift the fit. Retain the provider's wider panning area.
@@ -109,6 +129,7 @@ export function mapViewportOptions(
 		maxBounds,
 		fitBoundsOptions: {
 			padding: fitPadding,
+			...(offset[0] ? { offset } : {}),
 		},
 		minZoom,
 		maxZoom: 16,

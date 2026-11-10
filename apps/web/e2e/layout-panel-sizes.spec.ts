@@ -97,7 +97,7 @@ for (const locale of ['en', 'fr'])
 											(el) => JSON.parse((el as HTMLElement).dataset.cameraPadding ?? '{}').left,
 										),
 								)
-								.toBe(leftWidth + 32);
+								.toBe(leftWidth === 56 ? 16 : leftWidth + 32);
 							const defects = await textDefects(page);
 							expect(
 								defects.filter((finding) => !knownTextDefect(finding)),
