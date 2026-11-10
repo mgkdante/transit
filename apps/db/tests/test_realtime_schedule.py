@@ -84,9 +84,12 @@ def test_static_and_disabled_feeds_do_not_shorten_worker_ticks():
     assert worker_tick_seconds(manifest, 30) == 30
 
 
-@pytest.mark.parametrize("initialization_delay,vehicle_delay", [(3, 0), (0, 3)])
+@pytest.mark.parametrize(
+    "initialization_delay,vehicle_delay,trip_delay",
+    [(3, 0, 0), (9, 0, 0), (0, 3, 0), (0, 0, 3)],
+)
 def test_oc_worker_keeps_endpoint_cadences_after_cycle_work(
-    monkeypatch, initialization_delay, vehicle_delay
+    monkeypatch, initialization_delay, vehicle_delay, trip_delay
 ):
     manifest = load_provider_manifest(
         Path(__file__).resolve().parents[1] / "config/providers/octranspo.yaml"
@@ -101,6 +104,8 @@ def test_oc_worker_keeps_endpoint_cadences_after_cycle_work(
         captured[endpoint_key].append((now[0] - stamp(0)).total_seconds())
         if endpoint_key == "vehicle_positions":
             advance(vehicle_delay)
+        else:
+            advance(trip_delay)
         return orchestration.RealtimeEndpointCycleResult(
             endpoint_key, "succeeded", 0, None, 0, {}, None, None
         )
@@ -126,7 +131,10 @@ def test_oc_worker_keeps_endpoint_cadences_after_cycle_work(
         should_shutdown=lambda: False,
         bronze_storage_resolver=lambda _: object(),
     )
-    assert captured["vehicle_positions"] == [initialization_delay + s for s in range(0, 120, 20)]
+    assert captured["vehicle_positions"] == [
+        initialization_delay + s + (trip_delay if s % 30 == 0 else 0)
+        for s in range(0, 120, 20)
+    ]
     assert captured["trip_updates"] == [initialization_delay + s for s in range(0, 120, 30)]
 
 
