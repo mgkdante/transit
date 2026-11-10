@@ -46,5 +46,37 @@
     }
   ],
   "app": "apps/web",
-  "fullPlaywright": "e2e/playwright.config.ts"
+  "fullPlaywright": "e2e/playwright.config.ts",
+  "generatedInputs": [
+    {
+      "workspaces": [
+        "apps/web"
+      ],
+      "prefix": "apps/web/src/lib/v1/schemas/json/"
+    },
+    {
+      "workspaces": [
+        "apps/web"
+      ],
+      "prefix": "apps/web/scripts/gen-contract.mjs"
+    }
+  ],
+  "consumerInputs": [
+    {
+      "workspaces": [
+        "apps/web"
+      ],
+      "prefix": "apps/data-proxy/src/"
+    }
+  ],
+  "unitFileTests": [
+    {
+      "prefix": "apps/web/src/lib/",
+      "tests": [
+        "src/lib/i18n/frenchCopy.test.ts",
+        "src/lib/components/shared/controlCohesion.test.ts"
+      ],
+      "workspace": "apps/web"
+    }
+  ]
 }

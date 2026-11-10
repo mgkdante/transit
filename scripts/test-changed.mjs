@@ -10,8 +10,8 @@ export function changedFiles(root, baseRef = 'origin/main') {
 	const base = git('merge-base', 'HEAD', baseRef).trim();
 	// No rename detection: both sides of a rename must affect selection.
 	const files = [...new Set([
-		...git('diff', '--name-only', '--no-renames', '-z', base).split('\0'),
-		...git('diff', '--cached', '--name-only', '--no-renames', '-z', base).split('\0'),
+		...git('diff', '--name-only', '--no-renames', '-z', base, 'HEAD').split('\0'),
+		...git('diff', '--cached', '--name-only', '--no-renames', '-z').split('\0'),
 		...git('diff', '--name-only', '--no-renames', '-z').split('\0'),
 		...git('ls-files', '--others', '--exclude-standard', '-z').split('\0'),
 	].filter(Boolean))].sort();
@@ -62,28 +62,41 @@ function workspaces(root) {
 		}));
 }
 
-export function selectUnits(files, packages, all = false, generatedInputs = []) {
+export function isGraphSource(path) {
+	return /\.(?:[cm]?[jt]sx?|svelte)$/.test(path) && !/(?:^|\/)(?:scripts|tools)\//.test(path);
+}
+
+export function selectUnits(files, packages, all = false, generatedInputs = [], consumerInputs = []) {
 	const selected = new Set();
 	const fullTests = new Set(generatedInputs.filter(rule =>
 		files.some(path => path.replaceAll('\\', '/').startsWith(rule.prefix)),
 	).flatMap(rule => rule.workspaces));
-	packages.filter(pkg => fullTests.has(pkg.path)).forEach(pkg => selected.add(pkg.name));
+	const consumers = new Set(consumerInputs.filter(rule =>
+		files.some(path => path.replaceAll('\\', '/').startsWith(rule.prefix)),
+	).flatMap(rule => rule.workspaces));
+	packages.filter(pkg => fullTests.has(pkg.path) || consumers.has(pkg.path)).forEach(pkg => selected.add(pkg.name));
 	for (const raw of files) {
 		const path = raw.replaceAll('\\', '/');
 		const owner = packages.find(pkg => path.startsWith(pkg.path + '/'));
 		if (owner) selected.add(owner.name);
 		else packages.forEach(pkg => selected.add(pkg.name));
+		// Data, assets and command inputs can be read through fs rather than imports.
+		if (!isGraphSource(path)) {
+			(owner ? [owner] : packages).forEach(pkg => fullTests.add(pkg.path));
+		}
 	}
 	if (all) packages.forEach(pkg => selected.add(pkg.name));
 	// Include reverse workspace dependencies; Vitest owns the final module graph.
 	let previous;
 	do {
-		previous = selected.size;
+		previous = selected.size + fullTests.size;
+		const fullNames = new Set(packages.filter(pkg => fullTests.has(pkg.path)).map(pkg => pkg.name));
 		for (const pkg of packages) {
 			const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
 			if (Object.keys(deps).some(name => selected.has(name))) selected.add(pkg.name);
+			if (Object.keys(deps).some(name => fullNames.has(name))) fullTests.add(pkg.path);
 		}
-	} while (selected.size !== previous);
+	} while (selected.size + fullTests.size !== previous);
 	return packages.filter(pkg => selected.has(pkg.name) && pkg.scripts?.test)
 		.map(pkg => fullTests.has(pkg.path) ? { ...pkg, fullTest: true } : pkg);
 }
@@ -102,6 +115,40 @@ export function changedUnitArgs(script, base) {
 		...(/--maxWorkers\b/.test(script) ? [] : ['--maxWorkers=4'])];
 }
 
+export function repositoryArgs(files, base, graphPrefixes = []) {
+	const graphSafe = files.every(path => graphPrefixes.some(prefix => path.startsWith(prefix)));
+	return ['run', 'test:repository', ...(graphSafe ? ['--changed', base, '--passWithNoTests'] : []), '--maxWorkers=4'];
+}
+
+export function selectUnitFileTests(files, rules = []) {
+	return rules.filter(rule => files.some(path => path.replaceAll('\\', '/').startsWith(rule.prefix)));
+}
+
+function runUnitFiles(root, files, packages) {
+	for (const rule of selectUnitFileTests(files, config.unitFileTests)) {
+		const pkg = packages.find(pkg => pkg.path === rule.workspace);
+		if (!pkg?.scripts?.test || !rule.tests.length) throw new Error(`Invalid filesystem test boundary: ${rule.prefix}`);
+		if (pkg.fullTest) continue;
+		console.log(`Unit: ${rule.workspace}: filesystem input ${rule.prefix}; ${rule.tests.join(', ')}`);
+		run(root, rule.workspace, ['run', 'test', ...rule.tests,
+			...(/--maxWorkers\b/.test(pkg.scripts.test) ? [] : ['--maxWorkers=4'])], config.unitEnv);
+	}
+}
+
+function runBrowsers(root, selection, all) {
+	for (const group of config.browserGroups) {
+		const specs = selection.specs.filter(path => new RegExp(group.match).test(path));
+		if (!all && !specs.length) continue;
+		console.log(`Browser projects: ${(all ? group.allProjects : group.projects).join(', ')}`);
+		const env = { ...config.unitEnv, ...group.env, ...(!all ? group.changedEnv : {}) };
+		if (group.build) run(root, config.app, ['run', 'build', ...group.build], env);
+		// Playwright CLI arguments are regexes: escape filenames (including brackets and dots).
+		const filters = all ? [] : specs.map(path => relative(resolve(root, config.app), resolve(root, path)).replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+		run(root, config.app, ['x', '--no-install', 'playwright', 'test', '-c', all ? config.fullPlaywright : config.playwright,
+			...(all ? group.allProjects : group.projects).map(name => `--project=${name}`), ...filters], env);
+	}
+}
+
 export function main(root, args) {
 	const { values } = parseArgs({ args, options: {
 		all: { type: 'boolean' }, base: { type: 'string', default: 'origin/main' },
@@ -116,25 +163,21 @@ export function main(root, args) {
 	run(root, '.', ['run', 'test:changed:selection']);
 	if (all) run(root, '.', ['run', 'test']);
 	else {
-		for (const pkg of selectUnits(files, workspaces(root), false, config.generatedInputs)) {
+		const packages = selectUnits(files, workspaces(root), false, config.generatedInputs, config.consumerInputs);
+		for (const pkg of packages) {
 			const vitest = /\bvitest\b/.test(pkg.scripts.test) && !pkg.fullTest;
-			console.log(`Unit: ${pkg.path}: affected workspace/dependent; ${vitest ? 'Vitest module graph' : pkg.fullTest ? 'full owning suite (generated inputs)' : 'full owning suite (no Vitest)'}`);
+			console.log(`Unit: ${pkg.path}: affected workspace/dependent; ${vitest ? 'Vitest module graph' : pkg.fullTest ? 'full owning suite (filesystem/generated inputs)' : 'full owning suite (no Vitest)'}`);
 			run(root, pkg.path, vitest ? changedUnitArgs(pkg.scripts.test, base) : ['run', 'test'], config.unitEnv);
 		}
-		if (config.repositoryTests && files.length) run(root, '.', ['run', 'test:repository', '--changed', base, '--passWithNoTests', '--maxWorkers=4']);
+		runUnitFiles(root, files, packages);
+		if (config.repositoryTests && files.length) {
+			const args = repositoryArgs(files, base, config.repositoryGraphPrefixes);
+			console.log(`Repository tests: ${args.includes('--changed') ? 'module graph' : 'full suite for filesystem/unknown contract inputs'}`);
+			run(root, '.', args);
+		}
 	}
 	if (!selection.specs.length && !all) return;
-	for (const group of config.browserGroups) {
-		const specs = selection.specs.filter(path => new RegExp(group.match).test(path));
-		if (!all && !specs.length) continue;
-		console.log(`Browser projects: ${(all ? group.allProjects : group.projects).join(', ')}`);
-		const env = { ...config.unitEnv, ...group.env, ...(!all ? group.changedEnv : {}) };
-		if (group.build) run(root, config.app, ['run', 'build', ...group.build], env);
-		// Playwright CLI arguments are regexes: escape filenames (including brackets and dots).
-		const filters = all ? [] : specs.map(path => relative(resolve(root, config.app), resolve(root, path)).replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-		run(root, config.app, ['x', '--no-install', 'playwright', 'test', '-c', all ? config.fullPlaywright : config.playwright,
-			...(all ? group.allProjects : group.projects).map(name => `--project=${name}`), ...filters], env);
-	}
+	runBrowsers(root, selection, all);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

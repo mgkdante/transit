@@ -64,8 +64,8 @@ with STM, OC Transpo or any other transit agency.
 Run `bun run test:changed` from the root on Windows or Linux after installing
 repository dependencies and Playwright browsers. It uses the merge base with
 `origin/main` plus staged, unstaged and untracked files; fetch main to refresh it.
-Vitest follows affected module graphs; other runners and generated-input
-boundaries use full owning suites. The tested browser map selects changed/related
+Vitest follows affected module graphs. Data, assets and generators use full
+owning suites; filesystem-based checks are retained explicitly. The tested browser map selects changed/related
 specs at phone and desktop sizes; unknown/shared paths select all specs there.
 Selection reasons, runner results and elapsed times are printed. Existing project
 filters and skips apply. Use `--all` for full suites, including theme/motion

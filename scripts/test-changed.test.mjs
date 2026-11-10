@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { changedFiles, selectSpecs, selectUnits, changedUnitArgs } from './test-changed.mjs';
+import { changedFiles, selectSpecs, selectUnits, changedUnitArgs, selectUnitFileTests } from './test-changed.mjs';
 import config from './test-changed.config.json' with { type: 'json' };
 
 const available = ['tests/a.spec.ts', 'tests/b.spec.ts'];
@@ -31,7 +31,10 @@ test('workspace selection includes transitive consumers and conservative root fa
 	];
 	assert.deepEqual(selectUnits(['packages/core/a.ts'], packages), packages);
 	assert.deepEqual(selectUnits(['apps/web/a.ts'], packages), [packages[2]]);
-	assert.deepEqual(selectUnits(['package.json'], packages), packages);
+	assert.deepEqual(selectUnits(['package.json'], packages), packages.map(pkg => ({ ...pkg, fullTest: true })));
+	assert.ok(selectUnits(['packages/core/data.json'], packages).every(pkg => pkg.fullTest));
+	assert.ok(selectUnits(['packages/core/scripts/generate.ts'], packages).every(pkg => pkg.fullTest));
+	assert.ok(selectUnits(['packages/core/source.ts'], packages).every(pkg => !pkg.fullTest));
 	assert.deepEqual(selectUnits([], packages), []);
 });
 test('Git baseline includes committed, staged, unstaged, deleted, renamed and untracked paths', () => {
@@ -39,10 +42,13 @@ test('Git baseline includes committed, staged, unstaged, deleted, renamed and un
 	const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 	try {
 		git('init', '-q'); git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
-		for (const name of ['rename.ts', 'delete.ts', 'unstaged.ts', 'staged-only.ts']) writeFileSync(join(root, name), 'before');
+		for (const name of ['rename.ts', 'delete.ts', 'unstaged.ts', 'staged-only.ts', 'committed-cancelled.ts']) writeFileSync(join(root, name), 'before');
 		git('add', '.'); git('commit', '-qm', 'test: baseline');
 		const base = git('rev-parse', 'HEAD'); git('update-ref', 'refs/remotes/origin/main', base);
-		writeFileSync(join(root, 'committed.ts'), 'committed'); git('add', 'committed.ts'); git('commit', '-qm', 'test: change');
+		writeFileSync(join(root, 'committed.ts'), 'committed');
+		writeFileSync(join(root, 'committed-cancelled.ts'), 'after');
+		git('add', 'committed.ts', 'committed-cancelled.ts'); git('commit', '-qm', 'test: change');
+		writeFileSync(join(root, 'committed-cancelled.ts'), 'before'); git('add', 'committed-cancelled.ts');
 		git('mv', 'rename.ts', 'renamed.ts'); git('rm', 'delete.ts');
 		writeFileSync(join(root, 'staged-only.ts'), 'staged'); git('add', 'staged-only.ts');
 		writeFileSync(join(root, 'staged-only.ts'), 'before');
@@ -50,7 +56,7 @@ test('Git baseline includes committed, staged, unstaged, deleted, renamed and un
 		const result = changedFiles(root);
 		assert.equal(result.base, base);
 		assert.equal(changedFiles(root, 'HEAD').base, git('rev-parse', 'HEAD'));
-		assert.deepEqual(result.files, ['committed.ts', 'delete.ts', 'rename.ts', 'renamed.ts', 'staged-only.ts', 'unstaged.ts', 'untracked file.ts']);
+		assert.deepEqual(result.files, ['committed-cancelled.ts', 'committed.ts', 'delete.ts', 'rename.ts', 'renamed.ts', 'staged-only.ts', 'unstaged.ts', 'untracked file.ts']);
 	} finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -116,4 +122,24 @@ test('changed Vitest arguments preserve existing worker limits without duplicate
     assert.deepEqual(changedUnitArgs('node prepare.mjs && vitest run --maxWorkers=4', 'abc'),
         ['run', 'test', '--changed', 'abc', '--passWithNoTests']);
     assert.equal(changedUnitArgs('vitest run', 'abc').filter(arg => arg.startsWith('--maxWorkers')).length, 1);
+});
+
+test('Transit generated schemas and direct proxy imports select their real web consumer', () => {
+	const packages = ['apps/web', 'apps/data-proxy'].map(path => ({
+		path, ...JSON.parse(readFileSync(new URL(`../${path}/package.json`, import.meta.url), 'utf8')),
+	}));
+	for (const path of ['apps/web/src/lib/v1/schemas/json/providers.schema.json', 'apps/web/scripts/gen-contract.mjs']) {
+		const selected = selectUnits([path], packages, false, config.generatedInputs, config.consumerInputs);
+		assert.equal(selected.find(pkg => pkg.path === 'apps/web')?.fullTest, true, path);
+	}
+	const shared = selectUnits(['apps/data-proxy/src/snapshot-response.js'], packages, false, config.generatedInputs, config.consumerInputs);
+	assert.deepEqual(shared.map(pkg => pkg.path).sort(), ['apps/data-proxy', 'apps/web']);
+	assert.equal(shared.find(pkg => pkg.path === 'apps/web').fullTest, undefined);
+});
+
+test('source scans remain selected for ordinary web module edits', () => {
+    const jobs = selectUnitFileTests(['apps/web/src/lib/features/map/MapMobileDetailSheet.svelte'], config.unitFileTests);
+    const tests = jobs.flatMap(job => job.tests);
+    assert.ok(tests.includes('src/lib/i18n/frenchCopy.test.ts'));
+    assert.ok(tests.includes('src/lib/components/shared/controlCohesion.test.ts'));
 });
