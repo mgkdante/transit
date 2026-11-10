@@ -145,9 +145,17 @@ export default defineConfig({
 								],
 							},
 							bypassCSP: true,
-							// Findings attach text and geometry; recording known failures across
-							// the matrix is costly and adds no layout assertion evidence.
-							trace: 'off' as const,
+							// Keep a lean trace only for unexpected failures: the action log records
+							// route fetch/fulfill/abort calls with timing and stacks. Playwright records
+							// network entries only with DOM snapshots, which stay off with screenshots
+							// because findings already attach text and geometry and recording them is
+							// costly.
+							trace: {
+								mode: 'retain-on-failure' as const,
+								snapshots: false,
+								screenshots: false,
+								sources: false,
+							},
 							launchOptions: {
 								executablePath: browserName === 'chromium' ? executablePath : undefined,
 							},
