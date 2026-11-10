@@ -37,9 +37,12 @@ def capture(engine, settings, bronze_root, seed_provider):
     initialize_realtime_serving(PROVIDER, ["trip_updates"], engine=engine)
     base = datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=10)
 
-    def add(index, *, minutes=None, empty=False, historical=False, endpoint="trip_updates"):
+    def add(
+        index, *, minutes=None, empty=False, historical=False, endpoint="trip_updates",
+        captured_at=None,
+    ):
         sid, run, obj, old_time, delay = SNAPSHOTS[index]
-        captured = (
+        captured = captured_at or (
             old_time
             if historical
             else base + timedelta(minutes=index if minutes is None else minutes)
@@ -97,6 +100,34 @@ def capture(engine, settings, bronze_root, seed_provider):
         )
 
     return add
+
+
+@pytest.mark.parametrize("database_timezone", ["UTC", "America/Toronto"])
+def test_serving_capture_preserves_input_instant_across_database_timezones(
+    capture, engine, settings, database_timezone,
+):
+    from transit_ops.snapshots.builders.live import build_stop_departures, build_trips
+
+    def set_timezone(connection):
+        connection.execute(
+            text("SELECT set_config('TimeZone', :timezone, true)"),
+            {"timezone": database_timezone},
+        )
+
+    event.listen(engine, "begin", set_timezone)
+    try:
+        # Keep the expected instant independent of the receipt read from Postgres.
+        instant = datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=10)
+        receipt = capture(0, captured_at=instant)
+        assert receipt.captured_at_utc.tzinfo is not None
+        assert receipt.captured_at_utc.astimezone(UTC) == instant
+        _live(engine, settings, receipt)
+        with engine.connect() as connection:
+            for build in (build_trips, build_stop_departures):
+                payload = build(connection, provider_id=PROVIDER, generated_utc=instant.isoformat())
+                assert payload.feed_captured_utc == instant.strftime("%Y-%m-%dT%H:%M:%SZ")
+    finally:
+        event.remove(engine, "begin", set_timezone)
 
 
 def _live(engine, settings, *receipts, **kwargs):
