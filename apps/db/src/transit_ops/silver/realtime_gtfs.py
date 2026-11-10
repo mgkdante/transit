@@ -14,7 +14,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Connection, Engine
 
-from transit_ops.core.models import ProviderManifest
+from transit_ops.core.models import DEFAULT_MAX_VEHICLE_SPEED_KMH, ProviderManifest
 from transit_ops.db.connection import make_engine
 from transit_ops.gtfs.types import (
     ProviderBounds,
@@ -726,7 +726,7 @@ def _normalize_rt_vehicle_positions(
     snapshot: BronzeRealtimeSnapshot,
     rt_feed_snapshot_id: int,
     provider_bounds: ProviderBounds | None = None,
-    max_vehicle_speed_kmh: float = 100,
+    max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
 ) -> list[dict[str, object]]:
     vehicle_rows: list[dict[str, object]] = []
 
@@ -969,7 +969,7 @@ def _load_realtime_message_to_silver(
     snapshot: BronzeRealtimeSnapshot,
     message: gtfs_realtime_pb2.FeedMessage,
     provider_bounds: ProviderBounds | None = None,
-    max_vehicle_speed_kmh: float = 100,
+    max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
 ) -> RealtimeSilverLoadResult:
     if snapshot.endpoint_key not in {"trip_updates", "vehicle_positions"}:
         raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
@@ -1083,7 +1083,7 @@ def load_realtime_snapshot_to_silver(
     snapshot: BronzeRealtimeSnapshot,
     bronze_storage,
     provider_bounds: ProviderBounds | None = None,
-    max_vehicle_speed_kmh: float = 100,
+    max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
 ) -> RealtimeSilverLoadResult:
     message = _read_bronze_realtime_message(snapshot=snapshot, bronze_storage=bronze_storage)
     _lock_realtime_snapshot(connection, snapshot)
@@ -1108,7 +1108,7 @@ def load_realtime_snapshots_to_silver(
     bronze_storage_resolver: BronzeStorageResolver,
     skip_existing: bool = False,
     provider_bounds: ProviderBounds | None = None,
-    max_vehicle_speed_kmh: float = 100,
+    max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
     repair_incomplete: bool = False,
 ) -> RealtimeSilverBatchLoadResult:
     results: list[RealtimeSilverLoadResult] = []

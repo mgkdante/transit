@@ -11,7 +11,7 @@ import pytest
 from google.transit import gtfs_realtime_pb2
 
 import transit_ops.silver.realtime_gtfs as realtime_silver_module
-from transit_ops.core.models import ProviderManifest
+from transit_ops.core.models import DEFAULT_MAX_VEHICLE_SPEED_KMH, ProviderManifest
 from transit_ops.gtfs.types import ProviderBounds
 from transit_ops.settings import Settings
 from transit_ops.silver.realtime_gtfs import (
@@ -615,17 +615,21 @@ def test_normalize_rt_trip_updates_maps_minimum_fields(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("speed", "maximum", "expected"),
     [
-        (10, 100, 10),
-        (0, 100, 0),
-        (-1, 100, None),
-        (float("nan"), 100, None),
-        (float("inf"), 100, None),
-        (-float("inf"), 100, None),
-        (86, 100, None),
-        (27.7, 100, 27.7),
+        (10, 130, 10),
+        (0, 130, 0),
+        (-1, 130, None),
+        (float("nan"), 130, None),
+        (float("inf"), 130, None),
+        (-float("inf"), 130, None),
+        (86, 130, None),
+        # Highway running just over 100 km/h is real (101-117 km/h observed).
+        (28.4, 130, 28.4),
+        (32.5, 130, 32.5),
+        (36.1, 130, 36.1),
+        (36.2, 130, None),
         (28, 100, None),
         (40, 160, 40),
-        (None, 100, None),
+        (None, 130, None),
     ],
 )
 def test_vehicle_speed_validation_at_silver_load(
@@ -652,7 +656,11 @@ def test_vehicle_speed_validation_at_silver_load(
             connection,
             snapshot=snapshot,
             bronze_storage=FakeBronzeStorage(payload),
-            **({"max_vehicle_speed_kmh": maximum} if maximum != 100 else {}),
+            **(
+                {"max_vehicle_speed_kmh": maximum}
+                if maximum != DEFAULT_MAX_VEHICLE_SPEED_KMH
+                else {}
+            ),
         )
     inserts = [
         params
