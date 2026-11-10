@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -71,6 +71,113 @@ test("non-PR events, event errors, empty diffs and git errors select everything"
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("merge groups classify the complete base/head range and fail closed on unreadable events", () => {
+  const original = process.cwd();
+  const directory = mkdtempSync(join(tmpdir(), "transit-web-merge-group-"));
+  const git = (...args) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "core.hooksPath=",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "user.name=Policy test",
+        "-c",
+        "user.email=test@example.invalid",
+        ...args,
+      ],
+      { cwd: directory, encoding: "utf8", stdio: "pipe" },
+    ).trim();
+  try {
+    git("init", "--initial-branch=main");
+    writeFileSync(join(directory, "README.md"), "base");
+    git("add", "README.md");
+    git("commit", "-m", "base");
+    const base = git("rev-parse", "HEAD");
+    writeFileSync(join(directory, "README.md"), "docs");
+    git("commit", "-am", "docs");
+    const head = git("rev-parse", "HEAD");
+    const event = join(directory, "event.json");
+    const env = { GITHUB_EVENT_NAME: "merge_group", GITHUB_EVENT_PATH: event };
+    process.chdir(directory);
+    for (const content of [
+      "{}",
+      "invalid json",
+      JSON.stringify({ merge_group: { base_sha: "bad", head_sha: head } }),
+      JSON.stringify({
+        merge_group: { base_sha: base, head_sha: "f".repeat(40) },
+      }),
+    ]) {
+      writeFileSync(event, content);
+      const paths = changedPaths(env);
+      assert.equal(classifyPaths(paths), true);
+      assert.equal(classifyLayoutPaths(paths), true);
+    }
+    writeFileSync(
+      event,
+      JSON.stringify({ merge_group: { base_sha: base, head_sha: head } }),
+    );
+    assert.deepEqual(changedPaths(env), ["README.md"]);
+    assert.equal(classifyPaths(changedPaths(env)), false);
+    assert.equal(classifyLayoutPaths(changedPaths(env)), false);
+  } finally {
+    process.chdir(original);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("required workflows subscribe to merge groups without changing required job names", () => {
+  for (const [file, jobs] of [
+    ["web.yml", ["ci"]],
+    ["ci.yml", ["offline-tests", "alembic-single-head", "real-db-tests"]],
+    ["secret-scan.yml", ["gitleaks"]],
+  ]) {
+    const source = readFileSync(
+      new URL(`../workflows/${file}`, import.meta.url),
+      "utf8",
+    );
+    assert.match(source.split("\npermissions:")[0], /\n  merge_group:/);
+    for (const job of jobs) {
+      assert.ok(
+        file === "ci.yml"
+          ? source.includes(`context: ${job}\n`)
+          : source.includes(`\n  ${job}:`),
+        `${file}/${job}`,
+      );
+    }
+  }
+});
+
+test("gitleaks scans the merge group range and falls back to full history for unavailable commits", () => {
+  const source = readFileSync(
+    new URL("../workflows/secret-scan.yml", import.meta.url),
+    "utf8",
+  );
+  const scan = source
+    .split("      - name: Scan merge group commits\n")[1]
+    ?.split("      - name:")[0];
+  assert.ok(scan);
+  assert.match(
+    scan,
+    /MERGE_BASE: \$\{\{ github.event.merge_group.base_sha \}\}/,
+  );
+  assert.match(
+    scan,
+    /MERGE_HEAD: \$\{\{ github.event.merge_group.head_sha \}\}/,
+  );
+  assert.match(
+    scan,
+    /git cat-file -e "\$MERGE_BASE\^\{commit\}" && git cat-file -e "\$MERGE_HEAD\^\{commit\}"/,
+  );
+  assert.match(scan, /--log-opts "\$MERGE_BASE\.\.\$MERGE_HEAD"/);
+  assert.match(
+    scan,
+    /else\n\s+"\$\{GITLEAKS_BIN\}" detect --redact --config .gitleaks.toml\n/,
+  );
 });
 
 function needs(selected = "true") {

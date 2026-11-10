@@ -67,23 +67,25 @@ export function checkRequiredJobs(needs) {
 }
 
 export function changedPaths(environment) {
-  if (environment.GITHUB_EVENT_NAME !== "pull_request") return null;
+  if (!["pull_request", "merge_group"].includes(environment.GITHUB_EVENT_NAME))
+    return null;
   try {
     const event = JSON.parse(
       readFileSync(environment.GITHUB_EVENT_PATH, "utf8"),
     );
-    const { base, head } = event.pull_request;
-    if (![base.sha, head.sha].every((sha) => /^[a-f0-9]{40}$/.test(sha)))
+    const [base, head] =
+      environment.GITHUB_EVENT_NAME === "merge_group"
+        ? [event.merge_group?.base_sha, event.merge_group?.head_sha]
+        : [event.pull_request?.base?.sha, event.pull_request?.head?.sha];
+    if (
+      ![base, head].every(
+        (sha) => typeof sha === "string" && /^[a-f0-9]{40}$/.test(sha),
+      )
+    )
       return null;
     const paths = execFileSync(
       "git",
-      [
-        "diff",
-        "--name-only",
-        "--no-renames",
-        "-z",
-        `${base.sha}...${head.sha}`,
-      ],
+      ["diff", "--name-only", "--no-renames", "-z", `${base}...${head}`],
       { encoding: "utf8" },
     );
     return paths.split("\0").filter(Boolean);
