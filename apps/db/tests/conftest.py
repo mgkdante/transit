@@ -11,6 +11,8 @@ from sqlalchemy import Connection, Engine, create_engine, text
 
 from transit_ops.db.target_safety import assert_disposable_test_url
 
+pytest_plugins = ["parallel_db"]
+
 
 class SeedProvider(Protocol):
     def __call__(

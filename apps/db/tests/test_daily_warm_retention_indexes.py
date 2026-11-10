@@ -179,6 +179,9 @@ def _seed_perf_rows(engine) -> None:
                 "object_count": PERF_OBJECT_COUNT,
             },
         )
+        # FK checks cache plans too. Refresh bulk parents before loading children
+        # so a plan from an earlier tiny fixture cannot repeatedly scan the heap.
+        connection.execute(text("ANALYZE raw.ingestion_runs"))
         connection.execute(
             text(
                 """
@@ -200,6 +203,7 @@ def _seed_perf_rows(engine) -> None:
                 "object_count": PERF_OBJECT_COUNT,
             },
         )
+        connection.execute(text("ANALYZE raw.ingestion_objects"))
         connection.execute(
             text(
                 """
@@ -225,6 +229,7 @@ def _seed_perf_rows(engine) -> None:
                 "object_count": PERF_OBJECT_COUNT,
             },
         )
+        connection.execute(text("ANALYZE raw.realtime_snapshot_index"))
         connection.execute(
             text(
                 """
@@ -322,16 +327,20 @@ def _explain(connection, statement: str, parameters: dict[str, int]) -> str:
 
 
 def test_bronze_realtime_retention_uses_indexes_and_bounded_fk_delete(
-    real_db_engine,
+    real_db_engine, record_property,
 ) -> None:
     candidate_object_ids = [PERF_BASE_ID + value for value in range(1, 101)]
     candidate_snapshot_ids = candidate_object_ids.copy()
     full_batch_object_ids = [PERF_BASE_ID + value for value in range(1, 5_001)]
     expected_selector_ids = full_batch_object_ids.copy()
 
+    started = time.perf_counter()
     _cleanup_perf_rows(real_db_engine)
+    record_property("retention_initial_cleanup_seconds", time.perf_counter() - started)
     try:
+        started = time.perf_counter()
         _seed_perf_rows(real_db_engine)
+        record_property("retention_seed_seconds", time.perf_counter() - started)
         with real_db_engine.connect() as connection:
             assert _provider_row_counts(connection) == (
                 PERF_OBJECT_COUNT,
@@ -393,6 +402,8 @@ def test_bronze_realtime_retention_uses_indexes_and_bounded_fk_delete(
                 ).scalar_one()
             )
             count_elapsed_seconds = time.perf_counter() - started
+            record_property("retention_selector_seconds", selector_elapsed_seconds)
+            record_property("retention_count_seconds", count_elapsed_seconds)
             assert selected_object_ids == expected_selector_ids
             assert eligible_count == 5_000
             assert selector_elapsed_seconds < 2
@@ -417,6 +428,7 @@ def test_bronze_realtime_retention_uses_indexes_and_bounded_fk_delete(
             ).scalars()
             deleted_snapshot_ids = sorted(int(value) for value in deleted_snapshot_ids)
             elapsed_seconds = time.perf_counter() - started
+            record_property("retention_delete_100_seconds", elapsed_seconds)
             assert deleted_snapshot_ids == candidate_snapshot_ids
             assert elapsed_seconds < 2
             transaction.rollback()
@@ -439,6 +451,7 @@ def test_bronze_realtime_retention_uses_indexes_and_bounded_fk_delete(
             ).scalars()
             deleted_full_batch_ids = sorted(int(value) for value in deleted_full_batch_ids)
             full_batch_elapsed_seconds = time.perf_counter() - started
+            record_property("retention_delete_5000_seconds", full_batch_elapsed_seconds)
             assert deleted_full_batch_ids == full_batch_object_ids
             assert full_batch_elapsed_seconds < 60
             transaction.rollback()
@@ -467,4 +480,6 @@ def test_bronze_realtime_retention_uses_indexes_and_bounded_fk_delete(
             ).scalar_one()
             assert retained_full_batch_after_rollback == 5_000
     finally:
+        started = time.perf_counter()
         _cleanup_perf_rows(real_db_engine)
+        record_property("retention_final_cleanup_seconds", time.perf_counter() - started)

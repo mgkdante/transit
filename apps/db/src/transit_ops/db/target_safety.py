@@ -309,7 +309,10 @@ def assert_disposable_test_url(url: str, environment: Mapping[str, str]) -> None
 
     target = _parse_database_target(url, environment)
     confirmed = environment.get("TRANSIT_TEST_DATABASE_DISPOSABLE") == _DISPOSABLE_CONFIRMATION
-    approved_pair = (target.username, target.database) in _DISPOSABLE_TARGETS
+    database = target.database or ""
+    worker = re.fullmatch(r"(.+)_xdist_[0-9a-f]{16}_gw[0-9]+", database)
+    base_database = worker.group(1) if worker else database
+    approved_pair = (target.username, base_database) in _DISPOSABLE_TARGETS
     if _is_local_target(target) and approved_pair and confirmed:
         return
 

@@ -82,6 +82,10 @@ jobs:
       - name: Strict Python typing
         run: uv run mypy
 
+      - name: Verify runtime container toolchain
+        run: bash scripts/verify-runtime-images.sh
+        working-directory: apps/db
+
   # Require one Alembic head so empty-DB replay and production init-db can succeed.
   alembic-single-head-work:
     needs: [classify]
@@ -135,10 +139,6 @@ jobs:
       - name: Set up Python workspace
         uses: ./.github/actions/setup-py
 
-      - name: Verify runtime container toolchain
-        run: bash scripts/verify-runtime-images.sh
-        working-directory: apps/db
-
       - name: Replay migrations on disposable PostgreSQL
         run: |
           unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
@@ -148,7 +148,7 @@ jobs:
       - name: Run real-DB test suite
         run: |
           unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
-          uv run pytest tests
+          uv run pytest tests -n 4 --dist worksteal --max-worker-restart=0 --durations=20
         working-directory: apps/db
 
   required-contexts:

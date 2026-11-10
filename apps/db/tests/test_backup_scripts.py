@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -219,7 +220,10 @@ def _restore_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
         {
             "COMMAND_LOG": str(log_path),
             "PG_BIN": str(bin_dir),
-            "RESTORE_WORKDIR": str(tmp_path / "restore-work"),
+            # xdist's worker prefix and the case name must not exhaust sun_path.
+            "RESTORE_WORKDIR": str(
+                Path(tempfile.mkdtemp(prefix="rp-", dir=tmp_path.parent)) / "work"
+            ),
             "RESTORE_MIN_FREE_GB": "0",
         }
     )
@@ -242,6 +246,16 @@ def test_restore_proof_orders_initdb_restore_smoke(tmp_path: Path) -> None:
     ):
         assert prefixes.index(earlier) < prefixes.index(later), prefixes
     assert "RTO download_seconds=" in result.stdout
+
+
+def test_restore_fixture_keeps_socket_path_short_and_unique(tmp_path: Path) -> None:
+    long_case = tmp_path.with_name("restore-case-" + "x" * 80)
+    long_case.mkdir()
+    env, _ = _restore_env(long_case)
+    result = _run_script("restore-backup-proof.sh", long_case, env=env)
+    assert result.returncode == 0, result.stderr
+    another_env, _ = _restore_env(long_case)
+    assert env["RESTORE_WORKDIR"] != another_env["RESTORE_WORKDIR"]
 
 
 def test_restore_proof_uses_no_owner_no_privileges_parallel_jobs(tmp_path: Path) -> None:
