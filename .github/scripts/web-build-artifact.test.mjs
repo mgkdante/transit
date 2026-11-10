@@ -26,6 +26,11 @@ import {
   verifySource,
 } from "./web-build-artifact.mjs";
 
+const bunVersion = readFileSync(
+  new URL("../../.bun-version", import.meta.url),
+  "utf8",
+).trim();
+
 test("every deployment input exists in the real checkout, including the Kit 3 CSP config", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   assert.ok(BUILD_INPUTS.includes("apps/web/kit.config.js"));
@@ -49,7 +54,7 @@ function fixture(t) {
   };
   for (const path of BUILD_INPUTS) write(path, "{}");
   write(".nvmrc", process.versions.node);
-  write(".bun-version", "1.3.11");
+  write(".bun-version", bunVersion);
   write(
     "package.json",
     JSON.stringify({ devDependencies: { wrangler: "4.115.0" } }),
@@ -58,7 +63,7 @@ function fixture(t) {
     "node_modules/wrangler/package.json",
     JSON.stringify({ version: "4.115.0" }),
   );
-  write("bin/bun", '#!/bin/sh\nprintf "1.3.11\\n"\n');
+  write("bin/bun", `#!/bin/sh\nprintf "${bunVersion}\\n"\n`);
   chmodSync(join(root, "bin/bun"), 0o755);
   for (const tree of BUILD_TREES) write(`${tree}/entry.js`);
   write(`${BUILD_TREES[0]}/.assetsignore`, "_worker.js\n");

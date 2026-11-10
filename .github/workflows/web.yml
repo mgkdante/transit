@@ -46,7 +46,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
-          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          $main = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($LASTEXITCODE -ne 0 -or $main -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid trusted main SHA' }
+          $base = $main
+          $forceFull = 'false'
           if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
             $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
             $base = $event.pull_request.base.sha
@@ -58,7 +61,21 @@ jobs:
           }
           if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
           git merge-base --is-ancestor $base refs/remotes/origin/main
-          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $ancestryStatus = $LASTEXITCODE
+          if ($ancestryStatus -eq 1 -and $env:GITHUB_EVENT_NAME -eq 'merge_group') {
+            # A later queue entry can be based on an earlier temporary group.
+            # Load policy only from main, after validating both queued ancestors.
+            $head = $env:GITHUB_SHA
+            if ($head -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid queued HEAD SHA' }
+            git merge-base --is-ancestor $base $head
+            if ($LASTEXITCODE -ne 0) { throw 'Merge-group base is not an ancestor of queued HEAD' }
+            git merge-base --is-ancestor $main $head
+            if ($LASTEXITCODE -ne 0) { throw 'Trusted main is not an ancestor of queued HEAD' }
+            $base = $main
+            $forceFull = 'true'
+          } elseif ($ancestryStatus -ne 0) {
+            throw "Policy base is not reachable from origin/main (git exit $ancestryStatus)"
+          }
           $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
           New-Item -ItemType Directory -Path $policy | Out-Null
           foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
@@ -69,6 +86,7 @@ jobs:
           $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
           if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
           "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_FORCE_FULL=$forceFull" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up pinned Node
@@ -81,7 +99,7 @@ jobs:
         id: classify
         shell: pwsh
         run: |
-          if ($env:GITHUB_EVENT_NAME -notin @('pull_request', 'merge_group')) {
+          if ($env:GITHUB_EVENT_NAME -notin @('pull_request', 'merge_group') -or $env:WEB_CI_FORCE_FULL -ceq 'true') {
             [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "run_e2e=true`nrun_layout=true`n")
             exit 0
           }
@@ -143,11 +161,11 @@ jobs:
 
       - name: Web CI policy contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs .github/scripts/layout-timing.test.mjs .github/scripts/layout-shards.test.mjs
+        run: node --test .github/scripts/bun-tarball-resolution.test.mjs .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs .github/scripts/layout-timing.test.mjs .github/scripts/layout-shards.test.mjs
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs .github/scripts/deployment-order.test.mjs
+        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/deploy-now.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs .github/scripts/deployment-order.test.mjs
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
@@ -431,7 +449,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
-          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          $main = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($LASTEXITCODE -ne 0 -or $main -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid trusted main SHA' }
+          $base = $main
+          $forceFull = 'false'
           if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
             $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
             $base = $event.pull_request.base.sha
@@ -443,7 +464,21 @@ jobs:
           }
           if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
           git merge-base --is-ancestor $base refs/remotes/origin/main
-          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $ancestryStatus = $LASTEXITCODE
+          if ($ancestryStatus -eq 1 -and $env:GITHUB_EVENT_NAME -eq 'merge_group') {
+            # A later queue entry can be based on an earlier temporary group.
+            # Load policy only from main, after validating both queued ancestors.
+            $head = $env:GITHUB_SHA
+            if ($head -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid queued HEAD SHA' }
+            git merge-base --is-ancestor $base $head
+            if ($LASTEXITCODE -ne 0) { throw 'Merge-group base is not an ancestor of queued HEAD' }
+            git merge-base --is-ancestor $main $head
+            if ($LASTEXITCODE -ne 0) { throw 'Trusted main is not an ancestor of queued HEAD' }
+            $base = $main
+            $forceFull = 'true'
+          } elseif ($ancestryStatus -ne 0) {
+            throw "Policy base is not reachable from origin/main (git exit $ancestryStatus)"
+          }
           $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
           New-Item -ItemType Directory -Path $policy | Out-Null
           foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
@@ -454,6 +489,7 @@ jobs:
           $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
           if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
           "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_FORCE_FULL=$forceFull" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up pinned Node
@@ -488,6 +524,10 @@ jobs:
             if ($needs[$job].result -in @('failure', 'cancelled')) {
               throw "${job}: $($needs[$job].result)"
             }
+          }
+          if ($env:WEB_CI_FORCE_FULL -ceq 'true' -and
+              ($needs.classify.outputs.run_e2e -cne 'true' -or $needs.classify.outputs.run_layout -cne 'true')) {
+            throw 'Fallback policy requires full web classification'
           }
           if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
             if ($needs.classify.outputs.run_e2e -notin @('true', 'false')) { throw 'Invalid fast-lane classification' }

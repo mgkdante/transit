@@ -36,6 +36,7 @@ dev = [
   "botocore-stubs==1.43.123",
   "mypy-boto3-s3==1.43.106",
   "mypy>=2.3.0,<3.0",
+  "pytest-xdist>=3.8,<4",
   "pytest>=9.1.1,<10.0",
   "ruff>=0.16.0,<0.18",
 ]
