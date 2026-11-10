@@ -31,10 +31,10 @@ shared UI come from pinned
   (`live_source_lag_seconds`). Its `public` block decides whether and how the
   dashboard shows it.
 - **Live capture.** Two realtime workers, one per provider, poll each feed at its
-  declared cadence: STM vehicle positions every 20 seconds, two seconds after
-  STM rebuilds them; trip updates and OC Transpo vehicle positions every
-  30 seconds; STM service alerts every 5 minutes. OC Transpo publishes no
-  alerts feed.
+  declared cadence: vehicle positions every 20 seconds for STM and OC Transpo;
+  STM capture is aligned two seconds after its feed rebuilds. Trip updates
+  run every 30 seconds; STM service alerts every 5 minutes. OC Transpo
+  publishes no alerts feed.
 - **Live publication.** Each cycle rebuilds only the live files whose input
   feeds were captured again, then rewrites the manifest last. Live files are
   cached for 20 seconds, and the web app refetches when that cache expires.

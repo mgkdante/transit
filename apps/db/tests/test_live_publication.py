@@ -49,7 +49,8 @@ def test_tick_writes_and_gate_scope(monkeypatch, changed, count):
             assert store.objects[key] == old[key]
 
 
-@pytest.mark.parametrize(("provider", "expected"), [("stm", 29088), ("octranspo", 17280)])
+# OC's 60 s cycle writes 6 (both), 4 (vehicles), 6 (trips), then 4 (vehicles).
+@pytest.mark.parametrize(("provider", "expected"), [("stm", 29088), ("octranspo", 28800)])
 def test_daily_write_budget(provider, expected):
     manifest = load_provider_manifest(
         Path(__file__).resolve().parents[1] / f"config/providers/{provider}.yaml"

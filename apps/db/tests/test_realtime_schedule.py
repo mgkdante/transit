@@ -1,10 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from transit_ops import orchestration
 from transit_ops.providers.registry import load_provider_manifest
 from transit_ops.realtime_schedule import endpoint_due, worker_tick_seconds
+from transit_ops.settings import Settings
 from transit_ops.snapshots.contract import ManifestLiveFiles
 from transit_ops.snapshots.storage import CACHE_CONTROL
 
@@ -57,14 +60,74 @@ def test_phase_never_early_or_twice_in_one_slot():
     assert endpoint_due(feed, stamp(50), stamp(10))
 
 
-def test_oc_keeps_30_second_tick():
+def test_oc_captures_vehicles_every_20_seconds_and_trips_every_30():
     manifest = load_provider_manifest(
         Path(__file__).resolve().parents[1] / "config/providers/octranspo.yaml"
     )
+    tick = worker_tick_seconds(manifest, 30)
+    captured = {key: [] for key in ("vehicle_positions", "trip_updates")}
+    history = {}
+    for second in range(0, 121, tick):
+        for key in captured:
+            if endpoint_due(manifest.feeds[key], stamp(second), history.get(key)):
+                captured[key].append(second)
+                history[key] = stamp(second)
+
+    assert captured["vehicle_positions"] == [0, 20, 40, 60, 80, 100, 120]
+    assert captured["trip_updates"] == [0, 30, 60, 90, 120]
+
+
+def test_static_and_disabled_feeds_do_not_shorten_worker_ticks():
+    manifest = stm()
+    manifest.feeds["static_schedule"].refresh_interval_seconds = 7
+    manifest.feeds["vehicle_positions"].is_enabled = False
     assert worker_tick_seconds(manifest, 30) == 30
-    assert all(
-        getattr(feed, "refresh_phase_seconds", None) is None for feed in manifest.feeds.values()
+
+
+@pytest.mark.parametrize("initialization_delay,vehicle_delay", [(3, 0), (0, 3)])
+def test_oc_worker_keeps_endpoint_cadences_after_cycle_work(
+    monkeypatch, initialization_delay, vehicle_delay
+):
+    manifest = load_provider_manifest(
+        Path(__file__).resolve().parents[1] / "config/providers/octranspo.yaml"
     )
+    now = [stamp(0)]
+    captured = {key: [] for key in ("vehicle_positions", "trip_updates")}
+
+    def advance(seconds):
+        now[0] += timedelta(seconds=seconds)
+
+    def capture(provider_id, endpoint_key, **kwargs):
+        captured[endpoint_key].append((now[0] - stamp(0)).total_seconds())
+        if endpoint_key == "vehicle_positions":
+            advance(vehicle_delay)
+        return orchestration.RealtimeEndpointCycleResult(
+            endpoint_key, "succeeded", 0, None, 0, {}, None, None
+        )
+
+    monkeypatch.setattr(
+        orchestration, "_validate_realtime_worker_startup", lambda *a, **k: manifest
+    )
+    monkeypatch.setattr(orchestration, "utc_now", lambda: now[0])
+    monkeypatch.setattr(
+        orchestration, "initialize_realtime_serving", lambda *a, **k: advance(initialization_delay)
+    )
+    monkeypatch.setattr(orchestration, "_capture_and_load_realtime_source", capture)
+    monkeypatch.setattr(orchestration, "_best_effort_publish_live", lambda *a, **k: 0)
+    orchestration._run_realtime_worker_loop(
+        "octranspo",
+        settings=Settings(_env_file=None),
+        registry=SimpleNamespace(get_provider=lambda _: manifest),
+        engine=object(),
+        sleep_fn=advance,
+        max_cycles=12,
+        utc_now_fn=lambda: now[0],
+        perf_counter_fn=lambda: now[0].timestamp(),
+        should_shutdown=lambda: False,
+        bronze_storage_resolver=lambda _: object(),
+    )
+    assert captured["vehicle_positions"] == [initialization_delay + s for s in range(0, 120, 20)]
+    assert captured["trip_updates"] == [initialization_delay + s for s in range(0, 120, 30)]
 
 
 def test_live_ttl_shared():

@@ -1536,14 +1536,20 @@ def _fake_registry_with_intervals(
         feeds={
             "trip_updates": SimpleNamespace(
                 endpoint_key="trip_updates",
+                feed_kind="trip_updates",
+                is_enabled=True,
                 refresh_interval_seconds=trip_updates,
             ),
             "vehicle_positions": SimpleNamespace(
                 endpoint_key="vehicle_positions",
+                feed_kind="vehicle_positions",
+                is_enabled=True,
                 refresh_interval_seconds=vehicle_positions,
             ),
             "i3_alerts": SimpleNamespace(
                 endpoint_key="i3_alerts",
+                feed_kind="i3_alerts",
+                is_enabled=True,
                 refresh_interval_seconds=i3_alerts,
             ),
         },
