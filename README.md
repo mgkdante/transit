@@ -61,15 +61,13 @@ with STM, OC Transpo or any other transit agency.
 
 ## Fast local tests
 
-Run `bun run test:changed` from the repository root (Windows or Linux). It uses
-the merge base with the locally fetched `origin/main`, plus staged, unstaged and
-untracked files. Vitest follows its module graph in affected workspaces; other
-owning test runners run their full suite. Browser specs use the tested map in
-`scripts/test-changed.config.json` and two representative phone/desktop projects.
-Unknown or shared paths select all browser specs at those sizes. Selection and
-reasons are printed; failures propagate. Run `git fetch origin main` to refresh
-the baseline, and `bun run test:changed --all` for full unit and browser suites.
-Install the repository dependencies and Playwright browsers first. This local
-loop supplements the full CI gates.
-The existing project tag filters still apply; theme and reduced-motion variants
-are covered by `--all`. Existing test skips remain visible in the runner report.
+Run `bun run test:changed` from the root on Windows or Linux after installing
+repository dependencies and Playwright browsers. It uses the merge base with
+`origin/main` plus staged, unstaged and untracked files; fetch main to refresh it.
+Vitest follows affected module graphs; other runners and generated-input
+boundaries use full owning suites. The tested browser map selects changed/related
+specs at phone and desktop sizes; unknown/shared paths select all specs there.
+Selection reasons, runner results and elapsed times are printed. Existing project
+filters and skips apply. Use `--all` for full suites, including theme/motion
+variants, or `--base HEAD` to benchmark a small edit against a candidate commit.
+This local loop supplements the full CI gates; failures propagate.

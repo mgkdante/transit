@@ -3,53 +3,48 @@
   "rules": [
     {
       "specs": [
-        "search.spec.ts",
-        "layout.spec.ts"
+        "favicon.spec.ts"
       ],
-      "prefix": "apps/web/src/lib/features/search/"
-    },
-    {
-      "specs": [
-        "map.spec.ts",
-        "layout-map.spec.ts",
-        "layout-map-controls.spec.ts"
-      ],
-      "prefix": "apps/web/src/lib/features/map/"
+      "path": "apps/web/static/favicon.ico"
     }
   ],
   "specDir": "apps/web/e2e",
   "browserGroups": [
     {
-      "projects": [
-        "layout-chromium-390-light",
-        "layout-webkit-1440-light"
-      ],
+      "build": [],
+      "match": "/(?!layout)[^/]+\\.spec\\.ts$",
       "allProjects": [
-        "*"
+        "http",
+        "phone",
+        "tablet",
+        "desktop",
+        "reduced-motion",
+        "light",
+        "dark"
       ],
-      "match": "/layout[^/]*\\.spec\\.ts$",
-      "build": [
-        "--mode",
-        "e2e"
-      ]
-    },
-    {
       "projects": [
         "phone",
         "desktop"
-      ],
-      "allProjects": [
-        "*"
-      ],
-      "match": "/(?!layout)[^/]+\\.spec\\.ts$",
+      ]
+    },
+    {
+      "changedEnv": {
+        "TRANSIT_E2E_PANEL_SIZES": "1"
+      },
       "build": [
         "--mode",
         "e2e"
+      ],
+      "match": "/layout[^/]*\\.spec\\.ts$",
+      "allProjects": [
+        "layout-*"
+      ],
+      "projects": [
+        "layout-chromium-390-light",
+        "layout-webkit-1440-light"
       ]
     }
   ],
   "app": "apps/web",
-  "unitEnv": {
-    "TRANSIT_E2E_PANEL_SIZES": "1"
-  }
+  "fullPlaywright": "e2e/playwright.config.ts"
 }
