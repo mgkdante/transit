@@ -43,42 +43,50 @@
 	}
 </script>
 
-<section class="map-alerts" aria-label={t.alerts}>
-	<h3>
-		{t.alerts}{#if alerts && alerts.length > 0 && presentation === 'detail'}<span
-				class="map-alerts-count">{alerts.length}</span
-			>{/if}
-	</h3>
-	{#if alertsAgeSeconds != null}
-		<p class="map-alerts-age">
-			{MAP_COPY[locale].alertsChecked(formatRelativeSeconds(alertsAgeSeconds, locale))}
-		</p>
+{#if presentation === 'peek-passive'}
+	<!-- One passive line for the hover card: the first alert, clamped, plus a count. -->
+	{#if alerts && alerts.length > 0}
+		{@const alert = alerts[0]}
+		{@const display = displayAlert(alert)}
+		{@const marker = alertLanguageNotice(display, locale)}
+		<section class="map-alerts map-alerts-peek" aria-label={t.alerts}>
+			<p class="map-alert map-peek-alert" data-severity={alert.severity}>
+				<span class="map-alert-severity" aria-hidden="true">{severityGlyph(alert.severity)}</span
+				><span class="map-peek-alert-text"
+					><span lang={display.lang ?? ''}>{display.text}</span>{#if marker}<span
+							class="alert-language-marker">{marker}</span
+						>{/if}</span
+				>{#if alerts.length > PEEK_ALERT_CAP}<span class="map-peek-alerts-more"
+						>+{alerts.length - PEEK_ALERT_CAP} {t.more}</span
+					>{/if}
+			</p>
+		</section>
 	{/if}
-	{#if alerts == null}
-		<StateNotice title={t.alertsUnavailable} glyph="○" tone="neutral" presentation="silo" />
-	{:else if alerts.length > 0}
-		<ul class:map-alerts-peek={presentation === 'peek-passive'}>
-			{#each alerts.slice(0, presentation === 'peek-passive' ? PEEK_ALERT_CAP : 4) as alert, index (alert.id)}
-				{@const cause = causeLabel(alert.cause, locale)}
-				{@const effect = effectLabel(alert.effect, locale)}
-				{@const display = displayAlert(alert)}
-				{@const marker = alertLanguageNotice(display, locale)}
-				{@const url = alertDisplayUrl(alert, locale)}
-				{@const labelId = `${uid}-map-alert-label-${index}`}
-				<li
-					class="map-alert"
-					class:affected-alert={presentation === 'detail'}
-					data-severity={alert.severity}
-				>
-					{#if presentation === 'peek-passive'}
-						<span class="map-alert-text map-alert-passive">
-							<span class="map-alert-severity" aria-hidden="true"
-								>{severityGlyph(alert.severity)}</span
-							>
-							<span lang={display.lang ?? ''}>{display.text}</span>
-							{#if marker}<span class="alert-language-marker">{marker}</span>{/if}
-						</span>
-					{:else}<Button
+{:else}
+	<section class="map-alerts" aria-label={t.alerts}>
+		<h3>
+			{t.alerts}{#if alerts && alerts.length > 0}<span class="map-alerts-count"
+					>{alerts.length}</span
+				>{/if}
+		</h3>
+		{#if alertsAgeSeconds != null}
+			<p class="map-alerts-age">
+				{MAP_COPY[locale].alertsChecked(formatRelativeSeconds(alertsAgeSeconds, locale))}
+			</p>
+		{/if}
+		{#if alerts == null}
+			<StateNotice title={t.alertsUnavailable} glyph="○" tone="neutral" presentation="silo" />
+		{:else if alerts.length > 0}
+			<ul>
+				{#each alerts.slice(0, 4) as alert, index (alert.id)}
+					{@const cause = causeLabel(alert.cause, locale)}
+					{@const effect = effectLabel(alert.effect, locale)}
+					{@const display = displayAlert(alert)}
+					{@const marker = alertLanguageNotice(display, locale)}
+					{@const url = alertDisplayUrl(alert, locale)}
+					{@const labelId = `${uid}-map-alert-label-${index}`}
+					<li class="map-alert affected-alert" data-severity={alert.severity}>
+						<Button
 							variant="ghost"
 							size="sm"
 							type="button"
@@ -103,61 +111,59 @@
 								</span>
 								{#if marker}<span>{marker}</span>{/if}
 							</span>
-						</Button>{/if}
-					{#if presentation === 'detail' && (cause || effect)}
-						<dl class="map-alert-meta affected-alert-meta">
-							{#if cause}
-								<div>
-									<dt>{t.cause}</dt>
-									<dd>{cause}</dd>
-								</div>
-							{/if}
-							{#if effect}
-								<div>
-									<dt>{t.effect}</dt>
-									<dd>{effect}</dd>
-								</div>
-							{/if}
-						</dl>
-					{/if}
-					{#if presentation === 'detail' && url}
-						<Button
-							variant="ghost"
-							size="sm"
-							class="map-alert-link"
-							href={url.href}
-							hreflang={url.lang ?? undefined}
-							target="_blank"
-							rel="noopener noreferrer"
-							aria-label={t.alertLinkAria(url.host)}
-						>
-							{t.alertLink}<span class="map-alert-host">{url.host}</span><ArrowUpRightIcon
-								size={13}
-								strokeWidth={2.25}
-								aria-hidden="true"
-							/>
 						</Button>
-						{#if alertLanguageNotice(url, locale)}
-							<span class="alert-language-marker map-alert-link-language"
-								>{alertLanguageNotice(url, locale)}</span
-							>
+						{#if cause || effect}
+							<dl class="map-alert-meta affected-alert-meta">
+								{#if cause}
+									<div>
+										<dt>{t.cause}</dt>
+										<dd>{cause}</dd>
+									</div>
+								{/if}
+								{#if effect}
+									<div>
+										<dt>{t.effect}</dt>
+										<dd>{effect}</dd>
+									</div>
+								{/if}
+							</dl>
 						{/if}
-					{/if}
-				</li>
-			{/each}
-		</ul>
-		{#if presentation === 'peek-passive' && alerts.length > PEEK_ALERT_CAP}
-			<p class="map-peek-alerts-more">+{alerts.length - PEEK_ALERT_CAP} {t.more}</p>
+						{#if url}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="map-alert-link"
+								href={url.href}
+								hreflang={url.lang ?? undefined}
+								target="_blank"
+								rel="noopener noreferrer"
+								aria-label={t.alertLinkAria(url.host)}
+							>
+								{t.alertLink}<span class="map-alert-host">{url.host}</span><ArrowUpRightIcon
+									size={13}
+									strokeWidth={2.25}
+									aria-hidden="true"
+								/>
+							</Button>
+							{#if alertLanguageNotice(url, locale)}
+								<span class="alert-language-marker map-alert-link-language"
+									>{alertLanguageNotice(url, locale)}</span
+								>
+							{/if}
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<StateNotice
+				title={t.noAlerts}
+				glyph="●"
+				tone={alertsStale ? 'neutral' : 'positive'}
+				presentation="silo"
+			/>
 		{/if}
-	{:else}
-		<StateNotice
-			title={t.noAlerts}
-			glyph="●"
-			tone={alertsStale ? 'neutral' : 'positive'}
-			presentation="silo"
-		/>
-	{/if}
-</section>
+	</section>
+{/if}
 
 <style>
 	/* Detail alerts reuse alert-item.css (line and stop pages) at panel density. */
@@ -197,17 +203,17 @@
 		padding: 0;
 		list-style: none;
 	}
-	:global(.map-alerts li.map-alert) {
+	:global(.map-alerts .map-alert) {
 		--alert-tone: var(--dataviz-severity-high);
 		min-width: 0;
 		margin: 0;
 		font-size: var(--text-small);
 		color: var(--foreground);
 	}
-	:global(.map-alerts li.map-alert[data-severity='critical']) {
+	:global(.map-alerts .map-alert[data-severity='critical']) {
 		--alert-tone: var(--dataviz-severity-critical);
 	}
-	:global(.map-alerts li.map-alert[data-severity='watch']) {
+	:global(.map-alerts .map-alert[data-severity='watch']) {
 		--alert-tone: var(--dataviz-severity-watch);
 	}
 	:global(.map-alerts li.affected-alert) {
@@ -216,13 +222,27 @@
 		padding: 0.25rem 0.75rem 0.5rem;
 		border-radius: var(--radius-md);
 	}
-	/* Peek cards keep their quiet tinted line. */
-	:global(.map-alerts-peek li.map-alert) {
-		padding: 0.5rem 0.625rem;
-		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
-		border-radius: var(--radius-md);
-		background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
+	/* The hover card's one alert line: severity mark, two lines of text, a count. */
+	:global(.map-alerts .map-peek-alert) {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		align-items: baseline;
+		column-gap: 0.5rem;
+		padding-block-start: 0.5rem;
+		border-top: 1px solid var(--border-subtle);
+		line-height: 1.35;
+	}
+	:global(.map-peek-alert .map-alert-severity) {
+		margin: 0;
+		color: var(--alert-tone);
+	}
+	:global(.map-peek-alert-text) {
+		display: -webkit-box;
+		min-width: 0;
 		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 	:global(.map-alert-button) {
 		display: grid;
@@ -314,17 +334,13 @@
 	:global(.map-alert-text) {
 		min-width: 0;
 	}
-	:global(.map-alert-passive) {
-		display: block;
-		line-height: 1.35;
-	}
 	:global(.map-alert-severity) {
 		margin-inline-end: 0.375rem;
 		font-family: var(--font-mono);
 		color: color-mix(in srgb, var(--alert-tone) 72%, var(--foreground) 28%);
 	}
 	:global(.map-peek-alerts-more) {
-		margin: 0;
+		white-space: nowrap;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);

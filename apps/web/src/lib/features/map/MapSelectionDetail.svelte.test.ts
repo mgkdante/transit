@@ -1099,11 +1099,11 @@ describe('MapSelectionDetail', () => {
 							delay_min: 0,
 						}));
 			await view.rerender({ detail: { ...detail, departures }, locale });
-			const grid = view.container.querySelector('.detail-attribute-grid');
+			const row = view.container.querySelector('.detail-attribute-grid [data-fact="departures"]');
 			expect
-				.soft(grid?.querySelector('dt'))
+				.soft(row?.querySelector('dt'))
 				.toHaveTextContent(locale === 'en' ? 'Departures' : 'Départs');
-			expect.soft(grid?.querySelector('dd')).toHaveTextContent(locale === 'en' ? en : fr);
+			expect.soft(row?.querySelector('dd')).toHaveTextContent(locale === 'en' ? en : fr);
 			if (count === 5) {
 				expect(view.container.querySelectorAll('[data-slot="detail-departures"] li')).toHaveLength(
 					3,
@@ -1135,9 +1135,19 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect, onfilter },
 		});
 
-		expect(getByText('Stop code 52618')).toBeInTheDocument();
-		expect(getAllByText('2 departures').length).toBeGreaterThan(0);
-		expect(getByText('0 vehicles heading here')).toBeInTheDocument();
+		// Code, inbound vehicles and departures are separate label/value rows.
+		const factRows = [
+			...document.querySelectorAll('[data-slot="detail-status-band"] dl > div'),
+		].map((row) => [
+			row.querySelector('dt')?.textContent,
+			row.querySelector('dd')?.textContent?.trim(),
+		]);
+		expect(factRows).toEqual([
+			['Stop code', '52618'],
+			['Approaching', '0 vehicles'],
+			['Departures', '2 departures'],
+		]);
+		expect(document.querySelector('[data-slot="detail-meta"]')).toBeNull();
 		expect(getAllByText(/Route 24/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Past times:/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Next times:/).length).toBeGreaterThan(0);

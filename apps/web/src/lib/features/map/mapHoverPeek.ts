@@ -1,4 +1,4 @@
-import { stopDisplayName, lineLabel } from '#lib/site/transitDisplay.ts';
+import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 import { notReporting } from './vehicleMotion';
 import type { clock } from '@yesid/ui/state';
 import type { Locale } from '#lib/i18n/index.ts';
@@ -131,9 +131,7 @@ export function resolveMapHoverPeek(
 		return {
 			kind: 'vehicle',
 			id: vehicle.id,
-			title: vehicle.route
-				? `Route ${lineLabel(vehicle.route, context.routesIndex)}`
-				: `Bus ${vehicle.id}`,
+			title: vehicle.id,
 			route: routeRef(vehicle.route, context.routesIndex),
 			status: vehicle.status,
 			delayMin: vehicle.delay_min ?? null,
@@ -169,7 +167,7 @@ export function resolveMapHoverPeek(
 		return {
 			kind: 'route',
 			id: route.id,
-			title: `Route ${route.short || route.id}`,
+			title: route.short || route.id,
 			longName: publishedLongName || `Route ${route.short || route.id}`,
 			type: route.type,
 			labelInferred: !publishedLongName,
@@ -201,4 +199,21 @@ export function resolveMapHoverPeek(
 				? null
 				: context.alerts.filter((alert) => alertMatchesStop(alert, stop.id)),
 	};
+}
+
+/**
+ * The open detail panel already shows everything the peek would say about its
+ * own selection, so the peek steps aside for it. Direction and variant are
+ * ignored: hovering any part of the selected line is still the same line.
+ */
+export function peekRepeatsDetail(
+	peek: Pick<MapHoverPeek, 'kind' | 'id'> | null,
+	detailSelection: Pick<MapSelection, 'kind' | 'id'> | null,
+): boolean {
+	return (
+		peek != null &&
+		detailSelection != null &&
+		peek.kind === detailSelection.kind &&
+		peek.id === detailSelection.id
+	);
 }

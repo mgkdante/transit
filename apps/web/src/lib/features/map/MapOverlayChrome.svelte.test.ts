@@ -293,6 +293,31 @@ describe('MapOverlayChrome', () => {
 		expect(container.querySelector('.map-peek')).toBeInTheDocument();
 	});
 
+	it('steps the peek aside only for the selection the open panel already shows', async () => {
+		const store = createFilterStore(emptyFilterState());
+		const { container, rerender } = render(MapOverlayChromeHarness, {
+			props: {
+				store,
+				locale: 'en',
+				isDesktop: true,
+				detailOpen: true,
+				hoverPeek: stopPeek,
+				detailSelection: { kind: 'stop', id: stopPeek.id },
+			},
+		});
+		expect(container.querySelector('.map-peek')).not.toBeInTheDocument();
+
+		// Another stop, or the same id under another kind, is new information.
+		await rerender({ detailSelection: { kind: 'stop', id: 'other-stop' } });
+		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+		await rerender({ detailSelection: { kind: 'vehicle', id: stopPeek.id } });
+		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+
+		// A collapsed rail or closed panel passes no selection, so the peek returns.
+		await rerender({ detailSelection: null });
+		expect(container.querySelector('.map-peek')).toBeInTheDocument();
+	});
+
 	it('suppresses the hover peek while near-me is open and restores it after close', async () => {
 		const store = createFilterStore(emptyFilterState());
 		const { container } = render(MapOverlayChromeHarness, {
