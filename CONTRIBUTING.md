@@ -48,6 +48,18 @@ install Chromium once with `bunx playwright install chromium`, then run
 manifests, which cover linux-x64 and win32-x64. The CI layout job uses the
 pinned Playwright container.
 
+For a fast loop while you work, run `bun run test:changed` from the root on
+Windows or Linux after installing repository dependencies and Playwright
+browsers. It uses the merge base with
+`origin/main` plus staged, unstaged and untracked files; fetch main to refresh it.
+Vitest follows affected module graphs. Data, assets and generators use full
+owning suites; filesystem-based checks are retained explicitly. The tested
+browser map selects changed/related specs at phone and desktop sizes; unknown/shared paths select all specs there.
+Selection reasons, runner results and elapsed times are printed. Existing project
+filters and skips apply. Use `--all` for full suites, including theme/motion
+variants, or `--base HEAD` to benchmark a small edit against a candidate commit.
+This local loop supplements the full CI gates; failures propagate.
+
 CI also checks the social cards, icons, map posters and deploy dry runs. Shared
 design changes belong in
 [yesid.design](https://github.com/yesid-dev/yesid.design); the `@yesid/*`
@@ -83,9 +95,13 @@ CI, covers them.
 ## Deploys and operations
 
 Deploys and the scheduled pipeline run from [GitHub Actions](.github/workflows)
-with the maintainer's Cloudflare, storage and database access. Production web deployment waits
+with the maintainer's Cloudflare, storage and database access. Pull requests to
+`main` merge through GitHub's merge queue as a squash; the queue runs the
+required checks on the merged result, so a branch doesn't have to be up to date
+with `main` first. Production web deployment waits
 for the build, unit tests and core e2e. The full layout grid runs after deployment
-on that same SHA. Never point tests
+on that same SHA; pull requests that change the UI also run it before merge,
+and the merge queue skips it. Never point tests
 or migrations at production. Pull requests from branches of this repository get
 a noindex web preview at `pr-<number>-transit-web.<subdomain>.workers.dev`,
 linked from the PR's `preview` deployment; fork pull requests skip it.
