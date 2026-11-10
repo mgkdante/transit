@@ -439,6 +439,9 @@ $base = (git rev-parse refs/remotes/origin/main).Trim()
 if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
   $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
   $base = $event.pull_request.base.sha
+} elseif ($env:GITHUB_EVENT_NAME -eq 'merge_group') {
+  $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+  $base = $event.merge_group.base_sha
 } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
   $base = $env:GITHUB_SHA
 }
@@ -534,6 +537,7 @@ def test_node_setup_rejects_other_env_or_literal_versions(
         ("git merge-base --is-ancestor", "git merge-base"),
         ("if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }", ""),
         ('git show "${base}:$path"', 'git show "HEAD:$path"'),
+        ("$event.merge_group.base_sha", "$event.merge_group.head_sha"),
         ("(Join-Path $policy '.nvmrc')", "(Join-Path $policy '.bun-version')"),
         ('"WEB_CI_NODE=$pin"', '"WEB_CI_NODE=22"'),
     ],
