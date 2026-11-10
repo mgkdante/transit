@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PACKAGES = new Set(['tokens', 'motion', 'gates', 'seo-kit', 'ui', 'analytics', 'i18n-core', 'config']);
 const FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'overrides', 'resolutions'];
-const RELEASE = /^https:\/\/github\.com\/mgkdante\/yesid\.design\/releases\/download\/v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\/yesid-([a-z0-9._-]+)-\1\.tgz$/;
+const RELEASE = /^https:\/\/github\.com\/yesid-dev\/yesid\.design\/releases\/download\/v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\/yesid-([a-z0-9._-]+)-\1\.tgz$/;
 const REHEARSAL = 'The PR may rehearse on a release candidate but can merge only after switching to the stable release.';
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const design = name => name?.startsWith('@yesid/') && PACKAGES.has(name.slice(7));
