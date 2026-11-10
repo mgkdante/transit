@@ -124,7 +124,7 @@ export async function probeSites({
 }
 
 function runUrl() {
-  return `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY ?? "mgkdante/transit"}/actions/runs/${process.env.GITHUB_RUN_ID ?? "local"}`;
+  return `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${process.env.GITHUB_REPOSITORY ?? "yesid-dev/transit"}/actions/runs/${process.env.GITHUB_RUN_ID ?? "local"}`;
 }
 
 /** @param {string[]} args */

@@ -9,12 +9,12 @@ describe('/.well-known/security.txt', () => {
 		expect(prerender).toBe(true);
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8');
-		expect(body).toBe(`Contact: https://github.com/mgkdante/transit/security/advisories/new
+		expect(body).toBe(`Contact: https://github.com/yesid-dev/transit/security/advisories/new
 Contact: mailto:contact@yesid.dev
 Expires: 2027-08-31T23:59:59Z
 Preferred-Languages: en, fr
 Canonical: https://transit.yesid.dev/.well-known/security.txt
-Policy: https://github.com/mgkdante/transit/security/policy
+Policy: https://github.com/yesid-dev/transit/security/policy
 `);
 		expect(new Date('2027-08-31T23:59:59Z').getTime()).toBeGreaterThan(Date.now());
 	});

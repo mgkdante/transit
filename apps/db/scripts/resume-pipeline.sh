@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-REPO="mgkdante/transit"
+REPO="yesid-dev/transit"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "==> Resuming pipeline..."

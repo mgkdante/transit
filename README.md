@@ -1,6 +1,6 @@
 # Transit
 
-[![web](https://github.com/mgkdante/transit/actions/workflows/web.yml/badge.svg?branch=main)](https://github.com/mgkdante/transit/actions/workflows/web.yml)
+[![web](https://github.com/yesid-dev/transit/actions/workflows/web.yml/badge.svg?branch=main)](https://github.com/yesid-dev/transit/actions/workflows/web.yml)
 
 Transit is an independent dashboard for bus and metro service in Montréal (STM)
 and Ottawa (OC Transpo). It captures GTFS and GTFS-Realtime feeds, normalizes
@@ -20,14 +20,14 @@ Live at [transit.yesid.dev](https://transit.yesid.dev).
 
 Bun workspaces and Turborepo run the JavaScript apps. Design tokens, motion and
 shared UI come from pinned
-[yesid.design](https://github.com/mgkdante/yesid.design) releases.
+[yesid.design](https://github.com/yesid-dev/yesid.design) releases.
 
 ## Quickstart
 
 Install Node from [.nvmrc](.nvmrc) and Bun from [.bun-version](.bun-version), then:
 
 ```sh
-git clone https://github.com/mgkdante/transit.git
+git clone https://github.com/yesid-dev/transit.git
 cd transit
 bun install --frozen-lockfile
 bun run dev

@@ -408,7 +408,7 @@ def test_notify_uses_all_results(tmp_path, publish, proof, historic, action):
         "RETENTION_RESULT": "success",
         "GITHUB_RUN_ID": "123",
         "GITHUB_SERVER_URL": "https://github.com",
-        "GITHUB_REPOSITORY": "mgkdante/transit",
+        "GITHUB_REPOSITORY": "yesid-dev/transit",
     }
     assert notify(env, lambda argv: calls.append(argv) or 0) == 0
     assert calls[0][2:4] == (action, "daily-warm-rollups")

@@ -224,7 +224,7 @@ def test_validate_oracle_cutover_reports_success_without_mutating_systems(
     assert any("gold.latest_trip_delay_snapshot" in line for line in log_lines)
     assert not any("raw.realtime_snapshot_index" in line for line in log_lines)
     assert not any("core.feed_endpoints" in line for line in log_lines)
-    assert any("gh|workflow list --repo mgkdante/transit" in line for line in log_lines)
+    assert any("gh|workflow list --repo yesid-dev/transit" in line for line in log_lines)
     assert any("gh|run list --workflow Daily Warm Rollups" in line for line in log_lines)
     assert any("--branch main" in line for line in log_lines)
 

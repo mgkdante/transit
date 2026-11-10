@@ -28,7 +28,7 @@ dependencies = [
 transit-ops = "transit_ops.cli:app"
 
 [project.urls]
-Documentation = "https://github.com/mgkdante/transit#readme"
+Documentation = "https://github.com/yesid-dev/transit#readme"
 
 [dependency-groups]
 dev = [
