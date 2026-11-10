@@ -81,12 +81,16 @@ for (const locale of ['en', 'fr'])
 				expect(geometry.top, JSON.stringify(geometry)).toBeGreaterThanOrEqual(0);
 				expect(geometry.height).toBeLessThanOrEqual(viewport.height);
 				if (detent === 'full') {
-					// Full stops one 0.5rem chrome gap below the site nav and provider control.
-					const gap = geometry.top - geometry.chromeBottom;
-					expect(gap, JSON.stringify(geometry)).toBeGreaterThanOrEqual(8);
-					expect(gap, JSON.stringify(geometry)).toBeLessThanOrEqual(10);
+					// Full reaches 12 px below the top safe area (none in tests), over the site nav.
+					expect(geometry.top, JSON.stringify(geometry)).toBeCloseTo(12, 0);
+					expect(geometry.height).toBeCloseTo(viewport.height - 12, 0);
 				} else
 					expect(geometry.height).toBeCloseTo(detent === 'peek' ? 168 : viewport.height * 0.5, 0);
+				if (detent !== 'full')
+					expect(
+						geometry.top - geometry.chromeBottom,
+						JSON.stringify(geometry),
+					).toBeGreaterThanOrEqual(0);
 				expect(geometry.headerBottom).toBeLessThan(viewport.height);
 				expect(geometry.body, JSON.stringify(geometry)).toBeGreaterThan(0);
 				await expect
