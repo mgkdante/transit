@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from transit_ops.cli import app
 from transit_ops.core.errors import OptionalSourceUnavailable
-from transit_ops.core.models import ProviderManifest
+from transit_ops.core.models import DEFAULT_MAX_VEHICLE_SPEED_KMH, ProviderManifest
 from transit_ops.ingestion.gis import build_gis_ingestion_config
 from transit_ops.providers.registry import ProviderRegistry, load_provider_manifest
 from transit_ops.settings import Settings
@@ -82,7 +82,9 @@ def test_manifest_vehicle_speed_maximum(tmp_path: Path, maximum: int | None) -> 
 
     manifest = load_provider_manifest(path)
 
-    assert manifest.provider.max_vehicle_speed_kmh == (100 if maximum is None else maximum)
+    assert manifest.provider.max_vehicle_speed_kmh == (
+        DEFAULT_MAX_VEHICLE_SPEED_KMH if maximum is None else maximum
+    )
 
 
 @pytest.mark.parametrize("maximum", [0, -1, float("nan"), float("inf"), -float("inf")])

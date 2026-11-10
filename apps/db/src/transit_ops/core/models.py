@@ -8,6 +8,10 @@ from pydantic import AnyHttpUrl, BaseModel, Field, PositiveInt, model_validator
 
 from transit_ops.settings import Settings
 
+# Buses legitimately run slightly over 100 km/h on highways (observed 101-117 km/h on
+# STM and OC Transpo highway routes); feed glitches report 140 km/h and more.
+DEFAULT_MAX_VEHICLE_SPEED_KMH = 130
+
 
 class FeedKind(StrEnum):
     STATIC_SCHEDULE = "static_schedule"
@@ -131,7 +135,9 @@ class ProviderConfig(BaseModel):
     default_currency: str | None = None
     bounds: ProviderBoundsConfig | None = None
     live_source_lag_seconds: int = Field(default=0, ge=0)
-    max_vehicle_speed_kmh: float = Field(default=100, gt=0, allow_inf_nan=False)
+    max_vehicle_speed_kmh: float = Field(
+        default=DEFAULT_MAX_VEHICLE_SPEED_KMH, gt=0, allow_inf_nan=False
+    )
     attribution_text: str | None = None
     website_url: AnyHttpUrl | None = None
     is_active: bool = True

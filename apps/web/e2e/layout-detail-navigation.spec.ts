@@ -35,7 +35,7 @@ async function captureDetail(
 		await expectChromeClear(page);
 		await handle.press('End');
 		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'full');
-		await expectChromeClear(page);
+		await expectSheetCoversChrome(page);
 		await page.screenshot({ animations: 'disabled', path: prefix + '-full.png' });
 		await handle.press('Home');
 		await expect(page.locator('[data-slot="bottom-sheet"]')).toHaveAttribute('data-detent', 'peek');
@@ -43,7 +43,7 @@ async function captureDetail(
 		await handle.press('ArrowUp');
 	}
 }
-// The site nav and provider control stay visible above an open detail sheet, at every height.
+// At peek and half the site nav and provider control stay visible above the detail sheet.
 async function expectChromeClear(page: Page) {
 	const navPill = page.getByTestId('nav-pill');
 	await expect(navPill).toBeVisible();
@@ -58,6 +58,25 @@ async function expectChromeClear(page: Page) {
 			}),
 		)
 		.toBeGreaterThanOrEqual(0);
+}
+// At full the sheet reaches almost the top of the screen and sits above the site nav, so its
+// own close control is what a tap at the top of the sheet reaches.
+async function expectSheetCoversChrome(page: Page) {
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const sheet = document.querySelector('[data-slot="bottom-sheet"]')!.getBoundingClientRect();
+				const close = document
+					.querySelector('[data-slot="bottom-sheet-close"]')!
+					.getBoundingClientRect();
+				const hit = document.elementFromPoint(
+					close.left + close.width / 2,
+					close.top + close.height / 2,
+				);
+				return sheet.top <= 16 && !!hit?.closest('[data-slot="bottom-sheet-close"]');
+			}),
+		)
+		.toBe(true);
 }
 type Probe = { loaded: boolean; project(c: number[]): { x: number; y: number } };
 // A long unbroken alert is what once pushed detail content past the panel edge.
