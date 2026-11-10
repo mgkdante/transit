@@ -9,6 +9,7 @@
 	import type { LatLon, WithDistance } from '#lib/components/map/index.ts';
 	import type { GeocodePrecision } from '#lib/geocode/types.ts';
 	import type { MapHoverPeek } from '../mapHoverPeek';
+	import type { MapSelection } from '../selectionSession/mapSelection';
 	import MapFilters from '../MapFilters.svelte';
 	import MapMotionControl from '../MapMotionControl.svelte';
 	import MapOverlayChrome from '../MapOverlayChrome.svelte';
@@ -27,6 +28,7 @@
 		isDesktop?: boolean;
 		detailOpen?: boolean;
 		hoverPeek?: MapHoverPeek | null;
+		detailSelection?: MapSelection | null;
 		onstopselect?: (stop: WithDistance<StopIndexEntry>) => void;
 	}
 
@@ -41,6 +43,7 @@
 		isDesktop = true,
 		detailOpen = false,
 		hoverPeek = null,
+		detailSelection = null,
 		onstopselect = () => {},
 	}: Props = $props();
 
@@ -97,5 +100,6 @@
 	filtersStore={store}
 	{detailOpen}
 	{hoverPeek}
+	{detailSelection}
 	controls={mapControls}
 />

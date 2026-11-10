@@ -144,14 +144,7 @@
 					/>{#if detail.route?.long}<span class="detail-lede-item">{detail.route.long}</span
 						>{/if}</DetailLede
 				>{/if}
-		{:else if detail.kind === 'stop'}
-			<DetailLede
-				><span class="detail-lede-item detail-lede-data"
-					>{t.stopCode} {detail.stop.code ?? detail.stop.id}</span
-				><span class="detail-lede-item">{t.vehiclesHeading(detail.vehicles.length)}</span
-				></DetailLede
-			>
-		{:else if detail.route.long || detail.direction}
+		{:else if detail.kind === 'route' && (detail.route.long || detail.direction)}
 			<DetailLede
 				>{#if detail.route.long}<span class="detail-lede-item">{detail.route.long}</span
 					>{/if}{#if detail.direction}<span class="detail-lede-item"
@@ -313,7 +306,15 @@
 					/>{/if}
 			{:else if detail.kind === 'stop'}
 				<DetailAttributeGrid>
-					<div>
+					<div data-fact="stop-code">
+						<dt>{t.stopCode}</dt>
+						<dd class="detail-data-value">{detail.stop.code ?? detail.stop.id}</dd>
+					</div>
+					<div data-fact="approaching">
+						<dt>{t.approaching}</dt>
+						<dd>{t.vehicleCount(detail.vehicles.length)}</dd>
+					</div>
+					<div data-fact="departures">
 						<dt>{t.departuresLabel}</dt>
 						<dd>
 							{detail.departures == null

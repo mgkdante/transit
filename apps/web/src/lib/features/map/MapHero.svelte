@@ -613,6 +613,9 @@
 				filtersStore={filters}
 				{detailOpen}
 				{hoverPeek}
+				detailSelection={desktop.current && detailOpen && !detailCollapsed
+					? session.selected
+					: null}
 				controls={mapControls}
 			/>
 		{/if}
