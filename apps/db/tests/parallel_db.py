@@ -48,7 +48,11 @@ def pytest_configure(config: pytest.Config) -> None:
         return
     base = os.environ.get("TRANSIT_TEST_DATABASE_URL")
     count = config.getoption("numprocesses", default=0)
-    if not base or not count:
+    if not base:
+        return
+    if not count:
+        if config.getoption("dist", default="no") != "no":
+            raise pytest.UsageError("Parallel database tests require a local -n worker count")
         return
     assert_disposable_test_url(base, os.environ)
     template = parse_database_target(base).database

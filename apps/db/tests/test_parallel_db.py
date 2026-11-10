@@ -99,3 +99,15 @@ def test_cleanup_attempts_every_database_and_reports_failures(
     assert "gw2" in statements[0]
     assert "gw1" in statements[1]
     assert "gw0" in statements[2]
+
+
+def test_parallel_database_refuses_unmanaged_worker_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_URL", "postgresql+psycopg://transit_ci@localhost/transit_ci"
+    )
+    options = {"numprocesses": None, "dist": "load"}
+    config = SimpleNamespace(getoption=lambda key, **kwargs: options[key])
+    with pytest.raises(pytest.UsageError, match="worker count"):
+        parallel_db.pytest_configure(config)
