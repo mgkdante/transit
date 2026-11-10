@@ -106,6 +106,106 @@ jobs:
           node "$env:WEB_CI_POLICY/web-ci-paths.mjs" classify
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+  # Only trusted main code can issue this receipt. Every unavailable/invalid proof
+  # leaves the existing gates enabled; the sealed artifact is checked before skipping.
+  queue-gate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      queue_proven: ${{ steps.verified.outputs.queue_proven }}
+      queue_sha: ${{ steps.verified.outputs.queue_sha }}
+      queue_repository: ${{ steps.verified.outputs.queue_repository }}
+      artifact_id: ${{ steps.verified.outputs.artifact_id }}
+      manifest_sha256: ${{ steps.verified.outputs.manifest_sha256 }}
+      producer_attempt: ${{ steps.verified.outputs.producer_attempt }}
+      producer_run_id: ${{ steps.verified.outputs.producer_run_id }}
+      workflow_id: ${{ steps.verified.outputs.workflow_id }}
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Materialize trusted queue policy
+        id: queue_policy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            if ($env:GITHUB_SHA -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid pushed SHA' }
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+            git merge-base --is-ancestor $env:GITHUB_SHA refs/remotes/origin/main
+            if ($LASTEXITCODE -ne 0) { throw 'Pushed SHA is not on trusted main' }
+            $policy = Join-Path $env:RUNNER_TEMP ('queue-policy-' + [guid]::NewGuid())
+            New-Item -ItemType Directory -Path $policy | Out-Null
+            foreach ($path in @('.nvmrc', '.github/scripts/web-queue-gate.mjs', '.github/scripts/web-build-artifact.mjs')) {
+              $content = git show "$($env:GITHUB_SHA):$path"
+              if ($LASTEXITCODE -ne 0) { throw "Missing trusted queue policy: $path" }
+              [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+            }
+            $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+            if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+            "WEB_QUEUE_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "available=true`n")
+          } catch {
+            Write-Host "Queue policy unavailable; using full gate: $_"
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "available=false`n")
+          }
+
+      - name: Set up trusted pinned Node
+        if: steps.queue_policy.outputs.available == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Prove the exact queue gate
+        id: proof
+        if: steps.queue_policy.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRANSIT_QUEUE_RECEIPT: ${{ runner.temp }}/queue-receipt.json
+        shell: pwsh
+        run: |
+          node "$env:WEB_QUEUE_POLICY/web-queue-gate.mjs" prove
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Download the proven queue artifact
+        id: download
+        if: steps.proof.outputs.candidate == 'true'
+        # Acquisition is optional optimization, never a test or deployment gate.
+        # A failed download keeps all existing gate jobs enabled.
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.proof.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.proof.outputs.producer_run_id }}
+          path: ${{ runner.temp }}/queue-artifact
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Verify the sealed queue artifact
+        id: verified
+        if: steps.download.outcome == 'success'
+        env:
+          TRANSIT_QUEUE_RECEIPT: ${{ runner.temp }}/queue-receipt.json
+          TRANSIT_QUEUE_ARTIFACT: ${{ runner.temp }}/queue-artifact
+        shell: pwsh
+        run: |
+          node "$env:WEB_QUEUE_POLICY/web-queue-gate.mjs" verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   prerelease-guard:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -129,6 +229,8 @@ jobs:
         run: node .github/scripts/design-prerelease-guard.mjs
 
   ci-work:
+    needs: [queue-gate]
+    if: ${{ !cancelled() && (github.event_name != 'push' || github.ref != 'refs/heads/main' || needs.queue-gate.result != 'success' || needs.queue-gate.outputs.queue_proven != 'true') }}
     outputs:
       artifact_id: ${{ steps.promote.outputs.artifact_id || steps.upload_build.outputs.artifact-id }}
       manifest_sha256: ${{ steps.promote.outputs.manifest_sha256 || steps.seal_build.outputs.manifest_sha256 }}
@@ -165,7 +267,7 @@ jobs:
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/deploy-now.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs .github/scripts/deployment-order.test.mjs
+        run: node --test .github/scripts/web-queue-gate.test.mjs .github/scripts/web-queue-gate-workflow.test.mjs .github/scripts/deploy-scope.test.mjs .github/scripts/deploy-now.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs .github/scripts/deployment-order.test.mjs
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
@@ -296,6 +398,8 @@ jobs:
           retention-days: 1
 
   unit:
+    needs: [queue-gate]
+    if: ${{ !cancelled() && (github.event_name != 'push' || github.ref != 'refs/heads/main' || needs.queue-gate.result != 'success' || needs.queue-gate.outputs.queue_proven != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -311,8 +415,8 @@ jobs:
         run: bun run test
 
   e2e:
-    needs: [classify]
-    if: ${{ !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_e2e != 'false') }}
+    needs: [classify, queue-gate]
+    if: ${{ !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_e2e != 'false') && (github.event_name != 'push' || github.ref != 'refs/heads/main' || needs.queue-gate.result != 'success' || needs.queue-gate.outputs.queue_proven != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -428,7 +532,13 @@ jobs:
 
   ci:
     name: ci
-    needs: [classify, prerelease-guard, ci-work, unit, e2e, layout]
+    needs: [classify, prerelease-guard, queue-gate, ci-work, unit, e2e, layout]
+    outputs:
+      artifact_id: ${{ needs.queue-gate.outputs.queue_proven == 'true' && needs.queue-gate.outputs.artifact_id || needs.ci-work.outputs.artifact_id }}
+      manifest_sha256: ${{ needs.queue-gate.outputs.queue_proven == 'true' && needs.queue-gate.outputs.manifest_sha256 || needs.ci-work.outputs.manifest_sha256 }}
+      producer_attempt: ${{ needs.queue-gate.outputs.queue_proven == 'true' && needs.queue-gate.outputs.producer_attempt || needs.ci-work.outputs.producer_attempt }}
+      producer_run_id: ${{ needs.queue-gate.outputs.queue_proven == 'true' && needs.queue-gate.outputs.producer_run_id || needs.ci-work.outputs.producer_run_id }}
+      build_target: ${{ needs.queue-gate.outputs.queue_proven == 'true' && 'production' || needs.ci-work.outputs.build_target }}
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -498,6 +608,35 @@ jobs:
           node-version: ${{ env.WEB_CI_NODE }}
           package-manager-cache: false
 
+      - name: Materialize trusted queue policy
+        id: queue_policy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            if ($env:GITHUB_SHA -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid pushed SHA' }
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+            git merge-base --is-ancestor $env:GITHUB_SHA refs/remotes/origin/main
+            if ($LASTEXITCODE -ne 0) { throw 'Pushed SHA is not on trusted main' }
+            $policy = Join-Path $env:RUNNER_TEMP ('queue-policy-' + [guid]::NewGuid())
+            New-Item -ItemType Directory -Path $policy | Out-Null
+            foreach ($path in @('.nvmrc', '.github/scripts/web-queue-gate.mjs', '.github/scripts/web-build-artifact.mjs')) {
+              $content = git show "$($env:GITHUB_SHA):$path"
+              if ($LASTEXITCODE -ne 0) { throw "Missing trusted queue policy: $path" }
+              [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+            }
+            $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+            if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+            "WEB_QUEUE_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "available=true`n")
+          } catch {
+            Write-Host "Queue policy unavailable; using full gate: $_"
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "available=false`n")
+          }
+
       - name: Download layout coverage reports
         if: needs.layout.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -520,6 +659,12 @@ jobs:
         shell: pwsh
         run: |
           $needs = $env:NEEDS_JSON | ConvertFrom-Json -AsHashtable
+          if ($needs['queue-gate'].outputs.queue_proven -ceq 'true') {
+            if (-not $env:WEB_QUEUE_POLICY) { throw 'Trusted queue policy is unavailable' }
+            node "$env:WEB_QUEUE_POLICY/web-queue-gate.mjs" required
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            exit 0
+          }
           foreach ($job in $needs.Keys) {
             if ($needs[$job].result -in @('failure', 'cancelled')) {
               throw "${job}: $($needs[$job].result)"
@@ -657,11 +802,11 @@ jobs:
       - name: Require the producer artifact
         if: steps.locked_scope.outputs.deploy_web == 'true'
         env:
-          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
-          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
-          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
-          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
-          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+          TRANSIT_ARTIFACT_ID: ${{ needs.ci.outputs.artifact_id }}
+          TRANSIT_MANIFEST_SHA256: ${{ needs.ci.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci.outputs.producer_run_id }}
+          TRANSIT_PRODUCER_TARGET: ${{ needs.ci.outputs.build_target }}
         run: |
           [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
@@ -673,9 +818,9 @@ jobs:
         if: steps.locked_scope.outputs.deploy_web == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          artifact-ids: ${{ needs.ci.outputs.artifact_id }}
           github-token: ${{ github.token }}
-          run-id: ${{ needs.ci-work.outputs.producer_run_id }}
+          run-id: ${{ needs.ci.outputs.producer_run_id }}
           path: ${{ runner.temp }}/transit-web-build
           merge-multiple: true
           digest-mismatch: error
@@ -684,9 +829,9 @@ jobs:
         if: steps.locked_scope.outputs.deploy_web == 'true'
         working-directory: ${{ github.workspace }}
         env:
-          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
-          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
-          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci.outputs.producer_run_id }}
         run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
 
       - name: Capture rollback version before deployment
