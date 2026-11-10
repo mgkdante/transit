@@ -33,6 +33,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 const dataURL = `http://127.0.0.1:${dataPort}`;
 
 const httpSpecs = /(?:^|[\\/])(?:head-ssr|health|favicon)\.spec\.ts$/;
+const jsonReporter: ['json'][] = process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ? [['json']] : [];
 
 export default defineConfig({
 	testDir: '.',
@@ -43,7 +44,7 @@ export default defineConfig({
 	// Leave CI's shard sizing alone; keep local browser runs from saturating shared hosts.
 	workers: process.env.CI ? undefined : 2,
 	reporter: process.env.CI
-		? [['line'], ['html', { open: 'never', outputFolder: '../playwright-report' }]]
+		? [['line'], ['html', { open: 'never', outputFolder: '../playwright-report' }], ...jsonReporter]
 		: 'list',
 	use: {
 		baseURL,

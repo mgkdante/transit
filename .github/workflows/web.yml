@@ -143,7 +143,7 @@ jobs:
 
       - name: Web CI policy contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs
+        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs .github/scripts/layout-timing.test.mjs
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
@@ -370,7 +370,29 @@ jobs:
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
 
       - name: layout
-        run: bun run test:e2e:layout --shard=${{ matrix.shard }}/4
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/layout-timing/report.json
+        run: |
+          mkdir -p "$RUNNER_TEMP/layout-timing"
+          bun run test:e2e:layout --shard=${{ matrix.shard }}/4
+
+      - name: Record layout timing provenance
+        if: ${{ always() }}
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_LAYOUT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TRANSIT_LAYOUT_SHARD: ${{ matrix.shard }}
+          TRANSIT_LAYOUT_SHARDS: "4"
+        run: node .github/scripts/layout-timing.mjs record "$RUNNER_TEMP/layout-timing"
+
+      - name: Upload complete layout timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: layout-timing-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/layout-timing/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload e2e failure evidence
         if: ${{ failure() && !cancelled() }}
