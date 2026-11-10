@@ -22,6 +22,9 @@ export function neighbors(selection: MapSelection | null, items: readonly MapSel
 	return {
 		previous: index > 0 ? items[index - 1] : null,
 		next: index >= 0 ? (items[index + 1] ?? null) : null,
+		// One-based place in the stepped list, so the stepper can say where it is.
+		position: index >= 0 ? index + 1 : null,
+		total: items.length,
 	};
 }
 export function acceptsItemArrow(event: KeyboardEvent): boolean {

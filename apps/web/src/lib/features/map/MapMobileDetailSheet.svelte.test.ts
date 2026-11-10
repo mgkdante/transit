@@ -213,16 +213,15 @@ describe('MapMobileDetailSheet', () => {
 			const value = row.querySelector<HTMLElement>('dd')!;
 			const action = row.querySelector<HTMLElement>('button')!;
 
-			expect(getComputedStyle(row).gridTemplateColumns).toBe(
-				'minmax(7.5rem, 40%) minmax(0, 1fr) auto',
-			);
+			// Every row reserves the 44 px action column, so values share one start line.
+			expect(getComputedStyle(row).gridTemplateColumns).toBe('7.5rem minmax(0, 1fr) 2.75rem');
 			const etaRow = [
 				...document.querySelectorAll<HTMLElement>('.detail-attribute-grid > div'),
 			].find((candidate) => candidate.querySelector('dt')?.textContent === 'ETA')!;
 			expect(etaRow.querySelector('.detail-attribute-action')).toBeNull();
 			expect(etaRow.querySelector('button[popovertarget]')).toHaveAccessibleName(/No estimate/);
 			expect(getComputedStyle(etaRow).gridTemplateColumns).toBe(
-				'minmax(7.5rem, 40%) minmax(0, 1fr)',
+				getComputedStyle(row).gridTemplateColumns,
 			);
 			expect(cssFloorPx(getComputedStyle(action).minInlineSize)).toBeGreaterThanOrEqual(44);
 			expect(getComputedStyle(value).overflowWrap).toBe('anywhere');

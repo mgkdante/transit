@@ -61,6 +61,22 @@ describe('desktop detail sizes', () => {
 		await fireEvent.pointerUp(handle, { clientX: 500 + delta, pointerId: 1 });
 		expect(handle).toHaveAttribute('aria-valuenow', String(width));
 	});
+	it('shows the rail while a drag will snap to it, instead of a clipped strip of content', async () => {
+		const view = render(MapDetailOverlayHarness);
+		const handle = view.getByRole('separator');
+		const overlay = view.container.querySelector<HTMLElement>('[data-slot="map-detail-overlay"]')!;
+		handle.setPointerCapture = vi.fn();
+		await fireEvent.pointerDown(handle, { button: 0, clientX: 500, pointerId: 1 });
+		await fireEvent.pointerMove(handle, { clientX: 700, pointerId: 1 });
+		expect(overlay).not.toHaveAttribute('data-detail-rail-preview');
+		await fireEvent.pointerMove(handle, { clientX: 800, pointerId: 1 });
+		expect(overlay).toHaveAttribute('data-detail-rail-preview', 'true');
+		await fireEvent.pointerMove(handle, { clientX: 650, pointerId: 1 });
+		expect(overlay).not.toHaveAttribute('data-detail-rail-preview');
+		await fireEvent.pointerUp(handle, { clientX: 850, pointerId: 1 });
+		expect(handle).toHaveAttribute('aria-valuenow', '56');
+		expect(overlay).not.toHaveAttribute('data-detail-rail-preview');
+	});
 	it('rolls back a cancelled drag and keeps keyboard input usable with blocked storage', async () => {
 		const view = render(MapDetailOverlayHarness);
 		const handle = view.getByRole('separator');

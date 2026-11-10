@@ -2469,7 +2469,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			expect(body).toBeInTheDocument();
 			expect(within(body!).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' }),
+				screen.getByRole('heading', { level: 2, name: 'Stop Sherbrooke / Saint-Denis' }),
 			).toBeInTheDocument();
 			return body!;
 		});
@@ -2492,7 +2492,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			expect(body).toBe(firstBody);
 			expect(within(body!).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('heading', { level: 2, name: 'Temporary stop / Clark' }),
+				screen.getByRole('heading', { level: 2, name: 'Stop Temporary stop / Clark' }),
 			).toBeInTheDocument();
 		});
 
@@ -2523,7 +2523,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			expect(body).toBe(firstBody);
 			expect(within(body!).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' }),
+				screen.getByRole('heading', { level: 2, name: 'Stop Sherbrooke / Saint-Denis' }),
 			).toBeInTheDocument();
 		});
 		expect(harness.goto).toHaveBeenCalledTimes(navigationCountBeforeBack);
