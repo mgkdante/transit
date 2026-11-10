@@ -145,10 +145,11 @@ export default defineConfig({
 								],
 							},
 							bypassCSP: true,
-							// Keep a lean trace only for unexpected failures: the action and network
-							// log shows route races. DOM snapshots and screenshots stay off because
-							// findings already attach text and geometry, and recording them across
-							// the matrix is costly.
+							// Keep a lean trace only for unexpected failures: the action log records
+							// route fetch/fulfill/abort calls with timing and stacks. Playwright records
+							// network entries only with DOM snapshots, which stay off with screenshots
+							// because findings already attach text and geometry and recording them is
+							// costly.
 							trace: {
 								mode: 'retain-on-failure' as const,
 								snapshots: false,
