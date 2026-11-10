@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
 	import '#lib/components/surface/compact-row.css';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
@@ -205,8 +206,10 @@
 										<li class="trip-stop">
 											<a class="trip-stop-link" href={stopHref(stop.stop)}>
 												<span class="sr-only">{t.viewStop} </span>
-												<span class="trip-stop-name" title={stopNameFor(stop.stop)}
-													>{stopNameFor(stop.stop)}</span
+												<span
+													class="trip-stop-name readable-name"
+													use:readableName
+													title={stopNameFor(stop.stop)}>{stopNameFor(stop.stop)}</span
 												>
 												<span class="trip-stop-meta">
 													<time class="trip-stop-eta" datetime={stop.eta_utc}>
@@ -403,7 +406,7 @@
 	}
 	.trip-stop-name {
 		font-family: var(--font-mono);
-		font-size: var(--text-body);
+		font-size: var(--text-card-body);
 		color: var(--foreground);
 		overflow: hidden;
 		transition: color var(--duration-fast) var(--ease-out);
@@ -464,12 +467,6 @@
 		transition:
 			opacity var(--duration-fast) var(--ease-out),
 			transform var(--duration-fast) var(--ease-out);
-	}
-	.trip-stop-link:hover {
-		background: color-mix(in srgb, var(--primary) 7%, transparent);
-	}
-	.trip-stop-link:hover .trip-stop-name {
-		color: var(--primary);
 	}
 	.trip-stop-link:hover :global(svg) {
 		opacity: 1;

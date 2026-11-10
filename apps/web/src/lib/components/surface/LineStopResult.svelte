@@ -11,10 +11,10 @@
 	let { presentation, status, action, ...entity }: Props = $props();
 </script>
 
-{#if presentation === 'legacy-search'}
-	<EntityRow {...entity} metaSlot={status} />
-{:else if action}
-	<EntityResultRow {status} {action}>
+{#snippet emptyAction()}{/snippet}
+
+{#if presentation}
+	<EntityResultRow {status} action={action ?? emptyAction}>
 		<EntityRow {...entity} />
 	</EntityResultRow>
 {/if}

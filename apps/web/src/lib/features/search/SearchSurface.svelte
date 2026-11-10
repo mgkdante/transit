@@ -243,6 +243,8 @@
 								<span class="search-group-count">{t.resultCount(matchedRoutes.length)}</span>
 							</h2>
 							<EntityList
+								grid
+								cards
 								items={matchedRoutes}
 								key={(r) => r.id}
 								max={MAX_RESULTS}
@@ -278,6 +280,8 @@
 								<span class="search-group-count">{t.resultCount(matchedStops.length)}</span>
 							</h2>
 							<EntityList
+								grid
+								cards
 								items={matchedStops}
 								key={(s) => s.id}
 								max={MAX_RESULTS}
@@ -327,7 +331,7 @@
 								</span>
 								<span class="search-group-count">{t.resultCount(matchedVehicles.length)}</span>
 							</h2>
-							<EntityList items={matchedVehicles} key={(v) => v.id}>
+							<EntityList grid cards items={matchedVehicles} key={(v) => v.id}>
 								{#snippet row(v)}
 									<VehicleResultRow
 										{occupancyAvailable}

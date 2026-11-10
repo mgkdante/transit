@@ -1115,7 +1115,7 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 
 		const roster = document.querySelector('[data-testid="route-roster"]') as HTMLElement;
 		expect(
-			within(roster).getByRole('link', { name: 'View vehicle busLate on map' }),
+			within(roster).getByRole('link', { name: /View vehicle busLate on map/ }),
 		).toHaveAttribute('href', '/map?vehicle=busLate&focus=vehicle%3AbusLate');
 	});
 

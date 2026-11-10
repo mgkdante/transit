@@ -9,7 +9,6 @@ interface StringEntityListProps {
 	row: Snippet<[string]>;
 	cards?: boolean;
 	grid?: boolean;
-	minTile?: string;
 	max?: number;
 	truncatedLabel?: string;
 }
@@ -39,14 +38,13 @@ describe('EntityList cards presentation', () => {
 		}
 	});
 
-	it('keeps the DashboardGrid semantic ul and its grid contract in cards mode', () => {
+	it('keeps list semantics when the Transit grid is enabled', () => {
 		render(StringEntityList, {
-			props: { items: rows, key, row, cards: true, grid: true, minTile: '360px' },
+			props: { items: rows, key, row, cards: true, grid: true },
 		});
 
 		const list = screen.getByRole('list');
-		expect(list).toHaveClass('dashboard-grid', 'entity-list--grid', 'entity-list--cards');
-		expect(list).toHaveStyle('--min-tile: 360px');
+		expect(list).toHaveClass('entity-list--grid', 'entity-list--cards');
 		expect(within(list).getAllByRole('listitem')).toHaveLength(2);
 	});
 

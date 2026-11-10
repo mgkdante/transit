@@ -225,7 +225,9 @@ describe('SearchSurface vehicle results', () => {
 		expect(busRow).toBeInTheDocument();
 		expect(busRow).toHaveAttribute('href', '/map?vehicle=40061');
 		expect(within(busRow).getByText('Late')).toBeInTheDocument();
-		expect(within(busRow).getByText('+4 min')).toBeInTheDocument();
+		expect(
+			within(busRow.closest('[data-slot="entity-result-row"]')!).getByText('+4 min'),
+		).toBeInTheDocument();
 		expect(within(busRow).getByText('Next: Van Horne / Rockland')).toBeInTheDocument();
 	});
 });

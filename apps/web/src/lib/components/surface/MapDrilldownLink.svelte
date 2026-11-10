@@ -16,6 +16,9 @@
 <style>
 	.map-drilldown-link {
 		display: inline-flex;
+		flex-shrink: 0;
+		white-space: nowrap;
+		min-width: var(--size-tap-min);
 		align-items: center;
 		justify-content: center;
 		min-height: var(--size-tap-min);

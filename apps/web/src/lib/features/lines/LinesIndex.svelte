@@ -191,12 +191,7 @@
 		<p class="sr-only" role="status" aria-live="polite">
 			{statusPending ? t.statusPending : worstPending ? t.rankingPending : ''}
 		</p>
-		<!-- The catalogue lays out as a 2-up auto-fit board on desktop (each line
-		     result fills its grid cell), reflowing to a single column on a phone —
-		     EntityList's `grid` mode renders its rows through the SHARED DashboardGrid
-		     auto-fit recipe, so the list>listitem semantics (and the lazy reliability
-		     action per row) stay intact and the grid track lives ONLY in DashboardGrid. -->
-		<EntityList items={visible} key={(r) => r.id} grid cards minTile="360px">
+		<EntityList items={visible} key={(r) => r.id} grid cards>
 			{#snippet row(r)}
 				{@const routeSnapshot = reliability.get(r.id)}
 				<!-- Bare id (no `known` flag): availability is decided by the always-current
