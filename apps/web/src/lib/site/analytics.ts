@@ -52,7 +52,7 @@ export function outboundEvent({
 	pathname,
 }: Pick<URL, 'hostname' | 'pathname'>): AnalyticsEvent | undefined {
 	if (hostname === 'yesid.dev') return 'Portfolio Click';
-	if (hostname === 'github.com' && pathname.startsWith('/mgkdante/')) return 'Repo Click';
+	if (hostname === 'github.com' && /^\/yesid-dev\/[^/]+/.test(pathname)) return 'Repo Click';
 	return undefined;
 }
 
