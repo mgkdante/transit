@@ -39,6 +39,7 @@ def _execute(base: str, statement: str) -> None:
         admin.dispose()
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_configure(config: pytest.Config) -> None:
     workerinput = getattr(config, "workerinput", None)
     if workerinput is not None:
@@ -57,7 +58,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # Register immediately so a partially completed setup is cleaned on failure.
     config.add_cleanup(lambda: _cleanup(config, base))
     token = uuid4().hex[:16]
-    quote = make_url(base).get_dialect().identifier_preparer.quote_identifier
+    quote = make_url(base).get_dialect()().identifier_preparer.quote_identifier
     for index in range(count):
         name = f"{template}_xdist_{token}_gw{index}"
         url = _database_url(base, name)
@@ -67,7 +68,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def _cleanup(config: pytest.Config, base: str) -> None:
-    quote = make_url(base).get_dialect().identifier_preparer.quote_identifier
+    quote = make_url(base).get_dialect()().identifier_preparer.quote_identifier
     for url in reversed(config.stash[_DATABASES]):
         rendered = url.render_as_string(hide_password=False)
         assert_disposable_test_url(rendered, os.environ)
