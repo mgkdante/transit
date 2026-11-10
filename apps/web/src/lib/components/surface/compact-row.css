@@ -1,7 +1,8 @@
 /* Shared compact detail-row rhythm. */
 .line-stop-link,
 .route-roster-link,
-.trip-stop-link {
+.trip-stop-link,
+.compact-row {
 	align-items: center;
 	margin-inline: -0.5rem;
 	padding: 0.75rem 0.5rem;
@@ -13,12 +14,15 @@
 }
 .line-stop-link:hover,
 .route-roster-link:hover,
-.trip-stop-link:hover {
+.trip-stop-link:hover,
+.compact-row:hover,
+.compact-row[data-previewing='true'] {
 	background: var(--muted);
 }
 .line-stop-link:focus-visible,
 .route-roster-link:focus-visible,
-.trip-stop-link:focus-visible {
+.trip-stop-link:focus-visible,
+.compact-row:focus-visible {
 	outline: 2px solid var(--ring);
 	outline-offset: 2px;
 }

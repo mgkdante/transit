@@ -57,11 +57,15 @@ test("classify CLI sees both sides of renames and runs all checks when a diff is
   const head = git("rev-parse", "HEAD");
   const eventPath = join(root, "event.json");
   const output = join(root, "output");
-  const classify = (baseSha, headSha) => {
+  const classify = (baseSha, headSha, eventName = "pull_request") => {
     writeFileSync(
       eventPath,
       JSON.stringify({
-        pull_request: { base: { sha: baseSha }, head: { sha: headSha } },
+        ...(eventName === "merge_group"
+          ? { merge_group: { base_sha: baseSha, head_sha: headSha } }
+          : {
+              pull_request: { base: { sha: baseSha }, head: { sha: headSha } },
+            }),
       }),
     );
     writeFileSync(output, "");
@@ -72,7 +76,7 @@ test("classify CLI sees both sides of renames and runs all checks when a diff is
         cwd: root,
         env: {
           ...process.env,
-          GITHUB_EVENT_NAME: "pull_request",
+          GITHUB_EVENT_NAME: eventName,
           GITHUB_EVENT_PATH: eventPath,
           GITHUB_OUTPUT: output,
         },
@@ -88,6 +92,18 @@ test("classify CLI sees both sides of renames and runs all checks when a diff is
   git("add", "apps/web/new file.ts");
   git("commit", "--quiet", "-m", "web only");
   assert.equal(classify(head, git("rev-parse", "HEAD")), "run_db=false");
+  assert.equal(
+    classify(head, git("rev-parse", "HEAD"), "merge_group"),
+    "run_db=false",
+  );
+  assert.equal(
+    classify(base, git("rev-parse", "HEAD"), "merge_group"),
+    "run_db=true",
+  );
+  for (const invalid of [undefined, "--bad", "f".repeat(40)]) {
+    assert.equal(classify(invalid, head, "merge_group"), "run_db=true");
+    assert.equal(classify(base, invalid, "merge_group"), "run_db=true");
+  }
 });
 
 test("web, proxy and documentation changes skip DB work", () => {

@@ -7,7 +7,7 @@ import {
 	type RouteFile,
 	type RouteIndexEntry,
 } from '#lib/v1/schemas/index.ts';
-import { resolveMapHoverPeek, type MapHoverPeekContext } from './mapHoverPeek';
+import { peekRepeatsDetail, resolveMapHoverPeek, type MapHoverPeekContext } from './mapHoverPeek';
 
 const now = Date.parse('2026-07-31T12:00:00Z');
 const vehicles = [
@@ -112,7 +112,7 @@ describe('resolveMapHoverPeek', () => {
 		expect(peek).toEqual({
 			kind: 'vehicle',
 			id: 'bus-24',
-			title: 'Route 24',
+			title: 'bus-24',
 			route: { id: '24', longName: 'Sherbrooke', type: 3, labelInferred: false },
 			status: 'late',
 			delayMin: 4,
@@ -162,7 +162,7 @@ describe('resolveMapHoverPeek', () => {
 		).toEqual({
 			kind: 'route',
 			id: '24',
-			title: 'Route 24',
+			title: '24',
 			longName: 'Sherbrooke',
 			type: 3,
 			labelInferred: false,
@@ -278,5 +278,24 @@ it('uses the provider cutoff for vehicle hover silence', () => {
 	expect(resolveMapHoverPeek(selection, context)).toMatchObject({ notReportingAgeS: 180 });
 	expect(resolveMapHoverPeek(selection, { ...context, staleCutoffS: 210 })).toMatchObject({
 		notReportingAgeS: null,
+	});
+});
+
+describe('peekRepeatsDetail', () => {
+	const vehicle = { kind: 'vehicle', id: 'bus-24' } as const;
+
+	it('matches only the same kind and id as the open panel', () => {
+		expect(peekRepeatsDetail(vehicle, vehicle)).toBe(true);
+		expect(peekRepeatsDetail(vehicle, { kind: 'vehicle', id: 'bus-25' })).toBe(false);
+		expect(peekRepeatsDetail(vehicle, { kind: 'stop', id: 'bus-24' })).toBe(false);
+	});
+
+	it('treats any direction of the selected line as the same line', () => {
+		expect(peekRepeatsDetail({ kind: 'route', id: '24' }, { kind: 'route', id: '24' })).toBe(true);
+	});
+
+	it('never hides the peek without both a peek and an open panel selection', () => {
+		expect(peekRepeatsDetail(null, vehicle)).toBe(false);
+		expect(peekRepeatsDetail(vehicle, null)).toBe(false);
 	});
 });

@@ -2291,7 +2291,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 			family: 'departures',
 		},
 	])(
-		'keeps the $entity peek byte-equal before, during, and after its committed lease',
+		'keeps the $entity peek byte-equal across its committed lease and hides it while the panel shows it',
 		async ({ hoverTrigger, pickTrigger, family }) => {
 			harness.isDesktop = true;
 			const { container } = render(MapHero);
@@ -2307,15 +2307,17 @@ describe('MapHero map-layer feed lifecycle', () => {
 			await waitFor(() =>
 				expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledExactlyOnceWith([family]),
 			);
+			// The open panel shows this selection, so the peek steps aside while it is open.
 			const during = peekText(container);
 
 			await fireEvent.click(screen.getByRole('button', { name: 'Close panel' }));
 			await waitFor(() => expect(harness.releaseLease).toHaveBeenCalledTimes(1));
 			const after = peekText(container);
 
+			// The lease's data never rewrites the peek: it returns byte-equal after close.
 			expect({ before, during, after }).toEqual({
 				before,
-				during: before,
+				during: '',
 				after: before,
 			});
 			expect(harness.liveStore.subscribeFamilies).toHaveBeenCalledTimes(1);
@@ -2469,7 +2471,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			expect(body).toBeInTheDocument();
 			expect(within(body!).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' }),
+				screen.getByRole('heading', { level: 2, name: 'Stop Sherbrooke / Saint-Denis' }),
 			).toBeInTheDocument();
 			return body!;
 		});
@@ -2492,7 +2494,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			expect(body).toBe(firstBody);
 			expect(within(body!).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('heading', { level: 2, name: 'Temporary stop / Clark' }),
+				screen.getByRole('heading', { level: 2, name: 'Stop Temporary stop / Clark' }),
 			).toBeInTheDocument();
 		});
 
@@ -2523,7 +2525,7 @@ describe('MapHero mobile alert drilldown orchestrator', () => {
 			expect(body).toBe(firstBody);
 			expect(within(body!).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('heading', { level: 2, name: 'Sherbrooke / Saint-Denis' }),
+				screen.getByRole('heading', { level: 2, name: 'Stop Sherbrooke / Saint-Denis' }),
 			).toBeInTheDocument();
 		});
 		expect(harness.goto).toHaveBeenCalledTimes(navigationCountBeforeBack);

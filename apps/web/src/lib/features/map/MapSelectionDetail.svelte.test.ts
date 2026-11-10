@@ -379,14 +379,14 @@ describe('MapSelectionDetail', () => {
 		).not.toBeInTheDocument();
 	});
 
-	it('keeps vehicle chips to vehicle identity and route while status stays in the status band', () => {
+	it('keeps the vehicle lede to its route, not a repeat of the panel title, while status stays in the status band', () => {
 		const detail = resolveMapSelection(
 			{ kind: 'vehicle', id: 'veh-1' },
 			{ index, stops, alerts, routes },
 		);
 		const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
 		const chips = container.querySelector('[data-slot="detail-meta"]')!;
-		expect(chips).toHaveTextContent('Vehicle veh-1');
+		expect(chips).not.toHaveTextContent('veh-1');
 		expect(chips).toHaveTextContent('Route 24');
 		expect(chips).not.toHaveTextContent('Late');
 		expect(chips).not.toHaveTextContent('Standing');
@@ -939,7 +939,7 @@ describe('MapSelectionDetail', () => {
 			},
 		);
 
-		expect(getByText('Vehicle veh-1')).toBeInTheDocument();
+		expect(container.querySelector('[data-slot="detail-meta"]')).toHaveTextContent('Route 24');
 		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
 		expect(detailValue(container, 'Crowding')).toHaveTextContent(
 			`${occupancyGlyph('standing')} Standing`,
@@ -1099,11 +1099,11 @@ describe('MapSelectionDetail', () => {
 							delay_min: 0,
 						}));
 			await view.rerender({ detail: { ...detail, departures }, locale });
-			const grid = view.container.querySelector('.detail-attribute-grid');
+			const row = view.container.querySelector('.detail-attribute-grid [data-fact="departures"]');
 			expect
-				.soft(grid?.querySelector('dt'))
+				.soft(row?.querySelector('dt'))
 				.toHaveTextContent(locale === 'en' ? 'Departures' : 'Départs');
-			expect.soft(grid?.querySelector('dd')).toHaveTextContent(locale === 'en' ? en : fr);
+			expect.soft(row?.querySelector('dd')).toHaveTextContent(locale === 'en' ? en : fr);
 			if (count === 5) {
 				expect(view.container.querySelectorAll('[data-slot="detail-departures"] li')).toHaveLength(
 					3,
@@ -1135,9 +1135,19 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect, onfilter },
 		});
 
-		expect(getByText('Stop code 52618')).toBeInTheDocument();
-		expect(getAllByText('2 departures').length).toBeGreaterThan(0);
-		expect(getByText('0 vehicles heading here')).toBeInTheDocument();
+		// Code, inbound vehicles and departures are separate label/value rows.
+		const factRows = [
+			...document.querySelectorAll('[data-slot="detail-status-band"] dl > div'),
+		].map((row) => [
+			row.querySelector('dt')?.textContent,
+			row.querySelector('dd')?.textContent?.trim(),
+		]);
+		expect(factRows).toEqual([
+			['Stop code', '52618'],
+			['Approaching', '0 vehicles'],
+			['Departures', '2 departures'],
+		]);
+		expect(document.querySelector('[data-slot="detail-meta"]')).toBeNull();
 		expect(getAllByText(/Route 24/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Past times:/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Next times:/).length).toBeGreaterThan(0);
@@ -1530,6 +1540,7 @@ describe('vehicle attribute definition groups', () => {
 			expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
 				t.filterStatus(STATUS_LABELS[locale].late),
 				t.selectStop(detail.nextStop.name),
+				t.filterTrip(detail.vehicle.trip!),
 				t.filterCrowding(OCCUPANCY_LABELS[locale].standing),
 			]);
 			await fireEvent.click(actions[0]);
@@ -1537,6 +1548,8 @@ describe('vehicle attribute definition groups', () => {
 			await fireEvent.click(actions[1]);
 			expect(onselect).toHaveBeenLastCalledWith({ kind: 'stop', id: 'stop-2' });
 			await fireEvent.click(actions[2]);
+			expect(onfilter).toHaveBeenLastCalledWith({ kind: 'trip', value: detail.vehicle.trip });
+			await fireEvent.click(actions[3]);
 			expect(onfilter).toHaveBeenLastCalledWith({ kind: 'occupancy', value: 'standing' });
 		},
 	);

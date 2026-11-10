@@ -13,7 +13,7 @@ import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
 const vehicleStale: MapHoverPeekModel = {
 	kind: 'vehicle',
 	id: 'bus-24',
-	title: 'Route 24',
+	title: 'bus-24',
 	route: { id: '24', longName: 'Sherbrooke', type: 3, labelInferred: false },
 	status: 'late',
 	delayMin: 4,
@@ -28,7 +28,7 @@ const vehicleFresh: MapHoverPeekModel = { ...vehicleStale, notReportingAgeS: nul
 const route: MapHoverPeekModel = {
 	kind: 'route',
 	id: '24',
-	title: 'Route 24',
+	title: '24',
 	longName: 'Sherbrooke',
 	type: 3,
 	labelInferred: false,
@@ -92,23 +92,46 @@ describe('MapHoverPeek', () => {
 		expectInert(container);
 	});
 
-	it('renders useful trip and alert truth without turning the peek into an interactive panel', () => {
+	it('sums a vehicle up as the panel header, route tag, status, next stop and one alert line', () => {
 		const { container } = render(MapHoverPeek, {
 			props: { peek: { ...vehicleStale, alerts: [alert] }, locale: 'en' },
 		});
 
-		expect(container).toHaveTextContent('Route 24');
-		expect(container).toHaveTextContent('bus-24');
-		expect(container).toHaveTextContent('Bus');
-		expect(container).toHaveTextContent('Late');
-		expect(container).toHaveTextContent('Standing');
-		expect(container).toHaveTextContent('+4 min');
-		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
+		expect(container.querySelector('.peek-kind')).toHaveTextContent('Vehicle');
+		expect(container.querySelector('h2')).toHaveTextContent('bus-24');
+		const lede = container.querySelector('[data-slot="peek-lede"]')!;
+		expect(lede).toHaveTextContent('Route 24');
+		expect(lede).toHaveTextContent('Sherbrooke');
 		expect(container).toHaveTextContent('No recent position');
 		expect(container).toHaveTextContent('3 min');
-		expect(definitionValue(container, 'Trip')).toHaveTextContent('trip-secret');
-		expect(container).toHaveTextContent('Alerts');
-		expect(container).toHaveTextContent('Route 24 is diverted.');
+		expect(definitionValue(container, 'Status')).toHaveTextContent('Late');
+		expect(definitionValue(container, 'Status')).toHaveTextContent('+4 min');
+		expect(definitionValue(container, 'Next stop')).toHaveTextContent('Sherbrooke / Saint-Denis');
+		expect([...container.querySelectorAll('dt')].map((term) => term.textContent)).toEqual([
+			'Status',
+			'Next stop',
+		]);
+		// Trip and crowding stay in the panel; the glance does not repeat them.
+		expect(container).not.toHaveTextContent('trip-secret');
+		expect(container).not.toHaveTextContent('Standing');
+		expect(container.querySelector('section[aria-label="Alerts"]')).toHaveTextContent(
+			'Route 24 is diverted.',
+		);
+		expectInert(container);
+	});
+
+	it('shows at most one alert line and counts the rest', () => {
+		const second = { ...alert, id: 'alert-24-b', severity: 'critical' } as Alert;
+		const third = { ...alert, id: 'alert-24-c' } as Alert;
+		const { container } = render(MapHoverPeek, {
+			props: { peek: { ...vehicleFresh, alerts: [second, alert, third] }, locale: 'fr' },
+		});
+
+		const lines = container.querySelectorAll('.map-peek-alert');
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toHaveAttribute('data-severity', 'critical');
+		expect(lines[0].querySelector('.map-peek-alerts-more')).toHaveTextContent('+2 de plus');
+		expect(container.querySelector('.map-alerts h3')).toBeNull();
 		expectInert(container);
 	});
 
@@ -147,6 +170,7 @@ describe('MapHoverPeek', () => {
 			expect(container).not.toHaveTextContent('Alerts');
 			expect(container).not.toHaveTextContent('Alert data unavailable');
 			expect(container).not.toHaveTextContent('No alerts attached');
+			expect(container.querySelector('.map-alerts')).toBeNull();
 			unmount();
 		}
 	});
@@ -169,9 +193,6 @@ describe('MapHoverPeek', () => {
 			props: { peek: freshMetro, locale },
 		});
 
-		expect(
-			definitionValue(container, locale === 'en' ? 'Crowding' : 'Achalandage'),
-		).toHaveTextContent(why);
 		expect(definitionValue(container, locale === 'en' ? 'Status' : 'Statut')).toHaveTextContent(
 			why,
 		);
@@ -188,7 +209,6 @@ describe('MapHoverPeek', () => {
 			props: { peek: staleNulls, locale: 'en' },
 		});
 
-		expect(definitionValue(container, 'Crowding')).toHaveTextContent(/not reporting/i);
 		expect(definitionValue(container, 'Status')).toHaveTextContent(/not reporting/i);
 	});
 
@@ -202,19 +222,18 @@ describe('MapHoverPeek', () => {
 			props: { peek: freshBusNulls, locale: 'en' },
 		});
 
-		expect(definitionValue(container, 'Crowding')).toHaveTextContent(/not reported/i);
 		expect(definitionValue(container, 'Status')).toHaveTextContent(/not reported/i);
 	});
 
-	it('renders route long name, type, direction, and visible-vehicle count', () => {
+	it('renders route long name, direction, and visible-vehicle count', () => {
 		const { container } = render(MapHoverPeek, {
 			props: { peek: { ...route, directionLabel: 'East · toward Frontenac' }, locale: 'en' },
 		});
 
-		expect(container).toHaveTextContent('Route 24');
-		expect(container).toHaveTextContent('Sherbrooke');
-		expect(container).toHaveTextContent('Bus');
-		expect(container).toHaveTextContent('2 vehicles visible');
+		expect(container.querySelector('.peek-kind')).toHaveTextContent('Route');
+		expect(container.querySelector('h2')).toHaveTextContent('24');
+		expect(container.querySelector('[data-slot="peek-lede"]')).toHaveTextContent('Sherbrooke');
+		expect(definitionValue(container, 'Live vehicles')).toHaveTextContent('2 vehicles visible');
 		expect(definitionValue(container, 'Direction')).toHaveTextContent('East · toward Frontenac');
 		expectInert(container);
 	});
@@ -260,15 +279,21 @@ describe('MapHoverPeek', () => {
 		expect(container).not.toHaveTextContent('Next stop unknown');
 	});
 
-	it('renders stop code, vehicles-heading count, and loaded departure count', () => {
-		const { container } = render(MapHoverPeek, { props: { peek: stop, locale: 'en' } });
+	it.each([
+		['en', 'Stop code', 'Approaching', '2 vehicles', 'Departures', '3 departures'],
+		['fr', "Code d'arrêt", 'En approche', '2 véhicules', 'Départs', '3 départs'],
+	] as const)(
+		'gives a stop its code, approaching vehicles and departures as separate rows in %s',
+		(locale, codeTerm, approachingTerm, vehicles, departuresTerm, departures) => {
+			const { container } = render(MapHoverPeek, { props: { peek: stop, locale } });
 
-		expect(container).toHaveTextContent('Sherbrooke / Saint-Denis');
-		expect(container).toHaveTextContent('202');
-		expect(container).toHaveTextContent('2 vehicles heading here');
-		expect(container).toHaveTextContent('3 departures');
-		expectInert(container);
-	});
+			expect(container.querySelector('h2')).toHaveTextContent('Sherbrooke / Saint-Denis');
+			expect(definitionValue(container, codeTerm)).toHaveTextContent('202');
+			expect(definitionValue(container, approachingTerm)).toHaveTextContent(vehicles);
+			expect(definitionValue(container, departuresTerm)).toHaveTextContent(departures);
+			expectInert(container);
+		},
+	);
 
 	it('renders unavailable departures honestly instead of fabricating zero', () => {
 		const { container } = render(MapHoverPeek, {
@@ -296,8 +321,8 @@ describe.each(['en', 'fr'] as const)('MapHoverPeek published status in %s', (loc
 		});
 		const fact = definitionValue(container, locale === 'fr' ? 'Statut' : 'Status');
 		expect(fact).toHaveTextContent(STATUS_LABELS[locale][status]);
-		const badge = fact.querySelector('[data-slot="status-badge"]');
-		if (measurement || status !== 'unknown') expect(badge).toHaveAttribute('data-status', status);
+		const mark = fact.querySelector('.peek-status');
+		if (measurement || status !== 'unknown') expect(mark).toHaveAttribute('data-status', status);
 		const reading = fact.querySelector('.map-peek-delay')!;
 		if (measurement) expect(reading).toHaveTextContent(measurement);
 		else expect(reading.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();

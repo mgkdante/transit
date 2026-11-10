@@ -7,7 +7,8 @@
 	import type { GeocodePrecision, GeocodeSuggestion } from '#lib/geocode/types.ts';
 	import type { StopIndexEntry } from '#lib/v1/schemas/index.ts';
 	import type { MapCopy } from './map.copy';
-	import type { MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
+	import { peekRepeatsDetail, type MapHoverPeek as MapHoverPeekModel } from './mapHoverPeek';
+	import type { MapSelection } from './selectionSession/mapSelection';
 	import MapHeadTitle from './MapHeadTitle.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
@@ -36,6 +37,8 @@
 		filtersStore: FilterStore;
 		detailOpen: boolean;
 		hoverPeek: MapHoverPeekModel | null;
+		/** The selection the expanded detail panel is showing, if any. */
+		detailSelection?: MapSelection | null;
 		controls: Snippet<[{ collapsible?: boolean } | undefined]>;
 	}
 
@@ -58,8 +61,11 @@
 		filtersStore,
 		detailOpen,
 		hoverPeek,
+		detailSelection = null,
 		controls,
 	}: Props = $props();
+	// Hovering what the open panel already shows would only repeat it over the map.
+	const visiblePeek = $derived(peekRepeatsDetail(hoverPeek, detailSelection) ? null : hoverPeek);
 
 	let desktopControlsMounted = $state(false);
 	$effect(() => {
@@ -102,9 +108,9 @@
 
 <MapFeedStallBanner {presentation} />
 
-{#if hoverPeek && isDesktop && !nearMeOpen}
-	<div class="map-overlay map-peek">
-		<MapHoverPeek peek={hoverPeek} {locale} />
+{#if visiblePeek && isDesktop && !nearMeOpen}
+	<div class="map-overlay map-peek" data-slot="map-hover-peek">
+		<MapHoverPeek peek={visiblePeek} {locale} />
 	</div>
 {/if}
 
@@ -126,7 +132,7 @@
 			20rem,
 			calc(100% - var(--map-detail-offset, 0rem) - var(--app-left-rail-offset, 0rem) - 18rem)
 		);
-		padding: 0.875rem;
+		padding: 0.75rem 0.875rem;
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-md);

@@ -27,7 +27,11 @@
 	:global(.detail-inline-action) {
 		display: inline-flex;
 		min-height: 2.75rem;
+		height: auto;
+		max-width: 100%;
 		align-items: center;
+		white-space: normal;
+		text-align: left;
 		gap: 0.5rem;
 		padding-inline: 0;
 		border: 0;
@@ -38,6 +42,9 @@
 		font-weight: 600;
 		color: var(--foreground);
 		text-decoration: none;
+	}
+	:global(.detail-inline-action svg) {
+		flex: none;
 	}
 	:global(.detail-inline-action:hover) {
 		text-decoration: underline;

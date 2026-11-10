@@ -23,6 +23,10 @@ BUN_VERSION = "1.3.11"
 UV_VERSION = "0.13.4"
 WRANGLER_VERSION = "4.154.0"
 PLAYWRIGHT_VERSION = "1.62.0"
+PLAYWRIGHT_CONTAINER = (
+    f"mcr.microsoft.com/playwright:v{PLAYWRIGHT_VERSION}-noble@"
+    "sha256:baed2032d533817f3dbe6425de795788430ba345e819a1201337009ba17c9d07"
+)
 CHROMIUM_VERSION = "151.0.7922.34"
 CHROMIUM_ARCHIVE_SHA256 = "3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14"
 CHROMIUM_EXECUTABLE_SHA256 = "e11fc9ce65c96313476f7ee9844b6fb6a9220fb048693cfe9eee00acf4170a9f"
@@ -196,9 +200,15 @@ def _inventory_violations(sources: dict[str, str]) -> list[str]:
             source,
         ):
             violations.append(f"{path}: ad-hoc Wrangler executable")
+        # This exact reviewed container reference binds to the root Playwright pin.
+        version_source = (
+            source.replace(PLAYWRIGHT_CONTAINER, "")
+            if path == ".github/workflows/web.yml"
+            else source
+        )
         if path not in VERSION_OWNERS | PUBLIC_RECEIPTS and (
-            TOOL_LITERAL.search(source)
-            or OWNED_LITERAL.search(source)
+            TOOL_LITERAL.search(version_source)
+            or OWNED_LITERAL.search(version_source)
             or _setup_version_literals(document)
         ):
             violations.append(f"{path}: tool version outside an owner, proof, or receipt")
@@ -234,6 +244,61 @@ def _inventory_violations(sources: dict[str, str]) -> list[str]:
 
 def test_tracked_toolchain_inventory_has_only_reviewed_owners_and_images() -> None:
     assert _inventory_violations(_tracked_sources()) == []
+
+
+def test_layout_uses_the_approved_playwright_container_without_host_browser_installation() -> None:
+    job = _yaml(WORKFLOWS / "web.yml")["jobs"]["layout"]
+    assert job["container"]["image"] == PLAYWRIGHT_CONTAINER
+    assert job["container"]["options"] == "--ipc=host"
+    assert _json("package.json")["devDependencies"]["@playwright/test"] == PLAYWRIGHT_VERSION
+    runs = _step_runs(job)
+    assert "playwright install" not in runs
+    assert "apt" not in runs
+    assert "ImageOS" not in json.dumps(job)
+    assert "--shard=${{ matrix.shard }}/4" in runs
+    assert job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    setup = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/setup")
+    assert setup["with"]["layout-container"] == "true"
+    installer = next(
+        step for step in job["steps"] if step.get("name") == "Install authenticated Chromium"
+    )
+    assert (
+        'env -u PLAYWRIGHT_BROWSERS_PATH node scripts/install-browser-toolchain.mjs'
+        in installer["run"]
+    )
+    assert "PLAYWRIGHT_BROWSERS_PATH" not in installer.get("env", {})
+    assert "PLAYWRIGHT_BROWSERS_PATH" not in job.get("env", {})
+
+
+def test_layout_extractor_is_provisioned_after_pinned_node_but_before_bun() -> None:
+    action = _yaml(REPO_ROOT / ".github/actions/setup/action.yml")
+    steps = action["runs"]["steps"]
+    node = next(
+        i for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("actions/setup-node@")
+    )
+    bun = next(
+        i for i, step in enumerate(steps)
+        if step.get("uses", "").startswith("oven-sh/setup-bun@")
+    )
+    extractor = next(
+        i for i, step in enumerate(steps)
+        if step.get("run") == "node .github/scripts/install-layout-unzip.mjs"
+    )
+    assert node < extractor < bun
+    assert steps[extractor]["if"] == "${{ inputs.layout-container == 'true' }}"
+    assert action["inputs"]["layout-container"]["default"] == "false"
+
+
+@pytest.mark.parametrize("image", [
+    PLAYWRIGHT_CONTAINER.replace("v" + PLAYWRIGHT_VERSION, "v0.0.0"),
+    PLAYWRIGHT_CONTAINER.rsplit(":", 1)[0] + ":" + "0" * 64,
+])
+def test_container_inventory_rejects_unreviewed_playwright_versions_and_digests(image: str) -> None:
+    source = yaml.safe_dump({"jobs": {"layout": {"container": {"image": image}}}})
+    assert any("tool version" in item for item in _inventory_violations({
+        ".github/workflows/web.yml": source,
+    }))
 
 
 @pytest.mark.parametrize(
@@ -439,6 +504,9 @@ $base = (git rev-parse refs/remotes/origin/main).Trim()
 if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
   $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
   $base = $event.pull_request.base.sha
+} elseif ($env:GITHUB_EVENT_NAME -eq 'merge_group') {
+  $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+  $base = $event.merge_group.base_sha
 } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
   $base = $env:GITHUB_SHA
 }
@@ -534,6 +602,7 @@ def test_node_setup_rejects_other_env_or_literal_versions(
         ("git merge-base --is-ancestor", "git merge-base"),
         ("if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }", ""),
         ('git show "${base}:$path"', 'git show "HEAD:$path"'),
+        ("$event.merge_group.base_sha", "$event.merge_group.head_sha"),
         ("(Join-Path $policy '.nvmrc')", "(Join-Path $policy '.bun-version')"),
         ('"WEB_CI_NODE=$pin"', '"WEB_CI_NODE=22"'),
     ],

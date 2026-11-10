@@ -4,7 +4,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { deploymentEligible, main } from './deploy-scope.mjs';
+import {
+	deploymentEligible,
+	main,
+	liveProductionSha,
+} from './deploy-scope.mjs';
 
 function git(repository, args) {
 	return execFileSync('git', args, {
@@ -13,6 +17,42 @@ function git(repository, args) {
 		stdio: ['ignore', 'pipe', 'pipe'],
 	}).trim();
 }
+
+test('live deployment SHA is read from the Worker identity even during a data outage', async () => {
+	const sha = 'a'.repeat(40);
+	for (const status of [200, 503]) {
+		assert.equal(
+			await liveProductionSha(async (url, options) => {
+				assert.equal(url, 'https://transit.yesid.dev/health');
+				assert.equal(options.redirect, 'error');
+				return {
+					status,
+					json: async () => ({ service: 'transit-web', commit: sha }),
+				};
+			}),
+			sha,
+		);
+	}
+	for (const body of [
+		{},
+		{ service: 'other', commit: sha },
+		{ service: 'transit-web', commit: 'short' },
+	]) {
+		assert.equal(
+			await liveProductionSha(async () => ({
+				status: 200,
+				json: async () => body,
+			})),
+			undefined,
+		);
+	}
+	assert.equal(
+		await liveProductionSha(async () => {
+			throw new Error('unavailable');
+		}),
+		undefined,
+	);
+});
 
 test('tooling-only and workflow-only pushes preserve the deployed Worker', () => {
 	assert.equal(typeof deploymentEligible, 'function');
@@ -44,13 +84,21 @@ test('deployable changes and manual dispatch remain eligible', () => {
 		'.github/actions/setup/action.yml',
 	]) {
 		assert.equal(
-			deploymentEligible({ eventName: 'push', diffResolved: true, paths: [path] }),
+			deploymentEligible({
+				eventName: 'push',
+				diffResolved: true,
+				paths: [path],
+			}),
 			true,
 			path,
 		);
 	}
 	assert.equal(
-		deploymentEligible({ eventName: 'workflow_dispatch', diffResolved: false, paths: [] }),
+		deploymentEligible({
+			eventName: 'workflow_dispatch',
+			diffResolved: false,
+			paths: [],
+		}),
 		true,
 	);
 });
@@ -124,7 +172,7 @@ test('CLI resolves a valid base/head diff in the checked-out repository', () => 
 			main(
 				{
 					TRANSIT_DEPLOY_EVENT: 'push',
-					TRANSIT_DEPLOY_BEFORE: before,
+					TRANSIT_DEPLOY_LIVE_SHA: before,
 					TRANSIT_DEPLOY_AFTER: after,
 				},
 				{ write: (value) => (output += value) },
@@ -133,6 +181,47 @@ test('CLI resolves a valid base/head diff in the checked-out repository', () => 
 			0,
 		);
 		assert.equal(output, 'deploy_web=false\n');
+	} finally {
+		rmSync(repository, { recursive: true, force: true });
+	}
+});
+
+test('a cancelled main push cannot hide product changes behind a workflow-only event diff', () => {
+	const repository = mkdtempSync(join(tmpdir(), 'transit-live-deploy-scope-'));
+	try {
+		git(repository, ['init', '--initial-branch=main']);
+		git(repository, ['config', 'user.email', 'test@example.invalid']);
+		git(repository, ['config', 'user.name', 'Transit test']);
+		mkdirSync(join(repository, 'apps/web/src'), { recursive: true });
+		mkdirSync(join(repository, '.github/workflows'), { recursive: true });
+		writeFileSync(join(repository, 'apps/web/src/app.css'), 'old');
+		git(repository, ['add', 'apps/web/src/app.css']);
+		git(repository, ['commit', '-m', 'live']);
+		const live = git(repository, ['rev-parse', 'HEAD']);
+		writeFileSync(join(repository, 'apps/web/src/app.css'), 'new');
+		git(repository, ['commit', '-am', 'cancelled product push']);
+		const before = git(repository, ['rev-parse', 'HEAD']);
+		writeFileSync(join(repository, '.github/workflows/web.yml'), 'name: web\n');
+		git(repository, ['add', '.github/workflows/web.yml']);
+		git(repository, ['commit', '-m', 'workflow push']);
+		const after = git(repository, ['rev-parse', 'HEAD']);
+		const decide = (liveSha) => {
+			let output = '';
+			main(
+				{
+					TRANSIT_DEPLOY_EVENT: 'push',
+					TRANSIT_DEPLOY_BEFORE: before,
+					TRANSIT_DEPLOY_LIVE_SHA: liveSha,
+					TRANSIT_DEPLOY_AFTER: after,
+				},
+				{ write: (value) => (output += value) },
+				repository,
+			);
+			return output;
+		};
+		assert.equal(decide(live), 'deploy_web=true\n');
+		assert.equal(decide(after), 'deploy_web=false\n');
+		assert.equal(decide(undefined), 'deploy_web=true\n');
 	} finally {
 		rmSync(repository, { recursive: true, force: true });
 	}

@@ -31,6 +31,21 @@ jobs:
       PUBLIC_V1_BASE: https://data.yesid.dev/v1
       PUBLIC_INDEXING: "true"
     steps:
+      - name: Validate deployment request
+        shell: pwsh
+        env:
+          REQUESTED_REF: ${{ inputs.ref }}
+          DEPLOY_TARGET: ${{ inputs.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $requestedRef = $env:REQUESTED_REF
+          if ([string]::IsNullOrWhiteSpace($requestedRef) -or $requestedRef -ne $requestedRef.Trim() -or $requestedRef.StartsWith('-')) {
+            throw 'Invalid deployment ref'
+          }
+          git check-ref-format --branch $requestedRef
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid deployment ref' }
+          if ($env:DEPLOY_TARGET -cnotin @('web', 'data-proxy', 'both')) { throw 'Invalid deployment target' }
+
       - name: Check out main dispatch revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -67,9 +82,12 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Resolve deployed commit
-        shell: bash
+        shell: pwsh
         run: |
-          printf 'TRANSIT_COMMIT_SHA=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          $ErrorActionPreference = 'Stop'
+          $sha = (git rev-parse --verify 'HEAD^{commit}').Trim()
+          if ($LASTEXITCODE -ne 0 -or $sha -cnotmatch '^[a-f0-9]{40}$') { throw 'Cannot resolve deployment commit' }
+          "TRANSIT_COMMIT_SHA=$sha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install selected application dependencies
         run: bun install --frozen-lockfile

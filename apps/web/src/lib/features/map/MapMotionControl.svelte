@@ -86,9 +86,16 @@
 		gap: 0.5rem;
 		min-width: 0;
 	}
+	/* Hint and its method link share one baseline; the link wraps under a long hint. */
 	:global(.map-motion-caption) {
-		flex-direction: column;
-		align-items: flex-start;
+		flex-wrap: wrap;
+		align-items: baseline;
+		column-gap: 0.75rem;
+		row-gap: 0;
+	}
+	:global(.map-motion-caption .map-motion-hint) {
+		flex: 1 1 10rem;
+		min-width: 0;
 	}
 	:global(.map-motion[data-collapsed='true']) {
 		gap: 0.375rem;
@@ -170,6 +177,8 @@
 		display: inline-flex;
 		min-width: 44px;
 		flex: none;
+		margin-inline-start: auto;
+		padding-inline: 0;
 		justify-content: flex-start;
 		align-items: center;
 		justify-self: start;

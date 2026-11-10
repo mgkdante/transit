@@ -701,10 +701,17 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		overflow-y: auto;
-		padding-right: 0.5rem;
-		scrollbar-color: color-mix(in srgb, var(--primary) 40%, var(--border) 60%) transparent;
+		/* The scrollbar rides the card edge in the body's own inline padding,
+		   so rows keep the same right edge as the header whether it shows or not. */
+		margin-inline-end: -0.75rem;
+		padding-inline-end: 0.75rem;
+		scrollbar-color: var(--border) transparent;
 		scrollbar-gutter: stable;
 		scrollbar-width: thin;
+	}
+
+	:global(.mf-body:hover) {
+		scrollbar-color: color-mix(in srgb, var(--primary) 45%, var(--border) 55%) transparent;
 	}
 
 	:global(.mf-body::-webkit-scrollbar) {
@@ -712,7 +719,7 @@
 	}
 
 	:global(.mf-body::-webkit-scrollbar-thumb) {
-		background: color-mix(in srgb, var(--primary) 32%, var(--border) 68%);
+		background: var(--border);
 		border-radius: var(--radius-pill);
 	}
 
@@ -815,13 +822,11 @@
 	:global(.mf-active-label) {
 		display: flex;
 		align-items: center;
-		gap: 0.25rem;
+		gap: 0.375rem;
 		padding-left: 0;
 		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 600;
+		font-size: var(--text-caption);
 		color: var(--muted-foreground);
-		text-transform: uppercase;
 	}
 
 	:global(.map-filters[data-presentation='drawer']) {
@@ -886,8 +891,15 @@
 	:global(.mf-active-set .mf-chips) {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 1rem 0.375rem;
-		padding-block: 0.5rem;
+		gap: 0 0.375rem;
+	}
+	/* One hairline between groups; a group's last row needs no rule of its own. */
+	:global(.mf-body > .mf-group + .mf-group) {
+		padding-top: 0.25rem;
+		border-top: 1px solid var(--border-subtle);
+	}
+	:global(.mf-group-content .transit-checkbox-row:last-child) {
+		border-bottom: 0;
 	}
 
 	:global(.mf-clear:focus-visible),

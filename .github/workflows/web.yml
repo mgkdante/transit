@@ -1,6 +1,7 @@
 name: web
 
 on:
+  merge_group:
   pull_request:
     branches: [main]
   push:
@@ -11,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: web-${{ github.ref }}
+  group: web-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
@@ -49,6 +50,9 @@ jobs:
           if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
             $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
             $base = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'merge_group') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.merge_group.base_sha
           } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
             $base = $env:GITHUB_SHA
           }
@@ -77,7 +81,7 @@ jobs:
         id: classify
         shell: pwsh
         run: |
-          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+          if ($env:GITHUB_EVENT_NAME -notin @('pull_request', 'merge_group')) {
             [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "run_e2e=true`nrun_layout=true`n")
             exit 0
           }
@@ -108,10 +112,14 @@ jobs:
 
   ci-work:
     outputs:
-      artifact_id: ${{ steps.upload_build.outputs.artifact-id }}
-      manifest_sha256: ${{ steps.seal_build.outputs.manifest_sha256 }}
-      producer_attempt: ${{ steps.seal_build.outputs.producer_attempt }}
+      artifact_id: ${{ steps.promote.outputs.artifact_id || steps.upload_build.outputs.artifact-id }}
+      manifest_sha256: ${{ steps.promote.outputs.manifest_sha256 || steps.seal_build.outputs.manifest_sha256 }}
+      producer_attempt: ${{ steps.promote.outputs.producer_attempt || steps.seal_build.outputs.producer_attempt }}
+      producer_run_id: ${{ steps.promote.outputs.run_id || github.run_id }}
       build_target: ${{ steps.build_target.outputs.target }}
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -139,7 +147,7 @@ jobs:
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/deploy-now.test.mjs
+        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/deploy-now.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs .github/scripts/deployment-order.test.mjs
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
@@ -188,11 +196,41 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node .github/scripts/web-build-artifact.mjs configure
 
+      - name: Select verified queue artifact
+        id: promote
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/web-artifact-promotion.mjs
+
+      - name: Download verified queue artifact
+        if: steps.promote.outputs.promoted == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ steps.promote.outputs.artifact_id }}
+          run-id: ${{ steps.promote.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore verified queue build
+        if: steps.promote.outputs.promoted == 'true'
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_BUILD_TARGET: production
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.promote.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ steps.promote.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ steps.promote.outputs.run_id }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
       - name: Build (adapter-cloudflare)
+        # A successful exact-SHA merge group already sealed these production bytes.
+        if: steps.promote.outputs.promoted != 'true'
         run: bun run build
 
       - name: Seal deployment build
-        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        if: ${{ steps.build_target.outputs.target != 'verification' && steps.promote.outputs.promoted != 'true' }}
         id: seal_build
         working-directory: ${{ github.workspace }}
         env:
@@ -203,7 +241,7 @@ jobs:
         run: ../../node_modules/.bin/wrangler deploy --dry-run
 
       - name: Browser toolchain contract
-        run: node --test scripts/install-browser-toolchain.test.mjs
+        run: node --test scripts/install-browser-toolchain.test.mjs ../../.github/scripts/install-layout-unzip.test.mjs
 
       - name: Install authenticated Chromium
         env:
@@ -223,15 +261,17 @@ jobs:
         working-directory: ${{ github.workspace }}
         env:
           TRANSIT_BUILD_TARGET: ${{ steps.build_target.outputs.target }}
-          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.seal_build.outputs.manifest_sha256 }}
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ steps.promote.outputs.manifest_sha256 || steps.seal_build.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ steps.promote.outputs.producer_attempt || steps.seal_build.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ steps.promote.outputs.run_id || github.run_id }}
         run: node .github/scripts/web-build-artifact.mjs verify-source "$RUNNER_TEMP/transit-web-build"
 
       - name: Upload verified deployment build
-        if: ${{ steps.build_target.outputs.target != 'verification' }}
+        if: ${{ steps.build_target.outputs.target != 'verification' && steps.promote.outputs.promoted != 'true' }}
         id: upload_build
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}
+          name: transit-web-${{ github.sha }}-${{ steps.build_target.outputs.target }}-${{ github.run_attempt }}-${{ steps.seal_build.outputs.manifest_sha256 }}
           path: ${{ runner.temp }}/transit-web-build/
           include-hidden-files: true
           if-no-files-found: error
@@ -277,7 +317,15 @@ jobs:
           printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
 
       - name: e2e
-        run: bun run test:e2e --shard=${{ matrix.shard }}/3
+        env:
+          RUN_EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$RUN_EVENT" = pull_request ]; then
+            bun run test:e2e --shard=${{ matrix.shard }}/3
+          else
+            bun run build
+            bun x playwright test -c e2e/playwright.config.ts --project=http --project=phone --project=desktop --shard=${{ matrix.shard }}/3
+          fi
 
       - name: Upload e2e failure evidence
         if: ${{ failure() && !cancelled() }}
@@ -290,7 +338,334 @@ jobs:
 
   layout:
     needs: [classify]
-    if: ${{ !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_layout != 'false') }}
+    if: ${{ github.event_name == 'pull_request' && !cancelled() && (needs.classify.result != 'success' || needs.classify.outputs.run_layout != 'false') }}
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.0-noble@sha256:baed2032d533817f3dbe6425de795788430ba345e819a1201337009ba17c9d07
+      options: --ipc=host
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/web
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+        with:
+          layout-container: "true"
+
+      - name: Install authenticated Chromium
+        env:
+          TRANSIT_BROWSER_ROOT: ${{ runner.temp }}/transit-browser-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir --mode=0700 -- "$TRANSIT_BROWSER_ROOT"
+          env -u PLAYWRIGHT_BROWSERS_PATH node scripts/install-browser-toolchain.mjs "$TRANSIT_BROWSER_ROOT"
+          printf 'TRANSIT_BROWSER_ROOT=%s\n' "$TRANSIT_BROWSER_ROOT" >> "$GITHUB_ENV"
+
+      - name: layout
+        run: bun run test:e2e:layout --shard=${{ matrix.shard }}/4
+
+      - name: Upload e2e failure evidence
+        if: ${{ failure() && !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: transit-layout-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  ci:
+    name: ci
+    needs: [classify, prerelease-guard, ci-work, unit, e2e, layout]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # The trusted boundary covers policy code, not edits to this workflow, which need review.
+      # This standalone policy imports only Node built-ins, with no load-time assets.
+      # Extend the materialized closure for new imports/assets. Interface changes
+      # need a two-step migration: land compatible base support, then use it.
+      - name: Materialize trusted web policy
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
+          $base = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.pull_request.base.sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'merge_group') {
+            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $base = $event.merge_group.base_sha
+          } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $base = $env:GITHUB_SHA
+          }
+          if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
+          git merge-base --is-ancestor $base refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
+          $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $policy | Out-Null
+          foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
+            $content = git show "${base}:$path"
+            if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
+            [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
+          }
+          $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
+          if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
+          "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: ${{ env.WEB_CI_NODE }}
+          package-manager-cache: false
+
+      - name: Require selected jobs to succeed
+        working-directory: ${{ github.workspace }}
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        shell: pwsh
+        run: |
+          $needs = $env:NEEDS_JSON | ConvertFrom-Json -AsHashtable
+          foreach ($job in $needs.Keys) {
+            if ($needs[$job].result -in @('failure', 'cancelled')) {
+              throw "${job}: $($needs[$job].result)"
+            }
+          }
+          if ($env:GITHUB_EVENT_NAME -ne 'pull_request') {
+            if ($needs.classify.outputs.run_e2e -notin @('true', 'false')) { throw 'Invalid fast-lane classification' }
+            foreach ($job in @('classify', 'prerelease-guard', 'ci-work', 'unit', 'e2e')) {
+              $deliberateSkip = $job -eq 'e2e' -and $needs.classify.outputs.run_e2e -ceq 'false' -and $needs[$job].result -eq 'skipped'
+              if ($needs[$job].result -ne 'success' -and -not $deliberateSkip) { throw "${job}: fast lane did not succeed" }
+            }
+            exit 0
+          }
+          # Older base policies have no run_layout output and permit docs-only skips.
+          # Require explicit base classification even when that policy predates layout gating.
+          if ($needs.layout.result -eq 'skipped' -and $needs.classify.outputs.run_layout -cne 'false') {
+            throw 'layout: skipped without explicit run_layout=false'
+          }
+          node "$env:WEB_CI_POLICY/web-ci-paths.mjs" required
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  deploy_scope:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      deploy_web: ${{ steps.scope.outputs.deploy_web }}
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Resolve deployment against live Worker SHA
+        id: scope
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_DEPLOY_EVENT: ${{ github.event_name }}
+          TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
+        run: node .github/scripts/deploy-scope.mjs >> "$GITHUB_OUTPUT"
+
+  preview:
+    name: preview
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: preview
+      url: ${{ steps.upload.outputs.url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Build (adapter-cloudflare)
+        run: bun run build
+
+      # Uploads a version without deploying it; production traffic is untouched.
+      - name: Upload preview version
+        id: upload
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # checkout builds the PR merge ref, not the feature-branch head.
+          TRANSIT_COMMIT_SHA: ${{ github.sha }}
+          TRANSIT_BRANCH: ${{ github.head_ref }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+        run: |
+          ../../node_modules/.bin/wrangler versions upload --preview-alias "pr-$PR_NUMBER" \
+            --message "Preview of PR #$PR_NUMBER, never deploy" --var PUBLIC_INDEXING:false \
+            --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA" --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
+          url="$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")"
+          if [ -z "$url" ]; then
+            echo "::error::No preview URL: Version URLs are off for transit-web until a production deploy applies preview_urls = true."
+            exit 1
+          fi
+          printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+          printf 'Preview for PR #%s: %s\n' "$PR_NUMBER" "$url" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-production:
+    name: deploy production
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
+      identity_verified: ${{ steps.identity.outcome == 'success' }}
+      rollback_version: ${{ steps.previous.outputs.version_id }}
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    concurrency:
+      group: transit-data-edge-production
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [ci, deploy_scope, ci-work]
+    if: >-
+      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'push') }}
+    environment: production
+    env:
+      TRANSIT_BUILD_TARGET: production
+      PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Recheck live deployment inside the production lock
+        id: locked_scope
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_DEPLOY_EVENT: ${{ github.event_name }}
+          TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
+        run: node .github/scripts/deploy-scope.mjs locked >> "$GITHUB_OUTPUT"
+
+      - name: Require the producer artifact
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        env:
+          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
+          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
+          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
+        run: |
+          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRANSIT_PRODUCER_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
+
+      - name: Download the producer artifact
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.ci-work.outputs.producer_run_id }}
+          path: ${{ runner.temp }}/transit-web-build
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Restore the verified deployment build
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
+          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
+          TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
+        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
+
+      - name: Capture rollback version before deployment
+        id: previous
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        working-directory: ${{ github.workspace }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node .github/scripts/worker-rollback.mjs capture
+
+      - name: Apply public snapshot CORS
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        working-directory: apps/data-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
+
+      - name: Deploy production Worker
+        id: deploy
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLIC_PLAUSIBLE_DOMAIN: ${{ vars.PUBLIC_PLAUSIBLE_DOMAIN }}
+          PUBLIC_CF_BEACON_TOKEN: ${{ vars.PUBLIC_CF_BEACON_TOKEN }}
+          TRANSIT_COMMIT_SHA: ${{ github.sha }}
+          TRANSIT_BRANCH: ${{ github.ref_name }}
+        run: >-
+          ../../node_modules/.bin/wrangler deploy
+          --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA"
+          --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
+          ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
+          ${PUBLIC_CF_BEACON_TOKEN:+--var "PUBLIC_CF_BEACON_TOKEN:$PUBLIC_CF_BEACON_TOKEN"}
+          && printf 'deployed=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed source identity
+        id: identity
+        if: steps.deploy.outputs.deployed == 'true'
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/post-deploy-layout.mjs verify
+
+      - name: Verify shared production routes
+        id: smoke
+        if: steps.deploy.outputs.deployed == 'true'
+        working-directory: apps/data-proxy
+        run: bash smoke.sh
+
+      - name: Alert immediately on failed deployment verification
+        if: ${{ always() && steps.deploy.outputs.deployed == 'true' && (steps.identity.outcome != 'success' || steps.smoke.outcome != 'success') }}
+        working-directory: ${{ github.workspace }}
+        env:
+          DEPLOY_RESULT: failure
+          LAYOUT_RESULT: ${{ steps.identity.outcome == 'success' && 'pending' || 'not-run' }}
+          ROLLBACK_VERSION: ${{ steps.previous.outputs.version_id }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/post-deploy-layout.mjs report
+
+  post-deploy-layout:
+    needs: [deploy-production]
+    if: ${{ always() && needs.deploy-production.outputs.deployed == 'true' && needs.deploy-production.outputs.identity_verified == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -342,222 +717,35 @@ jobs:
         if: ${{ failure() && !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: transit-layout-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          name: transit-post-deploy-layout-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: apps/web/test-results/
           if-no-files-found: warn
           retention-days: 7
 
-  ci:
-    name: ci
-    needs: [classify, prerelease-guard, ci-work, unit, e2e, layout]
-    if: ${{ always() }}
+  post-deploy-result:
+    needs: [deploy-production, post-deploy-layout]
+    if: ${{ always() && needs.deploy-production.outputs.deployed == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    defaults:
+      run:
+        working-directory: .
     steps:
-      - name: Check out repository
+      - name: Check out deployed source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      # The trusted boundary covers policy code, not edits to this workflow, which need review.
-      # This standalone policy imports only Node built-ins, with no load-time assets.
-      # Extend the materialized closure for new imports/assets. Interface changes
-      # need a two-step migration: land compatible base support, then use it.
-      - name: Materialize trusted web policy
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot fetch trusted main' }
-          $base = (git rev-parse refs/remotes/origin/main).Trim()
-          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
-            $event = Get-Content -Raw -LiteralPath $env:GITHUB_EVENT_PATH | ConvertFrom-Json
-            $base = $event.pull_request.base.sha
-          } elseif ($env:GITHUB_EVENT_NAME -eq 'push') {
-            $base = $env:GITHUB_SHA
-          }
-          if ($base -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid policy base SHA' }
-          git merge-base --is-ancestor $base refs/remotes/origin/main
-          if ($LASTEXITCODE -ne 0) { throw 'Policy base is not reachable from origin/main' }
-          $policy = Join-Path $env:RUNNER_TEMP ('web-policy-' + [guid]::NewGuid())
-          New-Item -ItemType Directory -Path $policy | Out-Null
-          foreach ($path in @('.nvmrc', '.github/scripts/web-ci-paths.mjs')) {
-            $content = git show "${base}:$path"
-            if ($LASTEXITCODE -ne 0) { throw "Missing trusted policy file: $path" }
-            [IO.File]::WriteAllText((Join-Path $policy (Split-Path $path -Leaf)), ($content -join "`n") + "`n")
-          }
-          $pin = (Get-Content -Raw -LiteralPath (Join-Path $policy '.nvmrc')).Trim()
-          if ($pin -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid trusted Node pin' }
-          "WEB_CI_NODE=$pin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "WEB_CI_POLICY=$policy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Set up pinned Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: ${{ env.WEB_CI_NODE }}
-          package-manager-cache: false
-
-      - name: Require selected jobs to succeed
-        working-directory: ${{ github.workspace }}
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-        shell: pwsh
-        run: |
-          $needs = $env:NEEDS_JSON | ConvertFrom-Json -AsHashtable
-          foreach ($job in $needs.Keys) {
-            if ($needs[$job].result -in @('failure', 'cancelled')) {
-              throw "${job}: $($needs[$job].result)"
-            }
-          }
-          # Older base policies have no run_layout output and permit docs-only skips.
-          # Require explicit base classification even when that policy predates layout gating.
-          if ($needs.layout.result -eq 'skipped' -and $needs.classify.outputs.run_layout -cne 'false') {
-            throw 'layout: skipped without explicit run_layout=false'
-          }
-          node "$env:WEB_CI_POLICY/web-ci-paths.mjs" required
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-  deploy_scope:
-    if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      deploy_web: ${{ steps.scope.outputs.deploy_web }}
-    steps:
-      - name: Check out repository history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
       - name: Set up pinned Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-
-      - name: Resolve deployable event diff
-        id: scope
-        working-directory: ${{ github.workspace }}
+      - name: Report layout result and rollback command
         env:
-          TRANSIT_DEPLOY_EVENT: ${{ github.event_name }}
-          TRANSIT_DEPLOY_BEFORE: ${{ github.event.before }}
-          TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
-        run: node .github/scripts/deploy-scope.mjs >> "$GITHUB_OUTPUT"
-
-  preview:
-    name: preview
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    environment:
-      name: preview
-      url: ${{ steps.upload.outputs.url }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up JS workspace
-        uses: ./.github/actions/setup
-
-      - name: Build (adapter-cloudflare)
-        run: bun run build
-
-      # Uploads a version without deploying it; production traffic is untouched.
-      - name: Upload preview version
-        id: upload
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          # checkout builds the PR merge ref, not the feature-branch head.
-          TRANSIT_COMMIT_SHA: ${{ github.sha }}
-          TRANSIT_BRANCH: ${{ github.head_ref }}
-          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
-        run: |
-          ../../node_modules/.bin/wrangler versions upload --preview-alias "pr-$PR_NUMBER" \
-            --message "Preview of PR #$PR_NUMBER, never deploy" --var PUBLIC_INDEXING:false \
-            --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA" --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
-          url="$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")"
-          if [ -z "$url" ]; then
-            echo "::error::No preview URL: Version URLs are off for transit-web until a production deploy applies preview_urls = true."
-            exit 1
-          fi
-          printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
-          printf 'Preview for PR #%s: %s\n' "$PR_NUMBER" "$url" >> "$GITHUB_STEP_SUMMARY"
-
-  deploy-production:
-    name: deploy production
-    concurrency:
-      group: transit-data-edge-production
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    needs: [ci, deploy_scope, ci-work]
-    if: >-
-      ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
-          github.ref == 'refs/heads/main' &&
-          (github.event_name == 'workflow_dispatch' || needs.deploy_scope.outputs.deploy_web == 'true') }}
-    environment: production
-    env:
-      TRANSIT_BUILD_TARGET: production
-      PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
-      PUBLIC_V1_BASE: https://data.yesid.dev/v1
-      PUBLIC_INDEXING: "true"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up JS workspace
-        uses: ./.github/actions/setup
-
-      - name: Require the producer artifact
-        env:
-          TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
-          TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
-          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
-          TRANSIT_PRODUCER_TARGET: ${{ needs.ci-work.outputs.build_target }}
-        run: |
-          [[ "$TRANSIT_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
-          [[ "$TRANSIT_MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
-          [[ "$TRANSIT_PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
-
-      - name: Download the producer artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
-          path: ${{ runner.temp }}/transit-web-build
-          merge-multiple: true
-          digest-mismatch: error
-
-      - name: Restore the verified deployment build
-        working-directory: ${{ github.workspace }}
-        env:
-          TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
-          TRANSIT_PRODUCER_ATTEMPT: ${{ needs.ci-work.outputs.producer_attempt }}
-        run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
-
-      - name: Apply public snapshot CORS
-        working-directory: apps/data-proxy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
-
-      - name: Deploy production Worker
-        working-directory: apps/web
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PUBLIC_PLAUSIBLE_DOMAIN: ${{ vars.PUBLIC_PLAUSIBLE_DOMAIN }}
-          PUBLIC_CF_BEACON_TOKEN: ${{ vars.PUBLIC_CF_BEACON_TOKEN }}
-          TRANSIT_COMMIT_SHA: ${{ github.sha }}
-          TRANSIT_BRANCH: ${{ github.ref_name }}
-        run: >-
-          ../../node_modules/.bin/wrangler deploy
-          --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA"
-          --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
-          ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
-          ${PUBLIC_CF_BEACON_TOKEN:+--var "PUBLIC_CF_BEACON_TOKEN:$PUBLIC_CF_BEACON_TOKEN"}
-
-      - name: Verify shared production routes
-        working-directory: apps/data-proxy
-        run: bash smoke.sh
+          LAYOUT_RESULT: ${{ needs.post-deploy-layout.result }}
+          DEPLOY_RESULT: ${{ needs.deploy-production.result }}
+          ROLLBACK_VERSION: ${{ needs.deploy-production.outputs.rollback_version }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/post-deploy-layout.mjs report

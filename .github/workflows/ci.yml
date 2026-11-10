@@ -2,6 +2,7 @@ name: CI
 
 # Replays migrations and real-DB tests on disposable PostgreSQL.
 on:
+  merge_group:
   pull_request:
     branches: [main]
   push:
