@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,6 +49,46 @@ test('deployment summaries use actual Wrangler versions and reject missing deplo
       writeFileSync(receipt, JSON.stringify({ type: 'wrangler-session' }));
       assert.throws(() => execFileSync(process.execPath, ['--input-type=module', '-e', body], { env, stdio: 'pipe' }));
     }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('older application refs use deployment control files preserved from the main dispatch revision', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'transit-deploy-control-'));
+  const assets = ['.github/actions/setup/action.yml', 'apps/data-proxy/r2-cors.json', 'apps/data-proxy/scripts/configure-data-edge.mjs'];
+  function step(name) {
+    const block = workflow.split(`      - name: ${name}\n`)[1]?.split('\n      - name:')[0];
+    assert.ok(block, `Missing ${name}`);
+    return block.split('        run: |\n')[1].split('\n').map((line) => line.slice(10)).join('\n');
+  }
+  try {
+    const root = join(directory, 'checkout');
+    const temporary = join(directory, 'runner');
+    mkdirSync(root);
+    mkdirSync(temporary);
+    for (const asset of assets) {
+      mkdirSync(join(root, asset, '..'), { recursive: true });
+      writeFileSync(join(root, asset), `main control: ${asset}`);
+    }
+    const run = (name) => {
+      const script = join(directory, 'step.ps1');
+      writeFileSync(script, step(name));
+      execFileSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', script], {
+        cwd: root, env: { ...process.env, RUNNER_TEMP: temporary }, stdio: 'pipe',
+      });
+    };
+    run('Preserve main deployment controls');
+    // Model checkout of a historical ref that has none of these controls.
+    for (const asset of assets) rmSync(join(root, asset));
+    run('Restore main setup action');
+    assert.equal(readFileSync(join(root, assets[0]), 'utf8'), `main control: ${assets[0]}`);
+    for (const asset of assets.slice(1)) {
+      assert.equal(readFileSync(join(temporary, 'transit-deploy-control', asset), 'utf8'), `main control: ${asset}`);
+    }
+    assert.match(workflow, /--file "\$RUNNER_TEMP\/transit-deploy-control\/apps\/data-proxy\/r2-cors.json"/);
+    assert.match(workflow, /node "\$RUNNER_TEMP\/transit-deploy-control\/apps\/data-proxy\/scripts\/configure-data-edge.mjs"/);
+    assert.ok(workflow.indexOf('Preserve main deployment controls') < workflow.indexOf('Check out deployment ref'));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

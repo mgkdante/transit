@@ -31,10 +31,33 @@ jobs:
       PUBLIC_V1_BASE: https://data.yesid.dev/v1
       PUBLIC_INDEXING: "true"
     steps:
+      - name: Check out main dispatch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Preserve main deployment controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $control = Join-Path $env:RUNNER_TEMP 'transit-deploy-control'
+          foreach ($asset in @('.github/actions/setup/action.yml', 'apps/data-proxy/r2-cors.json', 'apps/data-proxy/scripts/configure-data-edge.mjs')) {
+            $destination = Join-Path $control $asset
+            New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+            Copy-Item -LiteralPath $asset -Destination $destination
+          }
+
       - name: Check out deployment ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Restore main setup action
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path '.github/actions/setup' | Out-Null
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'transit-deploy-control/.github/actions/setup/action.yml') -Destination '.github/actions/setup/action.yml' -Force
 
       - name: Resolve deployed commit
         shell: bash
@@ -53,7 +76,7 @@ jobs:
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file "$RUNNER_TEMP/transit-deploy-control/apps/data-proxy/r2-cors.json" --force
 
       - name: Deploy production web Worker
         if: inputs.target == 'web' || inputs.target == 'both'
@@ -119,4 +142,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
-        run: node scripts/configure-data-edge.mjs
+        run: node "$RUNNER_TEMP/transit-deploy-control/apps/data-proxy/scripts/configure-data-edge.mjs"
