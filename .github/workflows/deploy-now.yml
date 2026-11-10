@@ -1,0 +1,122 @@
+name: Admin deploy now
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA or branch to deploy
+        required: true
+        type: string
+      target:
+        description: Production Worker to deploy
+        type: choice
+        options: [web, data-proxy, both]
+        default: web
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    concurrency:
+      group: transit-data-edge-production
+      cancel-in-progress: false
+    env:
+      TRANSIT_BUILD_TARGET: production
+      PUBLIC_SITE_ORIGIN: https://transit.yesid.dev
+      PUBLIC_V1_BASE: https://data.yesid.dev/v1
+      PUBLIC_INDEXING: "true"
+    steps:
+      - name: Check out deployment ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve deployed commit
+        shell: bash
+        run: |
+          printf 'TRANSIT_COMMIT_SHA=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Set up JS workspace
+        uses: ./.github/actions/setup
+
+      - name: Build production web
+        if: inputs.target == 'web' || inputs.target == 'both'
+        working-directory: apps/web
+        run: bun run build
+
+      - name: Apply public snapshot CORS
+        working-directory: apps/data-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
+
+      - name: Deploy production web Worker
+        if: inputs.target == 'web' || inputs.target == 'both'
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TRANSIT_BRANCH: ${{ inputs.ref }}
+          PUBLIC_PLAUSIBLE_DOMAIN: ${{ vars.PUBLIC_PLAUSIBLE_DOMAIN }}
+          PUBLIC_CF_BEACON_TOKEN: ${{ vars.PUBLIC_CF_BEACON_TOKEN }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/deploy-web.ndjson
+        run: >-
+          ../../node_modules/.bin/wrangler deploy
+          --var "TRANSIT_COMMIT_SHA:$TRANSIT_COMMIT_SHA"
+          --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
+          ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
+          ${PUBLIC_CF_BEACON_TOKEN:+--var "PUBLIC_CF_BEACON_TOKEN:$PUBLIC_CF_BEACON_TOKEN"}
+
+      - name: Record web deployment
+        if: inputs.target == 'web' || inputs.target == 'both'
+        env:
+          DEPLOY_TARGET: web
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/deploy-web.ndjson
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+
+          const records = readFileSync(process.env.WRANGLER_OUTPUT_FILE_PATH, 'utf8')
+            .trim().split('\n').map((line) => JSON.parse(line));
+          const deployment = records.findLast((record) => record.type === 'deploy');
+          if (!deployment?.version_id) throw new Error('Wrangler did not report a deployed Worker version');
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `Deployed SHA: ${process.env.TRANSIT_COMMIT_SHA}\n\nTarget: ${process.env.DEPLOY_TARGET}\n\nWorker version: ${deployment.version_id}\n\n`);
+          NODE
+
+      - name: Deploy production data proxy Worker
+        if: inputs.target == 'data-proxy' || inputs.target == 'both'
+        working-directory: apps/data-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/deploy-data-proxy.ndjson
+        run: ../../node_modules/.bin/wrangler deploy
+
+      - name: Record data proxy deployment
+        if: inputs.target == 'data-proxy' || inputs.target == 'both'
+        env:
+          DEPLOY_TARGET: data-proxy
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/deploy-data-proxy.ndjson
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+
+          const records = readFileSync(process.env.WRANGLER_OUTPUT_FILE_PATH, 'utf8')
+            .trim().split('\n').map((line) => JSON.parse(line));
+          const deployment = records.findLast((record) => record.type === 'deploy');
+          if (!deployment?.version_id) throw new Error('Wrangler did not report a deployed Worker version');
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `Deployed SHA: ${process.env.TRANSIT_COMMIT_SHA}\n\nTarget: ${process.env.DEPLOY_TARGET}\n\nWorker version: ${deployment.version_id}\n\n`);
+          NODE
+
+      - name: Configure direct R2 edge caching
+        if: inputs.target == 'data-proxy' || inputs.target == 'both'
+        working-directory: apps/data-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: 8a4ad7999bd6c2259b5b4acd52f39015
+        run: node scripts/configure-data-edge.mjs

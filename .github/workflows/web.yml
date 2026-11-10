@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: web-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 defaults:
   run:
@@ -139,7 +139,7 @@ jobs:
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/deploy-scope.test.mjs
+        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/deploy-now.test.mjs
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
@@ -487,6 +487,9 @@ jobs:
 
   deploy-production:
     name: deploy production
+    concurrency:
+      group: transit-data-edge-production
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [ci, deploy_scope, ci-work]

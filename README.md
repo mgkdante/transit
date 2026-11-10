@@ -45,6 +45,20 @@ Cloudflare account.
   [Architecture wiki](https://yesid-dev.notion.site/3663e8630690815b927dea4888252234?v=4093e8630690803dbdba000c6dfd9439)
   documents how the system is built, tested, deployed and operated.
 
+## Admin deployment
+
+Dispatch from main to build and deploy a selected SHA or branch immediately,
+without running tests or waiting for CI. Targets are `web` (default), `data-proxy`,
+or `both`; the job summary records the deployed SHA and Worker version per target.
+Production deployments share a non-cancelling lock.
+
+```sh
+gh workflow run deploy-now.yml -R yesid-dev/transit --ref main -f ref=<sha> -f target=web
+```
+
+For VM workers, use the existing [worker-only rollout runbook](https://app.notion.com/p/40e3e8630690813a80eddf5efc7752bb),
+including its documented Compose activation command and host preconditions.
+
 ## Analytics
 
 The production site counts visits and a few named interactions with cookieless
