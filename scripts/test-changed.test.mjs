@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { changedFiles, selectSpecs, selectUnits } from './test-changed.mjs';
+import { changedFiles, selectSpecs, selectUnits, changedUnitArgs } from './test-changed.mjs';
 import config from './test-changed.config.json' with { type: 'json' };
 
 const available = ['tests/a.spec.ts', 'tests/b.spec.ts'];
@@ -108,4 +108,10 @@ test('full browser phases preserve separate core and layout preparation', () => 
 	assert.equal(core.env?.TRANSIT_E2E_PANEL_SIZES, undefined);
 	assert.equal(layout.env?.TRANSIT_E2E_PANEL_SIZES, undefined);
 	assert.equal(layout.changedEnv.TRANSIT_E2E_PANEL_SIZES, '1');
+});
+
+test('changed Vitest arguments preserve existing worker limits without duplicate flags', () => {
+    assert.deepEqual(changedUnitArgs('node prepare.mjs && vitest run --maxWorkers=4', 'abc'),
+        ['run', 'test', '--changed', 'abc', '--passWithNoTests']);
+    assert.equal(changedUnitArgs('vitest run', 'abc').filter(arg => arg.startsWith('--maxWorkers')).length, 1);
 });
