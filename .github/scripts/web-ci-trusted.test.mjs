@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  existsSync,
   writeFileSync,
   rmSync,
 } from "node:fs";
@@ -84,9 +85,9 @@ function fixture(t, policy = policies.current) {
     GITHUB_ENV: join(directory, "env"),
     GITHUB_OUTPUT: join(directory, "output"),
   };
-  const run = (job, name, extra = {}) => {
+  const run = (job, name, extra = {}, prologue = "") => {
     const script = join(directory, "step.ps1");
-    writeFileSync(script, workflowRun(job, name));
+    writeFileSync(script, `${prologue}\n${workflowRun(job, name)}`);
     return spawnSync(
       "pwsh",
       ["-NoProfile", "-NonInteractive", "-File", script],
@@ -105,6 +106,45 @@ function fixture(t, policy = policies.current) {
     );
   return { directory, root, git, base, env, run, setEvent };
 }
+function queuedFixture(t, missingPolicy = false) {
+  const f = fixture(t);
+  if (missingPolicy) {
+    f.git("rm", "--", ".github/scripts/web-ci-paths.mjs");
+    f.git("commit", "--quiet", "-m", "Main without policy");
+    f.git("branch", "-f", "main", f.git("rev-parse", "HEAD"));
+    mkdirSync(join(f.root, ".github/scripts"), { recursive: true });
+  }
+  writeFileSync(
+    join(f.root, ".github/scripts/web-ci-paths.mjs"),
+    'throw new Error("Temporary queue policy must not execute");\n',
+  );
+  writeFileSync(join(f.root, ".nvmrc"), "99.0.0\n");
+  f.git("add", "--", ".github/scripts/web-ci-paths.mjs", ".nvmrc");
+  f.git("commit", "--quiet", "-m", "Previous queue entry");
+  const queueBase = f.git("rev-parse", "HEAD");
+  writeFileSync(join(f.root, "README.md"), "Current queue entry\n");
+  f.git("add", "--", "README.md");
+  f.git("commit", "--quiet", "-m", "Current queue entry");
+  const head = f.git("rev-parse", "HEAD");
+  writeFileSync(
+    f.env.GITHUB_EVENT_PATH,
+    JSON.stringify({ merge_group: { base_sha: queueBase, head_sha: head } }),
+  );
+  const event = { GITHUB_EVENT_NAME: "merge_group", GITHUB_SHA: head };
+  return { ...f, head, event };
+}
+function policyEnvironment(f) {
+  return Object.fromEntries(
+    readFileSync(f.env.GITHUB_ENV, "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => {
+        const separator = line.indexOf("=");
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }),
+  );
+}
+
 function needs(extraResult) {
   return {
     classify: { result: "success", outputs: { run_e2e: "true" } },
@@ -205,6 +245,129 @@ for (const [version, source] of Object.entries(policies)) {
   }
 }
 for (const job of ["classify", "ci"]) {
+  test(`${job} uses trusted main and full classification for a non-first merge group`, (t) => {
+    const f = queuedFixture(t);
+    const event = f.event;
+    const result = f.run(job, "Materialize trusted web policy", event);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const trusted = policyEnvironment(f);
+    assert.equal(
+      readFileSync(join(trusted.WEB_CI_POLICY, "web-ci-paths.mjs"), "utf8"),
+      policies.current.toString(),
+    );
+    assert.equal(trusted.WEB_CI_NODE, nodePin.trim());
+    assert.equal(trusted.WEB_CI_FORCE_FULL, "true");
+    if (job === "classify") {
+      const classified = f.run(job, "Classify web paths", {
+        ...event,
+        ...trusted,
+      });
+      assert.equal(classified.status, 0, classified.stderr + classified.stdout);
+      assert.equal(
+        readFileSync(f.env.GITHUB_OUTPUT, "utf8"),
+        "run_e2e=true\nrun_layout=true\n",
+      );
+    } else {
+      const input = needs("success");
+      input.classify.outputs.run_layout = "true";
+      const aggregate = (value) =>
+        f.run(job, "Require selected jobs to succeed", {
+          ...event,
+          ...trusted,
+          NEEDS_JSON: JSON.stringify(value),
+        });
+      const accepted = aggregate(input);
+      assert.equal(accepted.status, 0, accepted.stderr + accepted.stdout);
+      for (const lane of ["e2e", "layout"]) {
+        for (const selection of ["false", undefined]) {
+          const skipped = structuredClone(input);
+          skipped.classify.outputs[`run_${lane}`] = selection;
+          skipped[lane].result = "skipped";
+          assert.notEqual(aggregate(skipped).status, 0);
+        }
+      }
+    }
+  });
+
+  test(`${job} fails closed on injected ancestry lookup errors`, (t) => {
+    const f = fixture(t);
+    f.git("commit", "--quiet", "--allow-empty", "-m", "Queued head");
+    const head = f.git("rev-parse", "HEAD");
+    writeFileSync(
+      f.env.GITHUB_EVENT_PATH,
+      JSON.stringify({ merge_group: { base_sha: f.base, head_sha: head } }),
+    );
+    for (const status of [128, 2]) {
+      const fault = `$nativeGit = (Get-Command git -CommandType Application).Source
+function git {
+  if ($args[0] -eq 'merge-base' -and $args[1] -eq '--is-ancestor' -and $args[3] -eq 'refs/remotes/origin/main') {
+    $global:LASTEXITCODE = ${status}
+    return
+  }
+  & $nativeGit @args
+  $global:LASTEXITCODE = $LASTEXITCODE
+}`;
+      const result = f.run(
+        job,
+        "Materialize trusted web policy",
+        {
+          GITHUB_EVENT_NAME: "merge_group",
+          GITHUB_SHA: head,
+        },
+        fault,
+      );
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.equal(existsSync(f.env.GITHUB_ENV), false);
+      assert.equal(existsSync(f.env.GITHUB_OUTPUT), false);
+    }
+  });
+
+  test(`${job} rejects invalid or unrelated queued HEADs without policy output`, (t) => {
+    const f = queuedFixture(t);
+    for (const head of [undefined, "bad", f.base]) {
+      const result = f.run(job, "Materialize trusted web policy", {
+        ...f.event,
+        GITHUB_SHA: head,
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(
+        result.stderr,
+        head === f.base
+          ? /Merge-group base is not an ancestor of queued HEAD/
+          : /Invalid queued HEAD SHA/,
+      );
+      assert.equal(existsSync(f.env.GITHUB_ENV), false);
+    }
+  });
+
+  test(`${job} rejects trusted main outside the queued ancestry`, (t) => {
+    const f = queuedFixture(t);
+    f.git("checkout", "--quiet", "main");
+    f.git(
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "Main advanced independently",
+    );
+    f.git("checkout", "--quiet", "--detach", f.head);
+    const result = f.run(job, "Materialize trusted web policy", f.event);
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      /Trusted main is not an ancestor of queued HEAD/,
+    );
+    assert.equal(existsSync(f.env.GITHUB_ENV), false);
+  });
+
+  test(`${job} rejects missing fallback policy files without policy output`, (t) => {
+    const f = queuedFixture(t, true);
+    const result = f.run(job, "Materialize trusted web policy", f.event);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Missing trusted policy file/);
+    assert.equal(existsSync(f.env.GITHUB_ENV), false);
+  });
+
   test(`${job} materializes the merge-group base rather than the head or latest main`, (t) => {
     const f = fixture(t);
     writeFileSync(
@@ -262,11 +425,14 @@ for (const job of ["classify", "ci"]) {
       );
       const result = f.run(job, "Materialize trusted web policy", {
         GITHUB_EVENT_NAME: "merge_group",
+        GITHUB_SHA: f.base,
       });
       assert.notEqual(result.status, 0);
       assert.match(
         result.stderr,
-        /Invalid policy base SHA|not reachable from origin\/main/,
+        base === undefined
+          ? /Invalid policy base SHA/
+          : /Merge-group base is not an ancestor of queued HEAD/,
       );
     }
   });
