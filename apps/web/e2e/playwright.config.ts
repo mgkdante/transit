@@ -145,9 +145,16 @@ export default defineConfig({
 								],
 							},
 							bypassCSP: true,
-							// Findings attach text and geometry; recording known failures across
-							// the matrix is costly and adds no layout assertion evidence.
-							trace: 'off' as const,
+							// Keep a lean trace only for unexpected failures: the action and network
+							// log shows route races. DOM snapshots and screenshots stay off because
+							// findings already attach text and geometry, and recording them across
+							// the matrix is costly.
+							trace: {
+								mode: 'retain-on-failure' as const,
+								snapshots: false,
+								screenshots: false,
+								sources: false,
+							},
 							launchOptions: {
 								executablePath: browserName === 'chromium' ? executablePath : undefined,
 							},
