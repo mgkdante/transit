@@ -247,8 +247,11 @@ def test_tracked_toolchain_inventory_has_only_reviewed_owners_and_images() -> No
     assert _inventory_violations(_tracked_sources()) == []
 
 
-def test_layout_uses_the_approved_playwright_container_without_host_browser_installation() -> None:
-    job = _yaml(WORKFLOWS / "web.yml")["jobs"]["layout"]
+@pytest.mark.parametrize("job_name", ["layout", "post-deploy-layout"])
+def test_layout_uses_the_approved_playwright_container_without_host_browser_installation(
+    job_name: str,
+) -> None:
+    job = _yaml(WORKFLOWS / "web.yml")["jobs"][job_name]
     assert job["container"]["image"] == PLAYWRIGHT_CONTAINER
     assert job["container"]["options"] == "--ipc=host"
     assert _json("package.json")["devDependencies"]["@playwright/test"] == PLAYWRIGHT_VERSION
@@ -256,8 +259,9 @@ def test_layout_uses_the_approved_playwright_container_without_host_browser_inst
     assert "playwright install" not in runs
     assert "apt" not in runs
     assert "ImageOS" not in json.dumps(job)
-    assert "--shard=${{ matrix.shard }}/4" in runs
-    assert job["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    assert '--test-list="$RUNNER_TEMP/layout-plan/shard-${{ matrix.shard }}.txt"' in runs
+    assert "--shard=" not in runs
+    assert job["strategy"]["matrix"]["shard"] == list(range(1, 13))
     setup = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/setup")
     assert setup["with"]["layout-container"] == "true"
     installer = next(
@@ -778,6 +782,8 @@ def test_pr_and_deployed_layout_share_the_complete_measured_grid() -> None:
     after = jobs["post-deploy-layout"]
     assert before["strategy"]["matrix"]["shard"] == list(range(1, 13))
     assert after["strategy"] == before["strategy"]
+    assert after["container"] == before["container"]
+    assert after["defaults"] == before["defaults"]
     assert after["steps"] == before["steps"]
     assert after["needs"] == ["deploy-production"]
     assert "identity_verified == 'true'" in after["if"]
