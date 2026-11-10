@@ -542,16 +542,18 @@ test('fails closed on unsupported platforms and Playwright mirror overrides', as
 			'PLAYWRIGHT_BROWSERS_PATH',
 			'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD',
 		]) {
-			await assert.rejects(
-				installBrowserToolchain({
-					repoRoot: subject.root,
-					installRoot: subject.installRoot,
-					platform: 'linux',
-					arch: 'x64',
-					env: { [variable]: '' },
-				}),
-				/browser environment overrides are not allowed/u,
-			);
+			for (const value of ['', '/ms-playwright']) {
+				await assert.rejects(
+					installBrowserToolchain({
+						repoRoot: subject.root,
+						installRoot: subject.installRoot,
+						platform: 'linux',
+						arch: 'x64',
+						env: { [variable]: value },
+					}),
+					/browser environment overrides are not allowed/u,
+				);
+			}
 		}
 	} finally {
 		await rm(subject.root, { recursive: true, force: true });
