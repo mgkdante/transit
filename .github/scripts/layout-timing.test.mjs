@@ -120,6 +120,62 @@ test("the full grid keeps its workers and emits timing artifacts even after a te
   assert.match(layout, /if-no-files-found: error/);
 });
 
+test("unrelated annotated skips are rejected instead of being relabeled not applicable", () => {
+  const root = mkdtempSync(join(tmpdir(), "transit-layout-skip-rule-"));
+  try {
+    const item = {
+      expectedStatus: "skipped",
+      projectName: "layout-chromium-1440-light",
+      annotations: [
+        {
+          type: "skip",
+          description: "desktop shows the detail panel, not the sheet",
+        },
+      ],
+      results: [{ status: "skipped", duration: 0 }],
+    };
+    const spec = {
+      id: "desktop-sheet",
+      file: "layout-map.spec.ts",
+      title:
+        "mobile detail sheet keeps its header controls above the home indicator at peek @layout",
+      tests: [item],
+    };
+    for (const patch of [
+      { title: "unrelated disabled regression" },
+      { file: "layout-other.spec.ts" },
+      { tests: [{ ...item, projectName: "layout-chromium-390-light" }] },
+      {
+        tests: [
+          {
+            ...item,
+            annotations: [
+              {
+                type: "skip",
+                description: "Temporarily disabled because flaky; TODO repair",
+              },
+            ],
+          },
+        ],
+      },
+    ]) {
+      const value = {
+        ...report,
+        stats: { ...report.stats, skipped: 1 },
+        suites: [{ specs: [report.suites[0].specs[0], { ...spec, ...patch }] }],
+      };
+      writeFileSync(join(root, "report.json"), JSON.stringify(value));
+      assert.throws(() => recordTiming(root, env), /Incomplete/);
+      assert.equal(
+        JSON.parse(readFileSync(join(root, "metadata.json"), "utf8")).status,
+        "rejected",
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("declared not-applicable cases retain observed overhead without claiming asserted execution", () => {
   const root = mkdtempSync(join(tmpdir(), "transit-layout-applicability-"));
   try {
@@ -129,7 +185,7 @@ test("declared not-applicable cases retain observed overhead without claiming as
       annotations: [
         {
           type: "skip",
-          description: "desktop shows a panel, not the mobile sheet",
+          description: "desktop shows the detail panel, not the sheet",
         },
       ],
       results: [{ status: "skipped", duration: 203 }],
@@ -144,7 +200,8 @@ test("declared not-applicable cases retain observed overhead without claiming as
             {
               id: "mobile-sheet-desktop",
               file: "layout-map.spec.ts",
-              title: "mobile sheet",
+              title:
+                "mobile detail sheet keeps its header controls above the home indicator at peek @layout",
               tests: [item],
             },
           ],

@@ -4,6 +4,27 @@ import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { plannedCoverage } from "./layout-shards.mjs";
 
+function reviewedApplicability(spec, item) {
+  const desktop = /^layout-(?:chromium|webkit)-(\d+)-(?:light|dark)$/.exec(
+    item.projectName ?? "",
+  );
+  if (
+    spec.file !== "layout-map.spec.ts" ||
+    spec.title !==
+      "mobile detail sheet keeps its header controls above the home indicator at peek @layout" ||
+    !desktop ||
+    Number(desktop[1]) < 1024 ||
+    item.expectedStatus !== "skipped"
+  )
+    return undefined;
+  return item.annotations?.find(
+    (annotation) =>
+      annotation.type === "skip" &&
+      annotation.description ===
+        "desktop shows the detail panel, not the sheet",
+  );
+}
+
 function caseCount(suites, notApplicable) {
   if (!Array.isArray(suites)) throw new Error("Invalid timing suites");
   return suites.reduce(
@@ -11,12 +32,7 @@ function caseCount(suites, notApplicable) {
       total +
       (suite.specs ?? []).reduce((count, spec) => {
         for (const item of spec.tests) {
-          const skip = item.annotations?.find(
-            (annotation) =>
-              annotation.type === "skip" &&
-              typeof annotation.description === "string" &&
-              annotation.description.trim(),
-          );
+          const skip = reviewedApplicability(spec, item);
           const declared =
             item.expectedStatus === "skipped" &&
             skip &&
