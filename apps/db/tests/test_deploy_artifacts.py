@@ -512,12 +512,21 @@ def test_real_db_ci_uses_a_disposable_postgres_service() -> None:
     runs = [step for step in job["steps"] if "run" in step]
     scrub = "unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE\n"
     assert [step["run"].strip() for step in runs] == [
-        "bash scripts/verify-runtime-images.sh",
         scrub + "uv run alembic upgrade head",
         scrub + "uv run pytest tests -n 4 --dist worksteal "
         "--max-worker-restart=0 --durations=20",
     ]
     assert all(step["working-directory"] == "apps/db" for step in runs)
+
+    # Container verification has no live-DB dependency and remains required once,
+    # alongside the DB suite rather than on its critical path.
+    verification_steps = [
+        (name, step["working-directory"])
+        for name, details in document["jobs"].items()
+        for step in details.get("steps", [])
+        if step.get("run") == "bash scripts/verify-runtime-images.sh"
+    ]
+    assert verification_steps == [("offline-tests-work", "apps/db")]
 
     required_job = document["jobs"]["required-contexts"]
     assert required_job["needs"] == [
