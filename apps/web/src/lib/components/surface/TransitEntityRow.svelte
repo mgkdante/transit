@@ -2,6 +2,7 @@
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
 	import type { Snippet } from 'svelte';
+	import { Badge } from '@yesid/ui/badge';
 	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { cn } from '#lib/utils/index.ts';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
@@ -85,7 +86,7 @@
 			<span class="entity-row-title">
 				<span class="entity-row-title-text readable-name" {title} use:readableName>{title}</span>
 				{#if tag}
-					<span class="entity-row-tag">{tag}</span>
+					<Badge variant="tag">{tag}</Badge>
 				{/if}
 			</span>
 			{#if subtitle}
@@ -113,7 +114,15 @@
 
 {#if presentation === 'card'}
 	<div class={cn('entity-result-row', className)} data-slot="entity-result-row">
-		<div class="entity-result-main" data-slot="entity-result-main">{@render children?.()}</div>
+		<div class="entity-result-main" data-slot="entity-result-main">
+			{#if children}{@render children()}{:else if href}<a
+					{href}
+					class="entity-row"
+					data-slot="vehicle-result"
+					aria-label={ariaLabel}
+					data-sveltekit-preload-data="hover">{@render rowContent()}</a
+				>{:else}{@render rowContent()}{/if}
+		</div>
 		{#if status}
 			<div class="entity-result-status" data-slot="entity-result-status">{@render status()}</div>
 		{/if}
@@ -156,13 +165,26 @@
 {#if presentation !== 'card'}{@render actions?.()}{/if}
 
 <style>
+	.entity-result-main :global(.entity-row) {
+		padding: 0;
+	}
+	.entity-result-main :global(.entity-row:hover) {
+		background: transparent;
+	}
+	.entity-result-row:hover {
+		background: var(--muted);
+	}
+	.entity-result-row {
+		border-radius: var(--radius-lg);
+	}
+
 	.entity-row,
 	.vehicle-row {
 		display: flex;
 		align-items: center;
 		gap: var(--entity-gap, 0.875rem);
 		padding: var(--entity-padding, 0.75rem 0.875rem);
-		border-radius: var(--radius-md);
+		border-radius: var(--entity-radius, var(--radius-md));
 		color: var(--foreground);
 		text-decoration: none;
 		transition: background-color var(--duration-fast) var(--ease-default);
@@ -214,25 +236,14 @@
 	.entity-row-title-text {
 		font-family: var(--font-heading);
 		font-weight: 600;
-		font-size: var(--text-body);
+		font-size: var(--entity-title-size, var(--text-body));
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: normal;
 	}
-	.entity-row-tag {
-		flex-shrink: 0;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		padding: 0.05rem 0.375rem;
-		border-radius: var(--radius-pill);
-		background-color: var(--muted);
-		color: var(--muted-foreground);
-	}
 	.entity-row-subtitle {
 		color: var(--muted-foreground);
-		font-size: var(--text-small);
+		font-size: var(--entity-body-size, var(--text-small));
 		line-height: 1.4;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -246,17 +257,17 @@
 	}
 	.entity-row-route {
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		font-size: var(--entity-meta-size, var(--text-small));
 		line-height: 1.1;
 		padding: 0.125rem 0.375rem;
-		border-radius: var(--radius-md);
+		border-radius: var(--radius-lg);
 		background-color: var(--muted);
 		color: var(--muted-foreground);
 	}
 	.entity-row-meta {
 		flex-shrink: 0;
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		font-size: var(--entity-meta-size, var(--text-small));
 		color: var(--muted-foreground);
 	}
 
@@ -272,7 +283,7 @@
 		grid-template-areas: 'main status action';
 		align-items: center;
 		gap: 0.75rem;
-		padding-right: 0.5rem;
+		padding: 1rem;
 	}
 
 	.entity-result-main {
@@ -290,17 +301,17 @@
 		flex: none;
 	}
 
-	@media (max-width: 32rem) {
+	@container entity-card (max-width: 26rem) {
 		.entity-result-row {
 			grid-template-columns: minmax(0, 1fr) auto;
 			grid-template-areas:
-				'main action'
+				'main main'
 				'status action';
 			row-gap: 0.25rem;
 		}
 
 		.entity-result-status {
-			padding-left: 0.875rem;
+			padding-left: 0;
 		}
 	}
 

@@ -160,7 +160,7 @@ describe.each(['en', 'fr'] as const)('VehicleResultRow published status in %s', 
 		expect(reading.textContent).not.toMatch(/late|early|On time|retard|avance|heure/);
 		const link = container.querySelector('a')!;
 		if (status === 'unknown' && delay == null) {
-			expect(link.textContent?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
+			expect(container.textContent?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
 			expect(link.getAttribute('aria-label')?.match(new RegExp(statusLabel, 'g'))).toHaveLength(1);
 			expect(link.getAttribute('aria-label')).toContain(
 				locale === 'en' ? 'not reported in the live feed' : 'non signalé dans le flux en direct',

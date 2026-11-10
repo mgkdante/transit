@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { readableName } from '#lib/components/surface/readableName.ts';
 	import '#lib/components/surface/compact-row.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
@@ -58,7 +59,6 @@
 	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 	import { formatUtc } from '#lib/utils/time.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import MapPinIcon from '@lucide/svelte/icons/map-pin';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
 	import { selectDayVerdictHeadline } from './reliability/selectors/dayVerdictHeadline';
 	import { routeVerdictCopy } from './reliability/routeVerdict.copy';
@@ -512,8 +512,21 @@
 																			{locale}
 																		/></span
 																	>
-																	{#if bus.next_stop != null}<span class="route-roster-next"
-																			>{t.roster.nextStop(bus.next_stop)}</span
+																	{#if bus.next_stop != null}<span
+																			class="route-roster-next readable-name"
+																			use:readableName
+																			title={t.roster.nextStop(
+																				route.data?.directions
+																					?.flatMap((d) => d.stops ?? [])
+																					.find((s) => s.id === bus.next_stop)?.name ??
+																					bus.next_stop,
+																			)}
+																			>{t.roster.nextStop(
+																				route.data?.directions
+																					?.flatMap((d) => d.stops ?? [])
+																					.find((s) => s.id === bus.next_stop)?.name ??
+																					bus.next_stop,
+																			)}</span
 																		>{/if}
 																</div>
 															{/snippet}
@@ -535,14 +548,11 @@
 																	{@render rosterRow()}
 																</div>
 															{/if}
-															<a
-																class="route-roster-map"
+															<MapDrilldownLink
 																href={localizeHref(mapHrefFor({ vehicle: bus.id }, locale), locale)}
-																aria-label={t.roster.viewBusOnMap(bus.id)}
-															>
-																<MapPinIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-																<span>{t.roster.mapAction}</span>
-															</a>
+																label={t.roster.mapAction}
+																context={t.roster.viewBusOnMap(bus.id)}
+															/>
 														</li>
 													{/each}
 												</ul>
@@ -710,6 +720,7 @@
 		gap: 0.5rem;
 	}
 	.route-roster-reading {
+		font-size: var(--text-card-body);
 		display: flex;
 		flex: 1;
 		flex-wrap: wrap;
@@ -741,32 +752,9 @@
 			opacity var(--duration-fast) var(--ease-out),
 			transform var(--duration-fast) var(--ease-out);
 	}
-	a.route-roster-link:hover {
-		background: color-mix(in srgb, var(--primary) 7%, transparent);
-	}
 	a.route-roster-link:hover :global(svg) {
 		opacity: 1;
 		transform: translateX(2px);
-	}
-	.route-roster-map {
-		flex-shrink: 0;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.375rem 0.5rem;
-		border-radius: var(--radius-pill);
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		color: var(--muted-foreground);
-		text-decoration: none;
-		border: 1px solid var(--border);
-		transition:
-			color var(--duration-fast) var(--ease-out),
-			border-color var(--duration-fast) var(--ease-out);
-	}
-	.route-roster-map:hover {
-		color: var(--primary);
-		border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
 	}
 	.route-departures {
 		display: flex;
@@ -800,8 +788,7 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.route-roster-link,
-		.route-roster-link :global(svg),
-		.route-roster-map {
+		.route-roster-link :global(svg) {
 			transition: none;
 		}
 		a.route-roster-link:hover :global(svg) {

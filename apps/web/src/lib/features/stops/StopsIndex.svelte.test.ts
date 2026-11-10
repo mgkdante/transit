@@ -305,7 +305,7 @@ describe('StopsIndex listing system', () => {
 
 		await screen.findByRole('link', { name: /Van Horne \/ Rockland/i });
 		expect(
-			container.querySelector('[data-slot="entity-result-row"] .entity-row-tag'),
+			container.querySelector('[data-slot="entity-result-row"] [data-slot="badge"]'),
 		).toHaveTextContent('Bus');
 		expect(container.querySelectorAll('[data-slot="entity-result-row"]')).toHaveLength(1);
 	});
@@ -429,7 +429,7 @@ describe('StopsIndex — find by typing', () => {
 			'/stop/11000',
 		);
 		expect(
-			container.querySelector('[data-slot="entity-result-row"] .entity-row-tag'),
+			container.querySelector('[data-slot="entity-result-row"] [data-slot="badge"]'),
 		).toHaveTextContent('Métro');
 	});
 });

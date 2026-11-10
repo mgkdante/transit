@@ -9,9 +9,9 @@
 	position: relative;
 	margin: 0;
 	border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
-	border-radius: var(--radius-md);
+	border-radius: var(--radius-lg);
 	background: color-mix(in srgb, var(--alert-tone) 9%, var(--card));
-	padding: 0.625rem 0.75rem;
+	padding: 1rem;
 	overflow: hidden;
 }
 
@@ -41,7 +41,7 @@
 .affected-alert-dot,
 .alert-history-dot {
 	flex: none;
-	font-size: var(--text-small);
+	font-size: var(--text-card-title);
 	line-height: 1.2;
 	color: var(--alert-tone);
 	font-variant-emoji: text;
@@ -50,7 +50,7 @@
 .affected-alert-title,
 .alert-history-title {
 	min-width: 0;
-	font-size: var(--text-small);
+	font-size: var(--text-card-title);
 	font-weight: 500;
 	line-height: 1.35;
 	color: var(--foreground);
@@ -75,7 +75,7 @@
 .affected-alert-meta dt,
 .alert-history-meta dt {
 	font-family: var(--font-mono);
-	font-size: var(--text-micro);
+	font-size: var(--text-card-meta);
 	font-weight: 500;
 	letter-spacing: var(--tracking-eyebrow);
 	text-transform: uppercase;
@@ -86,7 +86,7 @@
 .alert-history-meta dd {
 	margin: 0;
 	min-width: 0;
-	font-size: var(--text-caption);
+	font-size: var(--text-card-body);
 	font-weight: 500;
 	color: var(--foreground);
 }
@@ -94,6 +94,6 @@
 .alert-language-marker {
 	margin-inline-start: 0.375rem;
 	color: var(--muted-foreground);
-	font-size: var(--text-caption);
+	font-size: var(--text-card-body);
 	font-weight: 400;
 }

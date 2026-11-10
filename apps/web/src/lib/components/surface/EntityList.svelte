@@ -2,7 +2,6 @@
 	import type { Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '#lib/utils/index.ts';
-	import { DashboardGrid } from '@yesid/ui/layout';
 	import { Card } from '@yesid/ui/card';
 
 	interface EntityListProps extends Omit<HTMLAttributes<HTMLUListElement>, 'children'> {
@@ -12,7 +11,6 @@
 		max?: number;
 		truncatedLabel?: string;
 		grid?: boolean;
-		minTile?: string;
 		cards?: boolean;
 		class?: string;
 	}
@@ -24,7 +22,6 @@
 		max = 200,
 		truncatedLabel,
 		grid = false,
-		minTile = '360px',
 		cards = false,
 		class: className,
 		...restProps
@@ -32,8 +29,6 @@
 
 	const visible = $derived(items.slice(0, max));
 	const truncated = $derived(items.length > max);
-
-	const gridRest = $derived(restProps as Omit<HTMLAttributes<HTMLElement>, 'class'>);
 </script>
 
 {#snippet renderItem(item: T)}
@@ -46,70 +41,76 @@
 	{/if}
 {/snippet}
 
-{#if grid}
-	<DashboardGrid
-		as="ul"
-		{minTile}
-		gutter={false}
-		class={cn('entity-list', 'entity-list--grid', cards && 'entity-list--cards', className)}
-		data-slot="entity-list"
-		{...gridRest}
-	>
-		{#each visible as item (key(item))}
-			<li class="entity-list-item">{@render renderItem(item)}</li>
-		{/each}
-		{#if truncated && truncatedLabel}
-			<li class="entity-list-more">{truncatedLabel}</li>
-		{/if}
-	</DashboardGrid>
-{:else}
+<div class="entity-list-container">
 	<ul
-		class={cn('entity-list', cards && 'entity-list--cards', className)}
+		class={cn('entity-list', grid && 'entity-list--grid', cards && 'entity-list--cards', className)}
 		data-slot="entity-list"
 		{...restProps}
 	>
-		{#each visible as item (key(item))}
-			<li class="entity-list-item">{@render renderItem(item)}</li>
-		{/each}
-		{#if truncated && truncatedLabel}
-			<li class="entity-list-more">{truncatedLabel}</li>
-		{/if}
+		{#each visible as item (key(item))}<li class="entity-list-item">
+				{@render renderItem(item)}
+			</li>{/each}
+		{#if truncated && truncatedLabel}<li class="entity-list-more">{truncatedLabel}</li>{/if}
 	</ul>
-{/if}
+</div>
 
 <style>
-	.entity-list:not(.entity-list--grid) {
+	.entity-list-container {
+		container-type: inline-size;
+	}
+	.entity-list {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 		display: flex;
 		flex-direction: column;
 	}
-	.entity-list-item {
+	.entity-list--cards {
+		gap: var(--space-card-gap);
+	}
+	.entity-list:not(.entity-list--cards) .entity-list-item:not(:last-child) {
 		border-bottom: 1px solid var(--border-subtle, var(--border));
 	}
-	.entity-list-item:last-child {
-		border-bottom: none;
+	.entity-list-item {
+		min-width: 0;
 	}
-	.entity-list--cards:not(.entity-list--grid) {
-		gap: 1rem;
-	}
-	.entity-list--cards .entity-list-item {
-		border-bottom: none;
+	.entity-list--grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--space-card-gap);
+		align-items: stretch;
 	}
 	:global(.card-surface.entity-list-card) {
-		border-width: 3px;
-	}
-	.entity-list--grid:not(.entity-list--cards) .entity-list-item {
-		border-bottom: none;
-		border: 1px solid var(--border);
+		container: entity-card / inline-size;
+		--entity-gap: 0.75rem;
+		--entity-padding: 1rem;
+		--entity-title-size: var(--text-card-title);
+		--entity-body-size: var(--text-card-body);
+		--entity-meta-size: var(--text-card-meta);
+		--entity-radius: var(--radius-lg);
 		border-radius: var(--radius-lg);
-		background: var(--card);
+		box-shadow:
+			var(--shadow-card),
+			inset 0 1px 0 var(--edge-highlight);
+	}
+	:global(.entity-list-card:has(:focus-visible)) {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
 	}
 	.entity-list-more {
-		padding: 0.75rem 0.875rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		grid-column: 1 / -1;
+		padding: 1rem;
+		font-size: var(--text-card-meta);
 		color: var(--muted-foreground);
+	}
+	@container (min-width:46.5rem) {
+		.entity-list--grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	@container (min-width:70.5rem) {
+		.entity-list--grid {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
 	}
 </style>

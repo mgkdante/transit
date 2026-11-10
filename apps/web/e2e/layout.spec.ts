@@ -15,6 +15,9 @@ const pages = [
 	'/',
 	'/map?vehicle=layout-bus',
 	'/lines',
+	'/stops',
+	'/stops?q=Fixture',
+	`/stops?route=${line}`,
 	`/lines/${line}`,
 	`/stop/${stop}`,
 	'/network',
@@ -41,6 +44,8 @@ for (const locale of ['en', 'fr'] as const)
 					}),
 				);
 				await page.goto(localizeHref(path, locale), { waitUntil: 'networkidle' });
+				if (path.startsWith('/stops?q='))
+					await page.getByTestId('stops-filter-input').fill('Fixture');
 				await expect(page.getByRole('main')).toBeVisible();
 				await page.evaluate(() => document.fonts.ready);
 				await page.waitForTimeout(250);

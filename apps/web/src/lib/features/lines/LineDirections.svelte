@@ -181,7 +181,7 @@
 		text-align: right;
 	}
 	.line-stop-name {
-		font-size: var(--text-body);
+		font-size: var(--text-card-body);
 		color: var(--foreground);
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -239,12 +239,6 @@
 		transition:
 			opacity var(--duration-fast) var(--ease-out),
 			transform var(--duration-fast) var(--ease-out);
-	}
-	.line-stop-link:hover {
-		background: color-mix(in srgb, var(--primary) 7%, transparent);
-	}
-	.line-stop-link:hover .line-stop-name {
-		color: var(--primary);
 	}
 	.line-stop-link:hover :global(svg) {
 		opacity: 1;
