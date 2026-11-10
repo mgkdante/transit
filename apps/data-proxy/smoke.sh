@@ -134,18 +134,24 @@ assert_missing_edge_bypass() {
 }
 
 assert_retired_provider() {
-  local url="$1" expected_status="${2:-410}" status attempt
+  local url="$1" expected_status="${2:-410}" status attempt last_result curl_exit
   for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
-    status="$(status_of --path-as-is "$url")"
-    if [ "$status" = "$expected_status" ]; then
-      ok "$url retired provider -> $expected_status"
-      return
+    if status="$(status_of --path-as-is "$url")"; then
+      last_result="status $status"
+      if [ "$status" = "$expected_status" ]; then
+        ok "$url retired provider -> $expected_status"
+        return
+      fi
+    else
+      curl_exit=$?
+      last_result="curl exit $curl_exit"
+      echo "wait: $url retired provider curl exit $curl_exit (attempt $attempt/$EDGE_MAX_ATTEMPTS)" >&2
     fi
     if [ "$attempt" -lt "$EDGE_MAX_ATTEMPTS" ]; then
       sleep "$EDGE_RETRY_DELAY_S"
     fi
   done
-  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without retired-provider $expected_status"
+  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without retired-provider $expected_status (last $last_result)"
 }
 
 # --- direct R2 custom domain: manifest + all three tiers + provenance (hard asserts;
