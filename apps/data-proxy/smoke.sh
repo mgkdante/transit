@@ -116,11 +116,19 @@ assert_range_preflight() {
 }
 
 assert_missing_edge_bypass() {
-  local url="$1" headers attempt
+  local url="$1" headers attempt curl_exit
 
   for attempt in 1 2; do
-    headers="$(response_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")" \
-      || fail "$url missing-object cache probe failed"
+    if headers="$(response_headers_of "$url" -H "Origin: $BROWSER_ORIGIN")"; then
+      :
+    else
+      curl_exit=$?
+      echo "wait: $url missing-object cache probe curl exit $curl_exit (attempt $attempt/2)" >&2
+      if [ "$attempt" -eq 2 ]; then
+        fail "$url missing-object cache probe exhausted 2 attempts (last curl exit $curl_exit)"
+      fi
+      continue
+    fi
     grep -Eq '^HTTP/[^ ]+ 404' <<<"$headers" \
       || fail "$url missing-object cache probe did not return 404"
     if grep -qi '^cf-cache-status: HIT$' <<<"$headers"; then
@@ -134,18 +142,24 @@ assert_missing_edge_bypass() {
 }
 
 assert_retired_provider() {
-  local url="$1" expected_status="${2:-410}" status attempt
+  local url="$1" expected_status="${2:-410}" status attempt last_result curl_exit
   for ((attempt = 1; attempt <= EDGE_MAX_ATTEMPTS; attempt++)); do
-    status="$(status_of --path-as-is "$url")"
-    if [ "$status" = "$expected_status" ]; then
-      ok "$url retired provider -> $expected_status"
-      return
+    if status="$(status_of --path-as-is "$url")"; then
+      last_result="status $status"
+      if [ "$status" = "$expected_status" ]; then
+        ok "$url retired provider -> $expected_status"
+        return
+      fi
+    else
+      curl_exit=$?
+      last_result="curl exit $curl_exit"
+      echo "wait: $url retired provider curl exit $curl_exit (attempt $attempt/$EDGE_MAX_ATTEMPTS)" >&2
     fi
     if [ "$attempt" -lt "$EDGE_MAX_ATTEMPTS" ]; then
       sleep "$EDGE_RETRY_DELAY_S"
     fi
   done
-  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without retired-provider $expected_status"
+  fail "$url exhausted $EDGE_MAX_ATTEMPTS attempts without retired-provider $expected_status (last $last_result)"
 }
 
 # --- direct R2 custom domain: manifest + all three tiers + provenance (hard asserts;
