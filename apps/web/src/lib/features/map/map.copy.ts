@@ -75,6 +75,7 @@ export const copy = defineCopy({
 			crowding: 'Crowd',
 		},
 		filterClear: 'Clear',
+		filterRemove: 'Remove filter:',
 		filterClose: 'Close filters',
 		routeRemove: 'Remove route',
 		vehicleLabel: 'Vehicle',
@@ -103,6 +104,7 @@ export const copy = defineCopy({
 		feedNotRespondingShort: 'not responding',
 		motion: {
 			label: 'Positions',
+			setting: 'Estimated positions',
 			smooth: 'Estimated',
 			raw: 'Reported',
 			toRaw: 'Show reported positions only',
@@ -189,6 +191,7 @@ export const copy = defineCopy({
 			crowding: 'Achal.',
 		},
 		filterClear: 'Effacer',
+		filterRemove: 'Retirer le filtre :',
 		filterClose: 'Fermer les filtres',
 		routeRemove: 'Retirer la ligne',
 		vehicleLabel: 'Véhicule',
@@ -219,6 +222,7 @@ export const copy = defineCopy({
 		feedNotRespondingShort: 'ne répond pas',
 		motion: {
 			label: 'Positions',
+			setting: 'Positions estimées',
 			smooth: 'Estimées',
 			raw: 'Signalées',
 			toRaw: 'Afficher les positions signalées seulement',

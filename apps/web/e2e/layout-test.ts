@@ -1,4 +1,5 @@
 import { test as base } from '@playwright/test';
+import { forwardRoute } from './layout-helpers';
 
 // WebKit applies upgrade-insecure-requests even with bypassCSP. Wrangler's local
 // HTTP server has no TLS listener; keep this one directive out of fixture HTML.
@@ -22,6 +23,14 @@ export const test = base.extend({
 					);
 				await route.fulfill({ response, headers });
 			});
-		await use(page);
+		try {
+			await use(page);
+		} finally {
+			// Drain every spec's handlers while their page and fetched responses still
+			// exist. Waiting preserves real route failures instead of discarding them.
+			// A context closed by the test has already disposed its request client;
+			// its interrupted handlers can no longer complete a drain operation.
+			if (!page.isClosed()) await forwardRoute(page, () => page.unrouteAll({ behavior: 'wait' }));
+		}
 	},
 });

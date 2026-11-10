@@ -1,14 +1,17 @@
 import type { Page } from '@playwright/test';
 
-// A request can outlive its page: navigation or teardown disposes the fetched
-// response before route.fulfill runs. That is not a layout finding, so drop it.
+// Explicit page closure can dispose a fetched response. The shared fixture drains
+// normal teardown; failures on a live page must still fail the test.
 const TEARDOWN =
-	/has been disposed|Target page, context or browser has been closed|Route is already handled/;
-export async function forwardRoute(handle: () => Promise<void>): Promise<void> {
+	/has been disposed|Request context disposed|Target page, context or browser has been closed|Route is already handled/;
+export async function forwardRoute(
+	page: Pick<Page, 'isClosed'>,
+	handle: () => Promise<void>,
+): Promise<void> {
 	try {
 		await handle();
 	} catch (error) {
-		if (TEARDOWN.test(String(error))) return;
+		if (page.isClosed() && TEARDOWN.test(String(error))) return;
 		throw error;
 	}
 }

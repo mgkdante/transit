@@ -100,9 +100,24 @@ export default defineConfig({
 					)
 					.map((colorScheme) => ({
 						name: `layout-${browserName}-${width}-${colorScheme}`,
+						// Shard individual cases, so large matrix files cannot unbalance jobs.
+						fullyParallel: true,
 						testMatch: /layout.*\.spec\.ts/,
-						// This spec needs rich server-boot fixtures as well as browser routes.
 						testIgnore: [
+							// Route lifecycle depends on the engine, not viewport or theme.
+							...(width === 1440 && colorScheme === 'light'
+								? []
+								: [/layout-route-(?:lifecycle|close)\.spec\.ts/]),
+							// These specs own every size/container boundary they exercise.
+							// Keep both engines and themes; project viewport adds no coverage.
+							...(width === 1440
+								? []
+								: [
+										/layout-(?:cohesion|detail-navigation|sheet-scroll|cards|panel-sizes)\.spec\.ts/,
+									]),
+							// Polish owns a phone matrix or a desktop matrix, selected by width.
+							...(width === 390 || width === 1440 ? [] : [/layout-map-polish\.spec\.ts/]),
+							// Panel sizes also needs rich server-boot fixtures.
 							...(process.env.TRANSIT_E2E_PANEL_SIZES === '1'
 								? []
 								: [/layout-panel-sizes\.spec\.ts/]),

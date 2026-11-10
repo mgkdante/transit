@@ -213,13 +213,18 @@ describe('MapMobileDetailSheet', () => {
 			const value = row.querySelector<HTMLElement>('dd')!;
 			const action = row.querySelector<HTMLElement>('button')!;
 
-			expect(getComputedStyle(row).gridTemplateColumns).toBe('7rem minmax(0, 1fr) auto');
+			expect(getComputedStyle(row).gridTemplateColumns).toBe(
+				'minmax(7.5rem, 40%) minmax(0, 1fr) auto',
+			);
 			const etaRow = [
 				...document.querySelectorAll<HTMLElement>('.detail-attribute-grid > div'),
 			].find((candidate) => candidate.querySelector('dt')?.textContent === 'ETA')!;
 			expect(etaRow.querySelector('.detail-attribute-action')).toBeNull();
 			expect(etaRow.querySelector('button[popovertarget]')).toHaveAccessibleName(/No estimate/);
-			expect(getComputedStyle(etaRow).gridTemplateColumns).toBe('7rem minmax(0, 1fr)');
+			expect(getComputedStyle(etaRow).gridTemplateColumns).toBe(
+				'minmax(7.5rem, 40%) minmax(0, 1fr)',
+			);
+			expect(cssFloorPx(getComputedStyle(action).minInlineSize)).toBeGreaterThanOrEqual(44);
 			expect(getComputedStyle(value).overflowWrap).toBe('anywhere');
 			expect(
 				Math.max(

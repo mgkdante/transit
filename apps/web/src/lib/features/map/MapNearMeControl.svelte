@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import { readableName } from '#lib/components/surface/readableName.ts';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { SvelteMap } from 'svelte/reactivity';
@@ -174,7 +175,9 @@
 <svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} />
 
 <div class="map-near" bind:this={rootEl}>
-	<button
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="map-near-toggle"
 		aria-expanded={open}
@@ -183,10 +186,12 @@
 	>
 		<LocateFixedIcon class="map-near-icon" size={18} strokeWidth={2.25} aria-hidden="true" />
 		<span>{t.nearMe}</span>
-	</button>
+	</Button>
 	{#if open}
 		<div class="map-near-panel">
-			<button
+			<Button
+				variant="ghost"
+				size="sm"
 				type="button"
 				class="map-near-action"
 				onclick={() => {
@@ -195,7 +200,7 @@
 				}}
 			>
 				{t.nearMeUseLocation}
-			</button>
+			</Button>
 			<form class="map-near-form" onsubmit={onsearch}>
 				<div class="map-near-input-wrap">
 					<input
@@ -211,18 +216,22 @@
 						oninput={handleInput}
 					/>
 				</div>
-				<button type="submit" aria-busy={suggestionsLoading}>{t.nearMeSearchSubmit}</button>
+				<Button variant="ghost" size="sm" type="submit" aria-busy={suggestionsLoading}
+					>{t.nearMeSearchSubmit}</Button
+				>
 				{#if showSuggestions}
 					<div class="map-near-suggestions" role="group" aria-label={t.nearMeSuggestions}>
 						{#each suggestions as result (suggestionKey(result))}
-							<button
+							<Button
+								variant="ghost"
+								size="sm"
 								type="button"
 								class="map-near-suggestion"
 								onclick={() => selectSuggestion(result)}
 							>
 								<span>{result.label}</span>
 								<small>{t.precision[result.precision]}</small>
-							</button>
+							</Button>
 						{/each}
 					</div>
 				{/if}
@@ -235,15 +244,17 @@
 			{:else if origin}
 				<div class="map-near-origin-row">
 					<p class="map-near-origin">{origin.label}</p>
-					<button type="button" class="map-near-clear" onclick={onclear}>
+					<Button variant="ghost" size="sm" type="button" class="map-near-clear" onclick={onclear}>
 						<XIcon size={13} strokeWidth={2.25} aria-hidden="true" />
 						<span>{t.nearMeClear}</span>
-					</button>
+					</Button>
 				</div>
 				{#if stops.length > 0}
 					<div class="map-near-results">
 						{#each stops as stop (stop.id)}
-							<button
+							<Button
+								variant="ghost"
+								size="sm"
 								type="button"
 								class="map-near-stop"
 								onclick={() => {
@@ -255,7 +266,7 @@
 									>{stopDisplayName(stop.name)}</span
 								>
 								<small>{formatDistance(stop.distanceM)}</small>
-							</button>
+							</Button>
 						{/each}
 					</div>
 				{:else}
@@ -267,7 +278,7 @@
 </div>
 
 <style>
-	.map-near {
+	:global(.map-near) {
 		position: absolute;
 		z-index: var(--z-map-overlay);
 		top: auto;
@@ -281,12 +292,12 @@
 		justify-items: end;
 		transition: right var(--duration-normal) var(--ease-out);
 	}
-	.map-near-toggle,
-	.map-near-action,
-	.map-near-form button,
-	.map-near-stop,
-	.map-near-suggestion,
-	.map-near-clear {
+	:global(.map-near-toggle),
+	:global(.map-near-action),
+	:global(.map-near-form button),
+	:global(.map-near-stop),
+	:global(.map-near-suggestion),
+	:global(.map-near-clear) {
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		border: 1px solid var(--border-subtle);
@@ -296,7 +307,7 @@
 			background-color var(--duration-fast) var(--ease-default),
 			border-color var(--duration-fast) var(--ease-default);
 	}
-	.map-near-toggle {
+	:global(.map-near-toggle) {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -312,26 +323,26 @@
 		border-radius: var(--radius-pill);
 		box-shadow: var(--shadow-card);
 	}
-	.map-near-toggle:hover,
-	.map-near-toggle:focus-visible,
-	.map-near-toggle[aria-expanded='true'] {
+	:global(.map-near-toggle:hover),
+	:global(.map-near-toggle:focus-visible),
+	:global(.map-near-toggle[aria-expanded='true']) {
 		color: var(--accent-foreground);
 		background: color-mix(in srgb, var(--accent) 88%, var(--accent-foreground) 12%);
 		border-color: var(--accent);
 	}
-	.map-near-toggle :global(.map-near-icon) {
+	:global(.map-near-toggle .map-near-icon) {
 		color: var(--accent-foreground);
 	}
-	.map-near-action:hover,
-	.map-near-action:focus-visible,
-	.map-near-form button:hover,
-	.map-near-form button:focus-visible,
-	.map-near-stop:hover,
-	.map-near-stop:focus-visible,
-	.map-near-suggestion:hover,
-	.map-near-suggestion:focus-visible,
-	.map-near-clear:hover,
-	.map-near-clear:focus-visible {
+	:global(.map-near-action:hover),
+	:global(.map-near-action:focus-visible),
+	:global(.map-near-form button:hover),
+	:global(.map-near-form button:focus-visible),
+	:global(.map-near-stop:hover),
+	:global(.map-near-stop:focus-visible),
+	:global(.map-near-suggestion:hover),
+	:global(.map-near-suggestion:focus-visible),
+	:global(.map-near-clear:hover),
+	:global(.map-near-clear:focus-visible) {
 		color: var(--primary);
 		background: color-mix(in srgb, var(--primary) 10%, var(--muted) 90%);
 		border-color: color-mix(in srgb, var(--primary) 42%, var(--border) 58%);
@@ -341,7 +352,7 @@
 		color: var(--primary);
 		transition: color var(--duration-fast) var(--ease-default);
 	}
-	.map-near-panel {
+	:global(.map-near-panel) {
 		position: absolute;
 		right: 0;
 		bottom: calc(100% + 0.5rem);
@@ -356,7 +367,7 @@
 		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
 		backdrop-filter: blur(var(--glass-blur-sm));
 	}
-	.map-near-action {
+	:global(.map-near-action) {
 		min-height: 2rem;
 		padding: 0.375rem 0.625rem;
 		font-weight: 600;
@@ -367,7 +378,7 @@
 		border-color: color-mix(in srgb, var(--border) 70%, var(--primary) 30%);
 		border-radius: var(--radius-pill);
 	}
-	.map-near-form button {
+	:global(.map-near-form button) {
 		min-height: 2rem;
 		padding: 0.375rem 0.75rem;
 		font-weight: 600;
@@ -375,16 +386,16 @@
 		background: var(--muted);
 		border-radius: var(--radius-pill);
 	}
-	.map-near-form {
+	:global(.map-near-form) {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.375rem;
 	}
-	.map-near-input-wrap {
+	:global(.map-near-input-wrap) {
 		position: relative;
 		min-width: 0;
 	}
-	.map-near-form input {
+	:global(.map-near-form input) {
 		width: 100%;
 		min-width: 0;
 		min-height: 2rem;
@@ -399,27 +410,27 @@
 			border-color var(--duration-fast) var(--ease-default),
 			background-color var(--duration-fast) var(--ease-default);
 	}
-	.map-near-form input:hover {
+	:global(.map-near-form input:hover) {
 		border-color: color-mix(in srgb, var(--primary) 28%, var(--border) 72%);
 	}
-	.map-near-form input::placeholder,
-	.map-near-message,
-	.map-near-origin,
-	.map-near-stop small,
-	.map-near-suggestion small {
+	:global(.map-near-form input::placeholder),
+	:global(.map-near-message),
+	:global(.map-near-origin),
+	:global(.map-near-stop small),
+	:global(.map-near-suggestion small) {
 		color: var(--muted-foreground);
 	}
-	.map-near-form input:focus-visible {
+	:global(.map-near-form input:focus-visible) {
 		border-color: color-mix(in srgb, var(--primary) 50%, var(--border) 50%);
 	}
-	.map-near-collection-notice {
+	:global(.map-near-collection-notice) {
 		margin: 0;
 		color: var(--muted-foreground);
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		line-height: 1.35;
 	}
-	.map-near-suggestions {
+	:global(.map-near-suggestions) {
 		grid-column: 1 / -1;
 		z-index: var(--z-map-popover-behind);
 		display: grid;
@@ -433,7 +444,7 @@
 		border-radius: var(--radius-md);
 		box-shadow: var(--shadow-card);
 	}
-	.map-near-suggestion {
+	:global(.map-near-suggestion) {
 		display: grid;
 		gap: 0.125rem;
 		min-height: 2rem;
@@ -444,41 +455,41 @@
 		border-color: transparent;
 		border-radius: var(--radius-sm);
 	}
-	.map-near-suggestion span {
+	:global(.map-near-suggestion span) {
 		min-width: 0;
 		overflow: visible;
 		text-overflow: clip;
 		white-space: normal;
 		line-height: 1.35;
 	}
-	.map-near-stop span {
+	:global(.map-near-stop span) {
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: normal;
 	}
-	.map-near-suggestion small {
+	:global(.map-near-suggestion small) {
 		font-size: var(--text-micro);
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
 	}
-	.map-near-message,
-	.map-near-origin {
+	:global(.map-near-message),
+	:global(.map-near-origin) {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 	}
-	.map-near-message[data-error='true'] {
+	:global(.map-near-message[data-error='true']) {
 		color: var(--dataviz-severity-high);
 	}
-	.map-near-origin-row {
+	:global(.map-near-origin-row) {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 0.375rem;
 		padding: 0.125rem 0.375rem;
 	}
-	.map-near-origin {
+	:global(.map-near-origin) {
 		min-width: 0;
 		overflow: hidden;
 		font-weight: 600;
@@ -486,7 +497,7 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.map-near-clear {
+	:global(.map-near-clear) {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -497,11 +508,11 @@
 		background: var(--muted);
 		border-radius: var(--radius-pill);
 	}
-	.map-near-results {
+	:global(.map-near-results) {
 		display: grid;
 		gap: 0.375rem;
 	}
-	.map-near-stop {
+	:global(.map-near-stop) {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -514,27 +525,27 @@
 		border-color: transparent;
 		border-radius: var(--radius-sm);
 	}
-	.map-near-stop small {
+	:global(.map-near-stop small) {
 		flex: none;
 		font-variant-numeric: tabular-nums;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.map-near,
-		.map-near-toggle,
-		.map-near-action,
-		.map-near-form button,
-		.map-near-form input,
-		.map-near-stop,
-		.map-near-suggestion,
-		.map-near-clear,
+		:global(.map-near),
+		:global(.map-near-toggle),
+		:global(.map-near-action),
+		:global(.map-near-form button),
+		:global(.map-near-form input),
+		:global(.map-near-stop),
+		:global(.map-near-suggestion),
+		:global(.map-near-clear),
 		:global(.map-near-icon) {
 			transition: none;
 		}
 	}
 
 	@media (--desktop-max) {
-		.map-near {
+		:global(.map-near) {
 			top: auto;
 			right: 0.75rem;
 			bottom: var(--map-mobile-control-bottom);
@@ -542,7 +553,7 @@
 			width: auto;
 			transform: none;
 		}
-		.map-near-toggle {
+		:global(.map-near-toggle) {
 			justify-self: end;
 			width: 2.75rem;
 			height: 2.75rem;
@@ -550,10 +561,10 @@
 			padding: 0;
 			border-radius: var(--radius-pill);
 		}
-		.map-near-toggle span {
+		:global(.map-near-toggle span) {
 			display: none;
 		}
-		.map-near-panel {
+		:global(.map-near-panel) {
 			width: min(24rem, calc(100vw - 1.5rem));
 			max-width: calc(100vw - 1.5rem);
 		}

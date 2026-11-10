@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import { isInService, vehicleServiceCopy } from '#lib/v1/live/vehicleService.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
@@ -50,7 +51,9 @@
 	);
 </script>
 
-<button
+<Button
+	variant="ghost"
+	size="sm"
 	type="button"
 	class="detail-bus-row map-vehicle-action"
 	data-previewing={previewing}
@@ -82,10 +85,14 @@
 		{/if}</small
 	>
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-</button>
+</Button>
 
 <style>
-	.detail-bus-row {
+	:global(.detail-bus-row) {
+		height: auto;
+		white-space: normal;
+	}
+	:global(.detail-bus-row) {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.25rem 0.5rem;
@@ -93,7 +100,7 @@
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
 		align-items: center;
-		padding: 0.5rem;
+		padding: calc(var(--spacing) * 2) 0;
 		border: 0;
 		border-bottom: 1px solid var(--border-subtle);
 		background: transparent;
@@ -104,37 +111,37 @@
 			background-color var(--duration-fast) var(--ease-out),
 			border-color var(--duration-fast) var(--ease-out);
 	}
-	.detail-bus-row:hover,
-	.detail-bus-row[data-previewing='true'] {
+	:global(.detail-bus-row:hover),
+	:global(.detail-bus-row[data-previewing='true']) {
 		border-bottom-color: var(--border);
 		background-color: var(--muted);
 	}
-	.detail-bus-row:focus-visible {
+	:global(.detail-bus-row:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: -1px;
 	}
-	.detail-bus-row > strong,
-	.detail-bus-row > span,
-	.detail-bus-row > small {
+	:global(.detail-bus-row > strong),
+	:global(.detail-bus-row > span),
+	:global(.detail-bus-row > small) {
 		grid-column: 1;
 		min-width: 0;
 		overflow-wrap: anywhere;
 	}
-	.detail-bus-row strong {
+	:global(.detail-bus-row strong) {
 		font-family: var(--font-mono);
 	}
-	.detail-bus-row small {
+	:global(.detail-bus-row small) {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.375rem;
 		color: var(--muted-foreground);
 	}
-	.detail-bus-row :global(svg) {
+	:global(.detail-bus-row svg) {
 		grid-column: 2;
 		grid-row: 1 / span 3;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.detail-bus-row {
+		:global(.detail-bus-row) {
 			transition: none;
 		}
 	}

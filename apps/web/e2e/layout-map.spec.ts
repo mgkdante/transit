@@ -114,7 +114,7 @@ test('estimated vehicle draws move before the next feed poll @layout', async ({ 
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 	let vehiclePolls = 0;
 	await page.route('**/v1/**', (route) =>
-		forwardRoute(async () => {
+		forwardRoute(page, async () => {
 			const url = new URL(route.request().url());
 			if (url.pathname.endsWith('/live/vehicles.json')) vehiclePolls++;
 			url.pathname = `/__layout/fresh${url.pathname}`;
@@ -202,7 +202,7 @@ test('mobile detail sheet keeps its header controls above the home indicator at 
 	await page.clock.setFixedTime(epoch + 30_000);
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 	await page.route('**/v1/**', (route) =>
-		forwardRoute(async () => {
+		forwardRoute(page, async () => {
 			const url = new URL(route.request().url());
 			url.pathname = `/__layout/fresh${url.pathname}`;
 			await route.fulfill({ response: await route.fetch({ url: url.href }) });

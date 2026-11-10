@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
 	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
 	import PanelLeftOpenIcon from '@lucide/svelte/icons/panel-left-open';
@@ -38,7 +39,9 @@
 </script>
 
 <div class="mf-rail-layer" data-testid="map-filter-rail">
-	<button
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="mf-rail-expand"
 		aria-expanded="false"
@@ -47,9 +50,11 @@
 		onclick={onexpand}
 	>
 		<PanelLeftOpenIcon size={16} strokeWidth={2.25} aria-hidden="true" />
-	</button>
+	</Button>
 
-	<button
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="mf-rail-glyph"
 		aria-label={copy.motion.label}
@@ -57,8 +62,10 @@
 	>
 		<WavesIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 		<span class="mf-rail-abbr">{copy.rail.motion}</span>
-	</button>
-	<button
+	</Button>
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="mf-rail-glyph"
 		aria-label={copy.legendTitle}
@@ -66,9 +73,11 @@
 	>
 		<MapPinnedIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 		<span class="mf-rail-abbr">{copy.rail.markers}</span>
-	</button>
+	</Button>
 	{#if alertsAvailable}
-		<button
+		<Button
+			variant="ghost"
+			size="sm"
 			type="button"
 			class="mf-rail-glyph"
 			aria-label={copy.modeAlerts}
@@ -76,9 +85,11 @@
 		>
 			<TriangleAlertIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 			<span class="mf-rail-abbr">{copy.rail.alerts}</span>
-		</button>
+		</Button>
 	{/if}
-	<button
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="mf-rail-glyph"
 		aria-label={activeCount > 0 ? `${copy.activeTitle} ${activeCount}` : copy.activeTitle}
@@ -89,8 +100,10 @@
 		{#if activeCount > 0}
 			<span class="mf-rail-count">{activeCount}</span>
 		{/if}
-	</button>
-	<button
+	</Button>
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="mf-rail-glyph"
 		aria-label={copy.modeStatus}
@@ -98,8 +111,10 @@
 	>
 		<GaugeIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 		<span class="mf-rail-abbr">{copy.rail.status}</span>
-	</button>
-	{#if occupancyAvailable}<button
+	</Button>
+	{#if occupancyAvailable}<Button
+			variant="ghost"
+			size="sm"
 			type="button"
 			class="mf-rail-glyph"
 			aria-label={copy.modeOccupancy}
@@ -107,22 +122,29 @@
 		>
 			<UsersRoundIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 			<span class="mf-rail-abbr">{copy.rail.crowding}</span>
-		</button>{/if}
+		</Button>{/if}
 
 	{#if hasFilters}
-		<button type="button" class="mf-rail-clear" aria-label={copy.filterClear} onclick={onclear}>
+		<Button
+			variant="ghost"
+			size="sm"
+			type="button"
+			class="mf-rail-clear"
+			aria-label={copy.filterClear}
+			onclick={onclear}
+		>
 			<XIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 			<span>{copy.filterClear}</span>
-		</button>
+		</Button>
 	{/if}
 </div>
 
 <style>
-	.mf-rail-abbr,
-	.mf-rail-clear span {
+	:global(.mf-rail-abbr),
+	:global(.mf-rail-clear span) {
 		display: none;
 	}
-	.mf-rail-layer {
+	:global(.mf-rail-layer) {
 		position: relative;
 		display: grid;
 		align-content: start;
@@ -130,9 +152,9 @@
 		padding: 0.375rem;
 	}
 
-	.mf-rail-expand,
-	.mf-rail-glyph,
-	.mf-rail-clear {
+	:global(.mf-rail-expand),
+	:global(.mf-rail-glyph),
+	:global(.mf-rail-clear) {
 		display: grid;
 		place-items: center;
 		width: 100%;
@@ -149,31 +171,31 @@
 		cursor: pointer;
 	}
 
-	.mf-rail-expand:hover,
-	.mf-rail-expand:focus-visible,
-	.mf-rail-glyph:hover,
-	.mf-rail-glyph:focus-visible,
-	.mf-rail-clear:hover,
-	.mf-rail-clear:focus-visible {
+	:global(.mf-rail-expand:hover),
+	:global(.mf-rail-expand:focus-visible),
+	:global(.mf-rail-glyph:hover),
+	:global(.mf-rail-glyph:focus-visible),
+	:global(.mf-rail-clear:hover),
+	:global(.mf-rail-clear:focus-visible) {
 		color: var(--primary);
 		border-color: color-mix(in srgb, var(--primary) 48%, var(--border) 52%);
 		background: color-mix(in srgb, var(--primary) 10%, transparent);
 	}
 
-	.mf-rail-glyph {
+	:global(.mf-rail-glyph) {
 		position: relative;
 		min-height: 44px;
 		gap: 0.125rem;
 	}
 
-	.mf-rail-abbr {
+	:global(.mf-rail-abbr) {
 		max-width: 100%;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.mf-rail-count {
+	:global(.mf-rail-count) {
 		position: absolute;
 		top: 0.125rem;
 		right: 0.125rem;
@@ -189,7 +211,7 @@
 		border-radius: var(--radius-pill);
 	}
 
-	.mf-rail-clear {
+	:global(.mf-rail-clear) {
 		gap: 0.125rem;
 	}
 </style>

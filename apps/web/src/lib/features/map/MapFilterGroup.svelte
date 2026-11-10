@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import type { Snippet } from 'svelte';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
 	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
@@ -23,7 +24,9 @@
 </script>
 
 <fieldset class="mf-group" data-filter-group={kind} aria-label={label}>
-	<button
+	<Button
+		variant="ghost"
+		size="sm"
 		type="button"
 		class="mf-group-trigger"
 		aria-expanded={open}
@@ -47,27 +50,27 @@
 		{#if count > 0}
 			<span class="mf-group-count">{count}</span>
 		{/if}
-	</button>
+	</Button>
 	<div id={contentId} class="mf-group-content" hidden={!open}>
 		{@render children?.()}
 	</div>
 </fieldset>
 
 <style>
-	.mf-group {
+	:global(.mf-group) {
 		min-width: 0;
 		margin: 0;
 		padding: 0;
 		border: 0;
 	}
 
-	.mf-group-trigger {
+	:global(.mf-group-trigger) {
 		display: flex;
 		align-items: center;
 		width: 100%;
 		min-height: 44px;
 		gap: 0.5rem;
-		padding: 0.5rem;
+		padding: calc(var(--spacing) * 2) 0;
 		font: inherit;
 		color: var(--foreground);
 		text-align: left;
@@ -77,31 +80,31 @@
 		cursor: pointer;
 	}
 
-	.mf-group-trigger:hover,
-	.mf-group-trigger:focus-visible {
+	:global(.mf-group-trigger:hover),
+	:global(.mf-group-trigger:focus-visible) {
 		background: var(--muted);
 	}
 
-	.mf-group-badge {
+	:global(.mf-group-badge) {
 		display: inline-grid;
 		place-items: center;
-		width: 1.5rem;
+		width: 1rem;
 		height: 1.5rem;
 		flex: none;
 		color: var(--primary);
-		background: color-mix(in srgb, var(--primary) 14%, transparent);
-		border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+		background: transparent;
+		border: 0;
 		border-radius: var(--radius-sm);
 	}
 
-	.mf-group-label {
+	:global(.mf-group-label) {
 		min-width: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		font-weight: 600;
 	}
 
-	.mf-group-count {
+	:global(.mf-group-count) {
 		display: inline-grid;
 		min-width: 1.25rem;
 		height: 1.25rem;
@@ -112,10 +115,14 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--primary-foreground);
 		background: var(--primary);
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 	}
 
-	.mf-group-content {
+	:global(.mf-group-content) {
 		min-width: 0;
+	}
+	:global(.mf-group-trigger:focus-visible) {
+		outline: 2px solid var(--ring);
+		outline-offset: -2px;
 	}
 </style>

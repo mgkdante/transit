@@ -193,9 +193,9 @@ describe('SearchSurface scope filter', () => {
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /Van Horne \/ Rockland/i })).toBeInTheDocument();
 
-		const scopeGroup = screen.getByRole('radiogroup', { name: 'Show' });
+		const scopeGroup = screen.getByRole('tablist', { name: 'Show' });
 		await within(scopeGroup)
-			.getByRole('radio', { name: /Lines \(1\)/ })
+			.getByRole('tab', { name: /Lines \(1\)/ })
 			.click();
 
 		expect(screen.getByRole('link', { name: /161.*Van Horne/i })).toBeInTheDocument();

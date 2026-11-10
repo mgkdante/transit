@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import { untrack, type Snippet } from 'svelte';
 	import { ChevronToggle } from '@yesid/ui/brand';
 	import * as Sheet from '@yesid/ui/sheet';
@@ -55,14 +56,16 @@
 			<Sheet.Trigger
 				bind:ref={pillBtn}
 				type="button"
-				class="tap-press map-filter-pill"
+				class="map-filter-pill"
 				aria-expanded={drawerOpen}
+				>{#snippet child({ props })}<Button {...props} variant="ghost" size="sm">
+						<span class="map-filter-pill-dot" data-active={activeCount > 0}></span>
+						<span class="map-filter-pill-name">{t.controlsTitle}</span>
+						<span class="map-filter-pill-counter" data-empty={activeCount === 0}>{activeCount}</span
+						>
+						<ChevronToggle open={drawerOpen} size="sm" direction="down" />
+					</Button>{/snippet}</Sheet.Trigger
 			>
-				<span class="map-filter-pill-dot" data-active={activeCount > 0}></span>
-				<span class="map-filter-pill-name">{t.controlsTitle}</span>
-				<span class="map-filter-pill-counter" data-empty={activeCount === 0}>{activeCount}</span>
-				<ChevronToggle open={drawerOpen} size="sm" direction="down" />
-			</Sheet.Trigger>
 		</div>
 	{/if}
 
@@ -89,9 +92,11 @@
 		</div>
 
 		<footer class="map-filter-drawer-footer">
-			<Sheet.Close type="button" class="map-filter-done" data-testid="map-filter-done">
-				{t.controlsDone}
-			</Sheet.Close>
+			<Sheet.Close type="button" class="map-filter-done" data-testid="map-filter-done"
+				>{#snippet child({ props })}<Button {...props} variant="ghost" size="sm">
+						{t.controlsDone}
+					</Button>{/snippet}</Sheet.Close
+			>
 		</footer>
 	</Sheet.Content>
 </Sheet.Root>
@@ -121,7 +126,7 @@
 		white-space: nowrap;
 		background: color-mix(in srgb, var(--card) 92%, transparent);
 		border: 1px solid color-mix(in srgb, var(--border) 80%, var(--primary) 20%);
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 		box-shadow: var(--shadow-card);
 		-webkit-backdrop-filter: blur(var(--glass-blur-sm));
 		backdrop-filter: blur(var(--glass-blur-sm));
@@ -138,7 +143,7 @@
 		width: 0.5rem;
 		height: 0.5rem;
 		flex: none;
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 		background: var(--primary);
 		transition: box-shadow var(--duration-fast) var(--ease-default);
 	}
@@ -160,7 +165,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--primary-foreground);
 		background: var(--primary);
-		border-radius: var(--radius-pill);
+		border-radius: var(--radius-sm);
 		flex-shrink: 0;
 		transition:
 			color var(--duration-fast) var(--ease-default),
@@ -233,7 +238,7 @@
 	.map-filter-drawer-footer :global(.map-filter-done) {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-start;
 		width: 100%;
 		min-height: 44px;
 		padding: 0.5rem 1rem;
@@ -242,10 +247,10 @@
 		font-weight: 700;
 		letter-spacing: var(--tracking-eyebrow);
 		text-transform: uppercase;
-		color: var(--primary-foreground);
-		background: var(--primary);
-		border: 1px solid var(--primary);
-		border-radius: var(--radius-pill);
+		color: var(--primary);
+		background: transparent;
+		border: 0;
+		border-radius: var(--radius-sm);
 		cursor: pointer;
 	}
 

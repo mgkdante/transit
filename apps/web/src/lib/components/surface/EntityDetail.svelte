@@ -2,7 +2,8 @@
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Tabs, TabsList, TabsTrigger, TabsContent } from '@yesid/ui/tabs';
+	import TransitTabList from '../shared/TransitTabList.svelte';
+	import { Tabs, TabsContent } from '@yesid/ui/tabs';
 	import { SectionLabel, TocNav, useSectionJump, type TocEntry } from '@yesid/ui/brand';
 	import { ArticleSummaryLane } from '#lib/components/layout/index.ts';
 	import { Surface, DetailFrame, type DetailFrameToc } from '@yesid/ui/layout';
@@ -230,15 +231,7 @@
 			data-ripple-exempt
 			data-slot="entity-detail-tabs-scroll"
 		>
-			<TabsList variant="line" class="station-tabs w-full flex-nowrap justify-start">
-				{#each tabs as t (t.key)}
-					<TabsTrigger value={t.key}>
-						{#snippet child({ props })}
-							<button {...props} class="station-tab">{t.label}</button>
-						{/snippet}
-					</TabsTrigger>
-				{/each}
-			</TabsList>
+			<TransitTabList {tabs} />
 		</div>
 		<span
 			class="entity-tabs__fade"

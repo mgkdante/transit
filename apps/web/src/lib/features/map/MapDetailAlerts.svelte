@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
 	import { copy as MAP_COPY } from './map.copy';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -63,7 +64,9 @@
 							<span lang={display.lang ?? ''}>{display.text}</span>
 							{#if marker}<span class="alert-language-marker">{marker}</span>{/if}
 						</span>
-					{:else}<button
+					{:else}<Button
+							variant="ghost"
+							size="sm"
 							type="button"
 							class="map-alert-button"
 							aria-labelledby={labelId}
@@ -83,9 +86,11 @@
 								</span>
 								{#if marker}<span>{marker}</span>{/if}
 							</span>
-						</button>{/if}
+						</Button>{/if}
 					{#if presentation === 'detail' && url}
-						<a
+						<Button
+							variant="ghost"
+							size="sm"
 							class="map-alert-link"
 							href={url.href}
 							hreflang={url.lang ?? undefined}
@@ -94,7 +99,7 @@
 							aria-label={t.alertLinkAria(url.host)}
 						>
 							{t.alertLink} · {url.host}
-						</a>
+						</Button>
 						{#if alertLanguageNotice(url, locale)}
 							<span class="alert-language-marker">{alertLanguageNotice(url, locale)}</span>
 						{/if}
@@ -132,17 +137,17 @@
 </section>
 
 <style>
-	.map-alerts {
+	:global(.map-alerts) {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
-	.map-alerts-age {
+	:global(.map-alerts-age) {
 		margin: 0;
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
 	}
-	.map-alerts h3 {
+	:global(.map-alerts h3) {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -154,13 +159,13 @@
 		text-transform: uppercase;
 		color: var(--accent-text);
 	}
-	.map-alerts h3::after {
+	:global(.map-alerts h3::after) {
 		content: '';
 		flex: 1;
 		height: 1px;
 		background: var(--border-subtle);
 	}
-	.map-alerts ul {
+	:global(.map-alerts ul) {
 		display: flex;
 		flex-direction: column;
 		gap: 0.375rem;
@@ -168,7 +173,7 @@
 		padding: 0;
 		list-style: none;
 	}
-	.map-alerts li {
+	:global(.map-alerts li) {
 		--alert-tone: var(--dataviz-severity-high);
 		margin: 0;
 		border: 1px solid color-mix(in srgb, var(--alert-tone) 32%, var(--border) 68%);
@@ -179,16 +184,16 @@
 		color: var(--foreground);
 		overflow: hidden;
 	}
-	.map-alerts li[data-severity='critical'] {
+	:global(.map-alerts li[data-severity='critical']) {
 		--alert-tone: var(--dataviz-severity-critical);
 	}
-	.map-alerts li[data-severity='high'] {
+	:global(.map-alerts li[data-severity='high']) {
 		--alert-tone: var(--dataviz-severity-high);
 	}
-	.map-alerts li[data-severity='watch'] {
+	:global(.map-alerts li[data-severity='watch']) {
 		--alert-tone: var(--dataviz-severity-watch);
 	}
-	.map-alert-button {
+	:global(.map-alert-button) {
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
@@ -207,7 +212,7 @@
 		cursor: pointer;
 		transition: color var(--duration-fast) var(--ease-out);
 	}
-	.map-alert-link {
+	:global(.map-alert-link) {
 		display: inline-flex;
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
@@ -215,58 +220,58 @@
 		padding-block: 0.5rem;
 	}
 
-	.map-alert-text {
+	:global(.map-alert-text) {
 		min-width: 0;
 	}
-	.map-alert-passive {
+	:global(.map-alert-passive) {
 		display: block;
 		line-height: 1.35;
 	}
-	.map-alert-severity {
+	:global(.map-alert-severity) {
 		margin-inline-end: 0.375rem;
 		font-family: var(--font-mono);
 		color: color-mix(in srgb, var(--alert-tone) 72%, var(--foreground) 28%);
 	}
-	.map-peek-alerts-more {
+	:global(.map-peek-alerts-more) {
 		margin: 0;
 		font-family: var(--font-mono);
 		font-size: var(--text-caption);
 		color: var(--muted-foreground);
 	}
 
-	.map-alert-text .alert-language-marker {
+	:global(.map-alert-text .alert-language-marker) {
 		margin-inline-start: 0.375rem;
 		color: var(--muted-foreground);
 		font-size: var(--text-caption);
 		font-weight: 400;
 	}
-	.map-alert-button :global(svg) {
+	:global(.map-alert-button svg) {
 		flex: none;
 		opacity: 0.55;
 		transition:
 			opacity var(--duration-fast) var(--ease-out),
 			transform var(--duration-fast) var(--ease-out);
 	}
-	.map-alert-button:hover {
+	:global(.map-alert-button:hover) {
 		color: var(--primary);
 	}
-	.map-alert-button:hover :global(svg) {
+	:global(.map-alert-button:hover svg) {
 		opacity: 1;
 		transform: translateX(2px);
 	}
-	.map-alert-meta {
+	:global(.map-alert-meta) {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.375rem 0.5rem;
 		margin: 0.5rem 0 0;
 	}
-	.map-alert-meta div {
+	:global(.map-alert-meta div) {
 		display: inline-flex;
 		align-items: baseline;
 		gap: 0.375rem;
 		min-width: 0;
 	}
-	.map-alert-meta dt {
+	:global(.map-alert-meta dt) {
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
 		font-weight: 500;
@@ -274,7 +279,7 @@
 		text-transform: uppercase;
 		color: color-mix(in srgb, var(--alert-tone) 70%, var(--muted-foreground));
 	}
-	.map-alert-meta dd {
+	:global(.map-alert-meta dd) {
 		margin: 0;
 		min-width: 0;
 		font-size: var(--text-caption);
@@ -282,11 +287,11 @@
 		color: var(--foreground);
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.map-alert-button,
-		.map-alert-button :global(svg) {
+		:global(.map-alert-button),
+		:global(.map-alert-button svg) {
 			transition: none;
 		}
-		.map-alert-button:hover :global(svg) {
+		:global(.map-alert-button:hover svg) {
 			transform: none;
 		}
 	}

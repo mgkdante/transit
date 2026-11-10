@@ -17,21 +17,21 @@
 	}
 	.detail-attribute-grid > :global(div) {
 		display: grid;
-		grid-template-columns: 7rem minmax(0, 1fr);
+		grid-template-columns: minmax(7.5rem, 40%) minmax(0, 1fr);
 		gap: 0.75rem;
-		align-items: center;
+		align-items: baseline;
 		padding-block: 0.75rem;
 		border-bottom: 1px solid var(--border-subtle);
 	}
 	.detail-attribute-grid > :global(div:has(> .detail-attribute-action)) {
-		grid-template-columns: 7rem minmax(0, 1fr) auto;
+		grid-template-columns: minmax(7.5rem, 40%) minmax(0, 1fr) auto;
 	}
 	.detail-attribute-grid > :global(div > .detail-attribute-action) {
 		display: grid;
 	}
 	.detail-attribute-grid > :global(div > .detail-attribute-action > .detail-fact-action) {
 		min-block-size: 44px;
-		justify-content: center;
+		justify-content: flex-start;
 	}
 	.detail-attribute-grid :global(dt) {
 		overflow-wrap: normal;
@@ -52,7 +52,7 @@
 	@container right-panel (max-width: 21rem) {
 		.detail-attribute-grid > :global(div:has(> .detail-attribute-action)),
 		.detail-attribute-grid > :global(div) {
-			grid-template-columns: minmax(0, 1fr);
+			grid-template-columns: minmax(7.5rem, 45%) minmax(0, 1fr);
 		}
 	}
 </style>

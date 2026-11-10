@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '@yesid/ui/button';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { MapSelectionDetailCopy } from '../mapSelectionDetail.copy';
@@ -31,7 +32,9 @@
 	);
 </script>
 
-<button
+<Button
+	variant="ghost"
+	size="sm"
 	type="button"
 	class="detail-stop-row map-stop-action"
 	data-detail-stop-id={stop.id}
@@ -48,10 +51,14 @@
 	<strong><DetailEntityName ref={stop} {locale} /></strong>
 	{#if stop.etaUtc}<small><time>{timeLabel(stop.etaUtc, locale, timeZone)}</time></small>{/if}
 	<ChevronRightIcon size={13} strokeWidth={2.4} aria-hidden="true" />
-</button>
+</Button>
 
 <style>
-	.detail-stop-row {
+	:global(.detail-stop-row) {
+		height: auto;
+		white-space: normal;
+	}
+	:global(.detail-stop-row) {
 		display: grid;
 		grid-template-columns: 1.9rem minmax(0, 1fr) auto;
 		gap: 0.625rem;
@@ -59,7 +66,7 @@
 		min-height: 2.75rem;
 		min-block-size: 2.75rem;
 		align-items: center;
-		padding: 0.5rem;
+		padding: calc(var(--spacing) * 2) 0;
 		border: 0;
 		border-bottom: 1px solid var(--border-subtle);
 		background: transparent;
@@ -70,28 +77,28 @@
 			background-color var(--duration-fast) var(--ease-out),
 			border-color var(--duration-fast) var(--ease-out);
 	}
-	.detail-stop-row:hover,
-	.detail-stop-row[data-previewing='true'] {
+	:global(.detail-stop-row:hover),
+	:global(.detail-stop-row[data-previewing='true']) {
 		border-bottom-color: var(--border);
 		background: var(--muted);
 	}
-	.detail-stop-row:focus-visible {
+	:global(.detail-stop-row:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: -2px;
 	}
-	.detail-stop-row :global(svg) {
+	:global(.detail-stop-row svg) {
 		grid-column: 3;
 		grid-row: 1 / span 2;
 	}
-	.detail-stop-row strong {
+	:global(.detail-stop-row strong) {
 		min-width: 0;
 	}
-	.detail-stop-row small {
+	:global(.detail-stop-row small) {
 		grid-column: 2;
 		font-family: var(--font-mono);
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.detail-stop-row {
+		:global(.detail-stop-row) {
 			transition-duration: 0.01ms;
 		}
 	}

@@ -1946,7 +1946,7 @@ describe('MapHero map-layer feed lifecycle', () => {
 			expect(feed).toHaveBeenCalledTimes(initialFeeds[index] + 1);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Late' }));
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Late' }));
 		await tick();
 		for (const install of installSpies) expect(install).toHaveBeenCalledTimes(2);
 		expect(harness.setRouteLines).toHaveBeenCalledTimes(initialFeeds[0] + 1);
