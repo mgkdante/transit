@@ -3,7 +3,7 @@
 from datetime import datetime
 from math import gcd
 
-from transit_ops.core.models import ProviderManifest
+from transit_ops.core.models import FeedKind, ProviderManifest
 
 CAPTURE_CADENCE_TOLERANCE_SECONDS = 2.0
 
@@ -29,9 +29,11 @@ def endpoint_due(feed, now: datetime, previous: datetime | None) -> bool:
 def worker_tick_seconds(manifest: ProviderManifest, poll_seconds: int) -> int:
     tick = poll_seconds
     for feed in manifest.feeds.values():
+        if not feed.is_enabled or feed.feed_kind in (FeedKind.STATIC_SCHEDULE, FeedKind.GIS_STATIC):
+            continue
+        tick = gcd(tick, int(feed.refresh_interval_seconds))
         phase = getattr(feed, "refresh_phase_seconds", None)
-        if phase is not None and getattr(feed, "is_enabled", True):
-            tick = gcd(tick, int(feed.refresh_interval_seconds))
+        if phase is not None:
             tick = gcd(tick, phase)
     return tick
 
