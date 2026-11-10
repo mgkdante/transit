@@ -70,3 +70,36 @@ test("post-deploy failures use the shared alert and rollback shares the producti
     );
   }
 });
+
+test("a successful deploy receipt survives failed verification and controls reporting", () => {
+  const deploy = job("deploy-production");
+  assert.match(deploy, /deployed: \$\{\{ steps.deploy.outputs.deployed \}\}/);
+  assert.match(deploy, /node .github\/scripts\/deploy-scope.mjs locked/);
+  assert.ok(
+    deploy.indexOf("id: locked_scope") <
+      deploy.indexOf("Apply public snapshot CORS"),
+  );
+  assert.match(deploy, /&& printf 'deployed=true\\n'/);
+  for (const name of ["post-deploy-layout", "post-deploy-result"]) {
+    assert.match(
+      job(name),
+      /always\(\) && needs.deploy-production.outputs.deployed == 'true'/,
+    );
+    assert.doesNotMatch(
+      job(name),
+      /needs.deploy-production.result == 'success'/,
+    );
+  }
+  assert.match(
+    job("post-deploy-layout"),
+    /outputs.identity_verified == 'true'/,
+  );
+  assert.match(
+    job("post-deploy-result"),
+    /DEPLOY_RESULT: \$\{\{ needs.deploy-production.result \}\}/,
+  );
+  assert.match(
+    job("post-deploy-result"),
+    /ROLLBACK_VERSION: \$\{\{ needs.deploy-production.outputs.rollback_version \}\}/,
+  );
+});

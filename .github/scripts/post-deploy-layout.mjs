@@ -19,24 +19,31 @@ export function report(env = process.env, execute = execFileSync) {
   if (
     !/^[\w.-]+\/[\w.-]+$/.test(env.GH_REPO ?? "") ||
     !/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? "") ||
-    !/^[1-9][0-9]*$/.test(env.GITHUB_RUN_ID ?? "")
+    !/^[1-9][0-9]{0,19}$/.test(env.GITHUB_RUN_ID ?? "") ||
+    !/^[1-9][0-9]{0,9}$/.test(env.GITHUB_RUN_ATTEMPT ?? "")
   )
     throw new Error("Invalid deployment report identity");
-  const command = `gh workflow run rollback.yml -R ${env.GH_REPO} --ref main`;
-  const url = `https://github.com/${env.GH_REPO}/actions/runs/${env.GITHUB_RUN_ID}`;
-  const failed = env.LAYOUT_RESULT !== "success";
-  const body = `Full layout grid for deployed SHA ${env.GITHUB_SHA}: ${env.LAYOUT_RESULT}.\nRun: ${url}\n\nRollback command (previous production Worker version):\n\n\`\`\`sh\n${command}\n\`\`\``;
+  const validVersion =
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      env.ROLLBACK_VERSION ?? "",
+    );
+  const command = `gh workflow run rollback.yml -R ${env.GH_REPO} --ref main${validVersion ? ` -f version=${env.ROLLBACK_VERSION}` : ""}`;
+  const slug = `layout-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`;
+  const url = `https://github.com/${env.GH_REPO}/actions/runs/${env.GITHUB_RUN_ID}/attempts/${env.GITHUB_RUN_ATTEMPT}`;
+  const failed =
+    env.DEPLOY_RESULT !== "success" || env.LAYOUT_RESULT !== "success";
+  const body = `Deployment verification for SHA ${env.GITHUB_SHA}: ${env.DEPLOY_RESULT ?? "unknown"}.\nFull layout grid: ${env.LAYOUT_RESULT}.\nRun: ${url}, attempt ${env.GITHUB_RUN_ATTEMPT}.\n\nRollback command (${validVersion ? "captured pre-deployment Worker version" : "previous Worker version; captured target unavailable"}):\n\n\`\`\`sh\n${command}\n\`\`\``;
   appendFileSync(env.GITHUB_STEP_SUMMARY, `${body}\n`);
   const helper = fileURLToPath(new URL("./alert-issue.sh", import.meta.url));
   const args = failed
     ? [
         helper,
         "fire",
-        "production-layout",
-        "Production layout verification failed",
+        slug,
+        `Deployment verification failed for ${env.GITHUB_SHA.slice(0, 12)}`,
         body,
       ]
-    : [helper, "resolve", "production-layout", body];
+    : [helper, "resolve", slug, body];
   const output = execute("bash", args, { env, encoding: "utf8" });
   const existing = failed && output.match(/issue #(\d+) already open/);
   if (existing)
@@ -47,7 +54,7 @@ export function report(env = process.env, execute = execFileSync) {
     );
   if (failed)
     throw new Error(
-      "Post-deploy layout failed; alert published and rollback command recorded",
+      "Post-deploy verification failed; alert published and rollback command recorded",
     );
 }
 

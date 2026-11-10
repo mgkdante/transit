@@ -147,7 +147,7 @@ jobs:
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs
+        run: node --test .github/scripts/deploy-scope.test.mjs .github/scripts/web-artifact-promotion.test.mjs .github/scripts/worker-rollback.test.mjs .github/scripts/post-deploy-layout.test.mjs .github/scripts/ship-and-verify.test.mjs .github/scripts/deployment-order.test.mjs
 
       - name: Public site probe contract
         working-directory: ${{ github.workspace }}
@@ -545,9 +545,14 @@ jobs:
 
   deploy-production:
     name: deploy production
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
+      identity_verified: ${{ steps.identity.outcome == 'success' }}
+      rollback_version: ${{ steps.previous.outputs.version_id }}
     permissions:
       contents: read
       actions: read
+      issues: write
     concurrency:
       group: transit-data-edge-production
       cancel-in-progress: false
@@ -557,7 +562,7 @@ jobs:
     if: >-
       ${{ !cancelled() && needs.ci.result == 'success' && needs.deploy_scope.result == 'success' &&
           github.ref == 'refs/heads/main' &&
-          (github.event_name == 'workflow_dispatch' || needs.deploy_scope.outputs.deploy_web == 'true') }}
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'push') }}
     environment: production
     env:
       TRANSIT_BUILD_TARGET: production
@@ -567,11 +572,22 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
 
       - name: Set up JS workspace
         uses: ./.github/actions/setup
 
+      - name: Recheck live deployment inside the production lock
+        id: locked_scope
+        working-directory: ${{ github.workspace }}
+        env:
+          TRANSIT_DEPLOY_EVENT: ${{ github.event_name }}
+          TRANSIT_DEPLOY_AFTER: ${{ github.sha }}
+        run: node .github/scripts/deploy-scope.mjs locked >> "$GITHUB_OUTPUT"
+
       - name: Require the producer artifact
+        if: steps.locked_scope.outputs.deploy_web == 'true'
         env:
           TRANSIT_ARTIFACT_ID: ${{ needs.ci-work.outputs.artifact_id }}
           TRANSIT_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
@@ -586,6 +602,7 @@ jobs:
           test "$TRANSIT_PRODUCER_TARGET" = "$TRANSIT_BUILD_TARGET"
 
       - name: Download the producer artifact
+        if: steps.locked_scope.outputs.deploy_web == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.ci-work.outputs.artifact_id }}
@@ -596,6 +613,7 @@ jobs:
           digest-mismatch: error
 
       - name: Restore the verified deployment build
+        if: steps.locked_scope.outputs.deploy_web == 'true'
         working-directory: ${{ github.workspace }}
         env:
           TRANSIT_EXPECTED_MANIFEST_SHA256: ${{ needs.ci-work.outputs.manifest_sha256 }}
@@ -603,13 +621,24 @@ jobs:
           TRANSIT_PRODUCER_RUN_ID: ${{ needs.ci-work.outputs.producer_run_id }}
         run: node .github/scripts/web-build-artifact.mjs restore "$RUNNER_TEMP/transit-web-build"
 
+      - name: Capture rollback version before deployment
+        id: previous
+        if: steps.locked_scope.outputs.deploy_web == 'true'
+        working-directory: ${{ github.workspace }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node .github/scripts/worker-rollback.mjs capture
+
       - name: Apply public snapshot CORS
+        if: steps.locked_scope.outputs.deploy_web == 'true'
         working-directory: apps/data-proxy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: ../../node_modules/.bin/wrangler r2 bucket cors set transit-snapshots --file r2-cors.json --force
 
       - name: Deploy production Worker
+        id: deploy
+        if: steps.locked_scope.outputs.deploy_web == 'true'
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -623,18 +652,34 @@ jobs:
           --var "TRANSIT_BRANCH:$TRANSIT_BRANCH"
           ${PUBLIC_PLAUSIBLE_DOMAIN:+--var "PUBLIC_PLAUSIBLE_DOMAIN:$PUBLIC_PLAUSIBLE_DOMAIN"}
           ${PUBLIC_CF_BEACON_TOKEN:+--var "PUBLIC_CF_BEACON_TOKEN:$PUBLIC_CF_BEACON_TOKEN"}
+          && printf 'deployed=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Verify deployed source identity
+        id: identity
+        if: steps.deploy.outputs.deployed == 'true'
         working-directory: ${{ github.workspace }}
         run: node .github/scripts/post-deploy-layout.mjs verify
 
       - name: Verify shared production routes
+        id: smoke
+        if: steps.deploy.outputs.deployed == 'true'
         working-directory: apps/data-proxy
         run: bash smoke.sh
 
+      - name: Alert immediately on failed deployment verification
+        if: ${{ always() && steps.deploy.outputs.deployed == 'true' && (steps.identity.outcome != 'success' || steps.smoke.outcome != 'success') }}
+        working-directory: ${{ github.workspace }}
+        env:
+          DEPLOY_RESULT: failure
+          LAYOUT_RESULT: ${{ steps.identity.outcome == 'success' && 'pending' || 'not-run' }}
+          ROLLBACK_VERSION: ${{ steps.previous.outputs.version_id }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node .github/scripts/post-deploy-layout.mjs report
+
   post-deploy-layout:
     needs: [deploy-production]
-    if: ${{ needs.deploy-production.result == 'success' }}
+    if: ${{ always() && needs.deploy-production.outputs.deployed == 'true' && needs.deploy-production.outputs.identity_verified == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -693,7 +738,7 @@ jobs:
 
   post-deploy-result:
     needs: [deploy-production, post-deploy-layout]
-    if: ${{ always() && needs.deploy-production.result == 'success' }}
+    if: ${{ always() && needs.deploy-production.outputs.deployed == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -713,6 +758,8 @@ jobs:
       - name: Report layout result and rollback command
         env:
           LAYOUT_RESULT: ${{ needs.post-deploy-layout.result }}
+          DEPLOY_RESULT: ${{ needs.deploy-production.result }}
+          ROLLBACK_VERSION: ${{ needs.deploy-production.outputs.rollback_version }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: node .github/scripts/post-deploy-layout.mjs report

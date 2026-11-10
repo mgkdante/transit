@@ -119,13 +119,77 @@ export async function liveProductionSha(fetcher = fetch) {
 	}
 }
 
+export async function lockedDeploymentDecision(
+	env,
+	cwd = process.cwd(),
+	fetcher = fetch,
+) {
+	if (!['push', 'workflow_dispatch'].includes(env.TRANSIT_DEPLOY_EVENT)) {
+		throw new Error('Invalid locked deployment event');
+	}
+	const candidate = env.TRANSIT_DEPLOY_AFTER;
+	if (!/^[a-f0-9]{40}$/.test(candidate ?? ''))
+		throw new Error('Invalid deployment candidate');
+	const git = (...args) =>
+		execFileSync('git', args, {
+			cwd,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'pipe'],
+		}).trim();
+	if (git('rev-parse', 'HEAD') !== candidate)
+		throw new Error('Deployment checkout does not match candidate');
+	const automatic = env.TRANSIT_DEPLOY_EVENT === 'push';
+	if (automatic) {
+		git(
+			'fetch',
+			'--no-tags',
+			'origin',
+			'+refs/heads/main:refs/remotes/origin/main',
+		);
+		if (git('rev-parse', 'refs/remotes/origin/main') !== candidate)
+			return false;
+	}
+	const live = await liveProductionSha(fetcher);
+	if (automatic && live && live !== candidate) {
+		try {
+			git('cat-file', '-e', `${live}^{commit}`);
+		} catch {
+			git('fetch', '--no-tags', 'origin', live);
+		}
+		try {
+			git('merge-base', '--is-ancestor', candidate, live);
+			return false;
+		} catch (error) {
+			if (error.status !== 1)
+				throw new Error('Cannot establish live deployment ancestry', {
+					cause: error,
+				});
+		}
+	}
+	let output = '';
+	main(
+		{ ...env, TRANSIT_DEPLOY_LIVE_SHA: live },
+		{ write: (value) => (output += value) },
+		cwd,
+	);
+	return output === 'deploy_web=true\n';
+}
+
 if (
 	process.argv[1] &&
 	pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 ) {
-	const liveSha =
-		process.env.TRANSIT_DEPLOY_EVENT === 'push'
-			? await liveProductionSha()
-			: undefined;
-	process.exitCode = main({ ...process.env, TRANSIT_DEPLOY_LIVE_SHA: liveSha });
+	if (process.argv[2] === 'locked') {
+		const deploy = await lockedDeploymentDecision(process.env);
+		process.stdout.write(`deploy_web=${deploy}\n`);
+	} else {
+		const liveSha =
+			process.env.TRANSIT_DEPLOY_EVENT === 'push'
+				? await liveProductionSha()
+				: undefined;
+		process.exitCode = main({
+			...process.env,
+			TRANSIT_DEPLOY_LIVE_SHA: liveSha,
+		});
+	}
 }
