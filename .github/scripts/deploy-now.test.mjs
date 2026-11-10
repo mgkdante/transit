@@ -6,6 +6,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 const workflow = readFileSync(new URL('../workflows/deploy-now.yml', import.meta.url), 'utf8');
+const nodePin = readFileSync(new URL('../../.nvmrc', import.meta.url), 'utf8').trim();
+const bunPin = readFileSync(new URL('../../.bun-version', import.meta.url), 'utf8').trim();
+const wranglerPin = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).devDependencies.wrangler;
 const web = readFileSync(new URL('../workflows/web.yml', import.meta.url), 'utf8');
 
 test('manual production deployment checks out the selected ref without CI dependencies', () => {
@@ -78,22 +81,24 @@ test('older application refs use deployment control files preserved from the mai
         cwd: root, env: { ...process.env, RUNNER_TEMP: temporary }, stdio: 'pipe',
       });
     };
-    writeFileSync(join(root, 'package.json'), JSON.stringify({devDependencies:{wrangler:'4.154.0'}}));
-    writeFileSync(join(root, '.nvmrc'), '22.23.2\n');
-    writeFileSync(join(root, '.bun-version'), '1.3.11\n');
+    writeFileSync(join(root, 'package.json'), JSON.stringify({devDependencies:{wrangler:wranglerPin}}));
+    writeFileSync(join(root, '.nvmrc'), nodePin + '\n');
+    writeFileSync(join(root, '.bun-version'), bunPin + '\n');
     run('Preserve main deployment controls');
     // Model checkout of a historical ref that has none of these controls.
     for (const asset of assets) rmSync(join(root, asset));
     // Actual old metadata: no Node file and Wrangler lives in data-proxy.
-    const historical = readFileSync(new URL('./fixtures/deploy-now-historical-package.json', import.meta.url), 'utf8');
+    const historical = JSON.stringify({name:'transit',private:true,workspaces:['apps/*','packages/*'],devDependencies:{turbo:'^2.5.0'}});
     writeFileSync(join(root, 'package.json'), historical);
     assert.equal(JSON.parse(historical).devDependencies?.wrangler, undefined);
     const control = join(temporary, 'transit-deploy-control');
-    assert.equal(readFileSync(join(control, '.nvmrc'), 'utf8').trim(), '22.23.2');
-    assert.equal(readFileSync(join(control, '.bun-version'), 'utf8').trim(), '1.3.11');
-    assert.equal(JSON.parse(readFileSync(join(control, 'package.json'), 'utf8')).dependencies.wrangler, '4.154.0');
-    assert.match(workflow, /node-version-file: \$\{\{ runner.temp \}\}\/transit-deploy-control\/.nvmrc/);
-    assert.match(workflow, /bun-version-file: \$\{\{ runner.temp \}\}\/transit-deploy-control\/.bun-version/);
+    assert.equal(readFileSync(join(control, '.nvmrc'), 'utf8').trim(), nodePin);
+    assert.equal(readFileSync(join(control, '.bun-version'), 'utf8').trim(), bunPin);
+    assert.equal(JSON.parse(readFileSync(join(control, 'package.json'), 'utf8')).dependencies.wrangler, wranglerPin);
+    assert.match(workflow, /node-version-file: \.nvmrc/);
+    assert.ok(workflow.indexOf('Set up deployment Node') < workflow.indexOf('Check out deployment ref'));
+    assert.match(workflow, /bun-version-file: \.bun-version/);
+    assert.ok(workflow.indexOf('Set up deployment Bun') < workflow.indexOf('Check out deployment ref'));
     assert.match(workflow, /run: bun install --frozen-lockfile/);
     assert.doesNotMatch(workflow, /uses: \.\/\.github\/actions\/setup/);
     for (const asset of assets.slice(2)) {

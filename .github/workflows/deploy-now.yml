@@ -36,6 +36,17 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
+      - name: Set up deployment Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Set up deployment Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+
       - name: Preserve main deployment controls
         shell: pwsh
         run: |
@@ -59,17 +70,6 @@ jobs:
         shell: bash
         run: |
           printf 'TRANSIT_COMMIT_SHA=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-
-      - name: Set up deployment Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version-file: ${{ runner.temp }}/transit-deploy-control/.nvmrc
-          package-manager-cache: false
-
-      - name: Set up deployment Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: ${{ runner.temp }}/transit-deploy-control/.bun-version
 
       - name: Install selected application dependencies
         run: bun install --frozen-lockfile
