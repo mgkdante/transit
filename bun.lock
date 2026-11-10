@@ -81,6 +81,9 @@
     "bits-ui@2.20.4": "patches/bits-ui@2.20.4.patch",
   },
   "overrides": {
+    "@yesid/motion": "https://github.com/yesid-dev/yesid.design/releases/download/v0.39.1/yesid-motion-0.39.1.tgz",
+    "@yesid/seo-kit": "https://github.com/yesid-dev/yesid.design/releases/download/v0.39.1/yesid-seo-kit-0.39.1.tgz",
+    "@yesid/tokens": "https://github.com/yesid-dev/yesid.design/releases/download/v0.39.1/yesid-tokens-0.39.1.tgz",
     "@sveltejs/kit": "3.1.1",
     "bits-ui": "2.20.4",
     "brace-expansion": "5.0.9",

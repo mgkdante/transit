@@ -33,6 +33,9 @@
     "node": ">=22.17.0 <23"
   },
   "overrides": {
+    "@yesid/motion": "https://github.com/yesid-dev/yesid.design/releases/download/v0.39.1/yesid-motion-0.39.1.tgz",
+    "@yesid/seo-kit": "https://github.com/yesid-dev/yesid.design/releases/download/v0.39.1/yesid-seo-kit-0.39.1.tgz",
+    "@yesid/tokens": "https://github.com/yesid-dev/yesid.design/releases/download/v0.39.1/yesid-tokens-0.39.1.tgz",
     "brace-expansion": "5.0.9",
     "nanoid": "3.3.18",
     "postcss": "8.5.26",
