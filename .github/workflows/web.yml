@@ -161,7 +161,7 @@ jobs:
 
       - name: Web CI policy contract
         working-directory: ${{ github.workspace }}
-        run: node --test .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs
+        run: node --test .github/scripts/bun-tarball-resolution.test.mjs .github/scripts/web-ci-paths.test.mjs .github/scripts/web-ci-trusted.test.mjs
 
       - name: Deployment scope contract
         working-directory: ${{ github.workspace }}
