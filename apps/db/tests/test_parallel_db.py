@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import parallel_db
@@ -57,6 +58,7 @@ def test_clones_are_distinct_and_partial_setup_is_cleaned(monkeypatch: pytest.Mo
             raise RuntimeError("create failed")
 
     monkeypatch.setattr(parallel_db, "_execute", execute)
+    monkeypatch.setattr(parallel_db, "_database_settings", lambda _: [])
     with pytest.raises(RuntimeError, match="create failed"):
         parallel_db.pytest_configure(config)
     databases = config.stash[parallel_db._DATABASES]
@@ -111,3 +113,71 @@ def test_parallel_database_refuses_unmanaged_worker_configuration(
     config = SimpleNamespace(getoption=lambda key, **kwargs: options[key])
     with pytest.raises(pytest.UsageError, match="worker count"):
         parallel_db.pytest_configure(config)
+
+
+def test_database_profile_preserves_values_role_and_effective_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = "postgresql+psycopg://transit_ci@localhost/transit_ci"
+    name = "transit_ci_xdist_0123456789abcdef_gw0"
+    target = make_url(f"postgresql+psycopg://transit_ci@localhost/ignored?dbname={name}")
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_DISPOSABLE", "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE"
+    )
+    parameters, commands = [], []
+
+    class Connection:
+        def begin(self):
+            return nullcontext()
+
+        def execute(self, statement, values):
+            parameters.append(values)
+
+        def exec_driver_sql(self, statement):
+            commands.append(statement)
+
+    connection = Connection()
+    disposed = []
+    admin = SimpleNamespace(
+        connect=lambda: nullcontext(connection), dispose=lambda: disposed.append(1)
+    )
+    monkeypatch.setattr(parallel_db, "_admin_engine", lambda _: admin)
+    profile = [
+        (None, "search_path", '"schema, name", public'),
+        (None, "transit.profile", "a=b,c'quoted"),
+        ('quoted"role', "work_mem", "7MB"),
+    ]
+    parallel_db._copy_database_settings(base, target, profile)
+    assert parameters == [{"name": key, "value": value} for _, key, value in profile]
+    assert commands == [
+        f'ALTER DATABASE "{name}" SET "search_path" FROM CURRENT',
+        f'ALTER DATABASE "{name}" SET "transit.profile" FROM CURRENT',
+        f'ALTER ROLE "quoted""role" IN DATABASE "{name}" SET "work_mem" FROM CURRENT',
+    ]
+    assert disposed == [1]
+
+
+def test_settings_copy_failure_cleans_up_the_created_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = "postgresql+psycopg://transit_ci@localhost/transit_ci"
+    monkeypatch.setenv("TRANSIT_TEST_DATABASE_URL", base)
+    monkeypatch.setenv(
+        "TRANSIT_TEST_DATABASE_DISPOSABLE", "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE"
+    )
+    statements, cleanups = [], []
+    config = SimpleNamespace(stash={}, getoption=lambda *a, **kw: 2, add_cleanup=cleanups.append)
+    monkeypatch.setattr(parallel_db, "_execute", lambda base, sql: statements.append(sql))
+    monkeypatch.setattr(parallel_db, "_database_settings", lambda _: [(None, "TimeZone", "UTC")])
+
+    def fail(*args):
+        raise RuntimeError("cannot copy database profile")
+
+    monkeypatch.setattr(parallel_db, "_copy_database_settings", fail)
+    with pytest.raises(RuntimeError, match="cannot copy database profile"):
+        parallel_db.pytest_configure(config)
+    assert len(config.stash[parallel_db._DATABASES]) == 1
+    cleanups[0]()
+    assert len(statements) == 2
+    assert statements[0].startswith("CREATE DATABASE")
+    assert statements[1].startswith("DROP DATABASE")
