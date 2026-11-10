@@ -158,7 +158,13 @@ function inventory(root, staging = false) {
   );
 }
 
-function context(root, env, producerAttempt, producerRun = env.GITHUB_RUN_ID) {
+function context(
+  root,
+  env,
+  producerAttempt,
+  producerRun = env.GITHUB_RUN_ID,
+  verifyTools = true,
+) {
   const git = (...args) =>
     execFileSync("git", args, {
       cwd: root,
@@ -186,24 +192,26 @@ function context(root, env, producerAttempt, producerRun = env.GITHUB_RUN_ID) {
     if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version))
       throw new Error("Tool versions must be pinned");
   }
-  same(process.versions.node, node, "Node version");
-  same(
-    execFileSync("bun", ["--version"], {
-      cwd: root,
-      env,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim(),
-    bun,
-    "Bun version",
-  );
-  same(
-    JSON.parse(
-      readFileSync(join(root, "node_modules/wrangler/package.json"), "utf8"),
-    ).version,
-    wrangler,
-    "Wrangler version",
-  );
+  if (verifyTools) {
+    same(process.versions.node, node, "Node version");
+    same(
+      execFileSync("bun", ["--version"], {
+        cwd: root,
+        env,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim(),
+      bun,
+      "Bun version",
+    );
+    same(
+      JSON.parse(
+        readFileSync(join(root, "node_modules/wrangler/package.json"), "utf8"),
+      ).version,
+      wrangler,
+      "Wrangler version",
+    );
+  }
   return {
     repository: required(
       env,
@@ -275,7 +283,7 @@ export function prepare(
   return outputs;
 }
 
-function verify(stage, root, env, attempt) {
+function verify(stage, root, env, attempt, verifyTools = true) {
   const expectedHash = required(
     env,
     "TRANSIT_EXPECTED_MANIFEST_SHA256",
@@ -294,11 +302,29 @@ function verify(stage, root, env, attempt) {
       env,
       attempt,
       env.TRANSIT_PRODUCER_RUN_ID ?? env.GITHUB_RUN_ID,
+      verifyTools,
     ),
     "Build context",
   );
   same(inventory(stage, true), manifest.files, "Artifact inventory");
   return manifest;
+}
+
+// Read-only preflight before skipping gates. Verify the seal, exact source inputs,
+// pinned tool identities and every artifact byte without installing dependencies.
+// Deployment still uses restore(), which additionally verifies installed tools.
+export function verifySealed(
+  stage,
+  { root = process.cwd(), env = process.env } = {},
+) {
+  ({ root, stage } = paths(root, stage));
+  return verify(
+    stage,
+    root,
+    env,
+    required(env, "TRANSIT_PRODUCER_ATTEMPT", /^[1-9][0-9]*$/),
+    false,
+  );
 }
 
 export function verifySource(

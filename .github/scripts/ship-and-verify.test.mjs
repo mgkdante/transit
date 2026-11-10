@@ -50,11 +50,11 @@ test("promotion binds download and restoration to the selected run and keeps the
   );
   assert.match(
     job("deploy-production"),
-    /TRANSIT_PRODUCER_RUN_ID: \$\{\{ needs.ci-work.outputs.producer_run_id \}\}/,
+    /TRANSIT_PRODUCER_RUN_ID: \$\{\{ needs.ci.outputs.producer_run_id \}\}/,
   );
   assert.match(
     job("deploy-production"),
-    /run-id: \$\{\{ needs.ci-work.outputs.producer_run_id \}\}/,
+    /run-id: \$\{\{ needs.ci.outputs.producer_run_id \}\}/,
   );
   assert.doesNotMatch(
     job("deploy_scope"),
