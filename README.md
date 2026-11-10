@@ -40,9 +40,10 @@ shared UI come from pinned
   cached for 20 seconds, and the web app refetches when that cache expires.
 - **Freshness on screen.** Live age comes from vehicle positions and trip
   updates; alerts show their own "checked" time. Estimated positions are
-  opt-in. They keep each vehicle moving along its route until the next report
-  is due, and a vehicle shows as Not reporting after a cutoff that grows by the
-  provider's source lag.
+  opt-in. They move each vehicle along its route at its reported speed for a
+  limited time (70 seconds for STM, longer for a provider with source lag),
+  never past a next stop ahead of it, and a vehicle shows as Not reporting
+  after a cutoff that also grows by the provider's source lag.
 - **Map.** MapLibre draws a per-provider [Protomaps](https://protomaps.com)
   basemap that the [refresh-basemap](.github/workflows/refresh-basemap.yml)
   workflow rebuilds monthly and publishes beside the snapshots.
