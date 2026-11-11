@@ -8,6 +8,8 @@ let refreshing = $state(false);
 let error = $state<Error | null>(null);
 let runVersion = 0;
 let inFlight: Promise<void> | null = null;
+// A resource effect must not subscribe to the completion of unrelated requests.
+// eslint-disable-next-line svelte/prefer-svelte-reactivity
 const activeWork = new Map<Promise<unknown>, Promise<void>>();
 let failures: unknown[] = [];
 

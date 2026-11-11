@@ -24,7 +24,7 @@ it('keeps the map counter on vehicles while preserving selected trip-feed failur
 				notice: 'refresh-unavailable',
 			}),
 		},
-		{ page: 'map', selection: { kind: 'vehicle', id: 'v1' } },
+		{ page: 'map', selection: { kind: 'vehicle' } },
 	);
 	expect(result.stamp).toMatchObject({ ageSeconds: 20, generatedUtc: timestamp });
 	expect(result.notice.kind).toBe('refresh-unavailable');

@@ -64,9 +64,9 @@
 			/>
 		</svg>
 	</Button>
-	<span role="status" class="sr-only"
-		>{dataRefresh.error ? navPillCopy[locale].refreshFailed : ''}</span
-	>
+	{#if dataRefresh.error}
+		<span role="status" class="sr-only">{navPillCopy[locale].refreshFailed}</span>
+	{/if}
 </div>
 
 <style>
