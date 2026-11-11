@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { test } from './layout-test';
+import { test } from './layout-input-test';
 
 for (const provider of ['stm', 'octranspo']) {
 	for (const prefix of ['', '/fr']) {
