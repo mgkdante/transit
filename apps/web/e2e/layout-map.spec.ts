@@ -268,10 +268,10 @@ test('mobile detail sheet keeps its header controls above the home indicator at 
 
 for (const provider of read('providers').providers) {
 	for (const locale of ['en', 'fr']) {
-		test(`${provider.id} ${locale} mobile report precedes the upper-right title @layout`, async ({
+		test(`${provider.id} ${locale} map report and title fit their responsive placement @layout`, async ({
 			page,
 		}) => {
-			test.skip(page.viewportSize()!.width !== 390, 'the report stack uses the phone matrix');
+			const mobile = page.viewportSize()!.width < 1024;
 			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 			await page.route('**/v1/**', async (route) => {
 				const url = new URL(route.request().url());
@@ -283,15 +283,24 @@ for (const provider of read('providers').providers) {
 				waitUntil: 'networkidle',
 			});
 			const panel = page.locator('.map-head');
-			const report = panel.locator('[data-slot="freshness-stamp"]');
+			const report = page.locator(
+				`.map-freshness[data-placement="${mobile ? 'head' : 'floating'}"] [data-slot="freshness-stamp"]`,
+			);
 			await expect(report).toBeVisible();
 			const titleBox = (await panel.getByRole('heading', { level: 1 }).boundingBox())!;
 			const reportBox = (await report.boundingBox())!;
 			const panelBox = (await panel.boundingBox())!;
-			expect(titleBox.y).toBeGreaterThanOrEqual(reportBox.y + reportBox.height);
-			expect(titleBox.x).toBeCloseTo(reportBox.x, 0);
-			expect(page.viewportSize()!.width - panelBox.x - panelBox.width).toBeCloseTo(12, 0);
-			expect(reportBox.x + reportBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+			if (mobile) {
+				expect(titleBox.y).toBeGreaterThanOrEqual(reportBox.y + reportBox.height);
+				expect(titleBox.x).toBeCloseTo(reportBox.x, 0);
+				expect(page.viewportSize()!.width - panelBox.x - panelBox.width).toBeCloseTo(12, 0);
+				expect(reportBox.x + reportBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+			} else {
+				expect(reportBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width);
+				expect(reportBox.y).toBeLessThan(titleBox.y + titleBox.height);
+				expect(titleBox.y).toBeLessThan(reportBox.y + reportBox.height);
+				expect(reportBox.x + reportBox.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+			}
 		});
 
 		test(`${provider.id} ${locale} map title without eyebrow @layout`, async ({ page }) => {
