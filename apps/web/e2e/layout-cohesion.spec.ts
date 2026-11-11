@@ -34,6 +34,7 @@ for (const provider of ['stm', 'octranspo'])
 							waitUntil: 'networkidle',
 						});
 						await expect(page.getByRole('main')).toBeVisible();
+						await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
 						if (kind !== 'trip') {
 							const tabs = page.locator('[data-slot="entity-detail-tabs"]');
 							await expect(tabs.getByRole('tab')).toHaveCount(3);

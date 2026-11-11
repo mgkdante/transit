@@ -8,6 +8,7 @@ for (const provider of ['stm', 'octranspo']) {
 		}) => {
 			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 			await page.goto(`${prefix}/privacy?provider=${provider}`);
+			await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
 			await expect(page.locator('#page-scroller')).toHaveCount(0);
 			await expect
 				.poll(() => page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight))
@@ -35,6 +36,7 @@ for (const provider of ['stm', 'octranspo']) {
 			await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
 			await expect(anchor).toBeInViewport();
 			await page.goto(`${prefix}/map?provider=${provider}`);
+			await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
 			await expect(page.locator('[data-slot="app-shell"]')).toHaveAttribute(
 				'data-full-viewport',
 				'true',

@@ -147,6 +147,7 @@ for (const provider of ['stm', 'octranspo'])
 						),
 					)
 					.toBe(true);
+				await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
 				const point = await page.evaluate(
 					(provider) =>
 						(window as unknown as { __transitMap: Probe }).__transitMap.project(
