@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import readyProviders from '../../../e2e/providers.json';
 import {
 	loadProviderCatalog,
 	PublicProviderCatalogSchema,
@@ -28,6 +29,70 @@ const catalog = {
 	default_provider: 'test',
 	providers: [provider],
 };
+
+it.each([
+	['Ottawa', { lat: 45.42, lon: -75.7 }, 'octranspo'],
+	['Montréal', { lat: 45.5, lon: -73.6 }, 'stm'],
+	['Toronto', { lat: 43.65, lon: -79.38 }, 'stm'],
+	['missing location', null, 'stm'],
+] as const)('selects the network for %s with STM as the fallback', (_city, location, expected) => {
+	const ready = PublicProviderCatalogSchema.parse(readyProviders);
+	const url = new URL('https://transit.test/fr/network?date=2026-11-10');
+	const result = resolveProvider(url, ready, location);
+	expect(result.provider.id).toBe(expected);
+	expect(result.url.pathname + result.url.search).toBe(
+		expected === 'stm'
+			? '/fr/network?date=2026-11-10'
+			: '/fr/network?date=2026-11-10&provider=octranspo',
+	);
+	expect(url.searchParams.has('provider')).toBe(false);
+});
+
+it.each([
+	['provider=stm', 'stm'],
+	['provider=octranspo', 'octranspo'],
+	['provider=unknown', 'stm'],
+	['provider=', 'stm'],
+	['provider=stm&provider=octranspo', 'stm'],
+])('keeps explicit provider policy above location for %s', (query, expected) => {
+	const ready = PublicProviderCatalogSchema.parse(readyProviders);
+	const result = resolveProvider(new URL(`https://transit.test/map?${query}`), ready, {
+		lat: 45.42,
+		lon: -75.7,
+	});
+	expect(result.provider.id).toBe(expected);
+});
+
+it('selects only ready providers and falls back when bounds are absent or ambiguous', () => {
+	const ready = PublicProviderCatalogSchema.parse(readyProviders);
+	const url = new URL('https://transit.test/');
+	const location = { lat: 45.42, lon: -75.7 };
+	const stm = ready.providers.find(({ id }) => id === 'stm')!;
+	const ottawa = ready.providers.find(({ id }) => id === 'octranspo')!;
+	for (const providers of [
+		[stm],
+		[stm, { ...ottawa, fit_bounds: null }],
+		[stm, ottawa, { ...ottawa, id: 'overlap' }],
+	]) {
+		expect(resolveProvider(url, { ...ready, providers }, location).provider.id).toBe('stm');
+	}
+	expect(
+		resolveProvider(
+			url,
+			{ ...ready, providers: [stm, { ...ottawa, id: 'new-provider' }] },
+			location,
+		).provider.id,
+	).toBe('new-provider');
+});
+
+it('clears provider-specific entities when automatic location selection changes the network', () => {
+	const result = resolveProvider(
+		new URL('https://transit.test/fr/stop/123?lat=45.5&lon=-73.6'),
+		PublicProviderCatalogSchema.parse(readyProviders),
+		{ lat: 45.42, lon: -75.7 },
+	);
+	expect(result.url.pathname + result.url.search).toBe('/fr/map?provider=octranspo');
+});
 
 it('only disables alerts when both input families are explicitly unavailable', () => {
 	expect(providerHasAlerts(undefined)).toBe(true);

@@ -1,6 +1,7 @@
 import { waitUntil } from 'cloudflare:workers';
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { pathLocale } from '#lib/i18n/index.ts';
+import { readRequestLocation } from '#lib/v1/requestLocation.ts';
 import { readPublicSiteConfig } from '#lib/site/config.ts';
 import { DOCUMENT_SECURITY_HEADERS } from '#lib/site/securityHeaders.ts';
 import { configureTransitUi } from '#lib/ui/configure.ts';
@@ -85,12 +86,20 @@ function applyDocumentHeaders(response: Response, url: URL): void {
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.v1Cache = new Map();
+	event.locals.approximateLocation = readRequestLocation(event.request);
+	const automaticSelection =
+		event.route.id?.startsWith('/[[lang=locale]]') === true &&
+		!event.url.searchParams.has('provider') &&
+		event.locals.approximateLocation != null;
 
 	const lang = pathLocale(event.url.pathname);
 	event.locals.locale = lang;
 	const cache = await edgeCache();
 	const cacheBypassed =
-		event.isDataRequest || cache == null || requestBypassesHtmlCache(event.request);
+		automaticSelection ||
+		event.isDataRequest ||
+		cache == null ||
+		requestBypassesHtmlCache(event.request);
 	const key = cacheBypassed ? null : cacheKey(event.url);
 
 	if (cache != null && key != null) {
@@ -114,6 +123,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		preload: ({ type, path }) => type !== 'font' || preloadFont(path),
 	});
 	const response = mutableResponse(resolved, event.request.method === 'HEAD');
+	if (automaticSelection) response.headers.set('cache-control', 'no-store');
 
 	applyDocumentHeaders(response, event.url);
 

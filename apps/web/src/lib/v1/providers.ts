@@ -1,4 +1,6 @@
 import { delocalizePath, localizeHref, pathLocale } from '#lib/i18n/index.ts';
+import { isInsideBounds } from '#lib/geocode/types.ts';
+import type { ApproximateLocation } from './requestLocation';
 import { v1BaseUrl } from './config';
 import { PublicProviderCatalogSchema, type PublicProviderCatalog } from './schemas/providers';
 export { PublicProviderSchema, PublicProviderCatalogSchema } from './schemas/providers';
@@ -51,14 +53,31 @@ export function providerHref(url: URL, provider: string, lang = pathLocale(url.p
 	return next.pathname + next.search;
 }
 
-export function resolveProvider(url: URL, catalog: PublicProviderCatalog) {
+export function resolveProvider(
+	url: URL,
+	catalog: PublicProviderCatalog,
+	location?: ApproximateLocation | null,
+) {
 	const values = url.searchParams.getAll('provider');
-	const requested = values.length === 1 ? values[0] : catalog.default_provider;
+	const matches =
+		values.length === 0 && location
+			? catalog.providers.filter(
+					({ fit_bounds }) => fit_bounds && isInsideBounds(location.lat, location.lon, fit_bounds),
+				)
+			: [];
+	const requested =
+		values.length === 1
+			? values[0]
+			: matches.length === 1
+				? matches[0].id
+				: catalog.default_provider;
 	const provider =
 		catalog.providers.find(({ id }) => id === requested) ??
 		catalog.providers.find(({ id }) => id === catalog.default_provider)!;
 	const normalized =
-		values.length > 1 || (values.length === 1 && values[0] !== provider.id)
+		values.length > 1 ||
+		(values.length === 1 && values[0] !== provider.id) ||
+		(values.length === 0 && provider.id !== catalog.default_provider)
 			? new URL(providerHref(url, provider.id), url)
 			: url;
 	return { provider, url: normalized };

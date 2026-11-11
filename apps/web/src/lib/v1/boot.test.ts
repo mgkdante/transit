@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '#lib/v1/schemas/index.ts';
+import readyProviders from '../../../e2e/providers.json';
 
 const mocks = vi.hoisted(() => ({
 	getManifest: vi.fn(),
@@ -15,6 +16,40 @@ describe('bootV1 request reuse', () => {
 	beforeEach(() => {
 		mocks.getManifest.mockReset();
 		mocks.getLabels.mockReset();
+	});
+
+	it('redirects an Ottawa arrival before reading any default-city manifest or labels', async () => {
+		const fetch = vi.fn(async () => new Response(JSON.stringify(readyProviders)));
+		const result = await bootProvider(
+			new URL('https://transit.test/fr/map'),
+			'fr',
+			{ fetch },
+			{ lat: 45.42, lon: -75.7 },
+		);
+		expect(result).toMatchObject({
+			providerId: 'octranspo',
+			redirectHref: '/fr/map?provider=octranspo',
+			v1: null,
+			discoveryError: false,
+		});
+		expect(mocks.getManifest).not.toHaveBeenCalled();
+		expect(mocks.getLabels).not.toHaveBeenCalled();
+	});
+
+	it('keeps the STM compatibility fallback when discovery fails for an Ottawa arrival', async () => {
+		mocks.getManifest.mockResolvedValue({ provider: 'stm', city: 'Montréal', display_name: 'STM' });
+		mocks.getLabels.mockResolvedValue({});
+		const fetch = vi.fn(async () => new Response(null, { status: 503 }));
+		const result = await bootProvider(
+			new URL('https://transit.test/'),
+			'en',
+			{ fetch },
+			{ lat: 45.42, lon: -75.7 },
+		);
+		expect(result.providerId).toBe('stm');
+		expect(result.discoveryError).toBe(true);
+		expect(result.redirectHref).toBeNull();
+		expect(result.v1?.manifest.provider).toBe('stm');
 	});
 
 	it.each([503, 200])(

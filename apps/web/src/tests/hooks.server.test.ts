@@ -86,6 +86,8 @@ function event(
 		readonly method?: string;
 		readonly headers?: HeadersInit;
 		readonly cache?: CacheHarness;
+		readonly cf?: unknown;
+		readonly routeId?: string;
 	} = {},
 ): Parameters<typeof handle>[0]['event'] {
 	const cache = options.cache;
@@ -98,13 +100,16 @@ function event(
 	workers.waitUntil.mockImplementation((promise: Promise<unknown>) => {
 		cache?.waitUntil(promise);
 	});
+	const request = new Request(url, {
+		method: options.method ?? 'GET',
+		headers: options.headers,
+	});
+	Object.defineProperty(request, 'cf', { value: options.cf });
 	return {
 		url: new URL(url),
-		request: new Request(url, {
-			method: options.method ?? 'GET',
-			headers: options.headers,
-		}),
+		request,
 		locals: {},
+		route: { id: options.routeId ?? '/[[lang=locale]]' },
 	} as Parameters<typeof handle>[0]['event'];
 }
 
@@ -171,6 +176,89 @@ describe('server request locale', () => {
 });
 
 describe('server HTML edge cache', () => {
+	it.each(['/sitemap.xml', '/api/stops/slim'])(
+		'preserves %s caching when location is irrelevant',
+		async (path) => {
+			const cacheControl = 'public, max-age=300, s-maxage=3600';
+			const response = await handle({
+				event: event(`https://transit.yesid.dev${path}`, {
+					routeId: path,
+					cf: { latitude: '45.42', longitude: '-75.70' },
+				}),
+				resolve: vi.fn(
+					async () =>
+						new Response('data', {
+							headers: { 'content-type': 'application/json', 'cache-control': cacheControl },
+						}),
+				),
+			});
+			expect(response.headers.get('cache-control')).toBe(cacheControl);
+		},
+	);
+
+	it.each([
+		['Ottawa', { latitude: '45.42', longitude: '-75.70' }],
+		['Montréal', { latitude: '45.50', longitude: '-73.60' }],
+		['outside the supported areas', { latitude: '43.65', longitude: '-79.38' }],
+	])('does not reuse or store location-dependent HTML for %s', async (_city, cf) => {
+		const cache = cacheHarness(html('cached for another city'));
+		const request = event('https://transit.yesid.dev/fr/network', { cache, cf });
+		const resolve = vi.fn(async () => html('selected for this visitor'));
+		const response = await handle({ event: request, resolve });
+		expect(await response.text()).toBe('selected for this visitor');
+		expect(resolve).toHaveBeenCalledOnce();
+		expect(cache.match).not.toHaveBeenCalled();
+		expect(cache.put).not.toHaveBeenCalled();
+		expect(response.headers.get('cache-control')).toBe('no-store');
+	});
+
+	it('keeps explicit network pages cacheable regardless of visitor location', async () => {
+		const cache = cacheHarness(html('Montréal'));
+		const request = event('https://transit.yesid.dev/network?provider=stm', {
+			cache,
+			cf: { latitude: '45.42', longitude: '-75.70' },
+		});
+		const resolve = vi.fn(async () => html('Ottawa'));
+		const response = await handle({ event: request, resolve });
+		expect(await response.text()).toBe('Montréal');
+		expect(resolve).not.toHaveBeenCalled();
+		expect(response.headers.get('x-transit-edge-cache')).toBe('HIT');
+	});
+
+	it('keeps automatic redirects private even when the edge cache is unavailable', async () => {
+		const response = await handle({
+			event: event('https://transit.yesid.dev/fr/', {
+				cf: { latitude: '45.42', longitude: '-75.70' },
+			}),
+			resolve: vi.fn(
+				async () =>
+					new Response(null, {
+						status: 307,
+						headers: { location: '/fr/?provider=octranspo' },
+					}),
+			),
+		});
+		expect(response.status).toBe(307);
+		expect(response.headers.get('cache-control')).toBe('no-store');
+	});
+
+	it('keeps location-dependent page data private and passes the location to the layout', async () => {
+		const request = {
+			...event('https://transit.yesid.dev/fr/network', {
+				cf: { latitude: '45.42', longitude: '-75.70' },
+			}),
+			isDataRequest: true,
+		};
+		const response = await handle({
+			event: request,
+			resolve: vi.fn(async (event) => {
+				expect(event.locals.approximateLocation).toEqual({ lat: 45.42, lon: -75.7 });
+				return new Response('{}', { headers: { 'content-type': 'application/json' } });
+			}),
+		});
+		expect(response.headers.get('cache-control')).toBe('no-store');
+	});
+
 	it('serves an exact-URL cache hit without invoking SvelteKit, keeping its CSP and reapplying security headers', async () => {
 		const cache = cacheHarness(html('cached', { headers: { 'content-security-policy': KIT_CSP } }));
 		const request = event('https://transit.yesid.dev/fr/metrics?grain=week', { cache });
