@@ -26,7 +26,7 @@
 		{/snippet}
 		<NetworkTile
 			title={copy.delayHistogramSection}
-			subtitle={copy.delayHistogram.caption}
+			subtitle={copy.questions.delays}
 			sectionKey="network-delay-histogram"
 			class="network-hist-tile"
 			headerActions={histogramInfo}

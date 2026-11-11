@@ -4,6 +4,18 @@ import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const copy = defineCopy({
 	en: {
+		questions: {
+			overview: 'Can you trust the data shown here?',
+			lanes: 'Which preparation steps are working?',
+			freshness: 'Are the reports recent enough?',
+			sources: 'Where does the data come from?',
+			gaps: 'Which services can we not track?',
+			pipelineNotes: 'How do we get these numbers?',
+			retention: 'How far back do we keep the records?',
+			conformance: 'Does the data pass its checks?',
+			envelope: 'Which published report are you reading?',
+			historyCoverage: 'Which dates can you actually browse?',
+		},
 		kicker: 'DATA STATUS',
 		article: articleCopy('en', {
 			watermark: 'Status',
@@ -205,6 +217,18 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
+		questions: {
+			overview: 'Peut-on se fier aux données affichées ?',
+			lanes: 'Quelles étapes de préparation fonctionnent ?',
+			freshness: 'Les rapports sont-ils assez récents ?',
+			sources: 'D’où viennent les données ?',
+			gaps: 'Quels services ne peut-on pas suivre ?',
+			pipelineNotes: 'Comment obtient-on ces chiffres ?',
+			retention: 'Jusqu’où peut-on remonter ?',
+			conformance: 'Les données respectent-elles les vérifications ?',
+			envelope: 'Quel rapport consulte-t-on ?',
+			historyCoverage: 'Quelles dates peut-on réellement consulter ?',
+		},
 		kicker: 'ÉTAT DES DONNÉES',
 		article: articleCopy('fr', {
 			watermark: 'État',

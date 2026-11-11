@@ -23,7 +23,7 @@
 
 <NetworkTile
 	title={copy.dayTypeSection}
-	subtitle={copy.shift.rowCaption}
+	subtitle={copy.questions.weekday}
 	sectionKey="network-weekday-weekend"
 	{dataSlot}
 	headerActions={dayTypeInfo}

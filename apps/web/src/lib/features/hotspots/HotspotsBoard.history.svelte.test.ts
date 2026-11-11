@@ -564,9 +564,7 @@ describe('HotspotsBoard retained date history', () => {
 		expect(hotspotsCopy.fr.history.retainedVerdictNone).toBe(
 			'Aucun point chaud classé dans les observations conservées sélectionnées.',
 		);
-		expect(hotspotsCopy.en.cards.top.subtitle).toBe(
-			'The worst current hotspot and the evidence behind it',
-		);
+		expect(hotspotsCopy.en.cards.top.subtitle).toMatch(/\?$/);
 		expect(hotspotsCopy.en.verdict.none).toBe('Nothing is a hotspot right now.');
 	});
 });

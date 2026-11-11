@@ -402,16 +402,4 @@
 		color: var(--accent-text);
 		font-weight: 600;
 	}
-
-	:global(.reliability-band .section-subtitle__text) {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-title);
-		font-weight: 700;
-		line-height: 1.12;
-		letter-spacing: var(--tracking-tight);
-		color: var(--foreground);
-		max-inline-size: var(--measure-display);
-		text-wrap: balance;
-	}
 </style>

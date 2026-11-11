@@ -37,7 +37,7 @@ export const copy = defineCopy({
 				unpublished: 'That day was not published. Showing the latest repeat offenders.',
 			},
 			retainedWindow: (date) => `Available retained observations ending ${date}.`,
-			retainedWorstSubtitle: 'Severe-delay rate and recurrence in the selected observations',
+			retainedWorstSubtitle: 'Do severe delays keep happening in the selected observations?',
 			retainedHeroNone: 'No repeat offender ranks in the selected retained observations.',
 		},
 		rail: {
@@ -51,15 +51,15 @@ export const copy = defineCopy({
 		cards: {
 			worst: {
 				title: 'Worst repeat offender',
-				subtitle: 'Severe-delay rate and recurrence',
+				subtitle: 'Do severe delays keep happening?',
 			},
 			trips: {
 				title: 'Trips',
-				subtitle: 'Trips ranked by repeated severe lateness across observed days',
+				subtitle: 'Which trips are severely late again and again?',
 			},
 			vehicles: {
 				title: 'Vehicles',
-				subtitle: 'Vehicles ranked by repeated severe lateness across observed days',
+				subtitle: 'Which vehicles repeatedly report severe delays?',
 			},
 		},
 		caveatLabel: 'Caveat',
@@ -186,7 +186,7 @@ export const copy = defineCopy({
 			retainedWindow: (date: string) =>
 				`Observations conservées disponibles se terminant le ${date}.`,
 			retainedWorstSubtitle:
-				'Taux de retards graves et récurrence dans les observations sélectionnées',
+				'Les retards graves se répètent-ils dans les observations sélectionnées ?',
 			retainedHeroNone: 'Aucun récidiviste classé dans les observations conservées sélectionnées.',
 		},
 		rail: {
@@ -200,15 +200,15 @@ export const copy = defineCopy({
 		cards: {
 			worst: {
 				title: 'Pire récidiviste',
-				subtitle: 'Taux de retards graves et récurrence',
+				subtitle: 'Les retards graves se répètent-ils ?',
 			},
 			trips: {
 				title: 'Trajets',
-				subtitle: 'Trajets classés selon la répétition des retards graves sur les jours observés',
+				subtitle: 'Quels trajets accumulent les retards graves ?',
 			},
 			vehicles: {
 				title: 'Véhicules',
-				subtitle: 'Véhicules classés selon la répétition des retards graves sur les jours observés',
+				subtitle: 'Quels véhicules signalent régulièrement des retards graves ?',
 			},
 		},
 		caveatLabel: 'Mise en garde',

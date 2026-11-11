@@ -35,4 +35,15 @@
 	.article-section-stack > :global(*) {
 		margin: 0;
 	}
+
+	.article-section-stack :global(.section-subtitle--article-summary .section-subtitle__text) {
+		font-family: var(--font-heading);
+		font-size: var(--text-title);
+		font-weight: 700;
+		line-height: 1.12;
+		letter-spacing: var(--tracking-tight);
+		color: var(--foreground);
+		max-inline-size: none;
+		text-wrap: wrap;
+	}
 </style>

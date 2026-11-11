@@ -19,7 +19,7 @@
 <DashboardGrid minTile="320px" gutter={false}>
 	<NetworkTile
 		title={copy.statusSection}
-		subtitle={copy.statusBarLabel}
+		subtitle={copy.questions.status}
 		sectionKey="network-status-mix"
 	>
 		<Chart spec={statusSpec} />
@@ -31,7 +31,7 @@
 		{/snippet}
 		<NetworkTile
 			title={copy.occupancySection}
-			subtitle={copy.occupancyBarLabel}
+			subtitle={copy.questions.crowding}
 			sectionKey="network-occupancy-mix"
 			headerActions={occupancyInfo}
 		>

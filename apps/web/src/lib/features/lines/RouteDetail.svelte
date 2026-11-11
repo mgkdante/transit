@@ -430,6 +430,7 @@
 								title={t.directions}
 								headerVariant="article-summary"
 								index={1}
+								subtitle={t.questions.directions}
 								anchor="line-detail-directions"
 							>
 								<div class="route-section">
@@ -574,6 +575,7 @@
 								title={t.serviceSpan}
 								headerVariant="article-summary"
 								index={0}
+								subtitle={t.questions.span}
 								anchor="line-schedule-span"
 							>
 								<p class="route-schedule-intro" data-slot="schedule-intro">{t.scheduleIntro}</p>
@@ -606,6 +608,7 @@
 								title={t.servicePeriods}
 								headerVariant="article-summary"
 								index={1}
+								subtitle={t.questions.periods}
 								anchor="line-schedule-periods"
 							>
 								{#snippet headerActions()}

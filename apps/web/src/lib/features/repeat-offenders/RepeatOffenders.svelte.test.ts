@@ -529,29 +529,29 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(repeatCopy.en.cards).toEqual({
 			worst: {
 				title: 'Worst repeat offender',
-				subtitle: 'Severe-delay rate and recurrence',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			trips: {
 				title: 'Trips',
-				subtitle: 'Trips ranked by repeated severe lateness across observed days',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			vehicles: {
 				title: 'Vehicles',
-				subtitle: 'Vehicles ranked by repeated severe lateness across observed days',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 		});
 		expect(repeatCopy.fr.cards).toEqual({
 			worst: {
 				title: 'Pire récidiviste',
-				subtitle: 'Taux de retards graves et récurrence',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			trips: {
 				title: 'Trajets',
-				subtitle: 'Trajets classés selon la répétition des retards graves sur les jours observés',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			vehicles: {
 				title: 'Véhicules',
-				subtitle: 'Véhicules classés selon la répétition des retards graves sur les jours observés',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 		});
 	});

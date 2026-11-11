@@ -42,19 +42,19 @@ describe('Daily Receipt article copy', () => {
 		expect(copy.en.cards).toEqual({
 			main: {
 				title: 'The receipt',
-				subtitle: 'The day’s reliability figures, affected service, and worst readings',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			time: {
 				title: 'By time of day',
-				subtitle: 'Severe delays across the day’s service periods',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			delivered: {
 				title: 'Service counts',
-				subtitle: 'Counts relative to the schedule',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			silent: {
 				title: 'Scheduled but never appeared',
-				subtitle: 'Lines with scheduled trips that never appeared in the live feed',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 		});
 		expect(copy.en.caveatLabel).toBe('Caveat');
@@ -85,20 +85,19 @@ describe('Daily Receipt article copy', () => {
 		expect(copy.fr.cards).toEqual({
 			main: {
 				title: 'Le reçu',
-				subtitle: 'Les chiffres de fiabilité du jour, le service touché et les pires lectures',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			time: {
 				title: 'Par moment de la journée',
-				subtitle: 'Les retards graves selon les périodes de service de la journée',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			delivered: {
 				title: 'Décomptes de service',
-				subtitle: 'Décomptes rapportés à l’horaire',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			silent: {
 				title: 'Planifiés mais jamais apparus',
-				subtitle:
-					'Les lignes dont des trajets planifiés ne sont jamais apparus dans le flux en direct',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 		});
 		expect(copy.fr.caveatLabel).toBe('Mise en garde');

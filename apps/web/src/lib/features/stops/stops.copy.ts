@@ -94,6 +94,10 @@ export type StopsIndexCopy = (typeof indexCopy)[Locale];
 
 export const detailCopy = defineCopy({
 	fr: {
+		questions: {
+			departures: 'Quand le prochain véhicule est-il annoncé ?',
+			schedule: 'Quelles lignes passent ici, et quand ?',
+		},
 		kicker: 'ARRÊT',
 		back: '← Retour aux arrêts',
 		article: articleCopy(
@@ -132,7 +136,7 @@ export const detailCopy = defineCopy({
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		detailCard: {
 			title: 'Informations sur l’arrêt',
-			summary: 'Position, accessibilité, lignes desservies et avis de service actifs.',
+			summary: 'Où est cet arrêt, et quels services y sont offerts ?',
 		},
 		next: {
 			terminal: { title: 'passages-en-direct', tag: 'EN DIRECT' },
@@ -197,6 +201,10 @@ export const detailCopy = defineCopy({
 		},
 	},
 	en: {
+		questions: {
+			departures: 'When is the next vehicle predicted?',
+			schedule: 'Which lines stop here, and when?',
+		},
 		kicker: 'STOP',
 		back: '← Back to stops',
 		article: articleCopy(
@@ -232,7 +240,7 @@ export const detailCopy = defineCopy({
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		detailCard: {
 			title: 'Stop information',
-			summary: 'Position, accessibility, routes served and active service alerts.',
+			summary: 'Where is this stop, and what service can you use here?',
 		},
 		next: {
 			terminal: { title: 'live-departures', tag: 'LIVE' },

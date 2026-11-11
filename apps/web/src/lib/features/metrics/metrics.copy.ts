@@ -5,6 +5,11 @@ import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const metricsCopy = defineCopy({
 	fr: {
+		questions: {
+			provenance: 'D’où viennent les chiffres, et que comptent-ils ?',
+			positions: 'Où est le véhicule entre deux rapports ?',
+			gaps: 'Qu’est-ce que ces chiffres ne peuvent pas dire ?',
+		},
 		kicker: 'MÉTHODE · SCIENCE DES MESURES',
 		heading: 'Comment on mesure',
 		lede: 'Chaque chiffre de fiabilité sur ce site est un proxy dérivé du flux temps réel prédit, pas une mesure certifiée. Voici, par métrique, ce qu’il mesure vraiment, le calcul exact, le SQL, ce qu’il n’est PAS, et ses limites honnêtes.',
@@ -141,6 +146,11 @@ export const metricsCopy = defineCopy({
 		info: metricInfoCopy.fr,
 	},
 	en: {
+		questions: {
+			provenance: 'Where do the numbers come from, and what do they count?',
+			positions: 'Where is the vehicle between reports?',
+			gaps: 'What can these numbers not tell you?',
+		},
 		kicker: 'METHODOLOGY · METRIC SCIENCE',
 		heading: 'How we measure',
 		lede: 'Every reliability number on this site is a proxy derived from the predicted realtime feed, not a certified measurement. Here, per metric, is what it actually measures, the exact math, the SQL, what it is NOT, and its honest limits.',

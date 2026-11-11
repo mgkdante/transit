@@ -18,7 +18,7 @@
 
 <NetworkTile
 	title={copy.cancelSection}
-	subtitle={copy.cancel.summary}
+	subtitle={copy.questions.cancel}
 	sectionKey="network-cancellations"
 >
 	<div class="network-trend">

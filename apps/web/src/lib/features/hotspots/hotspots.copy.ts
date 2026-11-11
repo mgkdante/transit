@@ -55,17 +55,15 @@ export const copy = defineCopy({
 		cards: {
 			top: {
 				title: 'Point chaud principal',
-				subtitle: 'Le pire point chaud actuel et les preuves qui l’expliquent',
+				subtitle: 'Où les retards sont-ils les plus graves ?',
 			},
 			lines: {
 				title: 'Lignes',
-				subtitle:
-					'Lignes classées selon le taux de retards graves, y compris les petits échantillons',
+				subtitle: 'Quelles lignes ont la plus forte proportion de retards graves ?',
 			},
 			stops: {
 				title: 'Arrêts',
-				subtitle:
-					'Arrêts classés selon le taux de retards graves, y compris les petits échantillons',
+				subtitle: 'Quels arrêts ont la plus forte proportion de retards graves ?',
 			},
 		},
 		caveatLabel: 'Mise en garde',
@@ -184,15 +182,15 @@ export const copy = defineCopy({
 		cards: {
 			top: {
 				title: 'Top hotspot',
-				subtitle: 'The worst current hotspot and the evidence behind it',
+				subtitle: 'Where are delays most severe?',
 			},
 			lines: {
 				title: 'Lines',
-				subtitle: 'Lines ranked by severe-delay rate, including low-sample cases',
+				subtitle: 'Which lines have the highest share of severe delays?',
 			},
 			stops: {
 				title: 'Stops',
-				subtitle: 'Stops ranked by severe-delay rate, including low-sample cases',
+				subtitle: 'Which stops have the highest share of severe delays?',
 			},
 		},
 		caveatLabel: 'Caveat',

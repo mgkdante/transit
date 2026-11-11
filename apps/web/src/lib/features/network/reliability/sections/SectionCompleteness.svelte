@@ -15,10 +15,11 @@
 
 <NetworkTile
 	title={copy.completeness.section}
-	subtitle={copy.completeness.explainer}
+	subtitle={copy.questions.completeness}
 	sectionKey="network-service-completeness"
 	dataSlot="completeness-section"
 >
+	<p class="text-sm text-muted-foreground">{copy.completeness.explainer}</p>
 	<ExplainedMetricCard
 		label={copy.completeness.metric}
 		value={latestDisplay}

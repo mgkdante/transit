@@ -21,6 +21,7 @@
 </script>
 
 <NetworkTile
+	subtitle={copy.questions.reporting}
 	as="section"
 	title={copy.reporting.heading}
 	sectionKey="network-reporting"

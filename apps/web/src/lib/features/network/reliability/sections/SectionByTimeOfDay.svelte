@@ -23,7 +23,7 @@
 
 <NetworkTile
 	title={copy.shiftSection}
-	subtitle={copy.shift.rowCaption}
+	subtitle={copy.questions.time}
 	sectionKey="network-by-time-of-day"
 	{dataSlot}
 	headerActions={shiftInfo}

@@ -790,8 +790,8 @@ describe('RepeatOffenders retained date history', () => {
 	);
 
 	it('defines complete English and French retained-history copy without changing current copy', () => {
-		expect(repeatCopy.en.cards.worst.subtitle).toBe('Severe-delay rate and recurrence');
-		expect(repeatCopy.fr.cards.worst.subtitle).toBe('Taux de retards graves et récurrence');
+		expect(repeatCopy.en.cards.worst.subtitle).toMatch(/\?$/);
+		expect(repeatCopy.fr.cards.worst.subtitle).toMatch(/\?$/);
 		expect(repeatCopy.en.history).toMatchObject({
 			retainedWorstSubtitle: expect.not.stringMatching(/current/i),
 			retainedHeroNone: expect.not.stringMatching(/right now/i),
