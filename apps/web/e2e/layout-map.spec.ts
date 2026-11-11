@@ -279,10 +279,18 @@ for (const provider of read('providers').providers) {
 			await expect(page.getByText(/NETWORK · LIVE|RÉSEAU · EN DIRECT/)).toHaveCount(0);
 			const geometry = await heading.evaluate((el) => {
 				const title = el.getBoundingClientRect();
-				const head = el.closest('.map-head')!.getBoundingClientRect();
+				const panel = el.closest('.map-head')!;
+				const head = panel.getBoundingClientRect();
+				const style = getComputedStyle(panel);
+				// The panel's own inset is intentional; an eyebrow would add space inside it.
 				return {
-					top: title.top - head.top,
-					left: title.left - head.left,
+					top:
+						title.top - head.top - parseFloat(style.paddingTop) - parseFloat(style.borderTopWidth),
+					left:
+						title.left -
+						head.left -
+						parseFloat(style.paddingLeft) -
+						parseFloat(style.borderLeftWidth),
 					right: title.right,
 					width: innerWidth,
 				};
