@@ -13,6 +13,11 @@ describe('MapHeadTitle', () => {
 			`${MAP_COPY[locale].heading}.`,
 		);
 		expect(container.querySelector('.map-kicker')).not.toBeInTheDocument();
-		expect(container.querySelector('[data-placement="head"]')).toBeInTheDocument();
+		const report = container.querySelector('[data-placement="head"]');
+		expect(report).toBeInTheDocument();
+		expect(
+			report!.compareDocumentPosition(screen.getByRole('heading', { level: 1 })) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
 	});
 });

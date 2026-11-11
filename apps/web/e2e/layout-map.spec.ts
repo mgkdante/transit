@@ -268,6 +268,32 @@ test('mobile detail sheet keeps its header controls above the home indicator at 
 
 for (const provider of read('providers').providers) {
 	for (const locale of ['en', 'fr']) {
+		test(`${provider.id} ${locale} mobile report precedes the upper-right title @layout`, async ({
+			page,
+		}) => {
+			test.skip(page.viewportSize()!.width !== 390, 'the report stack uses the phone matrix');
+			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
+			await page.route('**/v1/**', async (route) => {
+				const url = new URL(route.request().url());
+				url.pathname = '/__layout/stale' + url.pathname;
+				await route.fulfill({ response: await route.fetch({ url: url.href }) });
+			});
+			await page.clock.setFixedTime(epoch + 900_000);
+			await page.goto(`${locale === 'fr' ? '/fr' : ''}/map?provider=${provider.id}`, {
+				waitUntil: 'networkidle',
+			});
+			const panel = page.locator('.map-head');
+			const report = panel.locator('[data-slot="freshness-stamp"]');
+			await expect(report).toBeVisible();
+			const titleBox = (await panel.getByRole('heading', { level: 1 }).boundingBox())!;
+			const reportBox = (await report.boundingBox())!;
+			const panelBox = (await panel.boundingBox())!;
+			expect(titleBox.y).toBeGreaterThanOrEqual(reportBox.y + reportBox.height);
+			expect(titleBox.x).toBeCloseTo(reportBox.x, 0);
+			expect(page.viewportSize()!.width - panelBox.x - panelBox.width).toBeCloseTo(12, 0);
+			expect(reportBox.x + reportBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+		});
+
 		test(`${provider.id} ${locale} map title without eyebrow @layout`, async ({ page }) => {
 			await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
 			await page.clock.setFixedTime(epoch + 30_000);
@@ -282,16 +308,25 @@ for (const provider of read('providers').providers) {
 				const panel = el.closest('.map-head')!;
 				const head = panel.getBoundingClientRect();
 				const style = getComputedStyle(panel);
-				// The panel's own inset is intentional; an eyebrow would add space inside it.
+				const stamp = panel.querySelector('[data-slot="freshness-stamp"]');
+				const report = stamp?.checkVisibility() ? stamp.getBoundingClientRect() : null;
+				// The report precedes the mobile title; neither row should leave a phantom eyebrow.
 				return {
 					top:
-						title.top - head.top - parseFloat(style.paddingTop) - parseFloat(style.borderTopWidth),
+						(report?.top ?? title.top) -
+						head.top -
+						parseFloat(style.paddingTop) -
+						parseFloat(style.borderTopWidth),
 					left:
 						title.left -
 						head.left -
 						parseFloat(style.paddingLeft) -
 						parseFloat(style.borderLeftWidth),
 					right: title.right,
+					panelRight: head.right,
+					titleTop: title.top,
+					titleLeft: title.left,
+					report: report ? { bottom: report.bottom, left: report.left } : null,
 					width: innerWidth,
 				};
 			});
@@ -300,6 +335,13 @@ for (const provider of read('providers').providers) {
 			expect(geometry.left).toBeGreaterThanOrEqual(0);
 			expect(geometry.left).toBeLessThan(12);
 			expect(geometry.right).toBeLessThanOrEqual(geometry.width);
+			if (geometry.width < 1024) {
+				expect(geometry.width - geometry.panelRight).toBeCloseTo(12, 0);
+				if (geometry.report) {
+					expect(geometry.titleTop).toBeGreaterThanOrEqual(geometry.report.bottom);
+					expect(geometry.titleLeft).toBeCloseTo(geometry.report.left, 0);
+				}
+			}
 		});
 	}
 }

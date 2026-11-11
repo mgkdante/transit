@@ -13,10 +13,10 @@
 </script>
 
 <div class="map-overlay map-head">
+	<MapFreshness placement="head" {presentation} {locale} />
 	<div class="map-title-row">
 		<h1 class="map-heading">{heading}<span class="map-dot">.</span></h1>
 	</div>
-	<MapFreshness placement="head" {presentation} {locale} />
 </div>
 
 <style>
@@ -60,7 +60,8 @@
 	@media (--desktop-max) {
 		.map-head {
 			top: var(--chrome-offset);
-			left: 0.75rem;
+			left: auto;
+			right: 0.75rem;
 			width: fit-content;
 			max-width: calc(100% - 1.5rem);
 			gap: 0.5rem;
