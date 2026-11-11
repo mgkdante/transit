@@ -141,6 +141,7 @@ export function createLiveStore(
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let clockDispose: (() => void) | null = null;
 	let refreshInFlight: Promise<void> | null = null;
+	let forcedController: AbortController | null = null;
 	const activeControllers = new SvelteSet<AbortController>();
 	let refreshGeneration = 0;
 	let lifecycleWired = false;
@@ -536,8 +537,10 @@ export function createLiveStore(
 
 	async function forceRefresh(controller: AbortController): Promise<void> {
 		refreshGeneration += 1;
+		pausePolling();
 		for (const active of activeControllers) active.abort();
 		activeControllers.clear();
+		forcedController = controller;
 		refreshInFlight = null;
 		for (const family of activeFamilies()) {
 			const state = familyStatesValue[family];
@@ -567,6 +570,10 @@ export function createLiveStore(
 			if (failure) throw failure;
 		} finally {
 			activeControllers.delete(controller);
+			if (forcedController === controller) {
+				forcedController = null;
+				schedulePolling();
+			}
 		}
 	}
 
@@ -641,7 +648,7 @@ export function createLiveStore(
 
 	function schedulePolling(): void {
 		pausePolling();
-		if (!started || !canPoll()) return;
+		if (!started || forcedController || !canPoll()) return;
 		const due = activeFamilies()
 			.filter((family) => familyStatesValue[family].phase !== 'loading')
 			.map((family) => nextPollAt.get(family) ?? Date.now() + ttlMs);
@@ -707,6 +714,7 @@ export function createLiveStore(
 
 	function stop(): void {
 		started = false;
+		forcedController = null;
 		refreshGeneration += 1;
 		refreshInFlight = null;
 		for (const family of LIVE_FAMILIES) {

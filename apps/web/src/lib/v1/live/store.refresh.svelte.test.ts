@@ -103,6 +103,42 @@ describe('explicit live refresh', () => {
 		expect(store.vehicles?.generated_utc).toBe(newer);
 	});
 
+	it('suspends due background polls while the forced manifest is loading', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const refreshManifest: NonNullable<LiveReader['refreshManifest']> = async ({ manifest }) => {
+			await gate;
+			return {
+				...manifest,
+				files: {
+					...manifest.files,
+					live: { ...manifest.files.live, vehicles: 'live/new-vehicles.json' },
+				},
+			};
+		};
+		const { store, reader } = mount(refreshManifest);
+		store.start();
+		await vi.advanceTimersByTimeAsync(1);
+		await vi.advanceTimersByTimeAsync(29_000);
+		const forced = store.refresh({ force: true });
+		try {
+			await vi.advanceTimersByTimeAsync(2000);
+			expect(reader.vehicles).toHaveBeenCalledTimes(1);
+		} finally {
+			release();
+		}
+		await forced;
+		expect(reader.vehicles.mock.calls[1][0]).toMatchObject({
+			requestCache: 'no-cache',
+			manifest: { files: { live: { vehicles: 'live/new-vehicles.json' } } },
+		});
+		const calls = reader.vehicles.mock.calls.length;
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(reader.vehicles).toHaveBeenCalledTimes(calls + 1);
+	});
+
 	it('retains the current report when both forced reads return an older publication', async () => {
 		const { store, reader } = mount();
 		await store.refresh();

@@ -171,3 +171,44 @@ for (const provider of ['stm', 'octranspo'])
 				}
 			});
 		}
+
+test('opening vehicle details keeps the global map report timestamp @layout', async ({ page }) => {
+	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
+	await page.clock.setFixedTime(epoch + 30_000);
+	await page.route('**/v1/**', async (route) => {
+		const url = new URL(route.request().url());
+		url.pathname = '/__layout/fresh' + url.pathname;
+		const response = await route.fetch({ url: url.href });
+		if (url.pathname.endsWith('/live/trips.json')) {
+			const payload = await response.json();
+			payload.feed_captured_utc = new Date(epoch - 3600_000).toISOString();
+			await route.fulfill({ response, json: payload });
+		} else await route.fulfill({ response });
+	});
+	await page.goto('/map', { waitUntil: 'networkidle' });
+	const placement = page.viewportSize()!.width < 1024 ? 'head' : 'floating';
+	const timestamp = page.locator(`.map-freshness[data-placement="${placement}"] time`);
+	await expect(timestamp).toHaveAttribute('datetime', /.+/);
+	const original = await timestamp.getAttribute('datetime');
+	await page.goto('/map?provider=stm&focus=vehicle:layout-bus', { waitUntil: 'networkidle' });
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const probe = (window as unknown as { __transitMap?: { loaded: boolean; moving: boolean } })
+					.__transitMap;
+				return Boolean(probe?.loaded && !probe.moving);
+			}),
+		)
+		.toBe(true);
+	const point = await page.evaluate(() =>
+		(
+			window as unknown as { __transitMap: { project(point: number[]): { x: number; y: number } } }
+		).__transitMap.project([-73.59, 45.51]),
+	);
+	const trips = page.waitForResponse((response) =>
+		new URL(response.url()).pathname.endsWith('/live/trips.json'),
+	);
+	await page.locator('.maplibregl-canvas').click({ position: point });
+	await trips;
+	await expect(timestamp).toHaveAttribute('datetime', original!);
+});
