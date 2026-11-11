@@ -46,9 +46,11 @@ async function requestJsonResponse(
 ): Promise<Response | undefined> {
 	let serverErrorRetries = init?.serverErrorRetries ?? 0;
 	while (true) {
+		const cache =
+			init?.cache === 'default' && getV1Runtime().refresh.refreshing ? 'no-cache' : init?.cache;
 		const res = await fetchFn(url, {
 			headers: { accept: 'application/json' },
-			cache: browser ? init?.cache : undefined,
+			cache: browser ? cache : undefined,
 			signal: init?.signal,
 		});
 

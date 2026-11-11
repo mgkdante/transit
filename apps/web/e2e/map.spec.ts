@@ -45,6 +45,57 @@ async function openNearMe(page: Page, name: string) {
 	}).toPass();
 }
 
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+	test(`manual refresh does not make an unchanged report younger (${reducedMotion})`, async ({
+		page,
+	}) => {
+		await page.emulateMedia({ reducedMotion });
+		const cachedDate = new Date(generated + 15_000).toUTCString();
+		const clockHeaders = {
+			date: cachedDate,
+			age: '0',
+			'access-control-allow-origin': '*',
+			'access-control-expose-headers': 'Date, Age',
+		};
+		await page.clock.install({ time: generated + 15_000 });
+		await page.route('**/v1/**', async (route) => {
+			if (new URL(route.request().url()).pathname.endsWith('/live/vehicles.json')) {
+				await route.fulfill({
+					json: { generated_utc: new Date(generated).toISOString(), vehicles: [] },
+					headers: clockHeaders,
+				});
+				return;
+			}
+			const response = await route.fetch();
+			await route.fulfill({
+				response,
+				headers: { ...response.headers(), ...clockHeaders },
+			});
+		});
+		await page.goto('/map');
+		const placement = page.viewportSize()!.width < 1024 ? 'head' : 'floating';
+		const stamp = page.locator(
+			`.map-freshness[data-placement="${placement}"] [data-slot="freshness-stamp"]`,
+		);
+		await expect(stamp).toHaveAttribute('data-age-seconds', /^\d+$/);
+		const originalAge = Number(await stamp.getAttribute('data-age-seconds'));
+		const timestamp = await stamp.locator('time').getAttribute('datetime');
+		for (let click = 1; click <= 3; click += 1) {
+			await page.clock.runFor(1100);
+			const refreshed = page.waitForResponse((response) =>
+				new URL(response.url()).pathname.endsWith('/live/vehicles.json'),
+			);
+			await page.getByRole('button', { name: 'Refresh data', exact: true }).click();
+			await refreshed;
+			await expect(page.getByRole('button', { name: 'Refresh data', exact: true })).toBeEnabled();
+			await expect
+				.poll(async () => Number(await stamp.getAttribute('data-age-seconds')))
+				.toBeGreaterThanOrEqual(originalAge + click);
+			await expect(stamp.locator('time')).toHaveAttribute('datetime', timestamp!);
+		}
+	});
+}
+
 for (const locale of PUBLISHED_LOCALES) {
 	const t = mapCopy[locale];
 	// The stall message at any age.

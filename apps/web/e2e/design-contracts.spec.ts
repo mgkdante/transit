@@ -237,7 +237,28 @@ for (const locale of PUBLISHED_LOCALES) {
 				expect(await sheet.evaluate((element) => element.contains(document.activeElement))).toBe(
 					true,
 				);
-				await page.keyboard.press('Escape');
+				if (reducedMotion === 'no-preference') {
+					await expect.poll(() => sheet.evaluate((el) => el.getAnimations().length)).toBe(0);
+					const samples = await sheet.evaluate(async (el) => {
+						const heights: number[] = [];
+						const rail = el.querySelector('[data-slot="surface-rail"]')!;
+						const initialHeight = rail.getBoundingClientRect().height;
+						el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+						await new Promise<void>((resolve) => {
+							const sample = () => {
+								if (!el.isConnected) return resolve();
+								heights.push(el.contains(rail) ? rail.getBoundingClientRect().height : 0);
+								requestAnimationFrame(sample);
+							};
+							requestAnimationFrame(sample);
+						});
+						return { heights, initialHeight };
+					});
+					expect(samples.heights.length).toBeGreaterThan(2);
+					expect(Math.min(...samples.heights)).toBeGreaterThanOrEqual(samples.initialHeight - 1);
+				} else {
+					await page.keyboard.press('Escape');
+				}
 				await expect(sheet).toBeHidden();
 				await expect(pill).toBeFocused();
 			} finally {
