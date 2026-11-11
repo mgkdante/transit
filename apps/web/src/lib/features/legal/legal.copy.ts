@@ -2,7 +2,7 @@ import { defineCopy, type Locale } from '#lib/i18n/index.ts';
 
 export type LegalPageKind = 'privacy' | 'terms' | 'accessibility';
 export const LEGAL_EFFECTIVE_DATES: Readonly<Record<LegalPageKind, string>> = {
-	privacy: '2026-11-08',
+	privacy: '2026-11-11',
 	terms: '2026-10-29',
 	accessibility: '2026-10-29',
 };
@@ -46,7 +46,7 @@ const documents = {
 			kicker: 'LEGAL',
 			title: 'Privacy Policy',
 			effectiveLabel: 'Effective and last updated',
-			effectiveDate: 'November 8, 2026',
+			effectiveDate: 'November 11, 2026',
 			summary:
 				'This policy explains the limited personal information processing involved when you use Transit. Transit has no user accounts, payments, advertising, newsletter or direct marketing.',
 			sections: [
@@ -79,8 +79,9 @@ const documents = {
 				},
 				{
 					id: 'search-location',
-					title: 'Address search and device location',
+					title: 'Network selection, address search and device location',
 					paragraphs: [
+						'To choose the initial transit network, Transit uses the approximate coordinates Cloudflare derives from your internet connection. It checks the published network areas and defaults to STM when no single area matches. This does not request device-location permission. Transit does not store these coordinates or send them to your browser. A network selected in the page URL takes priority; you can change it in the network selector.',
 						'When you type an address or place into map search, the query is sent to the Transit server and then to the Government of Canada Geo.ca geolocation service. Geo.ca receives the query from Transit, not a direct browser request from you.',
 						'When you select a result, its normalized label, coordinates and precision are written to the page URL so the view can be restored or shared. Anyone who receives that URL can see those values. Clearing the selected location removes them. Do not select a sensitive address before sharing a map link.',
 						'The Transit server uses the connecting IP address only in a best-effort, in-memory rate-limit table local to each Worker isolate. It is capped at 10,000 IP entries per isolate; inactive entries become eligible for removal after ten minutes, and isolate turnover resets it. The application does not write that table to persistent storage. Cloudflare and Geo.ca may separately process requests under their own practices.',
@@ -113,7 +114,7 @@ const documents = {
 					id: 'purposes-sharing',
 					title: 'Purposes and sharing',
 					paragraphs: [
-						'The information above is processed only to deliver and secure Transit, answer an address search, remember your interface choices, diagnose reliability and understand aggregate performance.',
+						'The information above is processed only to deliver and secure Transit, choose the initial transit network, answer an address search, remember your interface choices, diagnose reliability and understand aggregate performance.',
 						'Transit does not sell or rent personal information and does not use it for advertising or direct marketing. Information may be handled by Cloudflare, Plausible and the Government of Canada service described above, or disclosed when required by law.',
 						'Provider processing may occur outside Quebec. Cloudflare states that it primarily stores information in the United States and the European Economic Area. Information processed elsewhere may be subject to the laws of that location. This policy does not claim a particular Cloudflare data-localization configuration. Plausible processes and stores visitor data in the European Union.',
 					],
@@ -302,7 +303,7 @@ const documents = {
 			kicker: 'JURIDIQUE',
 			title: 'Politique de confidentialité',
 			effectiveLabel: 'Entrée en vigueur et dernière mise à jour',
-			effectiveDate: '8 novembre 2026',
+			effectiveDate: '11 novembre 2026',
 			summary:
 				'La présente politique explique le traitement limité de renseignements personnels lié à l’utilisation de Transit. Transit ne propose aucun compte, paiement, publicité, infolettre ni marketing direct.',
 			sections: [
@@ -341,8 +342,9 @@ const documents = {
 				},
 				{
 					id: 'search-location',
-					title: 'Recherche d’adresse et localisation de l’appareil',
+					title: 'Choix du réseau, recherche d’adresse et localisation de l’appareil',
 					paragraphs: [
+						'Pour choisir le réseau de transport initial, Transit utilise les coordonnées approximatives que Cloudflare déduit de votre connexion Internet. Il les compare aux zones publiées des réseaux et choisit la STM si aucune zone unique ne correspond. Aucune permission de localisation de l’appareil n’est demandée. Transit ne conserve pas ces coordonnées et ne les envoie pas à votre navigateur. Le réseau sélectionné dans l’URL de la page est prioritaire; vous pouvez le modifier dans le sélecteur de réseau.',
 						'Lorsque vous saisissez une adresse ou un lieu dans la recherche cartographique, la requête est envoyée au serveur de Transit, puis au service de géolocalisation Geo.ca du gouvernement du Canada. Geo.ca reçoit la requête de Transit, et non une requête directe de votre navigateur.',
 						'Lorsque vous sélectionnez un résultat, son libellé normalisé, ses coordonnées et son niveau de précision sont inscrits dans l’URL afin de restaurer ou de partager la vue. Toute personne qui reçoit cette URL peut voir ces valeurs. L’effacement du lieu sélectionné les retire. Ne sélectionnez pas une adresse sensible avant de partager un lien cartographique.',
 						'Le serveur Transit utilise l’adresse IP de connexion uniquement dans une table antiabus en mémoire propre à chaque instance d’exécution Cloudflare Worker. Elle est limitée à 10 000 entrées d’adresse IP par instance; les entrées inactives peuvent être retirées après dix minutes, et le remplacement de l’instance la réinitialise. L’application n’écrit pas cette table dans un stockage persistant. Cloudflare et Geo.ca peuvent traiter séparément les requêtes selon leurs propres pratiques.',
@@ -375,7 +377,7 @@ const documents = {
 					id: 'purposes-sharing',
 					title: 'Finalités et communication',
 					paragraphs: [
-						'Les renseignements décrits ci-dessus sont traités uniquement pour livrer et protéger Transit, répondre à une recherche d’adresse, mémoriser vos choix d’interface, diagnostiquer la fiabilité et comprendre la performance globale.',
+						'Les renseignements décrits ci-dessus sont traités uniquement pour livrer et protéger Transit, choisir le réseau de transport initial, répondre à une recherche d’adresse, mémoriser vos choix d’interface, diagnostiquer la fiabilité et comprendre la performance globale.',
 						'Transit ne vend ni ne loue de renseignements personnels et ne les utilise pas à des fins de publicité ou de marketing direct. Des renseignements peuvent être traités par Cloudflare, Plausible et le service du gouvernement du Canada décrit ci-dessus, ou communiqués lorsque la loi l’exige.',
 						"Le traitement par les fournisseurs peut avoir lieu à l’extérieur du Québec. Cloudflare indique stocker principalement les renseignements aux États-Unis et dans l’Espace économique européen. Les renseignements traités ailleurs peuvent être assujettis aux lois de cet endroit. La présente politique ne prétend pas qu’une configuration particulière de localisation des données Cloudflare est activée. Plausible traite et conserve les données de visite dans l'Union européenne.",
 					],

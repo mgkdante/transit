@@ -9,6 +9,7 @@ import { getManifest } from '#lib/v1/repositories/manifest.ts';
 import { installBrowserAdapterManifest } from '#lib/v1/adapter/browserManifest.ts';
 import { loadProviderCatalog, resolveProvider, type PublicProvider } from './providers';
 import { v1Provider } from './config';
+import type { ApproximateLocation } from './requestLocation';
 
 export interface V1Context {
 	readonly manifest: Manifest;
@@ -40,7 +41,12 @@ export async function bootV1(lang: Locale = DEFAULT_LOCALE, ctx?: AdapterCtx): P
 	return { manifest, labels, lang };
 }
 
-export async function bootProvider(url: URL, lang: Locale, ctx?: AdapterCtx) {
+export async function bootProvider(
+	url: URL,
+	lang: Locale,
+	ctx?: AdapterCtx,
+	location?: ApproximateLocation | null,
+) {
 	const requested = url.searchParams.getAll('provider');
 	let providerId = requested[0] ?? v1Provider();
 	let provider: PublicProvider | null = null;
@@ -49,7 +55,7 @@ export async function bootProvider(url: URL, lang: Locale, ctx?: AdapterCtx) {
 	let discoveryError = false;
 	try {
 		const catalog = await loadProviderCatalog(ctx?.fetch ?? fetch);
-		const selected = resolveProvider(url, catalog);
+		const selected = resolveProvider(url, catalog, location);
 		provider = selected.provider;
 		providerId = provider.id;
 		providers = catalog.providers;

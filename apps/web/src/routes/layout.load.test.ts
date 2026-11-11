@@ -70,6 +70,14 @@ beforeEach(() => {
 });
 
 describe('root server layout boot', () => {
+	it('passes request-only location to provider selection without returning coordinates', async () => {
+		const request = serverEvent('fr', '/network');
+		const location = { lat: 45.42, lon: -75.7 };
+		Object.assign(request.locals, { approximateLocation: location });
+		const result = await loadServerLayout(request);
+		expect(harness.bootProvider).toHaveBeenCalledWith(request.url, 'fr', undefined, location);
+		expect(JSON.stringify(result)).not.toContain('45.42');
+	});
 	it('prevents caching a successful fallback boot when catalog discovery failed', async () => {
 		const request = serverEvent(undefined, '/');
 		const setHeaders = vi.fn();
@@ -93,7 +101,7 @@ describe('root server layout boot', () => {
 				serverBoot: 'succeeded',
 			});
 			expect(harness.serverV1Context).toHaveBeenCalledWith(request);
-			expect(harness.bootProvider).toHaveBeenCalledWith(request.url, 'fr', context);
+			expect(harness.bootProvider).toHaveBeenCalledWith(request.url, 'fr', context, undefined);
 			expect(context.cache).toBe(request.locals.v1Cache);
 		},
 	);
