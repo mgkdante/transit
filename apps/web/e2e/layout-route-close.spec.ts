@@ -37,6 +37,10 @@ for (const target of ['page', 'context'] as const)
 			await Promise.all([fetching, reached]);
 			await Promise.all([target === 'page' ? page.close() : page.context().close(), completed]);
 		} finally {
+			// close() waits for every active connection. A request the browser releases
+			// as the page closes can hold one open past the test timeout (an in-flight
+			// keep-alive or partial headers), so end them all before closing.
+			server.closeAllConnections();
 			await new Promise<void>((resolve, reject) =>
 				server.close((error) => (error ? reject(error) : resolve())),
 			);
