@@ -30,7 +30,7 @@
 <NetworkTile
 	wide
 	title={copy.trendSection}
-	subtitle={copy.trend.summary}
+	subtitle={copy.questions.trend}
 	sectionKey="network-daily-trend"
 	headerActions={trendInfo}
 >

@@ -21,7 +21,11 @@
 	let { cards, locale, copy, terminal }: SectionLiveHeadlineProps = $props();
 </script>
 
-<NetworkTile title={copy.liveSection} sectionKey="network-live-headline">
+<NetworkTile
+	subtitle={copy.questions.live}
+	title={copy.liveSection}
+	sectionKey="network-live-headline"
+>
 	<p class="network-live-lede" data-slot="network-lede">{copy.lede}</p>
 	<TerminalPanel title={terminal.title} tag={terminal.tag} footer={terminal.footerItems}>
 		<DashboardGrid minTile="max(220px, calc((100% - var(--space-card-gap)) / 2))" gutter={false}>

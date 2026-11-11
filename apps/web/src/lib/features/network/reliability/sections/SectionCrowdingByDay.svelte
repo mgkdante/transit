@@ -20,7 +20,7 @@
 
 <NetworkTile
 	title={copy.occupancyTrendSection}
-	subtitle={copy.occupancyTrend.summary}
+	subtitle={copy.questions.crowdingTrend}
 	sectionKey="network-crowding-by-day"
 	headerActions={crowdingInfo}
 >

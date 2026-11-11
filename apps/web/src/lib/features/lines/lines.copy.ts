@@ -73,6 +73,11 @@ export type LinesIndexCopy = (typeof indexCopy)[Locale];
 
 export const detailCopy = defineCopy({
 	fr: {
+		questions: {
+			directions: 'Où va cette ligne, et quels arrêts dessert-elle ?',
+			span: 'À quelle heure commence et finit le service ?',
+			periods: 'Combien de temps est prévu entre deux départs ?',
+		},
 		kicker: 'LIGNE',
 		article: articleCopy(
 			'fr',
@@ -88,13 +93,13 @@ export const detailCopy = defineCopy({
 		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
 		profile: {
 			title: 'Profil de service',
-			summary: 'Structure du parcours et plage de service planifiée.',
+			summary: 'Où passe cette ligne, et à quelles heures ?',
 			directions: 'Directions',
 			stops: 'Arrêts répertoriés',
 		},
 		liveService: {
 			title: 'Service en direct',
-			summary: 'Véhicules en service et avis actifs touchant cette ligne.',
+			summary: 'Quels véhicules circulent, et y a-t-il des avis de service ?',
 		},
 		viewOnMap: 'Voir sur la carte',
 		viewRouteOnMap: (route: string) => `Voir la ligne ${route} sur la carte`,
@@ -170,6 +175,11 @@ export const detailCopy = defineCopy({
 		onTime: "À l'heure",
 	},
 	en: {
+		questions: {
+			directions: 'Where does this line go, and where does it stop?',
+			span: 'When does service start and finish?',
+			periods: 'How long is planned between departures?',
+		},
 		kicker: 'LINE',
 		article: articleCopy(
 			'en',
@@ -185,13 +195,13 @@ export const detailCopy = defineCopy({
 		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
 		profile: {
 			title: 'Service profile',
-			summary: 'Route structure and planned service span.',
+			summary: 'Where does this line run, and when?',
 			directions: 'Directions',
 			stops: 'Listed stops',
 		},
 		liveService: {
 			title: 'Live service',
-			summary: 'Current vehicles and active alerts affecting this line.',
+			summary: 'Which vehicles are running, and are there service alerts?',
 		},
 		viewOnMap: 'View on map',
 		viewRouteOnMap: (route) => `View route ${route} on map`,

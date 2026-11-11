@@ -11,6 +11,16 @@ const predictionShare = {
 
 export const stopReliabilityCopy = defineCopy({
 	fr: {
+		questions: {
+			trend: 'Les retards diminuent-ils au fil des jours ?',
+			percentiles: 'Quel retard est habituel, et jusqu’où peut-il aller ?',
+			pane: 'Que prévoient les rapports pour cet arrêt ?',
+			habits: 'À quels moments les retards reviennent-ils ?',
+			weekday: 'Quels jours faut-il prévoir plus de temps ?',
+			time: 'À quel moment de la journée les retards sont-ils les plus graves ?',
+			crowding: 'Les véhicules observés ici étaient-ils bondés ?',
+			byRoute: 'Quelles lignes prennent le plus de retard ici ?',
+		},
 		byRoute: 'Retard moyen par ligne',
 		noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
 		viewLine: (routeId: string) => `Voir la ligne ${routeId}`,
@@ -167,6 +177,16 @@ export const stopReliabilityCopy = defineCopy({
 		},
 	},
 	en: {
+		questions: {
+			trend: 'Are delays getting better over time?',
+			percentiles: 'What delay is typical, and how bad can it get?',
+			pane: 'What do the reports predict for this stop?',
+			habits: 'When do delays keep coming back?',
+			weekday: 'Which days should you allow more time?',
+			time: 'When during the day are delays most severe?',
+			crowding: 'How crowded were vehicles seen here?',
+			byRoute: 'Which lines are most delayed here?',
+		},
 		byRoute: 'Avg delay by route',
 		noRouteBreakdown: 'No per-route breakdown for this stop.',
 		viewLine: (routeId) => `View line ${routeId}`,

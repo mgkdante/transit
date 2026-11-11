@@ -263,6 +263,7 @@
 			<CollapsibleSection
 				title={t.provenance.label}
 				headerVariant="article-summary"
+				subtitle={t.questions.provenance}
 				anchor={PROVENANCE_ANCHOR}
 				open={true}
 			>
@@ -391,6 +392,7 @@
 			<CollapsibleSection
 				title={t.livePositions.title}
 				headerVariant="article-summary"
+				subtitle={t.questions.positions}
 				anchor={LIVE_POSITIONS_ANCHOR}
 				open={true}
 			>
@@ -416,6 +418,7 @@
 			<CollapsibleSection
 				title={t.lacunes.title}
 				headerVariant="article-summary"
+				subtitle={t.questions.gaps}
 				anchor={LACUNES_ANCHOR}
 				open={true}
 			>

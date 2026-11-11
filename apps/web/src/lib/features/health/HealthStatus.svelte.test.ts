@@ -374,7 +374,7 @@ describe('HealthStatus — full manifest render', () => {
 		).toBeInTheDocument();
 	});
 
-	it('opts every Status section and stat card into title-only article-summary headers', () => {
+	it('describes each Status section with a question while keeping compact rail headers', () => {
 		const { container } = render(HealthStatus);
 		const sectionCards = Array.from(
 			container.querySelectorAll<HTMLElement>('.health-sections > [data-slot="card"]'),
@@ -391,9 +391,11 @@ describe('HealthStatus — full manifest render', () => {
 			expect(heading).not.toBeNull();
 			expect(heading.children).toHaveLength(1);
 			const trigger = heading.firstElementChild as HTMLButtonElement;
-			expect(trigger).toHaveClass('section-header--title-only');
-			expect(trigger).not.toHaveAttribute('aria-describedby');
-			expect(card.querySelector('.section-subtitle--article-summary')).toBeNull();
+			if (sectionCards.includes(card)) {
+				expect(trigger).toHaveAccessibleDescription(/\?$/);
+			} else {
+				expect(trigger).not.toHaveAttribute('aria-describedby');
+			}
 		}
 		expect(
 			container.querySelector('.health-toc-rail [data-header-variant="article-summary"]'),

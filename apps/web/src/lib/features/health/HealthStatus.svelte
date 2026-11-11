@@ -174,33 +174,67 @@
 	);
 
 	const sectionDefs = $derived([
-		{ id: 'health-lanes', number: 1, title: t.lanes.section, present: laneRows.length > 0 },
+		{
+			id: 'health-lanes',
+			number: 1,
+			title: t.lanes.section,
+			subtitle: t.questions.lanes,
+			present: laneRows.length > 0,
+		},
 		{
 			id: 'health-freshness',
 			number: 2,
 			title: t.freshness.section,
+			subtitle: t.questions.freshness,
 			present: freshness.length > 0,
 		},
-		{ id: 'health-sources', number: 3, title: t.sources.section, present: sources.length > 0 },
-		{ id: 'health-gaps', number: 4, title: t.gaps.section, present: gaps.length > 0 },
+		{
+			id: 'health-sources',
+			number: 3,
+			title: t.sources.section,
+			subtitle: t.questions.sources,
+			present: sources.length > 0,
+		},
+		{
+			id: 'health-gaps',
+			number: 4,
+			title: t.gaps.section,
+			subtitle: t.questions.gaps,
+			present: gaps.length > 0,
+		},
 		{
 			id: 'health-pipeline-notes',
 			number: 5,
 			title: t.pipelineNotes.section,
+			subtitle: t.questions.pipelineNotes,
 			present: pipelineNotes.length > 0,
 		},
-		{ id: 'health-retention', number: 6, title: t.retention.section, present: hasRetention },
+		{
+			id: 'health-retention',
+			number: 6,
+			title: t.retention.section,
+			subtitle: t.questions.retention,
+			present: hasRetention,
+		},
 		{
 			id: 'health-conformance',
 			number: 7,
 			title: t.conformance.section,
+			subtitle: t.questions.conformance,
 			present: conformance != null,
 		},
-		{ id: 'health-envelope', number: 8, title: t.envelope.section, present: hasEnvelope },
+		{
+			id: 'health-envelope',
+			number: 8,
+			title: t.envelope.section,
+			subtitle: t.questions.envelope,
+			present: hasEnvelope,
+		},
 		{
 			id: 'health-history-coverage',
 			number: 9,
 			title: t.historyCoverage.section,
+			subtitle: t.questions.historyCoverage,
 			present: historyCoverageRows.length > 0,
 		},
 	]);
@@ -318,7 +352,12 @@
 	{/snippet}
 
 	<ArticleSectionStack class="health-sections" data-testid="health-sections">
-		<CollapsibleSection title={t.overview.title} headerVariant="article-summary" open={true}>
+		<CollapsibleSection
+			title={t.overview.title}
+			subtitle={t.questions.overview}
+			headerVariant="article-summary"
+			open={true}
+		>
 			<div class="health-overview">
 				<p class="health-lede">{t.lede}</p>
 				{#if manifest}{#key manifest.provider}<OutOfServiceVehicles
@@ -377,6 +416,7 @@
 			{section.number === 1 ? '' : ' '}{#if section.present}
 				<CollapsibleSection
 					title={section.title}
+					subtitle={section.subtitle}
 					headerVariant="article-summary"
 					index={section.number - 1}
 					anchor={section.id}

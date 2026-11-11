@@ -48,19 +48,19 @@ export const copy = defineCopy({
 		cards: {
 			main: {
 				title: 'The receipt',
-				subtitle: 'The day’s reliability figures, affected service, and worst readings',
+				subtitle: 'How reliable was service that day?',
 			},
 			time: {
 				title: 'By time of day',
-				subtitle: 'Severe delays across the day’s service periods',
+				subtitle: 'When during the day were delays most severe?',
 			},
 			delivered: {
 				title: serviceComparisonCopy.en.section,
-				subtitle: serviceComparisonCopy.en.split,
+				subtitle: 'How do observed trips compare with planned service?',
 			},
 			silent: {
 				title: 'Scheduled but never appeared',
-				subtitle: 'Lines with scheduled trips that never appeared in the live feed',
+				subtitle: 'Which lines had planned trips that never appeared live?',
 			},
 		},
 		caveatLabel: 'Caveat',
@@ -198,20 +198,20 @@ export const copy = defineCopy({
 		cards: {
 			main: {
 				title: 'Le reçu',
-				subtitle: 'Les chiffres de fiabilité du jour, le service touché et les pires lectures',
+				subtitle: 'Le service était-il fiable ce jour-là ?',
 			},
 			time: {
 				title: 'Par moment de la journée',
-				subtitle: 'Les retards graves selon les périodes de service de la journée',
+				subtitle: 'À quel moment de la journée les retards étaient-ils les plus graves ?',
 			},
 			delivered: {
 				title: serviceComparisonCopy.fr.section,
-				subtitle: serviceComparisonCopy.fr.split,
+				subtitle: 'Comment les trajets observés se comparent-ils au service prévu ?',
 			},
 			silent: {
 				title: 'Planifiés mais jamais apparus',
 				subtitle:
-					'Les lignes dont des trajets planifiés ne sont jamais apparus dans le flux en direct',
+					'Quelles lignes avaient des trajets prévus qui ne sont jamais apparus en direct ?',
 			},
 		},
 		caveatLabel: 'Mise en garde',

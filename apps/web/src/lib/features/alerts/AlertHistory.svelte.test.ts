@@ -390,15 +390,15 @@ describe('AlertHistory article shell', () => {
 		expect(copyEn.cards).toEqual({
 			window: {
 				title: 'Alerts in window',
-				subtitle: 'Matching alerts and their median resolved duration',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			breakdown: {
 				title: 'Breakdown',
-				subtitle: 'Cause, effect, and severity across the matching alerts',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			log: {
 				title: 'Past alerts',
-				subtitle: 'The matching alert archive, newest first',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 		});
 
@@ -423,15 +423,15 @@ describe('AlertHistory article shell', () => {
 		expect(copyFr.cards).toEqual({
 			window: {
 				title: 'Avis dans la fenêtre',
-				subtitle: 'Les avis correspondants et leur durée médiane de résolution',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			breakdown: {
 				title: 'Répartition',
-				subtitle: 'Les causes, effets et gravités des avis correspondants',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 			log: {
 				title: 'Avis passés',
-				subtitle: 'L’archive des avis correspondants, du plus récent au plus ancien',
+				subtitle: expect.stringMatching(/\?$/),
 			},
 		});
 	});

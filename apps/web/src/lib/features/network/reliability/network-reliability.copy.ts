@@ -8,6 +8,19 @@ import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
 export const networkReliabilityCopy = defineCopy({
 	en: {
+		questions: {
+			live: 'How is service running right now?',
+			trend: 'Is reliability improving over time?',
+			cancel: 'What share of trips was canceled?',
+			crowdingTrend: 'Are vehicles more crowded on some days?',
+			time: 'When during the day is the network most reliable?',
+			weekday: 'Is service more reliable on weekdays or weekends?',
+			reporting: 'How much service can we follow live?',
+			status: 'Are vehicles early, on time, or late?',
+			crowding: 'Is there room on board?',
+			delays: 'How large are the delays?',
+			completeness: 'How do observed trips compare with planned service?',
+		},
 		kicker: 'NETWORK · LIVE',
 		heading: 'Network health',
 		lede: 'Live punctuality, crowding and reporting coverage, with daily trends.',
@@ -145,6 +158,19 @@ export const networkReliabilityCopy = defineCopy({
 		},
 	},
 	fr: {
+		questions: {
+			live: 'Comment le service se déroule-t-il en ce moment ?',
+			trend: 'La fiabilité s’améliore-t-elle au fil des jours ?',
+			cancel: 'Quelle part des trajets a été annulée ?',
+			crowdingTrend: 'Les véhicules sont-ils plus remplis certains jours ?',
+			time: 'À quel moment le réseau est-il le plus fiable ?',
+			weekday: 'Le service est-il plus fiable en semaine ou le week-end ?',
+			reporting: 'Quelle part du service peut-on suivre en direct ?',
+			status: 'Les véhicules sont-ils en avance, à l’heure ou en retard ?',
+			crowding: 'Y a-t-il de la place à bord ?',
+			delays: 'Les retards sont-ils petits ou importants ?',
+			completeness: 'Comment les trajets observés se comparent-ils au service prévu ?',
+		},
 		kicker: 'RÉSEAU · EN DIRECT',
 		heading: 'Santé du réseau',
 		lede: 'La ponctualité, l’achalandage et la couverture des signalements en direct, avec leurs tendances quotidiennes.',

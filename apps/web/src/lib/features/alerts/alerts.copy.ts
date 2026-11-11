@@ -34,15 +34,15 @@ export const alertHistoryCopy = defineCopy({
 		cards: {
 			window: {
 				title: 'Avis dans la fenêtre',
-				subtitle: 'Les avis correspondants et leur durée médiane de résolution',
+				subtitle: 'Combien d’avis, et combien de temps ont duré ceux qui sont résolus ?',
 			},
 			breakdown: {
 				title: 'Répartition',
-				subtitle: 'Les causes, effets et gravités des avis correspondants',
+				subtitle: 'Qu’est-ce qui a causé les perturbations, et quelle était leur gravité ?',
 			},
 			log: {
 				title: 'Avis passés',
-				subtitle: 'L’archive des avis correspondants, du plus récent au plus ancien',
+				subtitle: 'Que s’est-il passé, et quand ?',
 			},
 		},
 		logSection: 'Avis passés',
@@ -173,15 +173,15 @@ export const alertHistoryCopy = defineCopy({
 		cards: {
 			window: {
 				title: 'Alerts in window',
-				subtitle: 'Matching alerts and their median resolved duration',
+				subtitle: 'How many alerts were there, and how long did resolved ones last?',
 			},
 			breakdown: {
 				title: 'Breakdown',
-				subtitle: 'Cause, effect, and severity across the matching alerts',
+				subtitle: 'What caused the disruptions, and how serious were they?',
 			},
 			log: {
 				title: 'Past alerts',
-				subtitle: 'The matching alert archive, newest first',
+				subtitle: 'What happened, and when?',
 			},
 		},
 		logSection: 'Past alerts',

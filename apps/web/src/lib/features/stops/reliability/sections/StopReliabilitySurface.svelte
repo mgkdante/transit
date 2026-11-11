@@ -305,6 +305,7 @@
 						<CollapsibleSection
 							title={copy.trend.heading}
 							headerVariant="article-summary"
+							subtitle={copy.questions.trend}
 							anchor="stop-rel-trend"
 							index={sectionIndex('stop-rel-trend')}
 							open={true}
@@ -334,6 +335,7 @@
 							<CollapsibleSection
 								title={copy.percentiles.heading}
 								headerVariant="article-summary"
+								subtitle={copy.questions.percentiles}
 								anchor="stop-rel-percentiles"
 								index={sectionIndex('stop-rel-percentiles')}
 								open={true}
@@ -363,6 +365,7 @@
 							<CollapsibleSection
 								title={copy.paneHeading}
 								headerVariant="article-summary"
+								subtitle={copy.questions.pane}
 								anchor="stop-rel-pane"
 								index={sectionIndex('stop-rel-pane')}
 								open={true}
@@ -385,6 +388,7 @@
 							<CollapsibleSection
 								title={copy.habits.heading}
 								headerVariant="article-summary"
+								subtitle={copy.questions.habits}
 								anchor="stop-rel-habits"
 								index={sectionIndex('stop-rel-habits')}
 								open={true}
@@ -408,6 +412,7 @@
 							<CollapsibleSection
 								title={copy.weekday.heading}
 								headerVariant="article-summary"
+								subtitle={copy.questions.weekday}
 								anchor="stop-rel-weekday"
 								index={sectionIndex('stop-rel-weekday')}
 								open={true}
@@ -430,6 +435,7 @@
 							<CollapsibleSection
 								title={copy.timeOfDay.heading}
 								headerVariant="article-summary"
+								subtitle={copy.questions.time}
 								anchor="stop-rel-time"
 								index={sectionIndex('stop-rel-time')}
 								open={true}
@@ -458,6 +464,7 @@
 						<CollapsibleSection
 							title={copy.crowding.heading}
 							headerVariant="article-summary"
+							subtitle={copy.questions.crowding}
 							anchor="stop-rel-crowding"
 							index={sectionIndex('stop-rel-crowding')}
 							open={true}
@@ -485,6 +492,7 @@
 						<CollapsibleSection
 							title={copy.byRoute}
 							headerVariant="article-summary"
+							subtitle={copy.questions.byRoute}
 							anchor="stop-rel-by-route"
 							index={sectionIndex('stop-rel-by-route')}
 							open={true}

@@ -523,6 +523,7 @@
 						title={t.next.heading}
 						headerVariant="article-summary"
 						index={0}
+						subtitle={t.questions.departures}
 						anchor="stop-detail-departures"
 					>
 						<ResourceBoundary resource={departureReport} lang={locale}>
@@ -641,6 +642,7 @@
 						title={t.schedule.heading}
 						headerVariant="article-summary"
 						index={0}
+						subtitle={t.questions.schedule}
 						anchor="stop-schedule-service"
 					>
 						<ResourceBoundary resource={stop} lang={locale}>
