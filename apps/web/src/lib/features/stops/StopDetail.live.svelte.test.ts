@@ -327,19 +327,22 @@ describe('StopDetail independent report owners', () => {
 		await manualRefresh();
 		expect(fixture.stop).toHaveBeenCalledTimes(2);
 		expect(fixture.reliability).toHaveBeenCalledTimes(2);
+		// The unchanged, minute-old report receives one bounded cache-bypassing retry.
+		expect(fixture.stopDepartures).toHaveBeenCalledTimes(5);
+		expect(fixture.alerts).toHaveBeenCalledTimes(5);
 		fixture.visible = 'hidden';
 		document.dispatchEvent(new Event('visibilitychange'));
 		await advance(60);
-		expect(fixture.stopDepartures).toHaveBeenCalledTimes(4);
-		expect(fixture.alerts).toHaveBeenCalledTimes(4);
+		expect(fixture.stopDepartures).toHaveBeenCalledTimes(5);
+		expect(fixture.alerts).toHaveBeenCalledTimes(5);
 		fixture.visible = 'visible';
 		document.dispatchEvent(new Event('visibilitychange'));
 		await settle();
-		expect(fixture.stopDepartures).toHaveBeenCalledTimes(5);
-		expect(fixture.alerts).toHaveBeenCalledTimes(5);
+		expect(fixture.stopDepartures).toHaveBeenCalledTimes(6);
+		expect(fixture.alerts).toHaveBeenCalledTimes(6);
 		view.unmount();
 		await advance(90);
-		expect(fixture.stopDepartures).toHaveBeenCalledTimes(5);
-		expect(fixture.alerts).toHaveBeenCalledTimes(5);
+		expect(fixture.stopDepartures).toHaveBeenCalledTimes(6);
+		expect(fixture.alerts).toHaveBeenCalledTimes(6);
 	});
 });

@@ -7,6 +7,23 @@ vi.mock('$app/env', () => ({ browser: true }));
 
 const ISO = '2026-07-15T12:00:00Z';
 
+it.each(['no-cache', 'reload'] as const)(
+	'binds explicit live %s policy through the reader and transport',
+	async (requestCache) => {
+		const request = vi.fn(async () => json({ generated_utc: ISO, vehicles: [] }));
+		vi.stubGlobal('fetch', request);
+		try {
+			await liveReader.vehicles({ manifest: bootManifest(), requestCache });
+			expect(request).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.objectContaining({ cache: requestCache }),
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	},
+);
+
 function bootManifest(): Manifest {
 	return {
 		provider: 'stm',

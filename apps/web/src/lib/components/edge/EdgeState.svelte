@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { clock } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const clock = getV1Runtime().clock;
 	import { cn } from '#lib/utils/index.ts';
 	import { formatRelative } from '#lib/utils/time.ts';
 

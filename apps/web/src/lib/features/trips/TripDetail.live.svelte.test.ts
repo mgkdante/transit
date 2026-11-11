@@ -18,6 +18,7 @@ const fixture = vi.hoisted(() => ({
 	network: vi.fn(),
 	stopNames: vi.fn(),
 	clockDispose: vi.fn(),
+	clockSubscribe: vi.fn(),
 }));
 vi.mock('$app/env', () => ({ browser: true }));
 vi.mock('#lib/v1/boot.ts', () => ({
@@ -116,10 +117,12 @@ beforeEach(() => {
 		fixture.network,
 		fixture.stopNames,
 		fixture.clockDispose,
+		fixture.clockSubscribe,
 	])
 		method.mockReset();
 	fixture.trips.mockResolvedValue(report());
 	fixture.stopNames.mockResolvedValue(null);
+	fixture.clockSubscribe.mockReturnValue(fixture.clockDispose);
 	restoreRuntime = configureV1Runtime({
 		clock: {
 			get serverNow() {
@@ -127,7 +130,7 @@ beforeEach(() => {
 				return fixture.now;
 			},
 			noteServerEpochMs: () => {},
-			subscribe: () => fixture.clockDispose,
+			subscribe: fixture.clockSubscribe,
 		},
 		refresh: {
 			get epoch() {
@@ -258,7 +261,8 @@ describe('TripDetail with the shared live store', () => {
 			view.unmount();
 			await advance(90);
 			expect(fixture.trips).toHaveBeenCalledTimes(3);
-			expect(fixture.clockDispose).toHaveBeenCalledTimes(1);
+			expect(fixture.clockSubscribe).toHaveBeenCalled();
+			expect(fixture.clockDispose).toHaveBeenCalledTimes(fixture.clockSubscribe.mock.calls.length);
 		},
 	);
 });

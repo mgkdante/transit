@@ -4,7 +4,8 @@
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
-	import { clock } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const clock = getV1Runtime().clock;
 	import { publicationPresentation, feedPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { ToggleChip, SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';

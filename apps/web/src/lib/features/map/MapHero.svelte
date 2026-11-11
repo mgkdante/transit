@@ -14,6 +14,8 @@
 	import type { MapStageFailure } from '#lib/components/map/MapStage.svelte';
 	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { clock, desktop, theme } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const dataClock = getV1Runtime().clock;
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { Button } from '@yesid/ui/button';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
@@ -187,7 +189,7 @@
 		locale,
 		timeZone: manifest.tz,
 		staleCutoffS: liveTimingFor(manifest).staleCutoffS,
-		serverNow: () => clock.serverNow,
+		serverNow: () => dataClock.serverNow,
 		alertsAvailable,
 	});
 	const runtime = createMapRuntime({

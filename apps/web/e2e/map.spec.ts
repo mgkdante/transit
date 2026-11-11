@@ -45,7 +45,75 @@ async function openNearMe(page: Page, name: string) {
 	}).toPass();
 }
 
+test('manual refresh stays busy until live data is received and rendered', async ({ page }) => {
+	await page.clock.install({ time: generated + 15_000 });
+	let hold = false;
+	let release!: () => void;
+	let markHeld!: () => void;
+	const responseGate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const held = new Promise<void>((resolve) => {
+		markHeld = resolve;
+	});
+	const newerTimestamp = new Date(generated + 5000).toISOString();
+	await page.route('**/live/vehicles.json', async (route) => {
+		if (hold) {
+			markHeld();
+			await responseGate;
+		}
+		await route.fulfill({
+			json: {
+				generated_utc: hold ? newerTimestamp : new Date(generated).toISOString(),
+				vehicles: [],
+			},
+		});
+	});
+	await page.goto('/map');
+	const placement = page.viewportSize()!.width < 1024 ? 'head' : 'floating';
+	const timestamp = page.locator(`.map-freshness[data-placement="${placement}"] time`);
+	await expect(timestamp).toHaveAttribute('datetime', new Date(generated).toISOString());
+	hold = true;
+	const invalidated = page.waitForResponse((response) => response.url().includes('__data.json'));
+	try {
+		await page.getByRole('button', { name: 'Refresh data', exact: true }).click();
+		await held;
+		await (await invalidated).finished();
+		await page.clock.runFor(250);
+		await expect(page.getByRole('button', { name: 'Refreshing…', exact: true })).toBeDisabled();
+		release();
+		await expect(page.getByRole('button', { name: 'Refresh data', exact: true })).toBeEnabled();
+		await expect(timestamp).toHaveAttribute('datetime', newerTimestamp);
+	} finally {
+		release();
+	}
+});
+
 for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+	test(`report age advances each second while idle (${reducedMotion})`, async ({ page }) => {
+		await page.emulateMedia({ reducedMotion });
+		await page.clock.install({ time: generated + 15_000 });
+		await page.route('**/live/vehicles.json', (route) =>
+			route.fulfill({
+				json: {
+					generated_utc: new Date(generated).toISOString(),
+					vehicles: [],
+				},
+			}),
+		);
+		await page.goto('/map', { waitUntil: 'networkidle' });
+		const placement = page.viewportSize()!.width < 1024 ? 'head' : 'floating';
+		const stamp = page.locator(
+			`.map-freshness[data-placement="${placement}"] [data-slot="freshness-stamp"]`,
+		);
+		await expect(stamp).toHaveAttribute('data-age-seconds', /^\d+$/);
+		const age = Number(await stamp.getAttribute('data-age-seconds'));
+		await page.clock.runFor(2100);
+		await expect
+			.poll(async () => Number(await stamp.getAttribute('data-age-seconds')))
+			.toBeGreaterThanOrEqual(age + 2);
+	});
+
 	test(`manual refresh does not make an unchanged report younger (${reducedMotion})`, async ({
 		page,
 	}) => {

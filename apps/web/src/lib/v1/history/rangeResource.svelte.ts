@@ -1,5 +1,6 @@
 import type { DateWindow } from './window';
 import { untrack } from 'svelte';
+import { getV1Runtime } from '#lib/v1/runtime.ts';
 import {
 	resolveHistoryRange,
 	type HistoryAvailability,
@@ -154,6 +155,8 @@ export function createHistoryRangeResource<TIndex, TValue>(
 	loader: HistoryRangeLoader<TIndex, TValue>,
 	options: HistoryRangeResourceOptions<TIndex, TValue>,
 ): HistoryRangeResource<TIndex, TValue> {
+	const runtime = getV1Runtime();
+	let lastRefreshEpoch = runtime.refresh.epoch;
 	const initialRequest = snapshotRequest(options.initialRequest);
 	const candidate = options.seed?.();
 	const seed =
@@ -228,6 +231,7 @@ export function createHistoryRangeResource<TIndex, TValue>(
 		let pending: Promise<HistoryRangeLoadResult<TValue>>;
 		try {
 			pending = loader.load(nextResolved, accepted, controller.signal);
+			runtime.refresh.track?.(pending, controller.signal);
 		} catch (cause) {
 			if (isAbortError(cause)) {
 				controller.abort();
@@ -328,6 +332,7 @@ export function createHistoryRangeResource<TIndex, TValue>(
 		let pending: Promise<TIndex | null>;
 		try {
 			pending = loader.loadIndex(controller.signal);
+			runtime.refresh.track?.(pending, controller.signal);
 		} catch (cause) {
 			if (isAbortError(cause)) {
 				controller.abort();
@@ -379,8 +384,12 @@ export function createHistoryRangeResource<TIndex, TValue>(
 
 	const disposeEffects = $effect.root(() => {
 		$effect(() => {
+			const epoch = runtime.refresh.epoch;
 			untrack(() => {
-				if (indexStatus === 'idle') startIndex();
+				if (epoch !== lastRefreshEpoch) {
+					lastRefreshEpoch = epoch;
+					startIndex();
+				} else if (indexStatus === 'idle') startIndex();
 			});
 		});
 	});

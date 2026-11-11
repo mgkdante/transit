@@ -5,6 +5,7 @@ export interface AdapterCtx {
 	readonly providerId?: string;
 	fetch?: FetchFn;
 	onResponseHeaders?: (headers: Headers) => void;
+	requestCache?: RequestCache;
 	manifest?: Manifest;
 	cache?: Map<string, unknown>;
 	signal?: AbortSignal;

@@ -10,6 +10,25 @@ import { tripCopy } from '#lib/features/trips/trips.copy.ts';
 import { formatUtc } from '#lib/utils/time.ts';
 
 const timestamp = '2026-06-21T12:00:00Z';
+
+it('keeps the map counter on vehicles while preserving selected trip-feed failure notices', () => {
+	const result = present(
+		{
+			vehicles: family(),
+			trips: family({
+				ageSeconds: 3600,
+				ageSource: 'serving-capture',
+				ageTimestamp: '2026-06-21T11:00:00Z',
+				state: 'retained-stale',
+				isStale: true,
+				notice: 'refresh-unavailable',
+			}),
+		},
+		{ page: 'map', selection: { kind: 'vehicle' } },
+	);
+	expect(result.stamp).toMatchObject({ ageSeconds: 20, generatedUtc: timestamp });
+	expect(result.notice.kind).toBe('refresh-unavailable');
+});
 function family(health: Partial<FeedHealth> = {}, active = true): LiveFamilyState {
 	return {
 		active,
@@ -238,7 +257,10 @@ it.each(['en', 'fr'] as const)('prints the age source timestamp after 24 hours i
 });
 
 it('propagates unknown age instead of recomputing from a valid publication', () => {
-	const result = present({ vehicles: family(), trips: family({ ageSeconds: null }) });
+	const result = present(
+		{ vehicles: family(), trips: family({ ageSeconds: null }) },
+		{ page: 'trip' },
+	);
 	expect(result.stamp.ageSeconds).toBeNull();
 	expect(result.stamp.ageText).toBe('unknown');
 });

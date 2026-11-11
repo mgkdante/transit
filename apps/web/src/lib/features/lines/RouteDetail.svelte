@@ -12,7 +12,8 @@
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { formatRelativeSeconds } from '#lib/utils/time.ts';
 	import { copy as MAP_COPY } from '#lib/features/map/map.copy.ts';
-	import { clock } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const clock = getV1Runtime().clock;
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import type { DetailTab } from '#lib/site/detailTabs.ts';

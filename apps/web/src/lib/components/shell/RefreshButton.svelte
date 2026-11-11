@@ -14,7 +14,13 @@
 
 	const refreshing = $derived(dataRefresh.refreshing);
 
-	const label = $derived(refreshing ? navPillCopy[locale].refreshing : navPillCopy[locale].refresh);
+	const label = $derived(
+		refreshing
+			? navPillCopy[locale].refreshing
+			: dataRefresh.error
+				? navPillCopy[locale].refreshFailed
+				: navPillCopy[locale].refresh,
+	);
 
 	function onClick(): void {
 		void dataRefresh.run();
@@ -31,10 +37,12 @@
 		onclick={onClick}
 		disabled={refreshing}
 		data-refreshing={refreshing}
+		data-refresh-failed={dataRefresh.error != null}
 	>
 		<svg
 			class="refresh-icon"
 			class:spin={refreshing}
+			class:failed={dataRefresh.error != null}
 			viewBox="0 0 20 20"
 			width="16"
 			height="16"
@@ -56,6 +64,9 @@
 			/>
 		</svg>
 	</Button>
+	{#if dataRefresh.error}
+		<span role="status" class="sr-only">{navPillCopy[locale].refreshFailed}</span>
+	{/if}
 </div>
 
 <style>
@@ -68,6 +79,9 @@
 	.refresh-icon.spin {
 		animation: refresh-spin 0.8s linear infinite;
 		transform-origin: center;
+	}
+	.refresh-icon.failed {
+		color: var(--dataviz-status-late);
 	}
 	@keyframes refresh-spin {
 		to {
