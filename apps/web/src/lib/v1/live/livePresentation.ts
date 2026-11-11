@@ -265,8 +265,12 @@ export function livePresentation(input: LivePresentationInput): LivePresentation
 		return state?.active ? [{ family, ...state }] : [];
 	});
 	const headline = states.filter(({ family }) => family !== 'alerts');
-	const stamp = liveAge(headline, input.locale);
-	const isPartialStale = stamp.isStale && headline.some(({ health }) => !health.isStale);
+	const primary =
+		input.page === 'map' ? headline.filter(({ family }) => family === 'vehicles') : [];
+	const stampFamilies = primary.length ? primary : headline;
+	const stamp = liveAge(stampFamilies, input.locale);
+	const shownHealth = primary.length ? liveAge(headline, input.locale) : stamp;
+	const isPartialStale = shownHealth.isStale && headline.some(({ health }) => !health.isStale);
 	const degraded = states.some(({ health }) => health.notice === 'refresh-unavailable');
 	const base = {
 		publicationUtc: oldestPublication(headline),
@@ -274,7 +278,7 @@ export function livePresentation(input: LivePresentationInput): LivePresentation
 		networkFeedAgeText: networkFeedAgeText(input),
 	};
 	if (input.page === 'map') {
-		const result = mapNotice(input, stamp, isPartialStale);
+		const result = mapNotice(input, shownHealth, isPartialStale);
 		return { ...base, stamp: mapStamp(stamp, result, input.locale, degraded), ...result };
 	}
 	if (input.page === 'trip') return { ...base, ...tripPresentation(input, stamp) };

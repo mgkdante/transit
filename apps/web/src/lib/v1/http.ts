@@ -3,18 +3,16 @@ import type { z } from 'zod';
 import { parsePort } from '#lib/v1/schemas/parse.ts';
 import { getV1Runtime } from '#lib/v1/runtime.ts';
 
-const MAX_SERVER_TIME_CALIBRATION_AGE_S = 30;
-
 function noteServerTime(res: Response): void {
-	if (!browser) return;
+	if (!browser || !res.ok) return;
 	const dateHeader = res.headers.get('date');
 	if (!dateHeader) return;
 	const dateMs = Date.parse(dateHeader);
 	if (Number.isNaN(dateMs)) return;
-	const parsedAgeSeconds = Number.parseInt(res.headers.get('age') ?? '0', 10);
-	const ageSeconds = Math.max(0, Number.isFinite(parsedAgeSeconds) ? parsedAgeSeconds : 0);
-	if (ageSeconds > MAX_SERVER_TIME_CALIBRATION_AGE_S) return;
-	getV1Runtime().clock.noteServerEpochMs(dateMs + ageSeconds * 1000);
+	const age = res.headers.get('age')?.trim() ?? '0';
+	// A cached response is valid data, but its Date/Age pair is not a fresh clock sample.
+	if (!/^\d+$/.test(age) || Number(age) !== 0) return;
+	getV1Runtime().clock.noteServerEpochMs(dateMs);
 }
 
 export type FetchFn = typeof fetch;

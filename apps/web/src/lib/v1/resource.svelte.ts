@@ -103,6 +103,7 @@ export function createResource<T>(
 		let pending: Promise<T>;
 		try {
 			pending = fetcher(controller.signal);
+			getV1Runtime().refresh.track?.(pending, controller.signal);
 		} catch (e) {
 			if (!isAbortError(e)) error = toError(e);
 			loading = false;

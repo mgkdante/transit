@@ -70,12 +70,12 @@ Object.assign(mocks, reader);
 import { createLiveStore, type LiveFamily } from './store.svelte';
 import { livePresentation } from './livePresentation';
 import { LIVE_FAMILIES, type LiveStore } from './store.svelte';
-const present = (store: Pick<LiveStore, 'familyStates'>) =>
+const present = (store: Pick<LiveStore, 'familyStates'>, page: 'map' | 'network' = 'map') =>
 	livePresentation({
 		familyStates: store.familyStates,
 		families: LIVE_FAMILIES,
 		locale: 'en',
-		page: 'map',
+		page,
 	});
 import { dataRefresh } from '#lib/stores/index.ts';
 import { configureV1Runtime } from '#lib/v1/runtime.ts';
@@ -957,7 +957,7 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 		expect(store.vehicles?.generated_utc).toBe('2026-06-21T12:00:30Z');
 		expect(store.network?.on_time_pct).toBe(91);
 		expect(present(store).publicationUtc).toBe('2026-06-21T12:00:00Z');
-		expect(present(store).stamp.ageSeconds).toBe(120);
+		expect(present(store, 'network').stamp.ageSeconds).toBe(120);
 		expect(present(store).stamp.isStale).toBe(true);
 	});
 
@@ -1153,6 +1153,8 @@ describe('createLiveStore — request-conscious browser lifecycle', () => {
 	});
 
 	it('refreshes a committed vehicle selection once per epoch bump', async () => {
+		mocks.nowMs = Date.parse(mocks.generatedUtc!);
+		mocks.offsetMs = 0;
 		const { store } = setup(30, ['vehicles', 'alerts']);
 		let selectedVehicle = false;
 		let publishSelection = () => {};

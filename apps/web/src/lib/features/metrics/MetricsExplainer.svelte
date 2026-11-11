@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
-	import { clock } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const clock = getV1Runtime().clock;
 	import { publicationPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { Badge } from '@yesid/ui/badge';
 	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';

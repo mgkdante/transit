@@ -8,6 +8,8 @@ export interface RefreshPort {
 	readonly epoch: number;
 	/** An explicit user refresh revalidates mutable browser-cache entries. */
 	readonly refreshing?: boolean;
+	/** Work owned by active resources; an abort discards a departed owner's work. */
+	track?(pending: Promise<unknown>, signal?: AbortSignal): void;
 }
 
 export interface V1RuntimePorts {

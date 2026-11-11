@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
+import { dataRefresh } from '#lib/stores/refresh.svelte.ts';
 import type { DateWindow } from '#lib/v1/history/index.ts';
 import {
 	createHistoryRangeResource,
@@ -83,6 +84,20 @@ afterEach(() => {
 });
 
 describe('server-seeded history ranges', () => {
+	it('reloads its index and selected range on a global refresh epoch', async () => {
+		const load = vi
+			.fn<HistoryRangeLoader<TestIndex, TestValue>['load']>()
+			.mockResolvedValueOnce({ value: { label: 'before' }, status: 'complete' })
+			.mockResolvedValueOnce({ value: { label: 'after' }, status: 'complete' });
+		const loader = makeLoader({ load });
+		const resource = create(loader, request('2026-01-01', '2026-01-31'));
+		await settle(resource);
+		expect(resource.value?.label).toBe('before');
+		dataRefresh.bumpEpoch();
+		await settle(resource);
+		expect(loader.loadIndex).toHaveBeenCalledTimes(2);
+		expect(resource.value?.label).toBe('after');
+	});
 	it.each(['complete', 'partial', 'no_data'] as const)(
 		'hydrates %s without repeating accepted repository work',
 		async (status) => {

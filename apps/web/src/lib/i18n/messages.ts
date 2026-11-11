@@ -6,6 +6,7 @@ export const navPillCopy = defineCopy({
 		mapLabel: 'Carte du réseau',
 		refresh: 'Actualiser les données',
 		refreshing: 'Actualisation…',
+		refreshFailed: 'Échec de l’actualisation ; réessayer',
 		searchPlaceholder: {
 			route: 'Rechercher une ligne…',
 			stop: 'Rechercher un arrêt…',
@@ -45,6 +46,7 @@ export const navPillCopy = defineCopy({
 		mapLabel: 'Network map',
 		refresh: 'Refresh data',
 		refreshing: 'Refreshing…',
+		refreshFailed: 'Refresh failed; try again',
 		searchPlaceholder: {
 			route: 'Search a line…',
 			stop: 'Search a stop…',

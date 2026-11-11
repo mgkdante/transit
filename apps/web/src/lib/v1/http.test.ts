@@ -77,17 +77,28 @@ describe('getEntityJson — server-time capture', () => {
 		vi.restoreAllMocks();
 	});
 
-	it('notes Date + Age (cache age folded into the server-time estimate)', async () => {
+	it('does not recalibrate the global clock from a cached Date/Age sample', async () => {
 		const { getEntityJson } = await loadHttp();
 		const dateHeader = 'Sun, 21 Jun 2026 12:00:00 GMT';
 		const fetchFn = fetchWithHeaders({ date: dateHeader, age: '12' });
 
 		await getEntityJson('https://x/y.json', schema, 'live.test', fetchFn);
 
-		const expected = Date.parse(dateHeader) + 12_000;
-		expect(mocks.noteServerEpochMs).toHaveBeenCalledTimes(1);
-		expect(mocks.noteServerEpochMs).toHaveBeenCalledWith(expected);
+		expect(mocks.noteServerEpochMs).not.toHaveBeenCalled();
 	});
+	it.each(['invalid', '-1', '0.5'])(
+		'rejects ambiguous Age metadata %s for calibration',
+		async (age) => {
+			const { getEntityJson } = await loadHttp();
+			await getEntityJson(
+				'https://x/y.json',
+				schema,
+				'live.test',
+				fetchWithHeaders({ date: 'Sun, 21 Jun 2026 12:00:00 GMT', age }),
+			);
+			expect(mocks.noteServerEpochMs).not.toHaveBeenCalled();
+		},
+	);
 
 	it('rejects an old cache sample whose Date/Age convention is ambiguous', async () => {
 		const { getEntityJson } = await loadHttp();

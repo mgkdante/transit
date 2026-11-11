@@ -4,7 +4,8 @@
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const { line } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
-	import { clock } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const clock = getV1Runtime().clock;
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { Vehicle } from '#lib/v1/schemas/index.ts';

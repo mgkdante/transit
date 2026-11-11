@@ -2,7 +2,8 @@
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import OutOfServiceVehicles from './OutOfServiceVehicles.svelte';
 	import type { Manifest } from '#lib/v1/schemas/index.ts';
-	import { clock } from '@yesid/ui/state';
+	import { getV1Runtime } from '#lib/v1/runtime.ts';
+	const clock = getV1Runtime().clock;
 	import './sections/health-sections.css';
 
 	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';

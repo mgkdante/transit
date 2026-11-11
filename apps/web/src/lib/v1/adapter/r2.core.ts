@@ -104,7 +104,7 @@ export async function readWhole<T>(
 ): Promise<T> {
 	const url = resolveUrl(relativePath, providerOf(ctx));
 	const value = await getEntityJson(url, schema, label, fetchOf(ctx), {
-		cache,
+		cache: cache === MUTABLE_CACHE ? (ctx?.requestCache ?? cache) : cache,
 		providerId: providerOf(ctx),
 		signal: ctx?.signal,
 		onResponseHeaders: ctx?.onResponseHeaders,

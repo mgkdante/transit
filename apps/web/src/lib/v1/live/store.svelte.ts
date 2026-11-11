@@ -55,11 +55,13 @@ export interface LiveFamilyState extends Omit<FamilyState, 'consecutiveFailures'
 
 export interface LiveReadContext {
 	readonly manifest: Manifest;
+	readonly requestCache?: RequestCache;
 	readonly signal?: AbortSignal;
 	readonly onPollDelayMs?: (delayMs: number) => void;
 }
 
 export interface LiveReader {
+	refreshManifest?(context: LiveReadContext): Promise<Manifest>;
 	vehicles(context: LiveReadContext): Promise<VehiclesFile>;
 	trips(context: LiveReadContext): Promise<TripsFile>;
 	stopDepartures(context: LiveReadContext): Promise<StopDeparturesFile>;
@@ -86,7 +88,7 @@ export interface LiveStore {
 	readonly error: Error | null;
 	start(): void;
 	stop(): void;
-	refresh(): Promise<void>;
+	refresh(options?: { force?: boolean }): Promise<void>;
 	subscribeFamilies(families: readonly LiveFamily[]): () => void;
 }
 
@@ -101,9 +103,9 @@ export function createLiveStore(
 	options: LiveStoreOptions = {},
 ): LiveStore {
 	const runtime = getV1Runtime();
-	const ttlMs = liveTtlMs(manifest);
-	const staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
-	const adapterCtx: LiveReadContext = { manifest };
+	let ttlMs = liveTtlMs(manifest);
+	let staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
+	let adapterCtx: LiveReadContext = { manifest };
 	const baselineFamilies = new SvelteSet<LiveFamily>(options.families ?? LIVE_FAMILIES);
 	const initialNetwork = baselineFamilies.has('network') ? (options.seed?.network ?? null) : null;
 
@@ -229,7 +231,7 @@ export function createLiveStore(
 		const e = runtime.refresh.epoch;
 		if (e !== lastRefreshEpoch) {
 			lastRefreshEpoch = e;
-			if (browser) void refresh();
+			if (browser) void refresh({ force: true });
 		}
 	});
 
@@ -346,6 +348,31 @@ export function createLiveStore(
 		};
 	}
 
+	function trackedRead(family: LiveFamily, context: LiveReadContext): Promise<LiveFamilyPayload> {
+		const pending = readFamily(family, context);
+		runtime.refresh.track?.(pending, context.signal);
+		return pending;
+	}
+
+	function retryStale(
+		family: LiveFamily,
+		payload: LiveFamilyPayload,
+		context: LiveReadContext,
+	): boolean {
+		if (context.requestCache !== 'no-cache') return false;
+		const retained = currentFamilyPayload(family);
+		const unchanged =
+			retained?.generated_utc === payload.generated_utc &&
+			captureTimestamp(retained) === captureTimestamp(payload);
+		const age = freshnessAgeSeconds(payload.generated_utc, runtime.clock.serverNow, ttlMs / 1000);
+		const behindManifest =
+			Date.parse(payload.generated_utc) < Date.parse(context.manifest.files.live.generated_utc);
+		return (
+			behindManifest ||
+			(unchanged && (age == null || age >= ttlMs / 1000 || familyStates[family].health.isStale))
+		);
+	}
+
 	async function settleFamily(
 		family: LiveFamily,
 		context: LiveReadContext,
@@ -365,18 +392,32 @@ export function createLiveStore(
 
 		try {
 			let delayMs = ttlMs;
-			const payload = await readFamily(family, {
+			const readContext: LiveReadContext = {
 				...context,
 				onPollDelayMs: (nextDelayMs) => {
 					delayMs = nextDelayMs;
 				},
-			});
+			};
+			let payload = await trackedRead(family, readContext);
+			if (
+				requestIsCurrent(family, token, generation, controller) &&
+				retryStale(family, payload, context)
+			) {
+				payload = await trackedRead(family, { ...readContext, requestCache: 'reload' });
+			}
 			if (requestIsCurrent(family, token, generation, controller)) {
 				nextPollAt.set(family, Date.now() + delayMs);
 			}
 			if (!requestIsCurrent(family, token, generation, controller)) return;
 
 			const retained = currentFamilyPayload(family);
+			if (
+				context.requestCache &&
+				retained &&
+				Date.parse(payload.generated_utc) < Date.parse(retained.generated_utc)
+			) {
+				throw new Error('Received an older live report');
+			}
 			const payloadGeneration =
 				typeof payload.generated_utc === 'string' ? payload.generated_utc : null;
 			const changed =
@@ -416,7 +457,10 @@ export function createLiveStore(
 		}
 	}
 
-	async function runBatch(requestedFamilies: readonly LiveFamily[]): Promise<void> {
+	async function runBatch(
+		requestedFamilies: readonly LiveFamily[],
+		requestCache?: RequestCache,
+	): Promise<void> {
 		const selectedFamilies = [
 			...new SvelteSet(
 				requestedFamilies.filter(
@@ -429,7 +473,11 @@ export function createLiveStore(
 
 		const generation = refreshGeneration;
 		const controller = new AbortController();
-		const batchContext: LiveReadContext = { ...adapterCtx, signal: controller.signal };
+		const batchContext: LiveReadContext = {
+			...adapterCtx,
+			signal: controller.signal,
+			requestCache,
+		};
 		const pendingFamilies = new SvelteSet(selectedFamilies);
 		const batchTokens = new SvelteMap<LiveFamily, number>();
 		let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
@@ -486,9 +534,47 @@ export function createLiveStore(
 		}
 	}
 
-	function refresh(): Promise<void> {
-		if (refreshInFlight) return refreshInFlight;
-		const pending = runBatch(activeFamilies());
+	async function forceRefresh(controller: AbortController): Promise<void> {
+		refreshGeneration += 1;
+		for (const active of activeControllers) active.abort();
+		activeControllers.clear();
+		refreshInFlight = null;
+		for (const family of activeFamilies()) {
+			const state = familyStatesValue[family];
+			familyStatesValue[family] = { ...state, phase: inactiveOrSettledPhase(state) };
+		}
+		const generation = refreshGeneration;
+		activeControllers.add(controller);
+		try {
+			if (reader.refreshManifest) {
+				const latest = await reader.refreshManifest({
+					...adapterCtx,
+					signal: controller.signal,
+					requestCache: 'no-cache',
+				});
+				if (generation !== refreshGeneration || controller.signal.aborted) return;
+				if (latest.provider !== manifest.provider)
+					throw new Error('Refresh manifest belongs to another provider');
+				manifest = latest;
+				adapterCtx = { manifest };
+				ttlMs = liveTtlMs(manifest);
+				staleThresholdS = (ttlMs / 1000) * STALE_TTL_MULTIPLIER;
+			}
+			await runBatch(activeFamilies(), 'no-cache');
+			const failure = activeFamilies()
+				.map((family) => familyStatesValue[family].error)
+				.find((error) => error != null);
+			if (failure) throw failure;
+		} finally {
+			activeControllers.delete(controller);
+		}
+	}
+
+	function refresh(options?: { force?: boolean }): Promise<void> {
+		if (refreshInFlight && !options?.force) return refreshInFlight;
+		const controller = options?.force ? new AbortController() : null;
+		const pending = controller ? forceRefresh(controller) : runBatch(activeFamilies());
+		if (controller) runtime.refresh.track?.(pending, controller.signal);
 		refreshInFlight = pending;
 		void pending.then(
 			() => {

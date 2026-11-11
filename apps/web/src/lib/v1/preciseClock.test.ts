@@ -53,8 +53,21 @@ describe('preciseServerClock', () => {
 			expect(freshnessAgeSeconds(report, clock.serverNow)).toBe(5 + seconds);
 		}
 		clock.noteServerEpochMs(16_000);
+		expect(clock.serverNow).toBe(15_000);
+		advance(1000);
 		expect(clock.serverNow).toBe(16_000);
 		expect(freshnessAgeSeconds(new Date(15_000).toISOString(), clock.serverNow)).toBe(1);
+	});
+
+	it('ignores ordinary response-time jitter instead of moving the global counter on clicks', () => {
+		const { clock, advance } = serverClockFixture();
+		clock.noteServerEpochMs(10_000);
+		for (const [index, jitter] of [2000, -1000, 3000].entries()) {
+			advance(1000);
+			const expected = 11_000 + index * 1000;
+			clock.noteServerEpochMs(expected + jitter);
+			expect(clock.serverNow).toBe(expected);
+		}
 	});
 
 	it('recovers an ahead-of-time calibration after consistent advancing server samples', () => {
