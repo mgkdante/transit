@@ -1,4 +1,4 @@
-import { test } from './layout-test';
+import { test } from './layout-input-test';
 import { expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, readFileSync } from 'node:fs';
