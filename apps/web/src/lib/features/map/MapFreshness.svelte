@@ -90,32 +90,15 @@
 			min-width: 0;
 			max-width: 100%;
 			gap: 0.25rem;
-			margin-left: auto;
-			padding: 0.25rem 0.5rem;
 			font-size: var(--text-micro);
-			line-height: 1;
+			line-height: 1.4;
 			white-space: normal;
-			background: color-mix(in srgb, var(--card) 90%, transparent);
-			border: 1px solid color-mix(in srgb, var(--border) 78%, var(--primary) 22%);
-			border-radius: var(--radius-pill);
-			box-shadow: var(--shadow-card);
-			-webkit-backdrop-filter: blur(var(--glass-blur-sm));
-			backdrop-filter: blur(var(--glass-blur-sm));
-		}
-
-		.map-freshness[data-placement='head'][data-stale='true'] {
-			border-color: color-mix(in srgb, var(--dataviz-status-late) 40%, var(--border) 60%);
-			background: color-mix(in srgb, var(--dataviz-status-late) 8%, var(--card) 90%);
-		}
-		.map-freshness[data-placement='head'][data-degraded='true'] {
-			border-color: color-mix(in srgb, var(--dataviz-status-late) 40%, var(--border) 60%);
-			background: color-mix(in srgb, var(--dataviz-status-late) 8%, var(--card) 90%);
 		}
 
 		.map-freshness[data-placement='head'] :global(.freshness-stamp) {
 			gap: 0.375rem;
 			font-size: var(--text-micro);
-			line-height: 1;
+			line-height: 1.4;
 		}
 
 		.map-freshness[data-placement='head'] :global(.freshness-stamp-label) {

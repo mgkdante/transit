@@ -61,8 +61,20 @@
 		.map-head {
 			top: var(--chrome-offset);
 			left: 0.75rem;
-			right: 0.75rem;
+			width: fit-content;
 			max-width: calc(100% - 1.5rem);
+			gap: 0.5rem;
+			padding: 0.625rem 0.75rem;
+			background: color-mix(in srgb, var(--card) 92%, transparent);
+			border: 1px solid var(--border-hairline);
+			border-radius: var(--radius-md);
+			box-shadow: var(--shadow-card);
+			-webkit-backdrop-filter: blur(var(--glass-blur-sm));
+			backdrop-filter: blur(var(--glass-blur-sm));
+		}
+		.map-title-row {
+			padding: 0;
+			background: transparent;
 		}
 		.map-heading {
 			font-size: var(--text-subheading);
