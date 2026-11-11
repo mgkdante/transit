@@ -86,6 +86,8 @@
 		.map-freshness[data-placement='head'] {
 			display: inline-flex;
 			align-items: center;
+			justify-content: flex-end;
+			text-align: right;
 			flex: 0 1 auto;
 			min-width: 0;
 			max-width: 100%;
@@ -96,6 +98,7 @@
 		}
 
 		.map-freshness[data-placement='head'] :global(.freshness-stamp) {
+			justify-content: flex-end;
 			gap: 0.375rem;
 			font-size: var(--text-micro);
 			line-height: 1.4;
