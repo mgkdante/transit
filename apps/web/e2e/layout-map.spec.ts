@@ -291,8 +291,22 @@ for (const provider of read('providers').providers) {
 			const reportBox = (await report.boundingBox())!;
 			const panelBox = (await panel.boundingBox())!;
 			if (mobile) {
+				const titleSurface = panel.getByRole('heading', { level: 1 }).locator('..');
+				const reportSurface = report.locator('..');
+				const titleSurfaceBox = (await titleSurface.boundingBox())!;
+				const reportSurfaceBox = (await reportSurface.boundingBox())!;
 				expect(titleBox.y).toBeGreaterThanOrEqual(reportBox.y + reportBox.height);
-				expect(titleBox.x).toBeCloseTo(reportBox.x, 0);
+				expect(titleBox.x + titleBox.width).toBeCloseTo(reportBox.x + reportBox.width, 0);
+				expect(titleSurfaceBox.x + titleSurfaceBox.width).toBeCloseTo(
+					reportSurfaceBox.x + reportSurfaceBox.width,
+					0,
+				);
+				expect(titleSurfaceBox.width).toBeLessThan(reportSurfaceBox.width);
+				for (const surface of [titleSurface, reportSurface]) {
+					expect(await surface.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(
+						'rgba(0, 0, 0, 0)',
+					);
+				}
 				expect(page.viewportSize()!.width - panelBox.x - panelBox.width).toBeCloseTo(12, 0);
 				expect(reportBox.x + reportBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
 			} else {
@@ -315,27 +329,24 @@ for (const provider of read('providers').providers) {
 			const geometry = await heading.evaluate((el) => {
 				const title = el.getBoundingClientRect();
 				const panel = el.closest('.map-head')!;
-				const head = panel.getBoundingClientRect();
-				const style = getComputedStyle(panel);
+				const head = el.parentElement!.getBoundingClientRect();
+				const style = getComputedStyle(el.parentElement!);
 				const stamp = panel.querySelector('[data-slot="freshness-stamp"]');
 				const report = stamp?.checkVisibility() ? stamp.getBoundingClientRect() : null;
 				// The report precedes the mobile title; neither row should leave a phantom eyebrow.
 				return {
 					top:
-						(report?.top ?? title.top) -
-						head.top -
-						parseFloat(style.paddingTop) -
-						parseFloat(style.borderTopWidth),
+						title.top - head.top - parseFloat(style.paddingTop) - parseFloat(style.borderTopWidth),
 					left:
 						title.left -
 						head.left -
 						parseFloat(style.paddingLeft) -
 						parseFloat(style.borderLeftWidth),
 					right: title.right,
-					panelRight: head.right,
+					panelRight: panel.getBoundingClientRect().right,
 					titleTop: title.top,
-					titleLeft: title.left,
-					report: report ? { bottom: report.bottom, left: report.left } : null,
+					titleRight: title.right,
+					report: report ? { bottom: report.bottom, right: report.right } : null,
 					width: innerWidth,
 				};
 			});
@@ -348,7 +359,7 @@ for (const provider of read('providers').providers) {
 				expect(geometry.width - geometry.panelRight).toBeCloseTo(12, 0);
 				if (geometry.report) {
 					expect(geometry.titleTop).toBeGreaterThanOrEqual(geometry.report.bottom);
-					expect(geometry.titleLeft).toBeCloseTo(geometry.report.left, 0);
+					expect(geometry.titleRight).toBeCloseTo(geometry.report.right, 0);
 				}
 			}
 		});

@@ -64,7 +64,13 @@
 			right: 0.75rem;
 			width: fit-content;
 			max-width: calc(100% - 1.5rem);
+			align-items: flex-end;
 			gap: 0.5rem;
+		}
+		.map-title-row,
+		.map-head > :global(.map-freshness[data-placement='head']) {
+			align-self: flex-end;
+			max-width: 100%;
 			padding: 0.625rem 0.75rem;
 			background: color-mix(in srgb, var(--card) 92%, transparent);
 			border: 1px solid var(--border-hairline);
@@ -74,8 +80,8 @@
 			backdrop-filter: blur(var(--glass-blur-sm));
 		}
 		.map-title-row {
-			padding: 0;
-			background: transparent;
+			justify-content: flex-end;
+			text-align: right;
 		}
 		.map-heading {
 			font-size: var(--text-subheading);
