@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 const mocks = vi.hoisted(() => ({
 	browser: true,
+	refreshing: false,
 	noteServerEpochMs: vi.fn<(ms: number) => void>(),
 }));
 
@@ -15,6 +16,12 @@ async function loadHttp() {
 	vi.resetModules();
 	const { configureV1Runtime } = await import('./runtime');
 	configureV1Runtime({
+		refresh: {
+			epoch: 0,
+			get refreshing() {
+				return mocks.refreshing;
+			},
+		},
 		clock: {
 			get serverNow() {
 				return 0;
@@ -137,6 +144,28 @@ describe('getEntityJson — server-time capture', () => {
 		const out = await getEntityJson('https://x/y.json', schema, 'live.test', fetchFn);
 
 		expect(out).toEqual({ ok: true });
+	});
+});
+
+describe('manual refresh cache policy', () => {
+	afterEach(() => {
+		mocks.refreshing = false;
+		mocks.browser = true;
+	});
+	it.each([
+		[true, 'default', 'no-cache'],
+		[false, 'default', 'default'],
+		[true, 'force-cache', 'force-cache'],
+		[true, 'no-store', 'no-store'],
+	] as const)('refreshing=%s with %s requests %s', async (refreshing, cache, expected) => {
+		mocks.refreshing = refreshing;
+		const { getEntityJson } = await loadHttp();
+		const fetchFn = fetchWithHeaders({});
+		await getEntityJson('/data/v1/stm/live/test.json', schema, 'live.test', fetchFn, { cache });
+		expect(fetchFn).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ cache: expected }),
+		);
 	});
 });
 

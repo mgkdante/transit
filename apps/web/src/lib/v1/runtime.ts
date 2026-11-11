@@ -6,6 +6,8 @@ export interface ClockPort {
 
 export interface RefreshPort {
 	readonly epoch: number;
+	/** An explicit user refresh revalidates mutable browser-cache entries. */
+	readonly refreshing?: boolean;
 }
 
 export interface V1RuntimePorts {
