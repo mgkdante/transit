@@ -306,6 +306,14 @@
 	}
 
 	onMount(() => {
+		// Kit finishes wiring its router after component mount callbacks.
+		const ready = setTimeout(() => {
+			document.documentElement.dataset.hydrated = '';
+		});
+		return () => clearTimeout(ready);
+	});
+
+	onMount(() => {
 		if (data.v1Error && !data.v1) void invalidateAll();
 
 		if (browser && navigator.serviceWorker) {
