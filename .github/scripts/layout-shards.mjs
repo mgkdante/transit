@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, posix, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -230,7 +236,8 @@ function readCoverageReceipt(folder, env, total) {
     metadata.repository !== env.GITHUB_REPOSITORY ||
     metadata.source_sha !== env.GITHUB_SHA ||
     metadata.run_id !== env.GITHUB_RUN_ID ||
-    metadata.attempt !== env.GITHUB_RUN_ATTEMPT ||
+    !/^[1-9][0-9]*$/.test(metadata.attempt ?? "") ||
+    Number(metadata.attempt) > Number(env.GITHUB_RUN_ATTEMPT) ||
     metadata.head_sha !== env.TRANSIT_LAYOUT_HEAD_SHA ||
     metadata.workers !== 2 ||
     metadata.shard?.total !== total ||
@@ -267,6 +274,29 @@ function readCoverageReceipt(folder, env, total) {
   return { metadata, keys };
 }
 
+// A failed-jobs rerun re-runs only some shards, so each shard's receipt may come
+// from any attempt of this run. Keep the latest attempt per shard; a second
+// receipt for the same shard and attempt is a duplicate. One downloaded
+// artifact is unpacked without a folder, so a flat directory is one receipt.
+function latestReceiptFolders(directory) {
+  if (existsSync(join(directory, "metadata.json"))) return [directory];
+  const latest = new Map();
+  for (const name of readdirSync(directory)) {
+    const folder = join(directory, name),
+      metadata = JSON.parse(
+        readFileSync(join(folder, "metadata.json"), "utf8"),
+      ),
+      shard = metadata.shard?.current ?? metadata.expected?.shard?.current,
+      attempt = Number(metadata.attempt),
+      current = latest.get(shard);
+    if (current?.attempt === attempt)
+      throw new Error("Duplicate layout coverage receipt");
+    if (!current || attempt > current.attempt)
+      latest.set(shard, { attempt, folder });
+  }
+  return [...latest.values()].map((r) => r.folder);
+}
+
 export function verifyCoverage(directory, env, total = 12) {
   if (
     !/^[\w.-]+\/[\w.-]+$/.test(env.GITHUB_REPOSITORY ?? "") ||
@@ -283,8 +313,8 @@ export function verifyCoverage(directory, env, total = 12) {
     catalogs = new Set(),
     assignments = new Set();
   let expectedCases;
-  for (const name of readdirSync(directory)) {
-    const receipt = readCoverageReceipt(join(directory, name), env, total),
+  for (const folder of latestReceiptFolders(directory)) {
+    const receipt = readCoverageReceipt(folder, env, total),
       metadata = receipt.metadata;
     if (seen.has(metadata.shard.current))
       throw new Error("Duplicate layout coverage receipt");

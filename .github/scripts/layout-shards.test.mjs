@@ -230,3 +230,91 @@ test("global audit proves every selected case occurs once across all shard repor
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a failed-jobs rerun combines each shard's latest receipt from earlier attempts of the same run", () => {
+  const root = mkdtempSync(join(tmpdir(), "transit-layout-rerun-"));
+  try {
+    const input = catalog([100, 50]);
+    const plan = makePlan(input, baseline([100, 50]), sha, 2);
+    const planDir = join(root, "plan"),
+      reports = join(root, "reports");
+    writePlan(plan, planDir);
+    mkdirSync(reports);
+    const base = {
+      GITHUB_REPOSITORY: "yesid-dev/transit",
+      GITHUB_SHA: sha,
+      TRANSIT_LAYOUT_HEAD_SHA: "b".repeat(40),
+      GITHUB_RUN_ID: "123",
+      TRANSIT_LAYOUT_PLAN: join(planDir, "plan.json"),
+      TRANSIT_LAYOUT_SHARDS: "2",
+    };
+    const shard = (attempt, i, runId = "123") => {
+      const folder = join(
+        reports,
+        `layout-timing-${runId}-${attempt}-${i + 1}`,
+      );
+      mkdirSync(folder);
+      writeFileSync(join(folder, "plan.json"), JSON.stringify(plan));
+      const suite = structuredClone(input.suites[i]);
+      suite.specs[0].tests[0].results = [{ status: "passed", duration: 10 }];
+      writeFileSync(
+        join(folder, "report.json"),
+        JSON.stringify({
+          config: { version, workers: 2, shard: null },
+          suites: [suite],
+          stats: {
+            duration: 10,
+            expected: 1,
+            unexpected: 0,
+            flaky: 0,
+            skipped: 0,
+          },
+        }),
+      );
+      recordTiming(folder, {
+        ...base,
+        GITHUB_RUN_ID: runId,
+        GITHUB_RUN_ATTEMPT: String(attempt),
+        TRANSIT_LAYOUT_SHARD: String(i + 1),
+      });
+      return folder;
+    };
+    shard(1, 0);
+    const failed = shard(1, 1);
+    const metadata = join(failed, "metadata.json");
+    writeFileSync(
+      metadata,
+      readFileSync(metadata, "utf8").replace(
+        '"status": "measured"',
+        '"status": "rejected"',
+      ),
+    );
+    shard(2, 1);
+    const env = { ...base, GITHUB_RUN_ATTEMPT: "2" };
+    assert.deepEqual(verifyCoverage(reports, env, 2), { shards: 2, cases: 2 });
+
+    assert.throws(
+      () => verifyCoverage(reports, { ...env, GITHUB_RUN_ATTEMPT: "1" }),
+      /receipt/,
+    );
+    const future = shard(3, 0);
+    assert.throws(() => verifyCoverage(reports, env, 2), /receipt/);
+    rmSync(future, { recursive: true });
+    const foreign = shard(1, 0, "999");
+    assert.throws(() => verifyCoverage(reports, env, 2), /receipt/);
+    rmSync(foreign, { recursive: true });
+    cpSync(
+      join(reports, "layout-timing-123-2-2"),
+      join(reports, "layout-timing-123-2-2-copy"),
+      { recursive: true },
+    );
+    assert.throws(() => verifyCoverage(reports, env, 2), /Duplicate/);
+    rmSync(join(reports, "layout-timing-123-2-2-copy"), { recursive: true });
+
+    const flat = join(root, "flat");
+    cpSync(join(reports, "layout-timing-123-2-2"), flat, { recursive: true });
+    assert.throws(() => verifyCoverage(flat, env, 2), /Incomplete/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
