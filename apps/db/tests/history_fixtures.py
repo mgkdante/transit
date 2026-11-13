@@ -145,6 +145,73 @@ def _working_endpoint(connection, provider_id, endpoint_key):
     return endpoint
 
 
+def delete_provider_rows(connection, provider_id):
+    """Clean committed seal fixtures using the disposable database owner's privileges."""
+    from sqlalchemy import text
+
+    for table in (
+        "core.history_event",
+        "core.history_archive_copy",
+        "core.history_window",
+        "gold.fact_trip_delay_snapshot",
+        "gold.fact_vehicle_snapshot",
+        "raw.realtime_snapshot_index",
+        "raw.i3_alert_snapshots",
+        "raw.ingestion_objects",
+        "raw.ingestion_runs",
+        "core.feed_endpoints",
+        "core.providers",
+    ):
+        connection.execute(text(f"DELETE FROM {table} WHERE provider_id=:p"), {"p": provider_id})
+
+
+def seed_stored_capture(
+    connection,
+    root,
+    *,
+    provider_id,
+    endpoint_key,
+    run_id,
+    capture_id,
+    started_at_utc,
+    payload,
+    captured_at_utc=None,
+):
+    from sqlalchemy import text
+
+    endpoint = seed_working_day(
+        connection,
+        provider_id=provider_id,
+        endpoint_key=endpoint_key,
+        run_id=run_id,
+        capture_id=capture_id,
+        started_at_utc=started_at_utc,
+        captured_at_utc=captured_at_utc,
+    )
+    values = dict(id=run_id, digest=hashlib.sha256(payload).hexdigest(), size=len(payload))
+    storage_path = connection.execute(
+        text(
+            "UPDATE raw.ingestion_objects SET storage_backend='local', "
+            "checksum_sha256=:digest, byte_size=:size WHERE ingestion_object_id=:id "
+            "RETURNING storage_path"
+        ),
+        values,
+    ).scalar_one()
+    if endpoint_key in ("i3_alerts", "service_alerts"):
+        connection.execute(
+            text(
+                "UPDATE raw.i3_alert_snapshots SET storage_backend='local', "
+                "checksum_sha256=:digest, byte_size=:size "
+                "WHERE i3_alert_snapshot_id=:id"
+            ),
+            dict(values, id=capture_id),
+        )
+    path = root / storage_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return endpoint
+
+
 def _working_capture(connection, params, endpoint_key):
     from real_db_seed import ingestion_objects, realtime_snapshot_index
     from sqlalchemy import text

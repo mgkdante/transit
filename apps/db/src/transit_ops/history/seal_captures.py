@@ -1,10 +1,18 @@
 """Build and verify a local pack from a working poll record."""
 
 import hashlib
+import json
+import re
+import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from datetime import date
 from pathlib import Path
 
+from sqlalchemy import Connection, text
+
+from transit_ops.history import datasets, ledger
+from transit_ops.history.manifest import Manifest, build_manifest, encode_manifest
 from transit_ops.history.pack import PackResult, read_pack, write_pack
 from transit_ops.history.poll_record import (
     CaptureEntry,
@@ -12,10 +20,259 @@ from transit_ops.history.poll_record import (
     PollRecordInvalid,
     ordered_record,
 )
+from transit_ops.history.working_captures import read_working_day, rows_fingerprint
 from transit_ops.ingestion.storage import BronzeStorage, BronzeStorageResolver
 
 OBJECT_ABSENT = "object_absent"
 OBJECT_MISMATCH = "object_mismatch"
+
+
+class WindowNotClosed(ValueError):
+    """The feed-day is still within its capture window."""
+
+
+def _read_day(
+    connection: Connection, provider_id: str, endpoint_key: str, utc_date: date
+) -> tuple[int, str, PollRecord, str]:
+    identity = dict(
+        dataset_id="capture." + endpoint_key,
+        provider_id=provider_id,
+        window_key=utc_date.isoformat(),
+    )
+    with connection.begin():
+        connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+        now = connection.execute(text("SELECT now()")).scalar_one()
+        closes = datasets.utc_day_closes_at(utc_date)
+        if now < closes:
+            raise WindowNotClosed(f"{provider_id}/{endpoint_key}/{utc_date} closes at {closes}")
+        feed = connection.execute(
+            text(
+                "SELECT feed_endpoint_id, feed_kind FROM core.feed_endpoints "
+                "WHERE provider_id=:provider_id AND endpoint_key=:endpoint_key"
+            ),
+            dict(provider_id=provider_id, endpoint_key=endpoint_key),
+        ).one_or_none()
+        if feed is None:
+            raise LookupError(f"feed not found: {provider_id}/{endpoint_key}")
+        window = ledger.window_state(
+            connection,
+            dataset_id=identity["dataset_id"],
+            provider_id=provider_id,
+            window_key=utc_date.isoformat(),
+        )
+        copies = ledger.find_copies(
+            connection,
+            dataset_id=identity["dataset_id"],
+            provider_id=provider_id,
+            start=utc_date,
+            end=utc_date,
+        )
+        if (window is not None and window.current_version is not None) or any(
+            copy.state == "sealed" for copy in copies
+        ):
+            raise NotImplementedError("sealing an existing copy requires H04c4")
+        record = read_working_day(
+            connection, provider_id=provider_id, endpoint_key=endpoint_key, utc_date=utc_date
+        )
+        fingerprint = rows_fingerprint(
+            connection, provider_id=provider_id, endpoint_key=endpoint_key, utc_date=utc_date
+        )
+        return feed.feed_endpoint_id, feed.feed_kind, record, fingerprint
+
+
+def _insert_allocated(
+    connection: Connection, manifest: Manifest, data: bytes, archive_backend: str, fingerprint: str
+) -> None:
+    pack = manifest.pack
+    values = dict(
+        dataset_id="capture." + manifest.endpoint_key,
+        provider_id=manifest.provider_id,
+        window_key=manifest.utc_date.isoformat(),
+        content_version=manifest.content_version,
+        schema_version=datasets.get_dataset("capture." + manifest.endpoint_key).schema_version,
+        storage_backend=archive_backend,
+        storage_path=pack.path if pack else None,
+        manifest_path=_prefix(manifest.provider_id, manifest.endpoint_key, manifest.utc_date)
+        + f"{manifest.content_version}.manifest.json.gz",
+        byte_size=pack.byte_size if pack else None,
+        sha256=pack.sha256 if pack else None,
+        manifest_sha256=hashlib.sha256(data).hexdigest(),
+        record_count=manifest.capture_count,
+        poll_count=manifest.poll_count,
+        source_bytes=manifest.source_bytes,
+        content_sha256=manifest.content_sha256,
+        poll_record_sha256=manifest.poll_record_sha256,
+        first_time_utc=manifest.first_time_utc,
+        last_time_utc=manifest.last_time_utc,
+        details=json.dumps(
+            dict(
+                rows_fingerprint=fingerprint,
+                declared_interval_seconds=manifest.declared_interval_seconds,
+                observed_interval_ms=manifest.observed_interval_ms,
+            ),
+            sort_keys=True,
+        ),
+    )
+    connection.execute(
+        text("""
+        INSERT INTO core.history_archive_copy
+            (dataset_id, provider_id, revision, window_key, content_version, schema_version,
+             storage_backend, storage_path, manifest_path, byte_size, sha256, manifest_sha256,
+             record_count, poll_count, source_bytes, content_sha256, poll_record_sha256,
+             first_time_utc, last_time_utc, allocated_at_utc, details)
+        VALUES (:dataset_id, :provider_id, 0, :window_key, :content_version, :schema_version,
+                :storage_backend, :storage_path, :manifest_path, :byte_size, :sha256,
+                :manifest_sha256,
+                :record_count, :poll_count, :source_bytes, :content_sha256, :poll_record_sha256,
+                :first_time_utc, :last_time_utc, clock_timestamp(), CAST(:details AS jsonb))
+    """),
+        values,
+    )
+
+
+def _prefix(provider_id: str, endpoint_key: str, utc_date: date) -> str:
+    return (
+        f"archive/v1/captures/{provider_id}/{endpoint_key}/"
+        f"{utc_date:%Y/%m}/{utc_date.isoformat()}.c"
+    )
+
+
+def _allocate(
+    connection: Connection,
+    local: "LocalPack",
+    feed_id: int,
+    feed_kind: str,
+    highest: int,
+    archive_backend: str,
+    sealed_by: str,
+    fingerprint: str,
+) -> tuple[Manifest, bytes]:
+    key = local.record.feed_day
+    identity = dict(
+        dataset_id="capture." + key.endpoint_key,
+        provider_id=key.provider_id,
+        window_key=key.utc_date.isoformat(),
+    )
+    with connection.begin():
+        version = ledger.allocate_version(
+            connection,
+            dataset_id=identity["dataset_id"],
+            provider_id=key.provider_id,
+            window_key=key.utc_date.isoformat(),
+            above_version=highest,
+        )
+        if not local.record.polls and not local.record.processing:
+            connection.execute(
+                text(
+                    "UPDATE core.history_window SET working_state='empty' "
+                    "WHERE dataset_id=:dataset_id AND provider_id=:provider_id "
+                    "AND revision=0 AND window_key=:window_key"
+                ),
+                identity,
+            )
+        sealed_at = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
+        pack_key = _prefix(key.provider_id, key.endpoint_key, key.utc_date) + f"{version}.pack.xz"
+        manifest = build_manifest(
+            local.record,
+            feed_endpoint_id=feed_id,
+            feed_kind=feed_kind,
+            content_version=version,
+            supersedes=None,
+            pack_path=pack_key if local.pack else None,
+            pack=local.pack,
+            sealed_at_utc=sealed_at,
+            sealed_by=sealed_by,
+        )
+        data = encode_manifest(manifest)
+        _insert_allocated(connection, manifest, data, archive_backend, fingerprint)
+    return manifest, data
+
+
+def _mark_sealed(connection: Connection, manifest: Manifest, actor: str | None) -> None:
+    identity = dict(
+        dataset_id="capture." + manifest.endpoint_key,
+        provider_id=manifest.provider_id,
+        window_key=manifest.utc_date.isoformat(),
+        content_version=manifest.content_version,
+    )
+    with connection.begin():
+        result = connection.execute(
+            text("""
+            UPDATE core.history_archive_copy SET sealed_at_utc=clock_timestamp()
+            WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=0
+              AND window_key=:window_key AND content_version=:content_version
+              AND sealed_at_utc IS NULL AND rejected_at_utc IS NULL
+        """),
+            identity,
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(f"could not seal copy {identity}")
+        ledger.record_event(
+            connection,
+            kind="seal",
+            revision=0,
+            actor=actor,
+            dataset_id="capture." + manifest.endpoint_key,
+            provider_id=manifest.provider_id,
+            window_key=manifest.utc_date.isoformat(),
+            content_version=manifest.content_version,
+        )
+
+
+def _highest_version(archive: BronzeStorage, prefix: str) -> int:
+    pattern = re.compile(re.escape(prefix) + r"([1-9][0-9]*)\..+")
+    return max(
+        (int(match[1]) for key in archive.list_keys(prefix) if (match := pattern.fullmatch(key))),
+        default=0,
+    )
+
+
+def seal_capture_day(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    *,
+    provider_id: str,
+    endpoint_key: str,
+    utc_date: date,
+    archive_backend: str,
+    sealed_by: str,
+    actor: str | None = None,
+) -> ledger.ArchiveCopy:
+    if not sealed_by or actor == "" or archive_backend not in ("local", "s3"):
+        raise ValueError("invalid sealed_by, actor or archive_backend")
+    if connection.in_transaction():
+        raise ValueError("seal requires a connection without a transaction")
+    feed_id, feed_kind, record, fingerprint = _read_day(
+        connection, provider_id, endpoint_key, utc_date
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        directory = Path(folder)
+        local = pack_working_day(record, storage, directory=directory)
+        archive = storage(archive_backend)
+        prefix = _prefix(provider_id, endpoint_key, utc_date)
+        highest = _highest_version(archive, prefix)
+        manifest, data = _allocate(
+            connection, local, feed_id, feed_kind, highest, archive_backend, sealed_by, fingerprint
+        )
+        if manifest.pack is not None:
+            assert local.path is not None
+            archive.put_if_absent(local.path, manifest.pack.path)
+        path = directory / "manifest.json.gz"
+        path.write_bytes(data)
+        archive.put_if_absent(path, prefix + f"{manifest.content_version}.manifest.json.gz")
+        _mark_sealed(connection, manifest, actor)
+    with connection.begin():
+        return next(
+            copy
+            for copy in ledger.find_copies(
+                connection,
+                dataset_id="capture." + endpoint_key,
+                provider_id=provider_id,
+                start=utc_date,
+                end=utc_date,
+            )
+            if copy.content_version == manifest.content_version
+        )
 
 
 @dataclass(frozen=True)
