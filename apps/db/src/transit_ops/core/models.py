@@ -12,6 +12,8 @@ from transit_ops.settings import Settings
 # STM and OC Transpo highway routes); feed glitches report 140 km/h and more.
 DEFAULT_MAX_VEHICLE_SPEED_KMH = 130
 
+ReadingPopulation = Literal["vehicle_evidence", "scheduled_window"]
+
 
 class FeedKind(StrEnum):
     STATIC_SCHEDULE = "static_schedule"
@@ -135,6 +137,7 @@ class ProviderConfig(BaseModel):
     default_currency: str | None = None
     bounds: ProviderBoundsConfig | None = None
     live_source_lag_seconds: int = Field(default=0, ge=0)
+    reading_population: ReadingPopulation | None = None
     max_vehicle_speed_kmh: float = Field(
         default=DEFAULT_MAX_VEHICLE_SPEED_KMH, gt=0, allow_inf_nan=False
     )
