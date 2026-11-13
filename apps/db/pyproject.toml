@@ -64,6 +64,7 @@ select = ["B", "E", "F", "I", "UP"]
 python_version = "3.12"
 files = [
     "src/transit_ops/providers/declared.py",
+    "src/transit_ops/providers/declaration.py",
     "src/transit_ops/history",
     "src/transit_ops/daily_run.py",
     "src/transit_ops/daily_run_process.py",
