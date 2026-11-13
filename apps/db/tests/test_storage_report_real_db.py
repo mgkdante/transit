@@ -88,7 +88,12 @@ def test_report_lists_editions_dead_rows_index_use_and_raw_sizes(real_db_engine,
         editions = _seed_editions(conn, endpoints[0], runs)
         report = build_storage_report(conn, limit=15, editions=True)
         assert [r for r in report["static_editions"] if r["provider_id"] == "storage-test"] == [
-            {"t": "trips", "provider_id": "storage-test", "dataset_version_id": v, "count": n}
+            {
+                "table_name": "trips",
+                "provider_id": "storage-test",
+                "dataset_version_id": v,
+                "count": n,
+            }
             for n, v in enumerate(editions, 1)
         ]
         polls = [r for r in report["polls_by_feed_hour"] if r["provider_id"] == "storage-test"]

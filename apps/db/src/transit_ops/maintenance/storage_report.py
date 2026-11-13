@@ -7,7 +7,8 @@ from sqlalchemy import Connection, text
 
 _QUERIES = {
     "static_editions": """
-SELECT 'stop_times' AS t,provider_id,dataset_version_id,count(*) FROM silver.stop_times GROUP BY 2,3
+SELECT 'stop_times' AS table_name,provider_id,dataset_version_id,count(*)
+FROM silver.stop_times GROUP BY 2,3
 UNION ALL SELECT 'shapes',provider_id,dataset_version_id,count(*) FROM silver.shapes GROUP BY 2,3
 UNION ALL SELECT 'trips', provider_id, dataset_version_id, count(*) FROM silver.trips GROUP BY 2, 3
 ORDER BY 1, 2, 3
