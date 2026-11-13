@@ -9,6 +9,7 @@ import zlib
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 
+from transit_ops.history.ledger import ArchiveCopy
 from transit_ops.history.pack import PackedCapture, PackResult, StreamEntry
 from transit_ops.history.poll_record import (
     CaptureEntry,
@@ -22,6 +23,7 @@ from transit_ops.history.poll_record import (
     poll_record_sha256,
     typed_value,
 )
+from transit_ops.ingestion.storage import BronzeStorageResolver
 
 FORMAT = "transit-capture-pack"
 FORMAT_VERSION = 1
@@ -64,6 +66,27 @@ class Manifest(FeedDayKey):
 
 class ManifestInvalid(PollRecordInvalid):
     pass
+
+
+def read_copy_manifest(storage: BronzeStorageResolver, copy: ArchiveCopy) -> Manifest:
+    if copy.manifest_path is None:
+        raise ValueError("manifest_path is required")
+    if copy.manifest_sha256 is None:
+        raise ValueError("manifest_sha256 is required")
+    identity = f"{copy.dataset_id}/{copy.provider_id}/{copy.window_key}/v{copy.content_version}"
+    with storage(copy.storage_backend).open_stream(copy.manifest_path) as stream:
+        data = stream.read()
+    if hashlib.sha256(data).hexdigest() != copy.manifest_sha256:
+        raise ManifestInvalid(f"manifest SHA-256 differs for copy {identity}")
+    manifest = decode_manifest(data)
+    if (
+        "capture." + manifest.endpoint_key != copy.dataset_id
+        or manifest.provider_id != copy.provider_id
+        or manifest.utc_date.isoformat() != copy.window_key
+        or manifest.content_version != copy.content_version
+    ):
+        raise ManifestInvalid(f"manifest identity differs for copy {identity}")
+    return manifest
 
 
 def content_sha256(manifest: Manifest) -> str:
