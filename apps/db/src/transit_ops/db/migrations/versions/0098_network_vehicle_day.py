@@ -8,14 +8,14 @@ branch_labels = None
 depends_on = None
 
 DDL = r"""
-CREATE TABLE gold.network_vehicle_day (
+CREATE TABLE gold.network_vehicle_day ( -- One row per provider, definition and service day; no row when the day's captures are not available (absence, never zero).
     provider_id text NOT NULL, -- No FK: migration locks no existing table.
     revision integer NOT NULL, -- Definition version of the count.
     service_date date NOT NULL,
-    vehicles_reporting integer NOT NULL CHECK (vehicles_reporting >= 0),
-    vehicles_on_trip integer NOT NULL CHECK (vehicles_on_trip >= 0),
+    vehicles_reporting integer NOT NULL CHECK (vehicles_reporting >= 0), -- Distinct vehicle ids in the day's vehicle position captures.
+    vehicles_on_trip integer NOT NULL CHECK (vehicles_on_trip >= 0), -- Those that named a trip.
     captures_read integer NOT NULL CHECK (captures_read >= 0),
-    source_fingerprint text NOT NULL,
+    source_fingerprint text NOT NULL, -- What the count was built from; a rebuild with other inputs replaces the row.
     PRIMARY KEY (provider_id, revision, service_date),
     CHECK (vehicles_on_trip <= vehicles_reporting)
 );
