@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 import real_db_seed as db_seed
 from google.transit import gtfs_realtime_pb2 as rt
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.exc import IntegrityError
 
 from transit_ops.gold import delay_days, rollups
@@ -63,8 +64,40 @@ def settings_for(root: Path) -> Settings:
         SNAPSHOT_PUBLIC_BASE_URL="https://data.example.test",
         GOLD_FACT_RETENTION_DAYS=RETENTION_DAYS,
         GOLD_WARM_ROLLUP_RETENTION_DAYS=RETENTION_DAYS,
+        GOLD_REPORTING_OPEN_WINDOW_DAYS=36000,
         SILVER_I3_CLOSED_RETENTION_DAYS=RETENTION_DAYS,
     )
+
+
+@contextmanager
+def pinned_engine(engine: Engine, instant: datetime):
+    with engine.begin() as conn:
+        conn.execute(text("CREATE SCHEMA r2guard_clock"))
+        conn.execute(text("""
+            CREATE FUNCTION r2guard_clock.now() RETURNS timestamptz
+            LANGUAGE sql STABLE AS $$
+                SELECT current_setting('r2guard.now')::timestamptz
+            $$
+        """))
+    pinned = create_engine(engine.url)
+
+    @event.listens_for(pinned, "connect")
+    def configure(connection, _record):
+        # Commit session settings so pool rollback cannot undo the clock.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT set_config('r2guard.now', %s, false)", (instant.isoformat(),))
+            cursor.execute("SET search_path = r2guard_clock, pg_catalog, public")
+        connection.commit()
+
+    try:
+        with pinned.connect() as conn:
+            zone = conn.execute(text("SHOW TimeZone")).scalar_one()
+            assert zone in ("UTC", "Etc/UTC"), f"TimeZone must be UTC or Etc/UTC; got {zone}"
+        yield pinned
+    finally:
+        pinned.dispose()
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA r2guard_clock CASCADE"))
 
 
 def _registry(provider_id: str) -> SimpleNamespace:
@@ -162,14 +195,17 @@ def _seed_provider(conn, provider_id: str, alerts: bool) -> None:
         loaded_at_utc="'2025-05-30T12:00:00Z'",
     )
     conn.execute(
-        text("UPDATE core.dataset_versions SET source_version='r2-2025' WHERE provider_id=:p"),
+        text("UPDATE core.dataset_versions SET source_version='r2-2025',"
+             " storage_backend='local', storage_path='schedule/seed.zip',"
+             " source_url='https://example.test/schedule.zip' WHERE provider_id=:p"),
         {"p": provider_id},
     )
     for route, kind, short in ROUTES:
         conn.execute(
             text(
                 "INSERT INTO silver.routes (dataset_version_id, provider_id, route_id,"
-                " route_type, route_short_name, route_long_name) VALUES (:d,:p,:r,:k,:s,:n)"
+                " route_type, route_short_name, route_long_name, route_color)"
+                " VALUES (:d,:p,:r,:k,:s,:n,'336699')"
             ),
             run | {"r": route, "k": kind, "s": short, "n": f"Ligne {short}"},
         )
@@ -177,7 +213,8 @@ def _seed_provider(conn, provider_id: str, alerts: bool) -> None:
         conn.execute(
             text(
                 "INSERT INTO silver.stops (dataset_version_id, provider_id, stop_id, stop_name,"
-                " stop_lat, stop_lon, wheelchair_boarding) VALUES (:d,:p,:s,:n,:a,:o,:w)"
+                " stop_lat, stop_lon, wheelchair_boarding, stop_code)"
+                " VALUES (:d,:p,:s,:n,:a,:o,:w,:s)"
             ),
             run | {"s": stop, "n": f"Arret {stop}", "a": lat, "o": lon, "w": wheelchair},
         )
@@ -197,6 +234,7 @@ def _feed(kind: str, captured: datetime, service_date: date, prefix: str, first:
         body.trip.start_date = service_date.strftime("%Y%m%d")
         if kind == "vp":
             body.vehicle.id = f"V{trip}"
+            body.stop_id = stops[1]
             body.position.latitude, body.position.longitude = STOPS[stops[1]][:2]
             body.position.bearing, body.position.speed = 90.0, 8.5
             body.timestamp, body.occupancy_status = message.header.timestamp, index % 5
@@ -260,7 +298,9 @@ def _alerts(engine: Engine, provider_id: str, number: int, at: datetime, open_en
         int((at + timedelta(hours=2)).timestamp()),
     )
     payload = [
-        {"id": f"A{number}", "header": "Travaux", "description": "Detour", "severity": "warning",
+        {"id": f"A{number}", "header": {"fr": "Travaux", "en": "Works"},
+         "description": {"fr": "Detour", "en": "Diversion"}, "severity": "warning",
+         "url": {"fr": "https://example.test/fr", "en": "https://example.test/en"},
          "cause": "CONSTRUCTION", "effect": "DETOUR", "routes": ["B10"],
          "activePeriods": [{"start": start, "end": end}]},
         {"id": f"B{number}", "header": "Avis", "routes": ["M1"], "stops": ["S2"],
@@ -297,7 +337,8 @@ def seed_history(engine: Engine, settings: Settings, root: Path) -> None:
                         _capture(conn, root, provider_id, 2 * number + endpoint, endpoint, body, at)
                     )
         registry = _registry(provider_id)
-        build_gold_marts(provider_id, engine=engine, settings=settings, registry=registry)
+        with pinned_engine(engine, datetime(2025, 5, 30, 12, tzinfo=UTC)) as marts_engine:
+            build_gold_marts(provider_id, engine=marts_engine, settings=settings, registry=registry)
         receipts = _load(engine, settings, provider_id, captures)
         refresh_gold_snapshots(
             provider_id,

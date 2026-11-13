@@ -1,0 +1,57 @@
+{
+ "schema_version": 1,
+ "methodology_version": "alerts-2",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "collection_generation_id": "49116a3afcf4e0c737126dd2cfc1c9c4f866e8031e3c9f9356b4eec5e0bfb5cb",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "total_alerts": 12,
+ "months": [
+  {
+   "month": "2025-08",
+   "total_alerts": 4,
+   "pages": [
+    {
+     "path": "historic/alerts/generations/408a516fae9644326079756a858d23ff3bf5be91131c06367ce79ada8992c58b/2025-08/page-0001.json",
+     "page": 1,
+     "count": 4,
+     "byte_size": 2951,
+     "sha256": "408a516fae9644326079756a858d23ff3bf5be91131c06367ce79ada8992c58b",
+     "coverage_start": "2025-08-03",
+     "coverage_end": "2025-08-19"
+    }
+   ]
+  },
+  {
+   "month": "2025-07",
+   "total_alerts": 4,
+   "pages": [
+    {
+     "path": "historic/alerts/generations/fe9f5e9b6325f2f94bbdf1f1fa1985250b31d589292291d1570e50c545c6cb5a/2025-07/page-0001.json",
+     "page": 1,
+     "count": 4,
+     "byte_size": 2951,
+     "sha256": "fe9f5e9b6325f2f94bbdf1f1fa1985250b31d589292291d1570e50c545c6cb5a",
+     "coverage_start": "2025-07-03",
+     "coverage_end": "2025-07-19"
+    }
+   ]
+  },
+  {
+   "month": "2025-06",
+   "total_alerts": 4,
+   "pages": [
+    {
+     "path": "historic/alerts/generations/cb52313b065a2c5f77b255052a21e0ddc69e8dd08d0820f53e524f2794afb558/2025-06/page-0001.json",
+     "page": 1,
+     "count": 4,
+     "byte_size": 2951,
+     "sha256": "cb52313b065a2c5f77b255052a21e0ddc69e8dd08d0820f53e524f2794afb558",
+     "coverage_start": "2025-06-03",
+     "coverage_end": "2025-06-19"
+    }
+   ]
+  }
+ ]
+}

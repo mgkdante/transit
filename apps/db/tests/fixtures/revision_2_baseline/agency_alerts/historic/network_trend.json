@@ -25,8 +25,8 @@
   },
   {
    "date": "2025-06-19",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": 7.9,
    "vehicles": 4,
    "cancellation_rate": 16.67,
@@ -38,14 +38,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-07-03",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": 7.9,
    "vehicles": 4,
    "cancellation_rate": 16.67,
@@ -57,14 +57,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-07-19",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": 7.9,
    "vehicles": 4,
    "cancellation_rate": 16.67,
@@ -76,14 +76,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-08-03",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": 7.9,
    "vehicles": 4,
    "cancellation_rate": 16.67,
@@ -95,14 +95,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-08-19",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": 7.9,
    "vehicles": 4,
    "cancellation_rate": 16.67,
@@ -114,16 +114,16 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   }
  ],
  "weekly": [
   {
    "date": "2025-06-02",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -135,14 +135,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-06-16",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -154,14 +154,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-06-30",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -173,14 +173,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-07-14",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -192,14 +192,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-07-28",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -211,14 +211,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   },
   {
    "date": "2025-08-18",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -230,16 +230,16 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
   }
  ],
  "monthly": [
   {
    "date": "2025-06-01",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -251,14 +251,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 8,
+   "wilson_lo": 21.5,
+   "wilson_hi": 78.5
   },
   {
    "date": "2025-07-01",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -270,14 +270,14 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 8,
+   "wilson_lo": 21.5,
+   "wilson_hi": 78.5
   },
   {
    "date": "2025-08-01",
-   "otp_pct": null,
-   "avg_delay_min": null,
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
    "p90_min": null,
    "vehicles": null,
    "cancellation_rate": 16.67,
@@ -289,9 +289,9 @@
     "full": 0.0
    },
    "service_completeness_rate": 83.33,
-   "observation_count": null,
-   "wilson_lo": null,
-   "wilson_hi": null
+   "observation_count": 8,
+   "wilson_lo": 21.5,
+   "wilson_hi": 78.5
   }
  ],
  "by_shift": [

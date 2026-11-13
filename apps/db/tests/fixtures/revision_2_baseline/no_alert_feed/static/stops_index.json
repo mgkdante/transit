@@ -6,7 +6,7 @@
  "stops": [
   {
    "id": "S1",
-   "code": null,
+   "code": "S1",
    "name": "Arret S1",
    "lat": 45.501,
    "lon": -73.601,
@@ -18,7 +18,7 @@
   },
   {
    "id": "S2",
-   "code": null,
+   "code": "S2",
    "name": "Arret S2",
    "lat": 45.512,
    "lon": -73.592,
@@ -31,7 +31,7 @@
   },
   {
    "id": "S3",
-   "code": null,
+   "code": "S3",
    "name": "Arret S3",
    "lat": 45.523,
    "lon": -73.583,
@@ -44,7 +44,7 @@
   },
   {
    "id": "S4",
-   "code": null,
+   "code": "S4",
    "name": "Arret S4",
    "lat": 45.534,
    "lon": -73.574,

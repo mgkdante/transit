@@ -4,9 +4,10 @@ import os
 import re
 import shutil
 import time
+from contextlib import ExitStack
 from copy import deepcopy
-from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -173,18 +174,12 @@ LANES = ("static", "historic", "live")
 @dataclass
 class Published:
     engine: Engine
+    historic_engine: Engine
     settings: Settings
     t0: datetime
     results: dict[str, dict[str, publish.PublishResult]]
     files: dict[str, dict[str, bytes]]
     lane_of: dict[str, str]
-    history_dates: set[date] = field(default_factory=set)  # database's local date around it
-
-
-def _local_date(engine) -> date:
-    with engine.connect() as conn:
-        query = text("SELECT (now() AT TIME ZONE :tz)::date")
-        return conn.execute(query, {"tz": str(seed.TZ)}).scalar_one()
 
 
 def _publish(engine, settings, provider_id: str, tier: str):
@@ -214,21 +209,65 @@ def _pin(monkeypatch, clock: datetime) -> None:
         monkeypatch.setattr(module, "utc_now", lambda: clock)
 
 
+def test_the_pinned_clock_reaches_only_its_engine(real_db_engine):
+    with seed.pinned_engine(real_db_engine, seed.HISTORY_CLOCK) as pinned:
+        for _ in range(2):  # Returning to the pool must not roll back the session setting.
+            with pinned.connect() as conn:
+                assert conn.execute(text("SELECT now()")).scalar_one() == seed.HISTORY_CLOCK
+                assert conn.execute(text(
+                    "SELECT timezone('America/Toronto', now())::date"
+                )).scalar_one() == date(2025, 9, 2)
+                assert conn.execute(text("SELECT CURRENT_DATE")).scalar_one() != date(2025, 9, 2)
+        with real_db_engine.connect() as conn:
+            delta = conn.execute(text("SELECT clock_timestamp() - now()")).scalar_one()
+            assert abs(delta) < timedelta(minutes=1)
+
+
+def test_date_bounded_windows_follow_the_pinned_date(published):
+    days = {day.isoformat() for day in seed.DAYS}
+    recent = {day for day in days if day >= "2025-06-04"}
+    weeks = {(day - timedelta(days=day.weekday())).isoformat() for day in seed.DAYS}
+    months = {day.replace(day=1).isoformat() for day in seed.DAYS}
+    for files in published.files.values():
+        trend = json.loads(files["historic/network_trend.json"])
+        for grain, expected in (("series", recent), ("weekly", weeks), ("monthly", months)):
+            assert {p["date"] for p in trend[grain] if p["otp_pct"] is not None} == expected
+        for key, body in files.items():
+            if key in {f"historic/stop_reliability/{stop}.json" for stop in seed.STOPS}:
+                assert {p["date"] for p in json.loads(body)["daily"]} == recent
+            if key in {f"historic/route_reliability/{route}.json" for route, *_ in seed.ROUTES}:
+                occupancy = json.loads(body)["occupancy_by_dow"]
+                assert {p["day_of_week_iso"] for p in occupancy} == {
+                    date(2025, 8, 3).isoweekday(), date(2025, 8, 19).isoweekday()
+                }
+                assert all(p["n"] == 2 for p in occupancy)
+        receipts = json.loads(files["historic/receipts/index.json"])
+        leaves = {
+            key.removeprefix("historic/receipts/").removesuffix(".json")
+            for key in files
+            if re.fullmatch(r"historic/receipts/\d{4}-\d{2}-\d{2}\.json", key)
+        }
+        assert set(receipts["dates"]) == leaves == days
+
+
 @pytest.fixture(scope="module")
 def published(real_db_engine, tmp_path_factory):
     engine, root = real_db_engine, tmp_path_factory.mktemp("bronze")
     settings = seed.settings_for(root)
+    with engine.connect() as conn:
+        zone = conn.execute(text("SHOW TimeZone")).scalar_one()
+        assert zone in ("UTC", "Etc/UTC"), f"TimeZone must be UTC or Etc/UTC; got {zone}"
     seed.delete_rows(engine)
-    run = Published(engine, settings, seed.HISTORY_CLOCK, {}, {}, {})
-    with pytest.MonkeyPatch.context() as monkeypatch:
+    with pytest.MonkeyPatch.context() as monkeypatch, ExitStack() as stack:
         # These builders read the process settings, not the ones passed to publish.
         for module in (line_history, network_history, network_trend, provenance, stop_history):
             monkeypatch.setattr(module, "get_settings", lambda: settings)
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
         try:
             seed.seed_history(engine, settings, root)
+            historic_engine = stack.enter_context(seed.pinned_engine(engine, seed.HISTORY_CLOCK))
+            run = Published(engine, historic_engine, settings, seed.HISTORY_CLOCK, {}, {}, {})
             _pin(monkeypatch, seed.HISTORY_CLOCK)
-            run.history_dates.add(_local_date(engine))
             for tier in LANES:
                 if tier == "live":
                     with engine.connect() as conn:
@@ -236,13 +275,12 @@ def published(real_db_engine, tmp_path_factory):
                     seed.seed_live(engine, settings, root, run.t0)
                     _pin(monkeypatch, run.t0)
                 for label, provider_id in seed.PROVIDERS.items():
-                    result, files = _publish(engine, settings, provider_id, tier)
+                    lane_engine = historic_engine if tier == "historic" else engine
+                    result, files = _publish(lane_engine, settings, provider_id, tier)
                     run.results.setdefault(label, {})[tier] = result
                     assert not files.keys() & run.files.setdefault(label, {}).keys()
                     run.files[label] |= files
                     run.lane_of |= dict.fromkeys(files, tier)
-                if tier == "historic":
-                    run.history_dates.add(_local_date(engine))
             yield run
         finally:
             seed.delete_rows(engine)
@@ -306,10 +344,10 @@ def test_publish_succeeds_at_this_commit(published):
 
 
 def test_revision_2_projection_is_unchanged(published):
-    for label in seed.PROVIDERS:  # What the masked alert window must hold.
+    for label in seed.PROVIDERS:
         window = json.loads(published.files[label]["historic/alert_history.json"])
         end, start = (date.fromisoformat(window[k]) for k in ("window_end", "window_start"))
-        assert end in published.history_dates
+        assert end.isoformat() == "2025-09-02"
         assert (end - start).days == published.settings.SILVER_I3_CLOSED_RETENTION_DAYS
     if os.environ.get(WRITE_BASELINE) == "1":
         for label in seed.PROVIDERS:
@@ -341,22 +379,11 @@ def test_live_bytes_are_stable_across_two_runs(published):
 
 # Published outputs this baseline holds empty by construction: family -> path -> cause.
 # A later packet that edits the builder behind an entry is not guarded by this baseline there.
-_DB_DATE = "looks back {} days from the database's date; the seed is in 2025"
-_BUILD_WINDOW = "rebuilt only GOLD_REPORTING_OPEN_WINDOW_DAYS back from the build's clock"
-_TREND = {
-    f"{grain}[*].{measure}": _DB_DATE.format(90 if grain == "series" else 371)
-    for grain in ("series", "weekly", "monthly")
-    for measure in ("otp_pct", "avg_delay_min", "observation_count", "wilson_lo", "wilson_hi")
-}
 _NETWORK_LEVEL = "a network-level collection names no entity"
-_NO_EN, _NO_URL = "the seeded alerts carry no English variant", "the seeded alerts carry no url"
-_ALERT_TEXT = {f"alerts[*].{k}_en": _NO_EN for k in ("header_text", "description", "url")}
-_ALERT_TEXT["alerts[*].url"] = _NO_URL
 _GAP = {
     path: "the builder sets no gap reason (history_common.py:769)"
     for path in ("gaps[*].reason", "metrics[*].gaps[*].reason")
 }
-_NAMES = "names are valid from the seed's Gold build, after the 2025 days (marts.py:400)"
 _FLOOR = "no entity reaches MIN_N_RATE observations (ranking_kernel.py:28)"
 _SPAN = "built a capture day late; no seeded capture day has a successor"
 _HOT_TRAY = {
@@ -369,23 +396,14 @@ _OFFENDER_TRAY = {
 } | {"by_grain[*].entries": _FLOOR}
 _WINDOWED = "windowed periods are built without date and histogram (_spine.py:284)"
 UNGUARDED: dict[str, dict[str, str]] = {
-    "historic/network_trend.json": _TREND
-    | {
-        f"{g}[*].{m}": _DB_DATE.format(371)
+    "historic/network_trend.json": {
+        f"{g}[*].{m}": "built without the fact query (network_trend.py:301-314)"
         for g in ("weekly", "monthly")
         for m in ("p90_min", "vehicles")
     },
-    "historic/receipts/index.json": dict.fromkeys(("available", "dates"), _BUILD_WINDOW),
-    "historic/receipts/generations/{h}/index.json": dict.fromkeys(
-        ("available", "dates"), _BUILD_WINDOW
-    ),
+    "historic/receipts/{date}.json": {"vehicles": "always null (small_surfaces.py:799)"},
     "historic/route_reliability/{id}.json": {
-        **dict.fromkeys(
-            ("occupancy_mix", "occupancy_by_dow", "occupancy_by_grain", "occupancy_by_hour"),
-            _DB_DATE.format(30),
-        ),
-        "delay_by_crowding": _DB_DATE.format(30),
-        "headway": _BUILD_WINDOW,
+        "headway": "one trip per route, direction, service date and shift (rollups.py:1472-1473)",
         "headway_by_grain": "needs two trips of a route direction at one stop and shift",
         "weak_stops_by_grain": "no stop reaches the Wilson floor in its window (_spine.py:545)",
         "service_spans": _SPAN,
@@ -404,30 +422,23 @@ UNGUARDED: dict[str, dict[str, str]] = {
             for k in ("observation_count", "severe_pct", "wilson_lo", "wilson_hi")
         },
     },
-    "historic/stop_reliability/{id}.json": {
-        "daily": _DB_DATE.format(90),
-        "occupancy_mix": _DB_DATE.format(30),
-        "habits": _BUILD_WINDOW,
+    "historic/alert_history.json": {
+        "alerts[*].impact_passages": "always null (small_surfaces.py:1016)"
     },
-    "historic/alert_history.json": _ALERT_TEXT
-    | {"alerts[*].impact_passages": "always null (small_surfaces.py:1016)"},
-    "historic/alerts/generations/{h}/{date}/{id}.json": _ALERT_TEXT
-    | {"alerts[*].impact_passages": "always null (alert_archive.py:133)"},
+    "historic/alerts/generations/{h}/{date}/{id}.json": {
+        "alerts[*].impact_passages": "always null (alert_archive.py:133)"
+    },
     "historic/history/index.json": {f"families[*].{k}": v for k, v in _GAP.items()},
     "historic/history/network/generations/{h}/index.json": _GAP | {"entity_id": _NETWORK_LEVEL},
     "historic/history/lines/{id}/generations/{h}/index.json": _GAP,
     "historic/history/lines/{id}/generations/{h}/{date}.json": {"days[*].service_span": _SPAN},
     "historic/history/stops/{id}/generations/{h}/index.json": _GAP,
-    "historic/history/stops/{id}/generations/{h}/{date}.json": {
-        "days[*].occupancy": "the seeded vehicles report no stop_id (rollups.py:424)"
-    },
     "historic/history/hotspots/generations/{h}/index.json": {
         "gaps[*].reason": _GAP["gaps[*].reason"],
         "entity_id": _NETWORK_LEVEL,
         "metrics": "point collections declare no metrics",
     },
-    "historic/history/hotspots/generations/{h}/{date}.json": _HOT_TRAY
-    | {"by_grain[*].tray[*].name": _NAMES, "hotspots[*].name": _NAMES},
+    "historic/history/hotspots/generations/{h}/{date}.json": _HOT_TRAY,
     "historic/history/repeat_offenders/generations/{h}/index.json": {
         "gaps[*].reason": _GAP["gaps[*].reason"],
         "entity_id": _NETWORK_LEVEL,
@@ -435,22 +446,16 @@ UNGUARDED: dict[str, dict[str, str]] = {
     },
     "historic/history/repeat_offenders/generations/{h}/{date}.json": _OFFENDER_TRAY
     | {
-        "by_grain[*].tray[*].route_name": _NAMES,
         "offenders": "needs severe delays on 3 days of its window; seeded days are 2 weeks apart",
     },
     "historic/hotspots.json": _HOT_TRAY,
     "historic/repeat_offenders.json": _OFFENDER_TRAY,
-    "live/alerts.json": _ALERT_TEXT,
     "live/network.json": {"non_responding_by_route": "every running seeded trip has a trip update"},
     "manifest.json": {"basemap": "the invented providers have no registry entry"},
     "provenance.json": {
         "gaps": "the invented providers have no registry entry",
-        "sources[*].chain": "the seeded dataset has no storage path or source url",
     },
     "static/routes/{id}.json": {"service_periods[*].headway_min": "one trip per direction"},
-    "static/routes_index.json": {"routes[*].color": "the seed sets no route_color"},
-    "static/stops_index.json": {"stops[*].code": "the seed sets no stop_code"},
-    "static/stops/{id}.json": {"code": "the seed sets no stop_code"},
 }
 _ENVELOPE_KEYS = {"schema_version", "methodology_version", "publish_generation_id", "generated_utc"}
 
@@ -587,7 +592,7 @@ def test_revision_2_history_graph_is_reused(published, monkeypatch, label):
             provider_id,
             tier="historic",
             settings=published.settings,
-            engine=published.engine,
+            engine=published.historic_engine,
             storage=store,
         )
         assert result.gate_report is not None and result.gate_report["errors"] == 0

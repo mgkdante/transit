@@ -6,7 +6,7 @@
  "sources": [
   {
    "feed": "static_schedule",
-   "chain": null,
+   "chain": "local:schedule/seed.zip",
    "last_loaded_utc": "2025-05-30T12:00:00Z"
   }
  ],

@@ -72,10 +72,6 @@ CLOCK_PATHS: Mapping[str, Mapping[str, ClockValue]] = {
     "provenance.json": {
         "freshness[*].age_s": ClockValue(int, "now() minus each feed's run (0093:928)", _FIXED_AGE)
     },
-    "historic/alert_history.json": {
-        "window_start": ClockValue(str, "window_end minus the retention (small_surfaces.py:890)"),
-        "window_end": ClockValue(str, "the database's local date (small_surfaces.py:890)"),
-    },
 }
 _ENVELOPE = {
     "generated_utc": "the live stamp, utc_now() pinned to T0 (publish.py:425)",

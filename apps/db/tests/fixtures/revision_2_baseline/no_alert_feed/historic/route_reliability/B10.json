@@ -1878,7 +1878,13 @@
    "service_completeness_pct": 100.0
   }
  ],
- "occupancy_mix": null,
+ "occupancy_mix": {
+  "empty": 0.0,
+  "many_seats": 0.0,
+  "few_seats": 0.5,
+  "standing": 0.5,
+  "full": 0.0
+ },
  "service_spans": [],
  "skipped_stops": [
   {
@@ -1918,7 +1924,22 @@
    "stop_time_update_count": 6
   }
  ],
- "delay_by_crowding": [],
+ "delay_by_crowding": [
+  {
+   "band": "few_seats",
+   "avg_delay_min": 3.0,
+   "p50_min": 3.0,
+   "observation_count": 2,
+   "day_count": 2
+  },
+  {
+   "band": "standing",
+   "avg_delay_min": 10.0,
+   "p50_min": 10.0,
+   "observation_count": 2,
+   "day_count": 2
+  }
+ ],
  "by_shift_daytype": [
   {
    "shift": "midday",
@@ -1937,9 +1958,75 @@
    "observation_count": 4
   }
  ],
- "occupancy_by_grain": [],
- "occupancy_by_dow": [],
- "occupancy_by_hour": [],
+ "occupancy_by_grain": [
+  {
+   "grain": "day",
+   "mix": {
+    "empty": 0.0,
+    "many_seats": 0.0,
+    "few_seats": 0.5,
+    "standing": 0.5,
+    "full": 0.0
+   }
+  },
+  {
+   "grain": "week",
+   "mix": {
+    "empty": 0.0,
+    "many_seats": 0.0,
+    "few_seats": 0.5,
+    "standing": 0.5,
+    "full": 0.0
+   }
+  },
+  {
+   "grain": "month",
+   "mix": {
+    "empty": 0.0,
+    "many_seats": 0.0,
+    "few_seats": 0.5,
+    "standing": 0.5,
+    "full": 0.0
+   }
+  }
+ ],
+ "occupancy_by_dow": [
+  {
+   "day_of_week_iso": 2,
+   "mix": {
+    "empty": 0.0,
+    "many_seats": 0.0,
+    "few_seats": 0.5,
+    "standing": 0.5,
+    "full": 0.0
+   },
+   "n": 2
+  },
+  {
+   "day_of_week_iso": 7,
+   "mix": {
+    "empty": 0.0,
+    "many_seats": 0.0,
+    "few_seats": 0.5,
+    "standing": 0.5,
+    "full": 0.0
+   },
+   "n": 2
+  }
+ ],
+ "occupancy_by_hour": [
+  {
+   "hour_of_day_local": 12,
+   "mix": {
+    "empty": 0.0,
+    "many_seats": 0.0,
+    "few_seats": 0.5,
+    "standing": 0.5,
+    "full": 0.0
+   },
+   "n": 4
+  }
+ ],
  "periods_by_grain": [
   {
    "grain": "day",

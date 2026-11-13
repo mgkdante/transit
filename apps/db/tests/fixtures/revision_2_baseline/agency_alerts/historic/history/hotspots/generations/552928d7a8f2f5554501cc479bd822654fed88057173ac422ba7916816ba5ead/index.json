@@ -1,0 +1,98 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "family": "hotspots",
+ "selection_mode": "date",
+ "entity_id": null,
+ "collection_generation_id": "c140b70011ca2f30936cb2eaa6c209a98058f6b7dfd1c110e9f64d9d37d3449f",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "available_dates": [
+  "2025-06-03",
+  "2025-06-19",
+  "2025-07-03",
+  "2025-07-19",
+  "2025-08-03",
+  "2025-08-19"
+ ],
+ "gaps": [
+  {
+   "start_date": "2025-06-04",
+   "end_date": "2025-06-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-06-20",
+   "end_date": "2025-07-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-04",
+   "end_date": "2025-07-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-20",
+   "end_date": "2025-08-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-08-04",
+   "end_date": "2025-08-18",
+   "reason": null
+  }
+ ],
+ "partitions": [
+  {
+   "path": "historic/history/hotspots/generations/4025130ba10f2d63b0d79748cb4c017d190cf2ae08c879b4472fd269c2ed31cf/2025-06-03.json",
+   "coverage_start": "2025-06-03",
+   "coverage_end": "2025-06-03",
+   "count": 1,
+   "sha256": "4025130ba10f2d63b0d79748cb4c017d190cf2ae08c879b4472fd269c2ed31cf",
+   "byte_size": 4159
+  },
+  {
+   "path": "historic/history/hotspots/generations/0037e47d77e001d55defa70ece720f31b9b926e030721d91fdd5f8853ec3807f/2025-06-19.json",
+   "coverage_start": "2025-06-19",
+   "coverage_end": "2025-06-19",
+   "count": 1,
+   "sha256": "0037e47d77e001d55defa70ece720f31b9b926e030721d91fdd5f8853ec3807f",
+   "byte_size": 4159
+  },
+  {
+   "path": "historic/history/hotspots/generations/71c4b8b97fc9c3036df288326b6702ebaad298a1779ce3b14b6b652e035dab61/2025-07-03.json",
+   "coverage_start": "2025-07-03",
+   "coverage_end": "2025-07-03",
+   "count": 1,
+   "sha256": "71c4b8b97fc9c3036df288326b6702ebaad298a1779ce3b14b6b652e035dab61",
+   "byte_size": 4159
+  },
+  {
+   "path": "historic/history/hotspots/generations/58d1947f34fb1846cac3c9321840933f70e8456c32b1968143f2acfc9cf1aa6b/2025-07-19.json",
+   "coverage_start": "2025-07-19",
+   "coverage_end": "2025-07-19",
+   "count": 1,
+   "sha256": "58d1947f34fb1846cac3c9321840933f70e8456c32b1968143f2acfc9cf1aa6b",
+   "byte_size": 4159
+  },
+  {
+   "path": "historic/history/hotspots/generations/e41e790fb71be9ca17204224dd406f3d5221991e2d8470b7cfc3474e69ec1ddb/2025-08-03.json",
+   "coverage_start": "2025-08-03",
+   "coverage_end": "2025-08-03",
+   "count": 1,
+   "sha256": "e41e790fb71be9ca17204224dd406f3d5221991e2d8470b7cfc3474e69ec1ddb",
+   "byte_size": 4159
+  },
+  {
+   "path": "historic/history/hotspots/generations/3741b63966cf026100c1ea626f23ef058d47e2d0f3bca40280950db33726a80f/2025-08-19.json",
+   "coverage_start": "2025-08-19",
+   "coverage_end": "2025-08-19",
+   "count": 1,
+   "sha256": "3741b63966cf026100c1ea626f23ef058d47e2d0f3bca40280950db33726a80f",
+   "byte_size": 4159
+  }
+ ],
+ "metrics": []
+}

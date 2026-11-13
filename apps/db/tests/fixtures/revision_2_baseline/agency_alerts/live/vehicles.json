@@ -83,9 +83,9 @@
    "status": "unknown",
    "delay_min": null,
    "occupancy": "standing",
-   "next_stop": null,
-   "next_stop_lat": null,
-   "next_stop_lon": null,
+   "next_stop": "S3",
+   "next_stop_lat": 45.523,
+   "next_stop_lon": -73.583,
    "updated_utc": "T0-20s",
    "reported_utc": "T0-20s"
   },
@@ -100,9 +100,9 @@
    "status": "unknown",
    "delay_min": null,
    "occupancy": "empty",
-   "next_stop": null,
-   "next_stop_lat": null,
-   "next_stop_lon": null,
+   "next_stop": "S2",
+   "next_stop_lat": 45.512,
+   "next_stop_lon": -73.592,
    "updated_utc": "T0-20s",
    "reported_utc": "T0-20s"
   }

@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": null,
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "month": "2025-06",
+ "entity_id": "S2",
+ "days": [
+  {
+   "date": "2025-06-03",
+   "delay": {
+    "observation_count": 2,
+    "in_clamp_observation_count": 2,
+    "on_time_count": null,
+    "severe_count": 0,
+    "sum_delay_seconds": -90
+   },
+   "delay_percentiles": {
+    "observation_count": 2,
+    "p50_delay_seconds": -45.0,
+    "p90_delay_seconds": 15.0
+   },
+   "occupancy": {
+    "empty": 2,
+    "many_seats": 1,
+    "few_seats": 0,
+    "standing": 0,
+    "full": 0
+   }
+  },
+  {
+   "date": "2025-06-19",
+   "delay": {
+    "observation_count": 2,
+    "in_clamp_observation_count": 2,
+    "on_time_count": null,
+    "severe_count": 0,
+    "sum_delay_seconds": -90
+   },
+   "delay_percentiles": {
+    "observation_count": 2,
+    "p50_delay_seconds": -45.0,
+    "p90_delay_seconds": 15.0
+   },
+   "occupancy": {
+    "empty": 2,
+    "many_seats": 1,
+    "few_seats": 0,
+    "standing": 0,
+    "full": 0
+   }
+  }
+ ]
+}
