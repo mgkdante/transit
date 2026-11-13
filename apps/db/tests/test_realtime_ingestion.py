@@ -5,6 +5,7 @@ import inspect
 import ssl
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from google.transit import gtfs_realtime_pb2
@@ -31,6 +32,8 @@ from transit_ops.settings import Settings
 
 
 class FakeResult:
+    rowcount = 1
+
     def __init__(self, scalar_value: int | None) -> None:
         self.scalar_value = scalar_value
 
@@ -49,6 +52,14 @@ class RecordingConnection:
 
     def execute(self, statement, params: dict[str, object]) -> FakeResult:  # noqa: ANN001
         sql_text = str(statement)
+        if "FOR UPDATE" in sql_text:
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(one_or_none=lambda: {
+                "status": "running", "started_at_utc": datetime.now(UTC),
+            }))
+        if "SELECT clock_timestamp() >=" in sql_text:
+            return SimpleNamespace(scalar_one=lambda: False)
+        if "clock_timestamp()" in sql_text:
+            return SimpleNamespace(scalar_one=lambda: datetime.now(UTC))
         self.calls.append((sql_text, params))
         if "SELECT feed_endpoint_id" in sql_text:
             return FakeResult(12)

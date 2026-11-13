@@ -17,11 +17,15 @@ from transit_ops.ingestion.common import (
     DownloadedArtifact,
     build_bronze_object_storage_path,
     build_request_details,
+    capture_deadline,
+    check_capture_deadline,
+    check_capture_run_deadline,
     download_to_tempfile,
     finish_failed_capture,
     get_feed_endpoint_id,
     insert_ingestion_object,
     insert_ingestion_run,
+    lock_running_capture_run,
     mark_ingestion_run_succeeded,
     project_root,
     utc_now,
@@ -271,6 +275,7 @@ def _download_to_tempfile(config: RealtimeIngestionConfig, temp_dir: Path) -> Do
         headers=config.request_headers,
         default_filename=f"{config.endpoint_key}.pb",
         ssl_context=_build_realtime_ssl_context(),
+        deadline=capture_deadline(),
     )
 
 
@@ -292,6 +297,7 @@ def _capture_realtime_feed(
     bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
     bronze_storage = bronze_storage_resolver(config.storage_backend)
     started_at_utc = utc_now()
+    deadline = capture_deadline()
 
     engine = engine or make_engine(settings)
     with engine.begin() as connection:
@@ -312,6 +318,7 @@ def _capture_realtime_feed(
     artifact: DownloadedArtifact | None = None
     storage_path: str | None = None
     persisted = False
+    result_may_be_recorded = False
     try:
         artifact = _download_to_tempfile(config, bronze_root / ".tmp")
         payload = artifact.temp_path.read_bytes()
@@ -326,12 +333,14 @@ def _capture_realtime_feed(
             captured_at_utc=started_at_utc,
             checksum_sha256=artifact.checksum_sha256,
         )
+        check_capture_deadline(deadline)
         archive_reference = bronze_storage.persist_temp_file(artifact.temp_path, storage_path)
         persisted = True
 
         completed_at_utc = utc_now()
         feed_timestamp_utc = metadata.feed_timestamp_utc or completed_at_utc
         with engine.begin() as connection:
+            lock_running_capture_run(connection, ingestion_run_id=ingestion_run_id)
             ingestion_object_id = insert_ingestion_object(
                 connection,
                 ingestion_run_id=ingestion_run_id,
@@ -353,6 +362,8 @@ def _capture_realtime_feed(
                 entity_count=metadata.entity_count,
                 captured_at_utc=completed_at_utc,
             )
+            check_capture_deadline(deadline)
+            check_capture_run_deadline(connection, ingestion_run_id=ingestion_run_id)
             mark_ingestion_run_succeeded(
                 connection,
                 ingestion_run_id=ingestion_run_id,
@@ -361,6 +372,7 @@ def _capture_realtime_feed(
                 entity_count=metadata.entity_count,
                 feed_timestamp_utc=feed_timestamp_utc,
             )
+            result_may_be_recorded = True
 
         result = RealtimeIngestionResult(
             provider_id=config.provider_id,
@@ -391,6 +403,7 @@ def _capture_realtime_feed(
             artifact=artifact,
             bronze_storage=bronze_storage,
             orphan_storage_path=storage_path if persisted else None,
+            result_may_be_recorded=result_may_be_recorded,
         )
         raise
 

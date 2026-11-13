@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 import pytest
 from test_realtime_silver import (
@@ -31,6 +32,14 @@ class CaptureConnection(RecordingConnection):
 
     def execute(self, statement, params=None):
         sql = str(statement)
+        if "FOR UPDATE" in sql:
+            return FakeResult(mapping_value={
+                "status": "running", "started_at_utc": datetime.now(UTC),
+            })
+        if "SELECT clock_timestamp() >=" in sql:
+            return FakeResult(scalar_value=False)
+        if "clock_timestamp()" in sql:
+            return FakeResult(scalar_value=datetime.now(UTC))
         if "FROM raw.realtime_snapshot_index AS rsi" in sql:
             assert params["snapshot_id"] == self.row["realtime_snapshot_id"]
             return FakeResult(mapping_value=self.row)

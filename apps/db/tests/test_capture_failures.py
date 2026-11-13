@@ -1,6 +1,9 @@
+from contextlib import contextmanager
 from dataclasses import replace
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 from urllib.error import HTTPError
 
@@ -55,6 +58,7 @@ def test_capture_preserves_original_error_and_cleans_resources(
     storage = Mock()
     storage.persist_temp_file.return_value = "memory://capture"
     result = MagicMock()
+    result.rowcount = 1
     result.scalar_one.return_value = 101
     result.scalar_one_or_none.return_value = 12
     result.mappings.return_value.one_or_none.return_value = None
@@ -62,6 +66,14 @@ def test_capture_preserves_original_error_and_cleans_resources(
 
     def execute(statement, params):
         sql = str(statement)
+        if "FOR UPDATE" in sql:
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(one_or_none=lambda: {
+                "status": "running", "started_at_utc": datetime.now(UTC),
+            }))
+        if "SELECT clock_timestamp() >=" in sql:
+            return SimpleNamespace(scalar_one=lambda: False)
+        if "clock_timestamp()" in sql:
+            return SimpleNamespace(scalar_one=lambda: datetime.now(UTC))
         if "INSERT INTO raw.ingestion_objects" in sql:
             raise original
         if "SET status = 'failed'" in sql:
@@ -126,3 +138,71 @@ def test_cleanup_attempts_survive_database_and_filesystem_failures(caplog):
     assert all("101" in record.message for record in caplog.records)
     assert "capture.pb" in caplog.text
     assert "secret" not in caplog.text
+
+
+def test_uncertain_recorded_result_keeps_object_when_reporting_fails(tmp_path, caplog):
+    engine = Mock()
+    engine.begin.side_effect = ConnectionError("database?token=connection-secret")
+    temp_path = tmp_path / "download.pb"
+    temp_path.write_bytes(b"capture")
+    storage = Mock()
+    artifact = DownloadedArtifact(temp_path, 7, "a" * 64, 200, "https://fixture.test")
+    finish_failed_capture(
+        engine=engine,
+        ingestion_run_id=101,
+        error=RuntimeError("original failure"),
+        artifact=artifact,
+        bronze_storage=storage,
+        orphan_storage_path="capture.pb",
+        result_may_be_recorded=True,
+    )
+    assert not temp_path.exists()
+    storage.delete_object.assert_not_called()
+    assert "Keeping uploaded object" in caplog.text
+    assert "101" in caplog.text
+    assert "secret" not in caplog.text
+    assert "original failure" not in caplog.text
+
+
+
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_versioned_capture_preserves_uncertain_success_zip(tmp_path, monkeypatch, after_commit):
+    from versioned_capture_fixtures import FakeEngine, RecordingConnection, prepare_capture
+
+    artifact, storage, settings, registry = prepare_capture(
+        tmp_path,
+        monkeypatch,
+        static_gtfs,
+        filename="schedule.zip",
+        payload=zip_payload(b"schedule"),
+        source_url="https://example.test/schedule.zip",
+        url_setting="STM_STATIC_GTFS_URL",
+    )
+    calls = 0
+
+    @contextmanager
+    def begin():
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise ConnectionError("reporting unavailable")
+        with FakeEngine(RecordingConnection()).begin() as connection:
+            yield connection
+
+    failure = RuntimeError("capture result failed")
+    if after_commit:
+        monkeypatch.setattr(static_gtfs, "StaticIngestionResult", Mock(side_effect=failure))
+    else:
+        from transit_ops.ingestion import _versioned_capture
+
+        monkeypatch.setattr(
+            _versioned_capture, "insert_ingestion_object", Mock(side_effect=failure)
+        )
+    with pytest.raises(RuntimeError, match="capture result failed"):
+        static_gtfs.ingest_static_feed(
+            "stm", settings=settings, registry=registry, engine=SimpleNamespace(begin=begin)
+        )
+    assert storage.persisted
+    key = storage.persisted[0][1]
+    assert storage.deleted == ([] if after_commit else [key])
+    assert not artifact.temp_path.exists()
