@@ -1,7 +1,11 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VehicleFC, VehicleFeature } from './vehicleLayer';
-import { createVehicleOverlay, VEHICLE_OVERLAY_RECEIPT } from './vehicleOverlay';
+import {
+	createVehicleOverlay,
+	STATUS_BADGE_MIN_ZOOM,
+	VEHICLE_OVERLAY_RECEIPT,
+} from './vehicleOverlay';
 import { HEADING_ICON, SILENT_ICON, type VehicleSpriteReceipt } from './vehicleSprites';
 
 type PaintCall = { kind: string; id?: string; values?: number[]; opacity?: number };
@@ -143,8 +147,35 @@ function feature(
 afterEach(() => vi.restoreAllMocks());
 
 describe('vehicle moving foreground', () => {
+	it('draws status badges from zoom 13 and leaves bodies and the not-reporting badge alone below it', () => {
+		const { overlay, calls, setCamera } = harness();
+		const scene: VehicleFC = {
+			type: 'FeatureCollection',
+			features: [feature('a', 0, { stale: 1 }), feature('b', 1)],
+		};
+		const painted = (zoom: number) => {
+			calls.length = 0;
+			setCamera({ zoom });
+			overlay.draw(scene);
+			return calls.filter((call) => call.kind === 'sprite').map((call) => call.id);
+		};
+		expect(STATUS_BADGE_MIN_ZOOM).toBe(13);
+		expect(painted(12.9)).toEqual(['body-b', 'body-a', HEADING_ICON, HEADING_ICON, SILENT_ICON]);
+		expect(painted(13)).toEqual([
+			'body-b',
+			'body-a',
+			HEADING_ICON,
+			HEADING_ICON,
+			'mark-b',
+			'mark-a',
+			SILENT_ICON,
+		]);
+		overlay.destroy();
+	});
+
 	it('paints full-feature passes and the near-target pin last with the GL backing ratio', () => {
-		const { overlay, calls, container } = harness();
+		const { overlay, calls, container, setCamera } = harness();
+		setCamera({ zoom: STATUS_BADGE_MIN_ZOOM });
 		overlay.setScene(false, { lon: 3, lat: 0, label: 'Near' }, null, null);
 		overlay.draw({
 			type: 'FeatureCollection',
@@ -219,7 +250,7 @@ describe('vehicle moving foreground', () => {
 
 	it('keeps badge and heading size separate from body pitch scaling, with global stale dim only on the first three sprite passes', () => {
 		const { overlay, calls, setCamera } = harness();
-		setCamera({ pitch: 40, bearing: 45 });
+		setCamera({ zoom: STATUS_BADGE_MIN_ZOOM, pitch: 40, bearing: 45 });
 		overlay.setScene(true, null, null, null);
 		overlay.draw({ type: 'FeatureCollection', features: [feature('a', 0, { stale: 1 })] });
 		const sprites = calls.filter((call) => call.kind === 'sprite');
@@ -229,9 +260,9 @@ describe('vehicle moving foreground', () => {
 			['mark-a', 0.45],
 			[SILENT_ICON, 1],
 		]);
-		expect(sprites[0]?.values?.[2]).toBeCloseTo(26 * 0.78, 3);
-		expect(sprites[1]?.values?.[2]).toBeCloseTo(26 * 0.78, 3);
-		expect(sprites[2]?.values?.[2]).toBeCloseTo(26 * 0.78 * 0.6, 3);
+		expect(sprites[0]?.values?.[2]).toBeCloseTo(26 * 1.04, 3);
+		expect(sprites[1]?.values?.[2]).toBeCloseTo(26 * 1.04, 3);
+		expect(sprites[2]?.values?.[2]).toBeCloseTo(26 * 1.04 * 0.6, 3);
 		expect(calls.find((call) => call.kind === 'rotate')?.values?.[0] ?? 0).toBeCloseTo(
 			(-37.45 * Math.PI) / 180,
 			2,

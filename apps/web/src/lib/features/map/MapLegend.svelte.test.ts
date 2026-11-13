@@ -27,6 +27,8 @@ describe('MapLegend', () => {
 				expect(entries).toContain(within(list).getByText(text).closest('li'));
 			}
 			expect(entries).toHaveLength(STATUS_CODES.length + 3);
+			// Badges are drawn only once zoomed in; the legend says so at every zoom.
+			expect(view.getByText(legend.zoomBadges)).toBeVisible();
 		},
 	);
 

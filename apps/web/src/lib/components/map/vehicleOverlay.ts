@@ -11,6 +11,8 @@ import {
 } from './vehicleSprites';
 
 export const VEHICLE_OVERLAY_RECEIPT = Symbol.for('transit.map.vehicleOverlayReceipt');
+/** Below this zoom badges would land on neighbouring buses; the body colour carries the state. */
+export const STATUS_BADGE_MIN_ZOOM = 13;
 
 export interface VehicleOverlayReceipt {
 	readonly generation: number;
@@ -352,7 +354,7 @@ export function createVehicleOverlay(
 			);
 			ctx.restore();
 		}
-		for (const { feature, x, y, baseSize } of symbols) {
+		for (const { feature, x, y, baseSize } of zoom >= STATUS_BADGE_MIN_ZOOM ? symbols : []) {
 			const mark = feature.properties.mark;
 			if (!mark) continue;
 			const offset = feature.properties.stale

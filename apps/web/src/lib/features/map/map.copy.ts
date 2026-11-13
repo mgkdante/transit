@@ -67,6 +67,7 @@ export const copy = defineCopy({
 			heading: 'Direction of travel',
 			notReporting: 'Not reporting: no position for a few minutes',
 			stop: 'Stop',
+			zoomBadges: 'Zoom in to see each bus’s status badge.',
 		},
 		statusHelp: 'Tick a status to show only those buses.',
 		entityFilterTitle: 'Filter map markers',
@@ -193,8 +194,9 @@ export const copy = defineCopy({
 		legend: {
 			title: 'Légende',
 			heading: 'Sens de déplacement',
-			notReporting: 'Ne transmet pas : aucune position depuis quelques minutes',
+			notReporting: 'Ne répond plus : aucune position depuis quelques minutes',
 			stop: 'Arrêt',
+			zoomBadges: 'Zoomez pour voir le symbole de statut.',
 		},
 		statusHelp: 'Cochez un état pour n’afficher que ces bus.',
 		entityFilterTitle: 'Filtrer les marqueurs de la carte',
