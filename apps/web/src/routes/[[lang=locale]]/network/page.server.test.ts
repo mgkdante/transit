@@ -5,11 +5,13 @@ const harness = vi.hoisted(() => ({
 	ctx: { fetch: vi.fn(), providerId: 'octranspo', manifest: { provider: 'octranspo' } },
 	getNetwork: vi.fn(),
 	getNetworkTrend: vi.fn(),
+	getHistoricAvailability: vi.fn(),
 	getProvenance: vi.fn(),
 	serverV1Context: vi.fn(),
 }));
 
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
+	getHistoricAvailability: (...args: unknown[]) => harness.getHistoricAvailability(...args),
 	getNetworkTrend: (...args: unknown[]) => harness.getNetworkTrend(...args),
 }));
 
@@ -60,6 +62,7 @@ describe('/network server seeds', () => {
 			networkSeed: null,
 			trendSeed: null,
 			provenanceSeed: null,
+			historicAvailabilitySeed: null,
 		});
 		expect(harness.getNetwork).not.toHaveBeenCalled();
 		expect(harness.getNetworkTrend).not.toHaveBeenCalled();
@@ -92,6 +95,7 @@ describe('/network server seeds', () => {
 			networkSeed: network,
 			trendSeed: { key: 'network-trend', data: trend },
 			provenanceSeed: { key: 'provenance', data: provenance },
+			historicAvailabilitySeed: null,
 		});
 	});
 
@@ -106,6 +110,23 @@ describe('/network server seeds', () => {
 			networkSeed: network,
 			trendSeed: null,
 			provenanceSeed: { key: 'provenance', data: provenance },
+			historicAvailabilitySeed: null,
 		});
+	});
+});
+
+it('seeds the history root beside the trend', async () => {
+	const index = { families: [] };
+	const trend = { series: [] };
+	harness.getHistoricAvailability.mockResolvedValue(index);
+	harness.getNetworkTrend.mockResolvedValue(trend);
+	expect(await load(event())).toMatchObject({
+		historicAvailabilitySeed: { key: 'historic-availability', data: index },
+		trendSeed: { key: 'network-trend', data: trend },
+	});
+	harness.getHistoricAvailability.mockRejectedValue(new Error('absent'));
+	expect(await load(event())).toMatchObject({
+		historicAvailabilitySeed: null,
+		trendSeed: { key: 'network-trend', data: trend },
 	});
 });

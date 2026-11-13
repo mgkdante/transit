@@ -1,3 +1,4 @@
+import { isoUtc } from '#lib/v1/schemas/types.ts';
 import { describe, it, expect } from 'vitest';
 import { selectTrendChart, selectVehiclesSpark } from './trendChart';
 import {
@@ -161,4 +162,46 @@ describe('selectVehiclesSpark', () => {
 	it('stands down (null) when no point carries a vehicles reading', () => {
 		expect(selectVehiclesSpark([{ date: 'a', vehicles: null }], sparkOpts)).toBeNull();
 	});
+});
+
+it('does not plot the open day', async () => {
+	const { trendClosedThrough } = await import('#lib/v1/closedWindow.ts');
+	const { closeNetworkTrend } = await import('../data/closedTrend');
+	const trend = {
+		generated_utc: isoUtc().parse('2026-11-11T12:00:00Z'),
+		series: [
+			{ date: '2026-11-08', otp_pct: 80, vehicles: 1400 },
+			{ date: '2026-11-09', otp_pct: 81, vehicles: 1420 },
+			{ date: '2026-11-10', otp_pct: 82, vehicles: 1452 },
+			{ date: '2026-11-11', otp_pct: null, p90_min: 9, vehicles: 346 },
+		],
+		weekly: [{ date: '2026-11-02' }, { date: '2026-11-09' }],
+		monthly: [{ date: '2026-10-01' }, { date: '2026-11-01' }],
+	};
+	const { HistoricAvailabilityIndexSchema } = await import('#lib/v1/schemas/history.ts');
+	const index = HistoricAvailabilityIndexSchema.parse({
+		schema_version: 1,
+		generated_utc: trend.generated_utc,
+		families: [
+			{
+				family: 'network',
+				index_path: 'historic/history/network/index.json',
+				selection_mode: 'range',
+				first_available_date: '2026-10-01',
+				last_available_date: '2026-11-10',
+				available_days: 41,
+			},
+		],
+	});
+	const closed = closeNetworkTrend(trend, trendClosedThrough(index, trend.series))!;
+	expect(trendOf(selectTrendChart(closed.series!, 'p90', opts)).points.map((p) => p.x)).toEqual([
+		'2026-11-08',
+		'2026-11-09',
+		'2026-11-10',
+	]);
+	expect(
+		selectVehiclesSpark(closed.series!, { locale: 'en', title: '', label: '' })?.values,
+	).toEqual([1400, 1420, 1452]);
+	expect(closed.weekly).toEqual([{ date: '2026-11-02' }]);
+	expect(closed.monthly).toEqual([{ date: '2026-10-01' }]);
 });

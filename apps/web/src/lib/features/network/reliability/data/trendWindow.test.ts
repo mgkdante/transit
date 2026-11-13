@@ -38,3 +38,18 @@ describe('trendWindow', () => {
 		expect(out).toEqual(monthly);
 	});
 });
+
+it('a disabled window says how many days are recorded', async () => {
+	const { trendWindowSegments } = await import('./trendWindow');
+	const { networkReliabilityCopy } = await import('../network-reliability.copy');
+	const copy = networkReliabilityCopy.en;
+	const labels = { 7: copy.window.d7, 30: copy.window.d30, 90: copy.window.d90 };
+	expect(trendWindowSegments(12, labels, copy.window.reason)).toEqual([
+		{ key: '7', label: labels[7], available: true },
+		{ key: '30', label: labels[30], available: false, title: copy.window.reason(12) },
+		{ key: '90', label: labels[90], available: false, title: copy.window.reason(12) },
+	]);
+	expect(
+		trendWindowSegments(0, labels, copy.window.reason).every((s) => !s.available && !s.title),
+	).toBe(true);
+});

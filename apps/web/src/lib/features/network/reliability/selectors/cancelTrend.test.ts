@@ -57,3 +57,20 @@ describe('selectCancelTrend', () => {
 		expect(vm.spec.kind).toBe('absence');
 	});
 });
+
+it('returns the date of the latest value', () => {
+	expect(
+		selectCancelTrend(
+			[
+				{ date: '2026-11-09', cancellation_rate: 2 },
+				{ date: '2026-11-10', cancellation_rate: 3 },
+				{ date: '2026-11-11', cancellation_rate: null },
+			],
+			opts,
+		),
+	).toMatchObject({ latest: 3, latestDate: '2026-11-10' });
+	expect(selectCancelTrend([{ date: '2026-11-11' }], opts)).toMatchObject({
+		latest: null,
+		latestDate: null,
+	});
+});

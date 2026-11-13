@@ -77,6 +77,7 @@ export const networkReliabilityCopy = defineCopy({
 		statusBarLabel: 'Network status mix',
 		occupancyBarLabel: 'Network crowding mix',
 		trend: {
+			through: (date: string) => `Through ${date}`,
 			onTimeLabel: 'On-time %',
 			retardLabel: 'Slowest 10% (min)',
 			retardP90: 'Slowest 10%',
@@ -90,7 +91,8 @@ export const networkReliabilityCopy = defineCopy({
 			vehiclesContext: 'Vehicles reporting each day',
 		},
 		cancel: {
-			metric: 'Canceled (latest day)',
+			metricOn: (date: string) => `Canceled · ${date}`,
+			metricUndated: 'Canceled',
 			seriesLabel: '% canceled trip-days',
 			summary: 'Daily share of canceled trip-days across the network.',
 		},
@@ -105,7 +107,7 @@ export const networkReliabilityCopy = defineCopy({
 			avgLabel: 'avg delay',
 			severeLabel: 'severe',
 			caveat:
-				'A real on-time over known share across the network, measured over the trailing window. It is a punctuality proxy, not certified on-time performance, and small samples vary.',
+				'All recorded days. It is a punctuality proxy, not certified on-time performance, and small samples vary.',
 		},
 		delayHistogram: {
 			summary: 'Distribution of trip-average delays across the network, earliest to latest.',
@@ -122,7 +124,13 @@ export const networkReliabilityCopy = defineCopy({
 			tripsUnit: (count) => (count === 1 ? 'trip' : 'trips'),
 		},
 		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
-		window: { label: 'Trend window', d7: '7d', d30: '30d', d90: '90d' },
+		window: {
+			reason: (n: number) => (n === 1 ? 'Only 1 day recorded' : `Only ${n} days recorded`),
+			label: 'Trend window',
+			d7: '7d',
+			d30: '30d',
+			d90: '90d',
+		},
 		history: {
 			navigator: historyCopy('en', {
 				mode: 'range',
@@ -226,6 +234,7 @@ export const networkReliabilityCopy = defineCopy({
 		statusBarLabel: 'Répartition des statuts du réseau',
 		occupancyBarLabel: 'Répartition de l’achalandage du réseau',
 		trend: {
+			through: (date: string) => `Jusqu’au ${date}`,
 			onTimeLabel: 'Ponctualité %',
 			retardLabel: '10 % les plus lents (min)',
 			retardP90: '10 % les plus lents',
@@ -241,7 +250,8 @@ export const networkReliabilityCopy = defineCopy({
 			vehiclesContext: 'Véhicules signalés chaque jour',
 		},
 		cancel: {
-			metric: 'Annulé (dernier jour)',
+			metricOn: (date: string) => `Annulé · ${date}`,
+			metricUndated: 'Annulé',
 			seriesLabel: '% de jours-trajets annulés',
 			summary: 'Part quotidienne des jours-trajets annulés à l’échelle du réseau.',
 		},
@@ -257,7 +267,7 @@ export const networkReliabilityCopy = defineCopy({
 			avgLabel: 'retard moyen',
 			severeLabel: 'sévère',
 			caveat:
-				'Une part réelle à l’heure sur connus à l’échelle du réseau, mesurée sur la fenêtre glissante. C’est une estimation de ponctualité, pas une ponctualité certifiée, et les petits échantillons varient.',
+				'Tous les jours enregistrés. C’est une estimation de ponctualité, pas une ponctualité certifiée, et les petits échantillons varient.',
 		},
 		delayHistogram: {
 			summary:
@@ -276,7 +286,14 @@ export const networkReliabilityCopy = defineCopy({
 			tripsUnit: (count: number) => (count <= 1 ? 'trajet' : 'trajets'),
 		},
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },
-		window: { label: 'Fenêtre de tendance', d7: '7 j', d30: '30 j', d90: '90 j' },
+		window: {
+			reason: (n: number) =>
+				n === 1 ? 'Seulement 1 jour enregistré' : `Seulement ${n} jours enregistrés`,
+			label: 'Fenêtre de tendance',
+			d7: '7 j',
+			d30: '30 j',
+			d90: '90 j',
+		},
 		history: {
 			navigator: historyCopy('fr', {
 				mode: 'range',

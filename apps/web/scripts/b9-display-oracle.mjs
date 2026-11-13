@@ -1,3 +1,4 @@
+import { closedTrendPoints, trendClosedThrough } from '../src/lib/v1/closedWindow.ts';
 import rich from './__fixtures__/b9/rich.json' with { type: 'json' };
 import sparse from './__fixtures__/b9/sparse.json' with { type: 'json' };
 
@@ -1223,6 +1224,10 @@ function retainedNetworkDays(fixture, view) {
 function networkOracle(fixture, locale, view) {
 	const live = networkFile(fixture);
 	const trend = networkTrend(fixture);
+	const closedThrough = trendClosedThrough(
+		fixture.files['historic/history/index.json'] ?? null,
+		trend.series ?? [],
+	);
 	const retained = view.includes('from=') ? retainedNetworkDays(fixture, view) : [];
 	const series =
 		retained.length > 0
@@ -1253,7 +1258,11 @@ function networkOracle(fixture, locale, view) {
 						),
 						occupancy_mix: row.occupancy ?? null,
 					}))
-			: (trend.series ?? []);
+			: (trend.series ?? []).filter((row) => closedThrough != null && row.date <= closedThrough);
+	const hasHistoric =
+		series.length > 0 ||
+		closedTrendPoints(trend.weekly ?? [], 'week', closedThrough).length > 0 ||
+		closedTrendPoints(trend.monthly ?? [], 'month', closedThrough).length > 0;
 	const latest = series.at(-1) ?? null;
 	const prior = series.at(-2) ?? null;
 	const rankRows = (rows) =>
@@ -1453,8 +1462,8 @@ function networkOracle(fixture, locale, view) {
 				return shares.length ? [shareTable(shares)] : [];
 			}),
 		),
-		observation('network.shift.rows', rankRows(trend.by_shift)),
-		observation('network.daytype.rows', rankRows(trend.by_daytype)),
+		observation('network.shift.rows', hasHistoric ? rankRows(trend.by_shift) : []),
+		observation('network.daytype.rows', hasHistoric ? rankRows(trend.by_daytype) : []),
 	];
 }
 
@@ -1785,6 +1794,13 @@ export function runOracleSelfCheck() {
 		null,
 		'current line completeness stands down',
 	);
+	for (const id of ['network.shift.rows', 'network.daytype.rows']) {
+		expectLiteral(
+			expectedDomainObservations('sparse', 'network').find((row) => row.id === id)?.value,
+			[],
+			'no closed point leaves the historic region empty: ' + id,
+		);
+	}
 	expectLiteral(
 		expectedDomainObservations('rich', 'network').find(
 			(row) => row.id === 'network.verdict.delta_pct',

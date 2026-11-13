@@ -22,7 +22,11 @@
 	} from '#lib/utils/index.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
-	import { getNetworkTrend } from '#lib/v1/repositories/historic.ts';
+	import type { HistoricAvailabilityIndex } from '#lib/v1/schemas/history.ts';
+	import { trendClosedThrough } from '#lib/v1/closedWindow.ts';
+	import { closeNetworkTrend } from '../data/closedTrend';
+	import { selectDailyChange } from '../selectors/dailyChange';
+	import { getNetworkTrend, getHistoricAvailability } from '#lib/v1/repositories/historic.ts';
 	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
 	import type { NetworkFile } from '#lib/v1/schemas/network.ts';
 	import type { NetworkTrend, TrendPoint } from '#lib/v1/schemas/network_trend.ts';
@@ -50,12 +54,18 @@
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import type { MetricKey } from '#lib/metrics.ts';
 	import { STATUS_LABELS, OCCUPANCY_LABELS } from '#lib/v1/enumLabels.ts';
-
 	import {
 		RELIABILITY_GRAINS as NETWORK_GRAINS,
 		type ReliabilityGrain as NetworkGrain,
 	} from '#lib/reliability/grains.ts';
-	import { WINDOWS, bestFitWindow, windowedSeries, type WindowDays } from '../data/trendWindow';
+	import {
+		WINDOWS,
+		trendWindowSegments,
+		trendWindowEnd,
+		bestFitWindow,
+		windowedSeries,
+		type WindowDays,
+	} from '../data/trendWindow';
 	import { createNetworkHistoryResource } from '../data/networkHistoryResource.svelte';
 	import { selectHeadlineKpis } from '../selectors/headlineKpis';
 	import { selectStatusMix } from '../selectors/statusMix';
@@ -68,7 +78,6 @@
 	import { selectOccupancyTrend } from '../selectors/occupancyTrend';
 	import { selectShiftRank } from '../selectors/shiftRank';
 	import { providerNetworkReliabilityCopy } from '../network-reliability.copy';
-
 	import SectionLiveHeadline from './SectionLiveHeadline.svelte';
 	import SectionReporting from './SectionReporting.svelte';
 	import SectionStatusMix from './SectionStatusMix.svelte';
@@ -79,23 +88,18 @@
 	import SectionCrowdingByDay from './SectionCrowdingByDay.svelte';
 	import SectionByTimeOfDay from './SectionByTimeOfDay.svelte';
 	import SectionWeekday from './SectionWeekday.svelte';
-
 	const display = transitDisplay();
-
 	const localizeHref = getLocalizeHref();
-
 	interface Props {
 		networkSeed?: NetworkFile;
 		trendSeed?: ResourceSeed<NetworkTrend>;
 		provenanceSeed?: ResourceSeed<Provenance>;
+		historicAvailabilitySeed?: ResourceSeed<HistoricAvailabilityIndex>;
 	}
-
-	let { networkSeed, trendSeed, provenanceSeed }: Props = $props();
-
+	let { networkSeed, trendSeed, provenanceSeed, historicAvailabilitySeed }: Props = $props();
 	const locale: Locale = getLocale();
 	const v1 = getV1Context();
 	const t = $derived(providerNetworkReliabilityCopy(locale, v1.manifest.provider));
-
 	const initialNetworkSeed = untrack(() => networkSeed);
 	const live = createLiveStore(v1.manifest, liveReader, {
 		families: ['network'],
@@ -105,7 +109,6 @@
 		live.start();
 		return () => live.stop();
 	});
-
 	const trend = createResource(() => getNetworkTrend(), {
 		key: () => 'network-trend',
 		seed: () => trendSeed,
@@ -118,11 +121,26 @@
 		key: () => 'provenance',
 		seed: () => provenanceSeed,
 	});
-
+	const availability = createResource(() => getHistoricAvailability().catch(() => null), {
+		key: () => 'historic-availability',
+		seed: () => historicAvailabilitySeed,
+	});
+	const closedTrend = $derived(
+		availability.settled
+			? closeNetworkTrend(
+					trend.data,
+					trendClosedThrough(availability.data, trend.data?.series ?? []),
+				)
+			: null,
+	);
+	const closedResource = $derived({
+		...trend,
+		data: closedTrend,
+		loading: trend.loading || !availability.settled,
+	});
 	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 	const noObservationLabel = $derived(absenceShort('no-observations', locale));
 	const retainedDataAbsence = $derived(describeAbsence('no-retained-data', locale));
-
 	const fmtMin = (v: number | null): string =>
 		sharedFmtDelayMin(v, { suffix: t.units.min, noData: noObservationLabel });
 	const fmtCount = (v: number): string => sharedFmtCount(v, { locale, noData: '' });
@@ -131,7 +149,6 @@
 		sharedFmtDelayMin(v, { suffix: t.units.min });
 	const fmtCancel = (v: number | null): string | null =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
-
 	const kpis = $derived.by(() =>
 		live.network
 			? selectHeadlineKpis(live.network, {
@@ -147,7 +164,6 @@
 				})
 			: null,
 	);
-
 	const statusSpec = $derived(
 		selectStatusMix(
 			live.network?.status_dist ?? null,
@@ -198,10 +214,9 @@
 			href: (rid) => localizeHref(routeFor({ kind: 'line', id: rid }), locale),
 		}),
 	);
-
 	const grainLabels = $derived({ day: t.grain.day, week: t.grain.week, month: t.grain.month });
 	const view = createReliabilityViewState({
-		snapshot: () => trend.data,
+		snapshot: () => closedTrend,
 		retained: {
 			resource: () => history,
 			copy: () => ({ ...t.history, noData: absenceSentence('no-retained-data', locale) }),
@@ -214,28 +229,12 @@
 	const explicitHistory = $derived(view.history.active);
 	const retainedReady = $derived(view.history.ready);
 	const selectedTrend = $derived(view.data);
-
-	const dailyChange = $derived.by(() => {
-		const series = selectedTrend?.series ?? [];
-		const latest = series.at(-1);
-		const prior = series.at(-2);
-		if (latest?.otp_pct == null || prior?.otp_pct == null) return null;
-		return { points: latest.otp_pct - prior.otp_pct, latest, prior };
-	});
-	const dailyChangeText = $derived(
-		dailyChange == null
-			? null
-			: t.verdictDelta.chip(
-					`${dailyChange.points > 0 ? '+' : ''}${sharedFmtNumber(dailyChange.points, { rounding: 'auto', locale })}`,
-					Math.abs(dailyChange.points) === 1,
-				),
-	);
-	const dailyChangeColor = $derived(
-		dailyChange == null || dailyChange.points === 0
-			? 'var(--muted-foreground)'
-			: dailyChange.points > 0
-				? 'var(--dataviz-status-on-time)'
-				: 'var(--dataviz-status-late)',
+	const dailyChange = $derived(
+		selectDailyChange(selectedTrend?.series ?? [], {
+			format: (points) =>
+				`${points > 0 ? '+' : ''}${sharedFmtNumber(points, { rounding: 'auto', locale })}`,
+			chip: t.verdictDelta.chip,
+		}),
 	);
 	const dailySeries = $derived<readonly TrendPoint[]>(selectedTrend?.series ?? []);
 	const weeklySeries = $derived<readonly TrendPoint[]>(selectedTrend?.weekly ?? []);
@@ -247,30 +246,22 @@
 	const networkVerdict = $derived(view.verdict);
 	const isDailyGrain = $derived(grain === 'day');
 	const showGrainPicker = $derived(view.segments.filter((segment) => segment.available).length > 1);
-
-	const currentDailySeries = $derived<readonly TrendPoint[]>(trend.data?.series ?? []);
+	const currentDailySeries = $derived<readonly TrendPoint[]>(closedTrend?.series ?? []);
 	// This trailing-day chart window is independent of the retained-history selection.
 	const bestFit = $derived<WindowDays>(bestFitWindow(currentDailySeries.length));
-
 	let windowKey = $state('7');
 	let windowSeeded = $state(false);
 	const windowDays = $derived.by<WindowDays>(() => {
 		const d = Number(windowKey);
 		return (WINDOWS as readonly number[]).includes(d) ? (d as WindowDays) : bestFit;
 	});
-	const windowSegments = $derived.by<GrainSegment<string>[]>(() => {
-		const n = currentDailySeries.length;
-		const labels: Record<WindowDays, string> = {
-			7: t.window.d7,
-			30: t.window.d30,
-			90: t.window.d90,
-		};
-		return WINDOWS.map((d, i) => ({
-			key: String(d),
-			label: labels[d],
-			available: n > 0 && (i === 0 || d <= n),
-		}));
-	});
+	const windowSegments = $derived(
+		trendWindowSegments(
+			currentDailySeries.length,
+			{ 7: t.window.d7, 30: t.window.d30, 90: t.window.d90 },
+			t.window.reason,
+		),
+	);
 	$effect(() => {
 		if (explicitHistory) return;
 		const n = currentDailySeries.length;
@@ -282,7 +273,6 @@
 			windowKey = String(bestFit);
 		}
 	});
-
 	const windowed = $derived<readonly TrendPoint[]>(
 		explicitHistory
 			? grain === 'week'
@@ -292,7 +282,6 @@
 					: allSeries.daily
 			: windowedSeries(grain, allSeries, windowDays),
 	);
-
 	let retardKey = $state('p90');
 	const delayAvailabilityKnown = $derived(
 		explicitHistory &&
@@ -330,7 +319,11 @@
 	const retardLabel = $derived(
 		effectiveRetard === 'avg' ? t.trend.retardAvgLabel : t.trend.retardLabel,
 	);
-
+	const trendThrough = $derived.by(() => {
+		const last = windowed.at(-1)?.date;
+		if (explicitHistory || !last) return null;
+		return formatDateKey(trendWindowEnd(last, grain), locale);
+	});
 	const trendSpec = $derived(
 		selectTrendChart(windowed, effectiveRetard, {
 			locale,
@@ -380,7 +373,6 @@
 		),
 	);
 	const hasOccupancyTrend = $derived(isDailyGrain && occupancyDays.length > 0);
-
 	const pctOrNullSubtitle = (avg: number | null, severe: number | null): string =>
 		`${t.shift.avgLabel} ${fmtMin(avg)} · ${t.shift.severeLabel} ${sharedFmtPct(severe, { rounding: 'fixed1', suffix: t.units.pct, noData: noObservationLabel })}`;
 	const shiftRows = $derived(
@@ -399,7 +391,6 @@
 	);
 	const hasShift = $derived(shiftRows.length > 0);
 	const hasDayType = $derived(dayTypeRows.length > 0);
-
 	const regionNav = $derived([
 		{ id: 'net-live', label: t.liveRegion },
 		{ id: 'net-historic', label: t.historicRegion },
@@ -438,7 +429,6 @@
 >
 	{historyAnnouncement ?? ''}
 </p>
-
 {#snippet windowControls()}
 	{#if isDailyGrain && !explicitHistory}
 		<GrainPicker
@@ -457,20 +447,19 @@
 		/>
 	{/if}
 {/snippet}
-
 {#snippet historicBoard()}
 	<ArticleSectionStack class="network-history-board" data-slot="network-history-board">
-		{#if dailyChange && dailyChangeText}
+		{#if dailyChange && dailyChange?.text}
 			<p
 				class="network-daily-change"
 				data-slot="verdict-delta"
-				style={`--delta-tone: ${dailyChangeColor}`}
+				style={`--delta-tone: ${dailyChange?.color}`}
 			>
 				<span class="network-daily-change__mark" aria-hidden="true"
 					>{dailyChange.points > 0 ? '▲' : dailyChange.points < 0 ? '▼' : '■'}</span
 				>
 				<span>
-					{dailyChangeText} ·
+					{dailyChange?.text} ·
 					<time datetime={dailyChange.latest.date}
 						>{formatDateKey(dailyChange.latest.date, locale, true)}</time
 					>
@@ -484,6 +473,7 @@
 		<div class="network-history-row" data-slot="network-history-trend-row">
 			<SectionTrend
 				{trendSpec}
+				through={trendThrough}
 				{vehiclesSpark}
 				{isDailyGrain}
 				metricKey={trendMetricKey}
@@ -491,7 +481,6 @@
 				{locale}
 			/>
 		</div>
-
 		{#if cancelTrend.hasCancel}
 			<div class="network-history-row" data-slot="network-history-cancellations-row">
 				<SectionCancellations
@@ -502,16 +491,13 @@
 				/>
 			</div>
 		{/if}
-
 		{#if hasOccupancyTrend}
 			<div class="network-history-row" data-slot="network-history-crowding-row">
 				<SectionCrowdingByDay days={occupancyDays} copy={t} {locale} />
 			</div>
 		{/if}
-
 		<div class="network-history-companions" data-slot="network-history-companion-row">
 			<SectionCompleteness latestDisplay={completenessDisplay} copy={t} {locale} />
-
 			{#if hasShift}
 				<SectionByTimeOfDay
 					rows={shiftRows}
@@ -533,7 +519,6 @@
 		</div>
 	</ArticleSectionStack>
 {/snippet}
-
 {#snippet combinedRail({ closeSheet }: SurfaceRailContext)}
 	{#snippet historyControls()}
 		<HistoryNavigator {...view.navigator!} announcement={historyAnnouncement} />
@@ -547,7 +532,6 @@
 			variant="time-grid"
 		/>
 	{/snippet}
-
 	{#if hasViewControls}
 		<CollapsibleSection independent title={t.viewControlsLabel}>
 			<ArticleControlStack
@@ -557,7 +541,6 @@
 			/>
 		</CollapsibleSection>
 	{/if}
-
 	<div class="rail-toc" data-slot="section-toc">
 		<TocNav
 			entries={tocEntries}
@@ -571,7 +554,6 @@
 	</div>
 	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 {/snippet}
-
 {#snippet railCell()}
 	<SurfaceRail
 		rail={combinedRail}
@@ -581,7 +563,6 @@
 		closeAria={t.rail.pillClose}
 	/>
 {/snippet}
-
 <DetailFrame
 	class="network-detail"
 	railScroll
@@ -624,7 +605,6 @@
 			{/snippet}
 		</ArticleHeader>
 	{/snippet}
-
 	<div class="network-content">
 		<section class="network-region" id="net-live" data-toc="net-live" aria-label={t.liveRegion}>
 			{#if kpis}
@@ -665,11 +645,9 @@
 				<EdgeState variant="skeleton" lang={locale} layout={edgeLayout} />
 			{/if}
 		</section>
-
 		<section class="network-verdict" aria-label={t.verdictDelta.label}>
 			<VerdictBanner result={networkVerdict} />
 		</section>
-
 		<section
 			class="network-region"
 			id="net-historic"
@@ -709,7 +687,7 @@
 				{/if}
 			{:else}
 				<ResourceBoundary
-					resource={trend}
+					resource={closedResource}
 					lang={locale}
 					isEmpty={(d) =>
 						(d.series?.length ?? 0) === 0 &&
@@ -742,7 +720,6 @@
 		align-items: center;
 		gap: 0.5rem 1.25rem;
 	}
-
 	.network-content {
 		display: flex;
 		flex-direction: column;
@@ -764,7 +741,6 @@
 	.network-history-notes p {
 		margin: 0;
 	}
-
 	.network-region {
 		display: flex;
 		flex-direction: column;

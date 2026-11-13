@@ -13,14 +13,22 @@
 
 	interface SectionTrendProps {
 		locale: Locale;
+		through?: string | null;
 		trendSpec: ChartSpec;
 		vehiclesSpark: SparklineSpec | null;
 		isDailyGrain: boolean;
 		metricKey: MetricKey;
 		copy: NetworkReliabilityCopy;
 	}
-	let { locale, trendSpec, vehiclesSpark, isDailyGrain, metricKey, copy }: SectionTrendProps =
-		$props();
+	let {
+		through = null,
+		locale,
+		trendSpec,
+		vehiclesSpark,
+		isDailyGrain,
+		metricKey,
+		copy,
+	}: SectionTrendProps = $props();
 </script>
 
 {#snippet trendInfo()}
@@ -36,6 +44,9 @@
 >
 	<div class="network-trend">
 		<Chart spec={trendSpec} />
+		{#if trendSpec.kind === 'trend' && through}<p data-slot="trend-through">
+				{copy.trend.through(through)}
+			</p>{/if}
 
 		{#if isDailyGrain && vehiclesSpark}
 			<div class="network-vehicles-row" data-slot="vehicles-reporting-row">

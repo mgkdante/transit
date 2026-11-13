@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
 	import { ExplainedMetricCard } from '#lib/components/dataviz/index.ts';
 	import { Chart } from '#lib/components/dataviz/chart/index.ts';
@@ -23,7 +24,9 @@
 >
 	<div class="network-trend">
 		<ExplainedMetricCard
-			label={copy.cancel.metric}
+			label={vm.latestDate
+				? copy.cancel.metricOn(formatDateKey(vm.latestDate, locale))
+				: copy.cancel.metricUndated}
 			value={latestDisplay}
 			absentReason="no-observations"
 			{locale}

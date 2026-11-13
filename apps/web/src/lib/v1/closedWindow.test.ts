@@ -102,3 +102,18 @@ it('does not show stale weekly cuts under the closed-week label', async () => {
 	expect(pane.peakOffPeak.byDayType).toEqual([]);
 	expect(pane.dayOfWeek).toEqual([]);
 });
+
+it('treats the newest daily date as open without a record anchor', async () => {
+	const { trendClosedThrough } = await import('./closedWindow');
+	expect(trendClosedThrough(null, [])).toBeNull();
+	expect(trendClosedThrough(null, [{ date: '2026-03-01' }, { date: '2026-02-27' }])).toBe(
+		'2026-02-28',
+	);
+	expect(
+		closedTrendPoints(
+			[{ date: '2026-03-01' }],
+			'day',
+			trendClosedThrough(null, [{ date: '2026-03-01' }]),
+		),
+	).toEqual([]);
+});

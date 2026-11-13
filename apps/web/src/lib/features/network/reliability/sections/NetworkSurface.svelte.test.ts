@@ -10,13 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NetworkFile, NetworkShift, TrendPoint } from '#lib/v1/index.ts';
 import type { IsoUtc } from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
+import { formatDateKey } from '#lib/utils/time.ts';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
 import { assertRailIndependence } from '../../../../../tests/railIndependence';
-
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
-
 const networkManifest = vi.hoisted(() => ({ provider: 'stm', files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const createResourceSpy = vi.hoisted(() => vi.fn());
@@ -100,18 +99,15 @@ const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, by
 			{ grain: 'weekend', otp_pct: 81, avg_delay_min: 2.3, severe_pct: 6.2 },
 		] satisfies NetworkShift[] as NetworkShift[],
 	}));
-
 const networkDefaults = structuredClone(network);
 const trendDefaults = structuredClone(trendSeries);
 const weeklyDefaults = structuredClone(weeklySeries);
 const monthlyDefaults = structuredClone(monthlySeries);
 const shiftDefaults = structuredClone(byShift);
 const daytypeDefaults = structuredClone(byDaytype);
-
 function restoreArray<T>(target: T[], defaults: readonly T[]): void {
 	target.splice(0, target.length, ...structuredClone(defaults));
 }
-
 function resetNetworkSurfaceState(): void {
 	motion.reduced = false;
 	live.ageSeconds = 20;
@@ -128,7 +124,6 @@ function resetNetworkSurfaceState(): void {
 	createLiveStoreSpy.mockClear();
 	createResourceSpy.mockClear();
 }
-
 const networkSurface = createSurfaceHarness({
 	storage: [
 		{
@@ -222,6 +217,7 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 }));
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: vi.fn(),
+	getHistoricAvailability: vi.fn(),
 	getNetworkHistoryIndex: vi.fn().mockResolvedValue(null),
 	loadNetworkHistoryRange: vi.fn(),
 }));
@@ -233,15 +229,17 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 		const src = loader.toString();
 		const isProvenance = src.includes('Provenance') || src.includes('provenance');
 		return {
-			data: isProvenance
-				? { conformance: null }
-				: {
-						series: trendSeries,
-						weekly: weeklySeries,
-						monthly: monthlySeries,
-						by_shift: byShift,
-						by_daytype: byDaytype,
-					},
+			data: /HistoricAvailability/.test(src)
+				? { families: [{ family: 'network', last_available_date: trendSeries.at(-1)?.date }] }
+				: isProvenance
+					? { conformance: null }
+					: {
+							series: trendSeries,
+							weekly: weeklySeries,
+							monthly: monthlySeries,
+							by_shift: byShift,
+							by_daytype: byDaytype,
+						},
 			error: null,
 			loading: false,
 			settled: true,
@@ -737,7 +735,7 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 	});
 
 	it.each([
-		['Week', 3, '83%'],
+		['Week', 2, '77%'],
 		['Month', 2, '76%'],
 	] as const)('plots the distinct %s rows without flattening', async (grain, count, last) => {
 		const { container } = render(NetworkSurface);
@@ -773,14 +771,16 @@ describe('NetworkSurface trend grain (day/week/month)', () => {
 		expect(header?.textContent).toContain('Average delay (min)');
 		expect(header?.textContent).not.toContain('Slowest 10% (min)');
 		const rows = trendRows(container);
-		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('1.6 min');
+		expect(rows[rows.length - 1].querySelectorAll('td')[1]?.textContent).toBe('2.2 min');
 	});
 });
 
 describe('NetworkSurface cancellation trend', () => {
 	it('renders the cancellation block with the latest value when the series carries data', () => {
 		render(NetworkSurface);
-		const tile = screen.getByText('Canceled (latest day)').closest('[data-slot="metric-display"]');
+		const tile = screen
+			.getByText(copy.cancel.metricOn(formatDateKey(trendSeries.at(-1)!.date, 'en')))
+			.closest('[data-slot="metric-display"]');
 		expect(tile).not.toBeNull();
 		expect(within(tile as HTMLElement).getByText('2.6%')).toBeInTheDocument();
 	});
@@ -988,7 +988,7 @@ describe('NetworkSurface — map-style GLASS LEFT RAIL (P5.4)', () => {
 		await fireEvent.click(railMobile.querySelector('button') as HTMLButtonElement);
 
 		const reasons = Array.from(
-			container.querySelectorAll<HTMLElement>('[data-slot="controls-reason"]'),
+			container.querySelectorAll<HTMLElement>('[data-region=primary] [data-slot=controls-reason]'),
 		);
 		const reasonIds = reasons.map((reason) => reason.id);
 		expect(reasonIds).toHaveLength(1);
