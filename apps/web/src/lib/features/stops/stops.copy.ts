@@ -1,4 +1,5 @@
 import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
+import type { AffectedAlertsCopy, SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 import { articleCopy } from '#lib/components/layout/articleCopy.ts';
 
 export const indexCopy = defineCopy({
@@ -53,7 +54,7 @@ export const indexCopy = defineCopy({
 		searchPlaceholder: 'Stop name or code…',
 		searchLabel: 'Search stops',
 		noMatches: 'No stops match this search.',
-		more: (n: number) => `+${n} more stops, refine the search`,
+		more: (n) => `+${n} more stops, refine the search`,
 		mapAction: 'Map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		controlsLabel: 'Filters',
@@ -81,13 +82,13 @@ export const indexCopy = defineCopy({
 			heading: 'Browse stops by line',
 			lede: 'Choose a line to see every published stop, grouped by direction.',
 			chooseLine: (short, long) => `Browse stops on line ${short}${long ? ` ${long}` : ''}`,
-			showMoreLines: (n: number) => `Show ${n} more lines`,
+			showMoreLines: (n) => `Show ${n} more lines`,
 			progressLabel: 'Stop catalogue progress',
 			progress: (shown, total) => `Showing ${shown} of ${total} stops`,
-			loadMore: (n: number) => `Load ${n} more stops`,
+			loadMore: (n) => `Load ${n} more stops`,
 		},
 	},
-});
+}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
 
 export type StopsIndexCopy = (typeof indexCopy)[Locale];
 
@@ -112,7 +113,6 @@ export const detailCopy = defineCopy({
 		report: {
 			departures: 'Rapport des passages',
 			alerts: 'Rapport des avis',
-			historic: 'Rapport de fiabilité',
 			refreshUnavailable: 'Actualisation indisponible',
 			behind: 'Rapport en retard',
 			retained: 'Le dernier rapport reçu reste affiché. Il peut ne plus être à jour.',
@@ -120,10 +120,6 @@ export const detailCopy = defineCopy({
 			retainedStatic: 'Les dernières informations reçues restent affichées.',
 			historicRefreshUnavailable: 'Fiabilité non actualisée',
 			retainedHistoric: 'Le dernier rapport de fiabilité reçu reste affiché.',
-		},
-		summary: {
-			reported: 'Résumé quotidien du rapport',
-			day: (date: string) => `Observations du ${date}`,
 		},
 		alertState: {
 			none: 'Aucun avis correspondant à cet arrêt dans ce rapport.',
@@ -172,11 +168,11 @@ export const detailCopy = defineCopy({
 			from: 'À partir de',
 			until: 'Jusqu’à',
 			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
-			more: (n: number) => `+${n} de plus`,
+			more: (n) => `+${n} de plus`,
 			showLess: 'Réduire',
 			link: 'Détails',
 			linkAria: (host: string) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
-		},
+		} satisfies AffectedAlertsCopy,
 		info: {
 			position: 'Position',
 			code: 'Code d’arrêt',
@@ -221,7 +217,6 @@ export const detailCopy = defineCopy({
 		report: {
 			departures: 'Departure report',
 			alerts: 'Alert report',
-			historic: 'Reliability report',
 			refreshUnavailable: 'Refresh unavailable',
 			behind: 'Report behind schedule',
 			retained: 'Showing the last report received. It may no longer be current.',
@@ -229,10 +224,6 @@ export const detailCopy = defineCopy({
 			retainedStatic: 'Showing the last stop information received.',
 			historicRefreshUnavailable: 'Reliability could not refresh',
 			retainedHistoric: 'Showing the last reliability report received.',
-		},
-		summary: {
-			reported: 'Reported daily summary',
-			day: (date: string) => `Observations on ${date}`,
 		},
 		alertState: {
 			none: 'No matching alerts for this stop in this report.',
@@ -281,11 +272,11 @@ export const detailCopy = defineCopy({
 			from: 'From',
 			until: 'Until',
 			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
-			more: (n: number) => `+${n} more`,
+			more: (n) => `+${n} more`,
 			showLess: 'Show less',
 			link: 'Details',
 			linkAria: (host) => `Open the alert details on ${host} (new tab)`,
-		},
+		} satisfies AffectedAlertsCopy,
 		info: {
 			position: 'Position',
 			code: 'Stop code',
@@ -307,7 +298,7 @@ export const detailCopy = defineCopy({
 				destination: 'Destination',
 				departures: 'Departures',
 			},
-			moreTimes: (n: number) => `+${n} more times`,
+			moreTimes: (n) => `+${n} more times`,
 		},
 	},
 });
