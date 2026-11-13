@@ -87,11 +87,14 @@ export function selectWorst(
 	const ranked = [...(window.entries ?? [])].sort(
 		(a, b) => (a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY),
 	);
-	const pick = (kind: PulseRank['kind']) =>
-		ranked
-			.filter((entry) => kindOf(entry.type) === kind)
+	const pick = (kind: PulseRank['kind']) => {
+		// A published file is outside input: a repeated id must not reach a keyed list.
+		const seen = new Set<string>();
+		return ranked
+			.filter((entry) => kindOf(entry.type) === kind && !seen.has(entry.id) && seen.add(entry.id))
 			.slice(0, limit)
 			.map((entry) => toRank(entry, kind, routes));
+	};
 	return {
 		through: window.window_end ?? window.date ?? null,
 		lines: pick('line'),

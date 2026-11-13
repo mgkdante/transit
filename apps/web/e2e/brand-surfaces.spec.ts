@@ -135,6 +135,60 @@ test('homepage ground follows window scrolling and reverses without moving the t
 	await expect(props).toHaveCount(1);
 });
 
+test('the home strip holds its place while its numbers and rankings arrive', async ({ page }) => {
+	// Hold both data files so the first measurement is taken before either lands.
+	let release = (): void => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
+	const generated_utc = new Date().toISOString();
+	await page.route('**/v1/stm/live/network.json', async (route) => {
+		await held;
+		await route.fulfill({
+			json: {
+				generated_utc,
+				vehicles_in_service: 321,
+				on_time_pct: 80,
+				status_dist: { on_time: 200, late: 40, severe: 30, early: 20, unknown: 31 },
+				delay_p50_min: 1,
+				delay_p90_min: 6,
+				non_responding: 7,
+				feed_freshness_s: 15,
+				coverage_pct: 90,
+			},
+		});
+	});
+	await page.route('**/v1/stm/historic/hotspots.json', async (route) => {
+		await held;
+		await route.fulfill({
+			json: {
+				generated_utc,
+				by_grain: [
+					{
+						grain: 'week',
+						date: '2026-06-08',
+						window_end: '2026-06-14',
+						entries: [
+							{ id: '24', type: 'route', rank: 1, name: 'Sherbrooke', severe_pct: 12.5 },
+							{ id: 'S1', type: 'stop', rank: 2, name: 'Fixture stop', severe_pct: 9.1 },
+						],
+					},
+				],
+			},
+		});
+	});
+	await page.goto('/');
+	const strip = page.locator('[data-slot="home-pulse"]');
+	const below = page.locator('[data-slot="home-search"]');
+	const documentTop = () =>
+		below.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+	await expect(strip.getByRole('term')).toHaveCount(5);
+	const before = await documentTop();
+	release();
+	await expect(strip.locator('[data-pulse="in-service"]')).toContainText('321');
+	await expect(strip.getByRole('link', { name: /Sherbrooke/ })).toBeVisible();
+	await expect(strip.getByRole('link', { name: /Fixture stop/ })).toBeVisible();
+	expect(Math.abs((await documentTop()) - before)).toBeLessThanOrEqual(1);
+});
+
 test('homepage props remain static without JavaScript and switch instantly with reduced motion', async ({
 	browser,
 	baseURL,

@@ -7,6 +7,7 @@ type PulseKey =
 	| 'onTimeNote'
 	| 'severeLate'
 	| 'severeLateNote'
+	| 'ofCount'
 	| 'early'
 	| 'earlyNote'
 	| 'notReporting'
@@ -15,7 +16,10 @@ type PulseKey =
 	| 'worstLines'
 	| 'worstStops'
 	| 'worstNote'
+	| 'worstThrough'
 	| 'worstUnavailable'
+	| 'worstError'
+	| 'unavailable'
 	| 'lateRate'
 	| 'allHotspots'
 	| 'openMap'
@@ -31,18 +35,21 @@ export const homePulseCopy = defineCopy({
 		onTime: 'À l’heure',
 		onTimeNote: 'de 1 min d’avance à 5 min de retard, parmi les bus mesurés',
 		severeLate: 'Plus de 5 min de retard',
-		severeLateNote: 'sur {n} bus avec une mesure de retard',
+		severeLateNote: 'bus avec une mesure de retard',
+		ofCount: 'sur {n}',
 		early: 'Plus de 1 min d’avance',
 		earlyNote: 'un bus en avance peut laisser des gens à l’arrêt',
 		notReporting: 'Trajets sans signal',
 		notReportingNote: 'prévus, mais aucun bus ne se signale',
-		liveUnavailable:
-			'Les chiffres en direct ne sont pas disponibles pour le moment. Ce n’est pas un zéro : la donnée manque.',
+		liveUnavailable: 'Chiffres en direct indisponibles pour le moment',
 		worstLines: 'Lignes les plus en retard',
 		worstStops: 'Arrêts les plus en retard',
 		worstNote:
-			'Part des mesures en retard de plus de 5 min, sur 7 jours (données jusqu’au {date}). Le bilan est republié chaque semaine.',
+			'Part des mesures en retard de plus de 5 min, sur 7 jours. Le bilan est republié chaque semaine.',
+		worstThrough: 'Données jusqu’au {date}',
 		worstUnavailable: 'Aucun classement hebdomadaire publié pour l’instant.',
+		worstError: 'Le classement n’a pas pu être chargé.',
+		unavailable: 'indisponible',
 		lateRate: '{pct} des mesures en retard de plus de 5 min',
 		allHotspots: 'Tous les points chauds',
 		openMap: 'Carte du réseau',
@@ -57,17 +64,21 @@ export const homePulseCopy = defineCopy({
 		onTime: 'On time',
 		onTimeNote: '1 min early to 5 min late, among buses with a delay reading',
 		severeLate: 'More than 5 min late',
-		severeLateNote: 'of {n} buses with a delay reading',
+		severeLateNote: 'buses with a delay reading',
+		ofCount: 'of {n}',
 		early: 'More than 1 min early',
 		earlyNote: 'an early bus can leave riders behind',
 		notReporting: 'Trips without a signal',
 		notReportingNote: 'scheduled, but no bus is reporting',
-		liveUnavailable: 'Live numbers are unavailable right now. That is missing data, not a zero.',
+		liveUnavailable: 'Live numbers unavailable right now',
 		worstLines: 'Most delayed lines',
 		worstStops: 'Most delayed stops',
 		worstNote:
-			'Share of readings more than 5 min late, over 7 days (data through {date}). The record is republished weekly.',
+			'Share of readings more than 5 min late, over 7 days. The record is republished weekly.',
+		worstThrough: 'Data through {date}',
 		worstUnavailable: 'No weekly ranking has been published yet.',
+		worstError: 'The rankings could not be loaded.',
+		unavailable: 'unavailable',
 		lateRate: '{pct} of readings more than 5 min late',
 		allHotspots: 'All hotspots',
 		openMap: 'Network map',
@@ -80,24 +91,26 @@ export const homePulseCopy = defineCopy({
 
 export type HomePulseCopy = (typeof homePulseCopy)[Locale];
 
-type InviteKey = 'title' | 'body' | 'contact' | 'code' | 'support';
+type InviteKey = 'title' | 'body' | 'contribute' | 'code' | 'contact' | 'support';
 
 export const homeInviteCopy = defineCopy({
 	fr: {
-		title: 'Amenez Transit dans votre ville',
-		body: 'Transit fonctionne avec toute société de transport qui publie des données ouvertes GTFS et GTFS-Realtime. Les villes mesurées aujourd’hui ne sont que les premières. Vous voulez que votre ville soit mesurée, ou vous pouvez aider avec le code, les données ou l’hébergement? Parlons-en.',
-		contact: 'Écrivez-moi',
+		title: 'Aidez à étendre Transit',
+		body: 'Transit est un projet à code source ouvert, et nous cherchons des contributeurs. Il fonctionne avec toute société de transport qui publie des données GTFS et GTFS-Realtime, et les villes mesurées aujourd’hui ne sont que les premières. Ajoutez votre ville, améliorez une mesure, corrigez un défaut ou aidez à l’hébergement.',
+		contribute: 'Comment contribuer',
 		code: 'Voir le code',
+		contact: 'Écrivez-nous',
 		support:
-			'Transit est indépendant et tourne sur le budget d’une seule personne. Les organisations qui peuvent prêter de l’hébergement, de la capacité d’API ou du financement rendent possibles d’autres villes.',
+			'Transit est un projet indépendant et bénévole. L’aide à l’hébergement est ce qui permet d’accueillir d’autres villes.',
 	},
 	en: {
-		title: 'Bring Transit to your city',
-		body: 'Transit works with any agency that publishes open GTFS and GTFS-Realtime data. The cities measured today are only the first. Want your city measured, or can you help with code, data or hosting? Let’s talk.',
-		contact: 'Get in touch',
+		title: 'Help extend Transit',
+		body: 'Transit is open source, and we are looking for contributors. It works with any agency that publishes GTFS and GTFS-Realtime data, and the cities measured today are only the first. Add your city, improve a metric, fix something or help with hosting.',
+		contribute: 'How to contribute',
 		code: 'View the code',
+		contact: 'Get in touch',
 		support:
-			'Transit is independent and runs on one person’s budget. Organizations that can lend hosting, API capacity or funding make more cities possible.',
+			'Transit is an independent, volunteer project. Hosting help is what lets more cities join.',
 	},
 } satisfies Readonly<Record<Locale, Readonly<Record<InviteKey, string>>>>);
 
@@ -118,5 +131,6 @@ export const homeSearchCopy = defineCopy({
 
 export const HOME_INVITE_LINKS = {
 	contact: { en: 'https://yesid.dev/contact', fr: 'https://yesid.dev/fr/contact' },
+	contribute: 'https://github.com/yesid-dev/transit/blob/main/CONTRIBUTING.md',
 	code: 'https://github.com/yesid-dev/transit',
 } as const;

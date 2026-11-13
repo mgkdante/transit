@@ -7,6 +7,7 @@ const { state, createLiveStoreSpy } = vi.hoisted(() => ({
 		network: null as Record<string, unknown> | null,
 		healthState: 'live' as string,
 		hotspots: null as Record<string, unknown> | null,
+		hotspotsSettled: true,
 	},
 	createLiveStoreSpy: vi.fn(),
 }));
@@ -55,7 +56,9 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 			},
 			error: null,
 			loading: false,
-			settled: true,
+			get settled() {
+				return key === 'home-hotspots' ? state.hotspotsSettled : true;
+			},
 		};
 	},
 }));
@@ -90,6 +93,7 @@ afterEach(() => {
 	state.network = null;
 	state.healthState = 'live';
 	state.hotspots = null;
+	state.hotspotsSettled = true;
 	createLiveStoreSpy.mockClear();
 });
 
@@ -108,7 +112,8 @@ describe('Home accountability strip', () => {
 		expect(createLiveStoreSpy).toHaveBeenCalledWith(manifest, { families: ['network'] });
 		const late = screen.getByText('More than 5 min late').closest('div') as HTMLElement;
 		expect(late).toHaveTextContent('42');
-		expect(late).toHaveTextContent('of 260 buses with a delay reading');
+		expect(late).toHaveTextContent('of 260');
+		expect(late).toHaveTextContent('buses with a delay reading');
 		expect(screen.getByText('Buses in service').closest('div')).toHaveTextContent('355');
 		expect(screen.getByText('Trips without a signal').closest('div')).toHaveTextContent('18');
 		expect(screen.getByText('More than 1 min early').closest('div')).toHaveTextContent('71');
@@ -117,11 +122,38 @@ describe('Home accountability strip', () => {
 		);
 	});
 
-	it('says the live numbers are missing instead of showing zeros', () => {
+	it('has its final shape before any data arrives, so nothing below it moves', () => {
+		state.healthState = 'never-loaded';
+		state.hotspotsSettled = false;
+		render(HomePulse, { props: { locale: 'en', city: 'Ottawa', manifest } });
+		expect(screen.getAllByRole('term').map((term) => term.textContent)).toEqual([
+			'Buses in service',
+			'On time',
+			'More than 5 min late',
+			'More than 1 min early',
+			'Trips without a signal',
+		]);
+		expect(screen.getByRole('region', { name: 'Most delayed lines' })).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: 'Most delayed stops' })).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /All hotspots/ })).toBeInTheDocument();
+		expect(screen.queryByRole('status')).toBeNull();
+	});
+
+	it('says the live numbers are unavailable instead of showing zeros', () => {
 		state.healthState = 'failed-no-data';
 		render(HomePulse, { props: { locale: 'fr', city: 'Montréal', manifest } });
-		expect(screen.getByText(/la donnée manque/)).toHaveAttribute('role', 'status');
-		expect(screen.queryByText('Bus en service')).toBeNull();
+		expect(screen.getByText(/Chiffres en direct indisponibles/)).toHaveAttribute('role', 'status');
+		for (const label of ['Bus en service', 'À l’heure', 'Plus de 5 min de retard'])
+			expect(screen.getByText(label).closest('div')).not.toHaveTextContent(/\d(?! min)/);
+	});
+
+	it('tells a failed ranking load apart from a ranking that does not exist yet', () => {
+		state.network = liveNetwork;
+		render(HomePulse, { props: { locale: 'en', city: 'Ottawa', manifest } });
+		const lines = screen.getByRole('region', { name: 'Most delayed lines' });
+		expect(within(lines).getByRole('status')).toHaveTextContent(
+			'No weekly ranking has been published yet.',
+		);
 	});
 
 	it('names the worst lines by route number and links each ranking to its page', () => {
@@ -138,6 +170,7 @@ describe('Home accountability strip', () => {
 		expect(within(stops).getByRole('link')).toHaveAttribute('href', '/stop/S9');
 		expect(within(stops).getByRole('link')).toHaveTextContent('Rideau / Sussex');
 		expect(screen.getByRole('link', { name: /All hotspots/ })).toHaveAttribute('href', '/hotspots');
-		expect(screen.getByText(/republished weekly/)).toHaveTextContent('data through');
+		expect(screen.getByText(/republished weekly/)).toBeInTheDocument();
+		expect(screen.getByText(/^Data through/)).toHaveTextContent('10');
 	});
 });

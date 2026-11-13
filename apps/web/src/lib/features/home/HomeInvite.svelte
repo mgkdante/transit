@@ -10,8 +10,9 @@
 	<h2 id="home-invite-title">{t.title}</h2>
 	<p>{t.body}</p>
 	<div class="invite-actions">
-		<a href={HOME_INVITE_LINKS.contact[locale]} rel="noopener">{t.contact} ↗</a>
+		<a href={HOME_INVITE_LINKS.contribute} rel="noopener">{t.contribute} ↗</a>
 		<a href={HOME_INVITE_LINKS.code} rel="noopener">{t.code} ↗</a>
+		<a href={HOME_INVITE_LINKS.contact[locale]} rel="noopener">{t.contact} ↗</a>
 	</div>
 	<p class="invite-support" data-slot="home-support">{t.support}</p>
 </section>

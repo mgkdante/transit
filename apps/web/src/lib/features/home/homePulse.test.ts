@@ -86,6 +86,25 @@ describe('selectWorst', () => {
 		]);
 	});
 
+	it('keeps the first of any repeated entry, so a malformed file cannot break the list', () => {
+		const repeated = {
+			...hotspots,
+			by_grain: [
+				{
+					grain: 'week',
+					entries: [
+						{ id: '11', type: 'route', rank: 1, name: 'Waller <> Bayshore', severe_pct: 30 },
+						{ id: '11', type: 'route', rank: 2, name: 'Waller <> Bayshore', severe_pct: 20 },
+						{ id: '11', type: 'stop', rank: 3, name: 'STOP ELEVEN', severe_pct: 10 },
+					],
+				},
+			],
+		} as Hotspots;
+		const worst = selectWorst(repeated, routes);
+		expect(worst?.lines.map((line) => [line.id, line.severePct])).toEqual([['11', 30]]);
+		expect(worst?.stops.map((stop) => stop.id)).toEqual(['11']);
+	});
+
 	it('caps each list and reports absence when no daily ranking is published', () => {
 		expect(selectWorst(hotspots, routes, { limit: 1 })?.lines).toHaveLength(1);
 		expect(selectWorst(hotspots, routes, { grain: 'day' })?.lines.map((l) => l.id)).toEqual(['99']);

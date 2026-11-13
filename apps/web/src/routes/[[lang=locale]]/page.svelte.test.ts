@@ -124,17 +124,16 @@ describe('Home civic overview and directory', () => {
 		expect(more).toHaveTextContent('When data is missing, we say so.');
 	});
 
-	it('invites other cities and names the hosting constraint without a funding pitch', () => {
+	it('says plainly that Transit is looking for contributors to extend it', () => {
 		renderHome();
-		const invite = screen.getByRole('region', { name: 'Bring Transit to your city' });
-		expect(within(invite).getByRole('link', { name: /Get in touch/ })).toHaveAttribute(
-			'href',
-			'https://yesid.dev/contact',
-		);
-		expect(within(invite).getByRole('link', { name: /View the code/ })).toHaveAttribute(
-			'href',
-			'https://github.com/yesid-dev/transit',
-		);
+		const invite = screen.getByRole('region', { name: 'Help extend Transit' });
+		expect(invite).toHaveTextContent('we are looking for contributors');
+		for (const [name, href] of [
+			[/How to contribute/, 'https://github.com/yesid-dev/transit/blob/main/CONTRIBUTING.md'],
+			[/View the code/, 'https://github.com/yesid-dev/transit'],
+			[/Get in touch/, 'https://yesid.dev/contact'],
+		] as const)
+			expect(within(invite).getByRole('link', { name })).toHaveAttribute('href', href);
 	});
 
 	it('retains all four question groups while making the remaining directory compact', () => {
