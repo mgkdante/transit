@@ -8,7 +8,7 @@ migration = import_module("transit_ops.db.migrations.versions.0099_alert_cell_da
 TABLE = "gold.alert_cell_day"
 INDEXES = ("gold.alert_cell_day_pkey", "gold.alert_cell_day_service_date_idx")
 INSERT = f"""INSERT INTO {TABLE} VALUES
-    ('network', 1, 'line', 'route', '2026-11-13', 'weather', 'delay',
+    ('city', 1, 'line', 'route', '2026-11-13', 'weather', 'delay',
      2, 1, 1, 9000000000, 1, 'approximate', 'at_close')"""
 
 
@@ -60,20 +60,27 @@ def test_key_holds_one_row_per_entity_day_cause_and_effect(conn):
     for old, new in (
         ("'weather'", "'construction'"),
         ("'delay'", "'detour'"),
-        ("'network', 1", "'network', 2"),
+        ("'city', 1", "'city', 2"),
         ("'line'", "'stop'"),
         ("'weather'", "'not_given'"),
+        ("'city'", "'town'"),
+        ("'route'", "'route-other'"),
+        ("'2026-11-13'", "'2026-11-14'"),
     ):
         conn.exec_driver_sql(INSERT.replace(old, new))
     assert conn.exec_driver_sql(
-        f"SELECT revision, scope, cause, effect FROM {TABLE} ORDER BY 1, 2, 3, 4"
+        f"SELECT provider_id, revision, scope, entity_id, service_date::text, cause, effect "
+        f"FROM {TABLE} ORDER BY 1, 2, 3, 4, 5, 6, 7"
     ).all() == [
-        (1, "line", "construction", "delay"),
-        (1, "line", "not_given", "delay"),
-        (1, "line", "weather", "delay"),
-        (1, "line", "weather", "detour"),
-        (1, "stop", "weather", "delay"),
-        (2, "line", "weather", "delay"),
+        ("city", 1, "line", "route", "2026-11-13", "construction", "delay"),
+        ("city", 1, "line", "route", "2026-11-13", "not_given", "delay"),
+        ("city", 1, "line", "route", "2026-11-13", "weather", "delay"),
+        ("city", 1, "line", "route", "2026-11-13", "weather", "detour"),
+        ("city", 1, "line", "route", "2026-11-14", "weather", "delay"),
+        ("city", 1, "line", "route-other", "2026-11-13", "weather", "delay"),
+        ("city", 1, "stop", "route", "2026-11-13", "weather", "delay"),
+        ("city", 2, "line", "route", "2026-11-13", "weather", "delay"),
+        ("town", 1, "line", "route", "2026-11-13", "weather", "delay"),
     ]
 
 
@@ -108,8 +115,8 @@ def test_values_are_checked(conn):
     ).all() == [("line", "route", 9000000000), ("network", "", 0)]
 
 
-@pytest.mark.parametrize("pipeline_creator", [False, True])
-def test_privileges_hold_whoever_creates_the_table(conn, monkeypatch, pipeline_creator):
+@pytest.mark.parametrize("creator", [None, "transit_app", "alert_cell_creator"])
+def test_privileges_hold_whoever_creates_the_table(conn, monkeypatch, creator):
     monkeypatch.setattr(migration.op, "execute", conn.exec_driver_sql)
     with conn.begin_nested() as checkpoint:
         migration.downgrade()
@@ -118,15 +125,21 @@ def test_privileges_hold_whoever_creates_the_table(conn, monkeypatch, pipeline_c
                 text("SELECT 1 FROM pg_roles WHERE rolname=:r"), {"r": role}
             ).scalar():
                 conn.exec_driver_sql(f'CREATE ROLE "{role}"')
-        if pipeline_creator:
+        if creator == "alert_cell_creator":
+            conn.exec_driver_sql("CREATE ROLE alert_cell_creator NOSUPERUSER NOLOGIN")
+        if creator:
             conn.exec_driver_sql(
-                "GRANT USAGE, CREATE ON SCHEMA gold TO transit_app WITH GRANT OPTION"
+                f'GRANT USAGE, CREATE ON SCHEMA gold TO "{creator}" WITH GRANT OPTION'
             )
-            conn.exec_driver_sql("SET LOCAL ROLE transit_app")
+            conn.exec_driver_sql(f'SET LOCAL ROLE "{creator}"')
         migration.upgrade()
         _assert_privileges(conn)
-        if not pipeline_creator:
-            conn.exec_driver_sql("SET LOCAL ROLE transit_app")
+        if creator == "alert_cell_creator":
+            with pytest.raises(ProgrammingError) as error, conn.begin_nested():
+                conn.exec_driver_sql(f"TRUNCATE {TABLE}")
+            assert error.value.orig.sqlstate == "42501"
+        conn.exec_driver_sql("RESET ROLE")
+        conn.exec_driver_sql("SET LOCAL ROLE transit_app")
         assert conn.exec_driver_sql("SELECT current_user").scalar_one() == "transit_app"
         conn.exec_driver_sql(INSERT)
         assert conn.exec_driver_sql(f"UPDATE {TABLE} SET episodes_started=2").rowcount == 1
@@ -138,14 +151,21 @@ def test_privileges_hold_whoever_creates_the_table(conn, monkeypatch, pipeline_c
 
 
 def _assert_privileges(conn):
-    assert (
+    assert sorted(
         conn.exec_driver_sql(f"""
-        SELECT count(*) FROM pg_class c,
+        SELECT COALESCE(r.rolname, 'PUBLIC'), a.privilege_type FROM pg_class c
+        CROSS JOIN
         LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) a
-        WHERE c.oid='{TABLE}'::regclass AND a.grantee=0
-    """).scalar_one()
-        == 0
-    )
+        LEFT JOIN pg_roles r ON r.oid=a.grantee
+        WHERE c.oid='{TABLE}'::regclass
+    """).all()
+    ) == [
+        ("transit-db", "SELECT"),
+        ("transit_app", "DELETE"),
+        ("transit_app", "INSERT"),
+        ("transit_app", "SELECT"),
+        ("transit_app", "UPDATE"),
+    ]
     for role in ("transit_app", "transit-db"):
         assert conn.execute(
             text("SELECT has_schema_privilege(:r, 'gold', 'USAGE')"), {"r": role}

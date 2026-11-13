@@ -28,6 +28,7 @@ CREATE TABLE gold.alert_cell_day ( -- No row when there is nothing to count (abs
 );
 CREATE INDEX alert_cell_day_service_date_idx ON gold.alert_cell_day (provider_id, revision, service_date);
 REVOKE ALL ON gold.alert_cell_day FROM PUBLIC;
+REVOKE ALL ON gold.alert_cell_day FROM CURRENT_USER;
 DO $$ BEGIN
     -- Revoke an owner's ordinary privileges too: the builder cannot truncate.
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'transit_app') THEN
