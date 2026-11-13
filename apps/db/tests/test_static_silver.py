@@ -430,22 +430,6 @@ def test_validate_required_static_members_requires_core_and_service_files() -> N
         )
 
 
-def test_load_static_zip_to_silver_can_require_beta_schema_contract(tmp_path: Path) -> None:
-    zip_path = tmp_path / "current-gtfs.zip"
-    _write_gtfs_zip(zip_path)
-    archive = _build_archive(zip_path)
-    connection = RecordingConnection()
-    bronze_storage = LocalBronzeStorageForTests(zip_path.read_bytes())
-
-    with pytest.raises(ValueError, match="Missing beta GTFS contract members"):
-        load_static_zip_to_silver(
-            connection,
-            archive=archive,
-            bronze_storage=bronze_storage,
-            require_beta_static_contract=True,
-        )
-
-
 def test_iter_gtfs_rows_parses_csv_rows_from_zip(tmp_path: Path) -> None:
     zip_path = tmp_path / "gtfs.zip"
     _write_gtfs_zip(zip_path)
@@ -816,7 +800,6 @@ def test_load_static_zip_to_silver_loads_beta_first_static_members(tmp_path: Pat
         connection,
         archive=archive,
         bronze_storage=bronze_storage,
-        require_beta_static_contract=True,
     )
 
     assert result.row_counts["agency"] == 1
@@ -935,7 +918,6 @@ def test_load_static_zip_to_silver_records_all_txt_members_and_extra_rows(
         connection,
         archive=archive,
         bronze_storage=bronze_storage,
-        require_beta_static_contract=True,
     )
 
     inventory_params = next(
@@ -1028,7 +1010,6 @@ def test_static_silver_result_display_dict_exposes_inventory_counts(
         connection,
         archive=archive,
         bronze_storage=bronze_storage,
-        require_beta_static_contract=True,
     )
 
     payload = result.display_dict()
@@ -1052,7 +1033,6 @@ def test_load_static_zip_to_silver_preserves_sparse_trip_notes(tmp_path: Path) -
         connection,
         archive=archive,
         bronze_storage=bronze_storage,
-        require_beta_static_contract=True,
     )
 
     trip_rows = _copy_rows_for(connection, "trips")
@@ -1206,6 +1186,88 @@ def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_m
     assert "directions" not in result.row_counts
     assert "route_patterns" not in result.row_counts
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
+
+
+def _load_optional_schedule(zip_path: Path, source_url: str, monkeypatch):
+    archive = _build_archive(zip_path)
+    lookup_row = {
+        "provider_id": archive.provider_id,
+        "storage_backend": "s3",
+        "feed_endpoint_id": archive.feed_endpoint_id,
+        "source_ingestion_run_id": archive.source_ingestion_run_id,
+        "source_ingestion_object_id": archive.source_ingestion_object_id,
+        "storage_path": archive.storage_path,
+        "source_url": source_url,
+        "checksum_sha256": archive.checksum_sha256,
+        "byte_size": archive.byte_size,
+        "source_completed_at_utc": archive.source_completed_at_utc,
+    }
+    settings = Settings(_env_file=None)
+    registry = ProviderRegistry.from_project_root(
+        project_root=Path(__file__).resolve().parents[1], settings=settings
+    )
+    connection = RecordingConnection()
+    storage = FakeBronzeStorage(zip_path.read_bytes())
+    monkeypatch.setattr(
+        static_silver_module,
+        "get_bronze_storage",
+        lambda settings, project_root, storage_backend: storage,
+    )
+    result = load_latest_static_to_silver(
+        "stm",
+        settings=settings,
+        registry=registry,
+        engine=FakeEngine(LookupConnection(lookup_row), connection),
+    )
+    return result, connection
+
+
+@pytest.mark.parametrize("source_url", ["https://example.com/beta.zip", "https://example.com/feed.zip"])
+@pytest.mark.parametrize("include_optional", [True, False])
+def test_optional_members_load_by_presence_not_by_url(
+    tmp_path: Path, monkeypatch, source_url: str, include_optional: bool
+) -> None:
+    zip_path = tmp_path / "schedule.zip"
+    _write_beta_gtfs_zip(zip_path)
+    if not include_optional:
+        with ZipFile(zip_path) as archive:
+            members = {
+                name: archive.read(name).decode("utf-8")
+                for name in archive.namelist()
+                if name not in {"directions.txt", "route_patterns.txt"}
+            }
+        _write_members_zip(zip_path, members)
+
+    result, _ = _load_optional_schedule(zip_path, source_url, monkeypatch)
+
+    for member in ("directions", "route_patterns"):
+        if include_optional:
+            assert result.row_counts[member] == 1
+        else:
+            assert member not in result.row_counts
+
+
+def test_beta_url_without_the_optional_columns_loads(tmp_path: Path, monkeypatch) -> None:
+    zip_path = tmp_path / "schedule.zip"
+    _write_beta_gtfs_zip(zip_path)
+    with ZipFile(zip_path) as archive:
+        members = {name: archive.read(name).decode("utf-8") for name in archive.namelist()}
+    members["routes.txt"] = members["routes.txt"].replace(
+        ",route_desc_detail", ""
+    ).replace(
+        ",Lignes de jour seulement", ""
+    )
+    _write_members_zip(zip_path, members)
+
+    result, connection = _load_optional_schedule(
+        zip_path, "https://example.com/beta.zip", monkeypatch
+    )
+
+    assert result.row_counts["routes"] == 1
+    route_rows = next(
+        params for sql, params in connection.calls if "INSERT INTO silver.routes" in sql
+    )
+    assert route_rows[0]["route_desc_detail"] is None
 
 
 def test_load_latest_static_to_silver_does_not_prune_inside_the_load_transaction() -> None:

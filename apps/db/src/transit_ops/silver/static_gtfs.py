@@ -41,28 +41,6 @@ OPTIONAL_SERVICE_MEMBERS = {
     "calendar.txt",
     "calendar_dates.txt",
 }
-BETA_STATIC_CONTRACT_MEMBERS = {
-    "directions.txt",
-    "route_patterns.txt",
-}
-BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER = {
-    "directions.txt": {
-        "route_direction_id",
-        "route_id",
-        "direction_id",
-        "direction",
-        "direction_legacy",
-    },
-    "route_patterns.txt": {
-        "route_pattern_id",
-        "route_id",
-        "direction_id",
-        "route_pattern_typicality",
-    },
-    "routes.txt": {"route_desc", "route_desc_detail"},
-    "shapes.txt": {"route_pattern_id"},
-    "trips.txt": {"route_pattern_id"},
-}
 REQUIRED_COLUMNS_BY_MEMBER: dict[str, set[str]] = {
     # Single-agency feeds may omit agency_id; synthesize the Silver primary key.
     "agency.txt": {
@@ -734,32 +712,6 @@ def _hash_zip_member(zip_file: ZipFile, member_name: str) -> str:
         for chunk in iter(lambda: raw_handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def validate_beta_static_contract(member_map: Mapping[str, str], zip_file: ZipFile) -> None:
-    missing_members = sorted(BETA_STATIC_CONTRACT_MEMBERS - set(member_map))
-    if missing_members:
-        raise ValueError(
-            "Missing beta GTFS contract members: " + ", ".join(missing_members)
-        )
-
-    missing_columns: dict[str, list[str]] = {}
-    for member_key, required_columns in BETA_STATIC_CONTRACT_COLUMNS_BY_MEMBER.items():
-        member_name = member_map.get(member_key)
-        if member_name is None:
-            missing_columns[member_key] = sorted(required_columns)
-            continue
-        header = _read_member_header(zip_file, member_name)
-        missing = sorted(required_columns - header)
-        if missing:
-            missing_columns[member_key] = missing
-
-    if missing_columns:
-        details = "; ".join(
-            f"{member_key}: {', '.join(columns)}"
-            for member_key, columns in sorted(missing_columns.items())
-        )
-        raise ValueError("Missing beta GTFS contract columns: " + details)
 
 
 def _member_should_load(
@@ -1537,7 +1489,6 @@ def load_static_zip_to_silver(
     *,
     archive: BronzeStaticArchive,
     bronze_storage,
-    require_beta_static_contract: bool = False,
     strict_gtfs: bool = True,
 ) -> StaticSilverLoadResult:
     _pin_static_archive_source(connection, archive)
@@ -1559,8 +1510,6 @@ def load_static_zip_to_silver(
         validate_required_static_members(
             member_map, strict_gtfs=strict_gtfs, conformance=conformance
         )
-        if require_beta_static_contract:
-            validate_beta_static_contract(member_map, zip_file)
         member_metadata: dict[str, _MemberMetadata] = {}
         load_member = partial(
             _load_member_rows,
@@ -1712,11 +1661,6 @@ def load_static_zip_to_silver(
     )
 
 
-def _archive_requires_beta_static_contract(archive: BronzeStaticArchive) -> bool:
-    source_tokens = (archive.source_url or "", archive.storage_path or "")
-    return any("beta" in token.lower() for token in source_tokens)
-
-
 _POST_LOAD_ANALYZE_TABLES = (
     "silver.agency",
     "silver.feed_info",
@@ -1778,7 +1722,6 @@ def load_latest_static_to_silver(
             connection,
             archive=archive,
             bronze_storage=bronze_storage,
-            require_beta_static_contract=_archive_requires_beta_static_contract(archive),
             strict_gtfs=effective_strict,
         )
         for table in _POST_LOAD_ANALYZE_TABLES:
