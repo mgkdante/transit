@@ -1,0 +1,11 @@
+{
+ "schema_version": 1,
+ "methodology_version": "alerts-2",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "collection_generation_id": "8c334aac506441543cb33cf877d77b7cd6422392c8fbef9e34dea073fbf1131f",
+ "first_available_date": null,
+ "last_available_date": null,
+ "total_alerts": 0,
+ "months": []
+}

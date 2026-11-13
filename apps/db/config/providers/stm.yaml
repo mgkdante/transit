@@ -14,6 +14,7 @@ provider:
   attribution_text: Contains STM data made available under CC BY 4.0.
   website_url: https://www.stm.info/
   is_active: true
+  reading_population: vehicle_evidence
 
 public:
   enabled: true

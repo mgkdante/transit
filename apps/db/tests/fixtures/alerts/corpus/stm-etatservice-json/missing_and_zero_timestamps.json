@@ -1,0 +1,13 @@
+{
+  "messages": [
+    {
+      "id": "epoch-fixture",
+      "header": "Synthetic epoch notice",
+      "publishedAt": 0,
+      "activePeriod": {
+        "start": "0",
+        "end": ""
+      }
+    }
+  ]
+}

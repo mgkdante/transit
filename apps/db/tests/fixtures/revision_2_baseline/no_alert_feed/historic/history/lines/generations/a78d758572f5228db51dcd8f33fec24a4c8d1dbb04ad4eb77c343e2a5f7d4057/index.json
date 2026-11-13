@@ -1,0 +1,37 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "family": "lines",
+ "selection_mode": "range",
+ "collection_generation_id": "5cfd3c0924f28488ae6698c6334ce1e84fc82e06ec3ac4df256960cc4762b434",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "entities": [
+  {
+   "entity_id": "B10",
+   "encoded_id": "423130",
+   "index_path": "historic/history/lines/423130/generations/b8696a8d7fecfb5719b963b967afe52e82e1b27900c9547f0f82216ed5124c6c/index.json",
+   "collection_generation_id": "af194ce15f612f265e66088a6597247483dff69029111c42b79b871c278e2ed9",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19"
+  },
+  {
+   "entity_id": "B20",
+   "encoded_id": "423230",
+   "index_path": "historic/history/lines/423230/generations/1a38fcbafacb7e019d199bb0700c10f7c5764a871ed6561cd3ea7ebfe87f44b2/index.json",
+   "collection_generation_id": "6d522f2b2fd1b69a14df3218b6e09b8d894160081a9cd0e8ab8e75fdba245b6c",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19"
+  },
+  {
+   "entity_id": "M1",
+   "encoded_id": "4d31",
+   "index_path": "historic/history/lines/4d31/generations/4c3615fbab4dd1f0e559f9d7e2c5ea2b0459bdb6b6980028b030e0971661d007/index.json",
+   "collection_generation_id": "f4025bea619d3dad38feedee38ae780248c17f70ee6f188007944633d4e181a2",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19"
+  }
+ ]
+}

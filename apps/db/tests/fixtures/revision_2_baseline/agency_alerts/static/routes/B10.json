@@ -1,0 +1,96 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_alerts@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "id": "B10",
+ "long": "Ligne 10",
+ "type": 3,
+ "directions": [
+  {
+   "dir": 0,
+   "headsign": "Vers S4",
+   "shape": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.592,
+      45.512
+     ],
+     [
+      -73.583,
+      45.523
+     ],
+     [
+      -73.574,
+      45.534
+     ]
+    ]
+   },
+   "stops": [
+    {
+     "id": "S2",
+     "seq": 2,
+     "name": "Arret S2"
+    },
+    {
+     "id": "S3",
+     "seq": 3,
+     "name": "Arret S3"
+    },
+    {
+     "id": "S4",
+     "seq": 4,
+     "name": "Arret S4"
+    }
+   ]
+  },
+  {
+   "dir": 1,
+   "headsign": "Vers S2",
+   "shape": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.574,
+      45.534
+     ],
+     [
+      -73.583,
+      45.523
+     ],
+     [
+      -73.592,
+      45.512
+     ]
+    ]
+   },
+   "stops": [
+    {
+     "id": "S4",
+     "seq": 1,
+     "name": "Arret S4"
+    },
+    {
+     "id": "S3",
+     "seq": 2,
+     "name": "Arret S3"
+    },
+    {
+     "id": "S2",
+     "seq": 3,
+     "name": "Arret S2"
+    }
+   ]
+  }
+ ],
+ "service_periods": [
+  {
+   "shift": "midday",
+   "window": "09:00–15:00",
+   "headway_min": null
+  }
+ ],
+ "first_departure": "12:00",
+ "last_departure": "12:00"
+}

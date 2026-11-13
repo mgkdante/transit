@@ -1,0 +1,92 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": "2026-05-25T05:00:00+00:00",
+      "active_period_start_utc": "2026-05-25T04:00:00+00:00",
+      "alert_header_text": "Fermeture fictive",
+      "alert_header_text_en": null,
+      "alert_id": "periods-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "1961c4087fb8300bca6bee6825bdcecd",
+      "description_text": null,
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriods": [
+          {
+            "end": "2026-05-25T05:00:00Z",
+            "start": "2026-05-25T04:00:00Z"
+          },
+          {
+            "end": "2026-06-01T05:00:00Z",
+            "start": "2026-06-01T04:00:00Z"
+          },
+          {
+            "start": "2026-06-08T04:00:00Z"
+          }
+        ],
+        "header_texts": [
+          {
+            "language": "fr",
+            "text": "Fermeture fictive"
+          }
+        ],
+        "id": "periods-fixture",
+        "url": [
+          {
+            "language": "fr",
+            "text": "https://example.invalid/fr/periods"
+          },
+          {
+            "language": "en",
+            "text": "https://example.invalid/en/periods"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": "https://example.invalid/fr/periods",
+      "url_en": "https://example.invalid/en/periods"
+    }
+  ],
+  "entity_rows": [],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:periods-fixture",
+      "has_explicit_en": false,
+      "has_explicit_fr": true,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": false
+    }
+  ],
+  "period_rows": [
+    {
+      "alert_index": 0,
+      "end_utc": "2026-05-25T05:00:00+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "2026-05-25T04:00:00+00:00"
+    },
+    {
+      "alert_index": 0,
+      "end_utc": "2026-06-01T05:00:00+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 1,
+      "start_utc": "2026-06-01T04:00:00+00:00"
+    },
+    {
+      "alert_index": 0,
+      "end_utc": null,
+      "i3_alert_snapshot_id": 1,
+      "period_index": 2,
+      "start_utc": "2026-06-08T04:00:00+00:00"
+    }
+  ]
+}

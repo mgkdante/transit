@@ -1,0 +1,102 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": "1970-01-01T00:00:00+00:00",
+      "alert_header_text": "Synthetic anonymous notice",
+      "alert_header_text_en": null,
+      "alert_id": null,
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "5dd3cc9219cc4588e218fa46a6a82298",
+      "description_text": null,
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriod": [
+          {
+            "start": 0
+          }
+        ],
+        "header": [
+          {
+            "text": "Synthetic anonymous notice"
+          }
+        ],
+        "id": null,
+        "informedEntities": [
+          {
+            "routeId": "anonymous-route"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "converted_payload": {
+    "alerts": [
+      {
+        "activePeriod": [
+          {
+            "start": 0
+          }
+        ],
+        "header": [
+          {
+            "text": "Synthetic anonymous notice"
+          }
+        ],
+        "id": null,
+        "informedEntities": [
+          {
+            "routeId": "anonymous-route"
+          }
+        ]
+      }
+    ],
+    "gtfsRealtimeVersion": "2.0",
+    "timestamp": null
+  },
+  "entity_rows": [
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "routeId": "anonymous-route"
+      },
+      "route_id": "anonymous-route",
+      "stop_id": null,
+      "trip_id": null
+    }
+  ],
+  "language_observations": [
+    {
+      "alert_logical_id": "content:35b89371d67e760d443f70e1476913f3f01ad053e8fa7d156a6b509031b26768",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    }
+  ],
+  "period_rows": [
+    {
+      "alert_index": 0,
+      "end_utc": null,
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "1970-01-01T00:00:00+00:00"
+    }
+  ]
+}

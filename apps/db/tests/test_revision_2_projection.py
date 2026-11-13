@@ -1,7 +1,35 @@
+import hashlib
+import json
+import os
+import re
+import shutil
+import time
 from copy import deepcopy
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
-from revision_2_allowlist import FILE_RULES, compare_with_baseline, revision_2_projection
+import revision_2_seed as seed
+from revision_2_allowlist import (
+    FILE_RULES,
+    clock_rewrite,
+    compare_with_baseline,
+    revision_2_projection,
+)
+from snapshot_storage_fixtures import MemorySnapshotStore
+from sqlalchemy import Engine, text
+
+from transit_ops import settings as settings_module
+from transit_ops.settings import Settings
+from transit_ops.snapshots import historic_tier, publish
+from transit_ops.snapshots.builders.historic import (
+    line_history,
+    network_history,
+    network_trend,
+    provenance,
+    stop_history,
+)
 
 
 def test_a_listed_new_file_family_is_accepted_and_an_unlisted_one_fails():
@@ -120,3 +148,362 @@ def test_every_file_rule_names_a_published_family():
             if isinstance(field.default, str) and field.default.endswith(".json")
         )
     assert all(rule.pattern in known for rule in FILE_RULES)
+
+
+def test_clock_rewrite_keeps_absence_and_touches_only_listed_paths():
+    t0 = datetime(2026, 11, 13, 12, tzinfo=UTC)
+    payload = {"generated_utc": "2026-11-13T12:00:00.5Z", "feed_freshness_s": None}
+    payload["note"] = "2026-11-13T12:00:00Z"
+    assert clock_rewrite("live/network.json", payload, t0) == {
+        "generated_utc": "T0+0.5s",
+        "feed_freshness_s": None,
+        "note": "2026-11-13T12:00:00Z",
+    }
+    for wrong in ("5", 3600, -1, True):
+        with pytest.raises(AssertionError, match="feed_freshness_s"):
+            clock_rewrite("live/network.json", {"feed_freshness_s": wrong}, t0)
+
+
+# Real database: two seeded providers published at this commit (revision_2_seed).
+BASELINE = Path(__file__).parent / "fixtures" / "revision_2_baseline"
+WRITE_BASELINE = "TRANSIT_WRITE_REVISION_2_BASELINE"
+LANES = ("static", "historic", "live")
+
+
+@dataclass
+class Published:
+    engine: Engine
+    settings: Settings
+    t0: datetime
+    results: dict[str, dict[str, publish.PublishResult]]
+    files: dict[str, dict[str, bytes]]
+    lane_of: dict[str, str]
+    history_dates: set[date] = field(default_factory=set)  # database's local date around it
+
+
+def _local_date(engine) -> date:
+    with engine.connect() as conn:
+        query = text("SELECT (now() AT TIME ZONE :tz)::date")
+        return conn.execute(query, {"tz": str(seed.TZ)}).scalar_one()
+
+
+def _publish(engine, settings, provider_id: str, tier: str):
+    if tier == "live":  # Each live publication starts from the same state.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM core.snapshot_publish_state WHERE provider_id=:p AND tier='live'"
+                ),
+                {"p": provider_id},
+            )
+    store = MemorySnapshotStore()
+    result = publish.publish_snapshot(
+        provider_id, tier=tier, settings=settings, engine=engine, storage=store
+    )
+    # _meta holds the hash gate's own state, which is not served.
+    return result, {k: v for k, v in store.objects.items() if not k.startswith("_meta/")}
+
+
+def _canonical(key: str, body: bytes, t0: datetime | None) -> bytes:
+    value = clock_rewrite(key, revision_2_projection(key, json.loads(body)), t0)
+    return (json.dumps(value, ensure_ascii=False, indent=1) + "\n").encode()
+
+
+def _pin(monkeypatch, clock: datetime) -> None:
+    for module in (publish, historic_tier):
+        monkeypatch.setattr(module, "utc_now", lambda: clock)
+
+
+@pytest.fixture(scope="module")
+def published(real_db_engine, tmp_path_factory):
+    engine, root = real_db_engine, tmp_path_factory.mktemp("bronze")
+    settings = seed.settings_for(root)
+    seed.delete_rows(engine)
+    run = Published(engine, settings, seed.HISTORY_CLOCK, {}, {}, {})
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        # These builders read the process settings, not the ones passed to publish.
+        for module in (line_history, network_history, network_trend, provenance, stop_history):
+            monkeypatch.setattr(module, "get_settings", lambda: settings)
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+        try:
+            seed.seed_history(engine, settings, root)
+            _pin(monkeypatch, seed.HISTORY_CLOCK)
+            run.history_dates.add(_local_date(engine))
+            for tier in LANES:
+                if tier == "live":
+                    with engine.connect() as conn:
+                        run.t0 = conn.execute(text("SELECT date_trunc('second', now())")).scalar()
+                    seed.seed_live(engine, settings, root, run.t0)
+                    _pin(monkeypatch, run.t0)
+                for label, provider_id in seed.PROVIDERS.items():
+                    result, files = _publish(engine, settings, provider_id, tier)
+                    run.results.setdefault(label, {})[tier] = result
+                    assert not files.keys() & run.files.setdefault(label, {}).keys()
+                    run.files[label] |= files
+                    run.lane_of |= dict.fromkeys(files, tier)
+                if tier == "historic":
+                    run.history_dates.add(_local_date(engine))
+            yield run
+        finally:
+            seed.delete_rows(engine)
+            assert seed.remaining_rows(engine) == {}
+
+
+def _projected(run: Published, label: str) -> dict[str, bytes]:
+    return {
+        key: _canonical(key, body, run.t0 if run.lane_of[key] == "live" else None)
+        for key, body in run.files[label].items()
+    }
+
+
+def _first_difference(old, new, path="$"):
+    if isinstance(old, dict) and isinstance(new, dict):
+        if old.keys() == new.keys() and list(old) != list(new):
+            return f"{path} (key order)"
+        for key in dict.fromkeys([*old, *new]):
+            if key not in old or key not in new:
+                return f"{path}.{key}"
+            if found := _first_difference(old[key], new[key], f"{path}.{key}"):
+                return found
+        return None
+    if isinstance(old, list) and isinstance(new, list):
+        for index, (a, b) in enumerate(zip(old, new, strict=False)):
+            if found := _first_difference(a, b, f"{path}[{index}]"):
+                return found
+        return None if len(old) == len(new) else f"{path}[{min(len(old), len(new))}]"
+    return None if old == new else path
+
+
+def _write_baseline(label: str, files: dict[str, bytes]) -> None:
+    shutil.rmtree(BASELINE / label, ignore_errors=True)
+    for key, body in files.items():
+        target = BASELINE / label / key
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
+    digests = {key: hashlib.sha256(files[key]).hexdigest() for key in sorted(files)}
+    # Beside the folder: a MANIFEST.json inside it would collide with the published
+    # manifest.json on case-insensitive file systems.
+    (BASELINE / f"{label}.MANIFEST.json").write_bytes(
+        json.dumps(digests, indent=1).encode() + b"\n"
+    )
+
+
+def _read_baseline(label: str) -> dict[str, bytes]:
+    digests = json.loads((BASELINE / f"{label}.MANIFEST.json").read_bytes())
+    files = {key: (BASELINE / label / key).read_bytes() for key in digests}
+    assert {k: hashlib.sha256(v).hexdigest() for k, v in files.items()} == digests
+    return files
+
+
+def test_publish_succeeds_at_this_commit(published):
+    for label, lanes in published.results.items():
+        assert set(lanes) == set(LANES)
+        for tier, result in lanes.items():
+            report = result.gate_report
+            assert report is not None and report["errors"] == 0, (label, tier, report)
+        assert published.files[label]
+        assert not [key for key in published.files[label] if "r3" in key.split("/")]
+
+
+def test_revision_2_projection_is_unchanged(published):
+    for label in seed.PROVIDERS:  # What the masked alert window must hold.
+        window = json.loads(published.files[label]["historic/alert_history.json"])
+        end, start = (date.fromisoformat(window[k]) for k in ("window_end", "window_start"))
+        assert end in published.history_dates
+        assert (end - start).days == published.settings.SILVER_I3_CLOSED_RETENTION_DAYS
+    if os.environ.get(WRITE_BASELINE) == "1":
+        for label in seed.PROVIDERS:
+            _write_baseline(label, _projected(published, label))
+        pytest.fail(f"baseline written; run again without {WRITE_BASELINE}")
+    problems = []
+    for label in seed.PROVIDERS:
+        baseline, current = _read_baseline(label), _projected(published, label)
+        for message in compare_with_baseline(baseline, current):
+            key = message.split(": ", 1)[0]
+            if key in baseline and key in current:
+                old, new = json.loads(baseline[key]), json.loads(current[key])
+                message += f" at {_first_difference(old, new)}"
+            problems.append(f"{label}/{message}")
+    assert problems == []
+
+
+def test_live_bytes_are_stable_across_two_runs(published):
+    time.sleep(3)
+    for label, provider_id in seed.PROVIDERS.items():
+        _result, files = _publish(published.engine, published.settings, provider_id, "live")
+        first = {
+            k: v for k, v in _projected(published, label).items() if published.lane_of[k] == "live"
+        }
+        second = {key: _canonical(key, body, published.t0) for key, body in files.items()}
+        assert first.keys() == second.keys()
+        assert [key for key in first if first[key] != second[key]] == []
+
+
+# Published outputs this baseline holds empty by construction: family -> path -> cause.
+# A later packet that edits the builder behind an entry is not guarded by this baseline there.
+_DB_DATE = "looks back {} days from the database's date; the seed is in 2025"
+_BUILD_WINDOW = "rebuilt only GOLD_REPORTING_OPEN_WINDOW_DAYS back from the build's clock"
+_TREND = {
+    f"{grain}[*].{measure}": _DB_DATE.format(90 if grain == "series" else 371)
+    for grain in ("series", "weekly", "monthly")
+    for measure in ("otp_pct", "avg_delay_min", "observation_count", "wilson_lo", "wilson_hi")
+}
+_NETWORK_LEVEL = "a network-level collection names no entity"
+_NO_EN, _NO_URL = "the seeded alerts carry no English variant", "the seeded alerts carry no url"
+_ALERT_TEXT = {f"alerts[*].{k}_en": _NO_EN for k in ("header_text", "description", "url")}
+_ALERT_TEXT["alerts[*].url"] = _NO_URL
+_GAP = {
+    path: "the builder sets no gap reason (history_common.py:769)"
+    for path in ("gaps[*].reason", "metrics[*].gaps[*].reason")
+}
+_NAMES = "names are valid from the seed's Gold build, after the 2025 days (marts.py:400)"
+_FLOOR = "no entity reaches MIN_N_RATE observations (ranking_kernel.py:28)"
+_SPAN = "built a capture day late; no seeded capture day has a successor"
+_HOT_TRAY = {
+    f"by_grain[*].tray[*].{k}": "the unranked tray sets none (ranking_kernel.py:122)"
+    for k in ("rank", "issue_count", "otp_delta_pts", "severity", "wilson_lo", "wilson_hi")
+} | {"by_grain[*].entries": _FLOOR}
+_OFFENDER_TRAY = {
+    f"by_grain[*].tray[*].{k}": "the unranked tray sets none (ranking_kernel.py:323)"
+    for k in ("rank", "wilson_lo", "wilson_hi")
+} | {"by_grain[*].entries": _FLOOR}
+_WINDOWED = "windowed periods are built without date and histogram (_spine.py:284)"
+UNGUARDED: dict[str, dict[str, str]] = {
+    "historic/network_trend.json": _TREND
+    | {
+        f"{g}[*].{m}": _DB_DATE.format(371)
+        for g in ("weekly", "monthly")
+        for m in ("p90_min", "vehicles")
+    },
+    "historic/receipts/index.json": dict.fromkeys(("available", "dates"), _BUILD_WINDOW),
+    "historic/receipts/generations/{h}/index.json": dict.fromkeys(
+        ("available", "dates"), _BUILD_WINDOW
+    ),
+    "historic/route_reliability/{id}.json": {
+        **dict.fromkeys(
+            ("occupancy_mix", "occupancy_by_dow", "occupancy_by_grain", "occupancy_by_hour"),
+            _DB_DATE.format(30),
+        ),
+        "delay_by_crowding": _DB_DATE.format(30),
+        "headway": _BUILD_WINDOW,
+        "headway_by_grain": "needs two trips of a route direction at one stop and shift",
+        "weak_stops_by_grain": "no stop reaches the Wilson floor in its window (_spine.py:545)",
+        "service_spans": _SPAN,
+        "habits_by_grain[*].habits": "no hour cell reaches 30 observations (_spine.py:145)",
+        **{
+            f"periods[*].prior_{k}": "prior attaches only to periods_by_grain (_spine.py:326)"
+            for k in ("observation_count", "on_time", "otp_pct")
+        },
+        **{
+            f"periods_by_grain[*].{g}[*].{k}": _WINDOWED
+            for g in ("by_shift", "by_daytype")
+            for k in ("date", "delay_histogram")
+        },
+        **{
+            f"weak_stops[*].{k}": "sets only id, name and delay (route_reliability.py:363)"
+            for k in ("observation_count", "severe_pct", "wilson_lo", "wilson_hi")
+        },
+    },
+    "historic/stop_reliability/{id}.json": {
+        "daily": _DB_DATE.format(90),
+        "occupancy_mix": _DB_DATE.format(30),
+        "habits": _BUILD_WINDOW,
+    },
+    "historic/alert_history.json": _ALERT_TEXT
+    | {"alerts[*].impact_passages": "always null (small_surfaces.py:1016)"},
+    "historic/alerts/generations/{h}/{date}/{id}.json": _ALERT_TEXT
+    | {"alerts[*].impact_passages": "always null (alert_archive.py:133)"},
+    "historic/history/index.json": {f"families[*].{k}": v for k, v in _GAP.items()},
+    "historic/history/network/generations/{h}/index.json": _GAP | {"entity_id": _NETWORK_LEVEL},
+    "historic/history/lines/{id}/generations/{h}/index.json": _GAP,
+    "historic/history/lines/{id}/generations/{h}/{date}.json": {"days[*].service_span": _SPAN},
+    "historic/history/stops/{id}/generations/{h}/index.json": _GAP,
+    "historic/history/stops/{id}/generations/{h}/{date}.json": {
+        "days[*].occupancy": "the seeded vehicles report no stop_id (rollups.py:424)"
+    },
+    "historic/history/hotspots/generations/{h}/index.json": {
+        "gaps[*].reason": _GAP["gaps[*].reason"],
+        "entity_id": _NETWORK_LEVEL,
+        "metrics": "point collections declare no metrics",
+    },
+    "historic/history/hotspots/generations/{h}/{date}.json": _HOT_TRAY
+    | {"by_grain[*].tray[*].name": _NAMES, "hotspots[*].name": _NAMES},
+    "historic/history/repeat_offenders/generations/{h}/index.json": {
+        "gaps[*].reason": _GAP["gaps[*].reason"],
+        "entity_id": _NETWORK_LEVEL,
+        "metrics": "point collections declare no metrics",
+    },
+    "historic/history/repeat_offenders/generations/{h}/{date}.json": _OFFENDER_TRAY
+    | {
+        "by_grain[*].tray[*].route_name": _NAMES,
+        "offenders": "needs severe delays on 3 days of its window; seeded days are 2 weeks apart",
+    },
+    "historic/hotspots.json": _HOT_TRAY,
+    "historic/repeat_offenders.json": _OFFENDER_TRAY,
+    "live/alerts.json": _ALERT_TEXT,
+    "live/network.json": {"non_responding_by_route": "every running seeded trip has a trip update"},
+    "manifest.json": {"basemap": "the invented providers have no registry entry"},
+    "provenance.json": {
+        "gaps": "the invented providers have no registry entry",
+        "sources[*].chain": "the seeded dataset has no storage path or source url",
+    },
+    "static/routes/{id}.json": {"service_periods[*].headway_min": "one trip per direction"},
+    "static/routes_index.json": {"routes[*].color": "the seed sets no route_color"},
+    "static/stops_index.json": {"stops[*].code": "the seed sets no stop_code"},
+    "static/stops/{id}.json": {"code": "the seed sets no stop_code"},
+}
+_ENVELOPE_KEYS = {"schema_version", "methodology_version", "publish_generation_id", "generated_utc"}
+
+
+def _family(key: str) -> str:
+    key = re.sub(r"[0-9a-f]{64}", "{h}", key)
+    key = re.sub(r"\d{4}-\d{2}(-\d{2})?", "{date}", key)
+    return re.sub(r"(?<=/)[\w-]*\d[\w-]*(?=/|\.json$)", "{id}", key)
+
+
+def _real(value) -> bool:
+    if isinstance(value, dict | list):
+        return any(_real(child) for child in (value.values() if isinstance(value, dict) else value))
+    return value is not None
+
+
+def _at(value, parts):
+    if not parts:
+        yield value
+    elif parts[0] == "*" and isinstance(value, dict | list):
+        for child in value.values() if isinstance(value, dict) else value:
+            yield from _at(child, parts[1:])
+    elif isinstance(value, dict) and parts[0] in value:
+        yield from _at(value[parts[0]], parts[1:])
+
+
+def _sections(value, path=""):
+    """Top-level keys, and every key of an object inside a list, at any depth."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            here = f"{path}.{key}" if path else key
+            if not path or path.endswith("[*]"):
+                yield here
+            yield from _sections(child, here)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _sections(child, f"{path}[*]")
+
+
+def test_the_baseline_lists_every_output_it_does_not_guard():
+    families: dict[str, list] = {}
+    for label in seed.PROVIDERS:
+        for key, body in _read_baseline(label).items():
+            families.setdefault(_family(key), []).append(json.loads(body))
+    problems = [f"{name}: listed but not published" for name in UNGUARDED.keys() - families.keys()]
+    for name, payloads in sorted(families.items()):
+        listed = UNGUARDED.get(name, {})
+        sections = {path for payload in payloads for path in _sections(payload)}
+        for path in sorted(sections - _ENVELOPE_KEYS | set(listed)):
+            parts = path.replace("[*]", ".*").split(".")
+            real = any(_real(value) for payload in payloads for value in _at(payload, parts))
+            if real and path in listed:
+                problems.append(f"{name}: {path} is listed but holds a value")
+            elif not real and path not in listed:
+                problems.append(f"{name}: {path} is empty and not listed")
+    assert problems == []

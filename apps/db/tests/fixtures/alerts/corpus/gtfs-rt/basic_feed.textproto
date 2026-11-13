@@ -1,0 +1,11 @@
+header { gtfs_realtime_version: "2.0" timestamp: 1774837200 }
+entity {
+ id: "basic-fixture"
+ alert {
+  active_period { start: 1774837200 end: 1774900000 }
+  cause: CONSTRUCTION effect: DETOUR severity_level: WARNING
+  header_text { translation { language: "fr" text: "Detour de ligne fictive" } translation { language: "en" text: "Fictional route detour" } }
+  description_text { translation { language: "fr" text: "Travaux imaginaires" } }
+  informed_entity { route_id: "R33" stop_id: "S1" }
+ }
+}

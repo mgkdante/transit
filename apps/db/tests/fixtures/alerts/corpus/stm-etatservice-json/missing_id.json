@@ -1,0 +1,33 @@
+{
+  "messages": [
+    {
+      "header": "Without identity",
+      "description": "Imaginary service notice",
+      "informedEntities": [
+        {
+          "routeId": "Without identity-route",
+          "stopId": "Without identity-stop"
+        }
+      ],
+      "activePeriod": {
+        "start": "2026-05-25T04:00:00Z",
+        "end": "2026-05-25T05:00:00Z"
+      }
+    },
+    {
+      "header": "With identity",
+      "description": "Imaginary service notice",
+      "informedEntities": [
+        {
+          "routeId": "With identity-route",
+          "stopId": "With identity-stop"
+        }
+      ],
+      "activePeriod": {
+        "start": "2026-05-25T04:00:00Z",
+        "end": "2026-05-25T05:00:00Z"
+      },
+      "id": "present-fixture"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "messages": [
+    {
+      "id": "untagged-fixture",
+      "header": [
+        {
+          "text": "Invented untagged heading"
+        }
+      ],
+      "description": [
+        {
+          "text": "Invented untagged description"
+        }
+      ]
+    }
+  ]
+}

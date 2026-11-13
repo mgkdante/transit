@@ -627,3 +627,60 @@ def test_provider_rejects_invalid_live_source_lag(lag):
     payload["provider"]["live_source_lag_seconds"] = lag
     with pytest.raises(ValidationError, match="live_source_lag_seconds"):
         ProviderManifest.model_validate(payload)
+
+
+def test_reading_population_is_read_from_each_declaration():
+    from transit_ops.providers.declared import reading_population
+
+    assert reading_population("stm") == "vehicle_evidence"
+    assert reading_population("octranspo") == "vehicle_evidence"
+    assert reading_population("sto") is None
+    result = runner.invoke(app, ["show-provider", "stm"])
+    assert result.exit_code == 0, result.output
+    assert '"reading_population": "vehicle_evidence"' in result.stdout
+
+
+def test_unknown_reading_population_value_is_rejected():
+    payload = _provider_manifest_payload()
+    payload["provider"]["reading_population"] = "all_trips"
+    with pytest.raises(ValidationError, match="reading_population"):
+        ProviderManifest.model_validate(payload)
+    del payload["provider"]["reading_population"]
+    assert ProviderManifest.model_validate(payload).provider.reading_population is None
+
+
+@pytest.mark.parametrize("provider_id", ["stm", "octranspo"])
+def test_declared_gaps_json_equals_what_is_synced(provider_id):
+    from transit_ops.providers.declared import lines_without_live_data_json
+    from transit_ops.providers.live_policy import sync_live_policy
+
+    class RecordingConnection:
+        def execute(self, statement, params):
+            self.params = params
+
+    connection = RecordingConnection()
+    sync_live_policy(connection, ProviderRegistry.from_project_root().get_provider(provider_id))
+    assert connection.params["policy"] == lines_without_live_data_json(provider_id)
+    assert lines_without_live_data_json("stm") == (
+        '[{"gap_id": "metro_realtime", "route_ids": [], "route_types": [1]}]'
+    )
+    assert lines_without_live_data_json("sto") == "[]"
+
+
+@pytest.mark.parametrize("provider_id, expected", [("stm", 0), ("octranspo", 60)])
+def test_live_source_lag_seconds_is_read_from_each_declaration(provider_id, expected):
+    from transit_ops.providers.declared import live_source_lag_seconds
+
+    assert live_source_lag_seconds(provider_id) == expected
+
+
+def test_declared_accessors_refuse_an_unknown_provider():
+    from transit_ops.providers.declared import (
+        lines_without_live_data_json,
+        live_source_lag_seconds,
+        reading_population,
+    )
+
+    for accessor in (reading_population, live_source_lag_seconds, lines_without_live_data_json):
+        with pytest.raises(KeyError, match="no_such_provider"):
+            accessor("no_such_provider")

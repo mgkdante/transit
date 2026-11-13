@@ -1,0 +1,33 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_plain@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "labels": {
+  "status.early": "En avance",
+  "status.on_time": "À l'heure",
+  "status.late": "En retard",
+  "status.severe": "Critique",
+  "status.unknown": "Inconnu",
+  "severity.critical": "Critique",
+  "severity.high": "Élevé",
+  "severity.watch": "Surveillance",
+  "occupancy.empty": "Vide",
+  "occupancy.many_seats": "Nombreuses places",
+  "occupancy.few_seats": "Quelques places",
+  "occupancy.standing": "Debout seulement",
+  "occupancy.full": "Complet",
+  "methodology.otp_definition": "À l'heure : de une minute d'avance à moins de cinq minutes de retard. En direct, le pourcentage porte sur les positions de véhicules admissibles sur la carte dont le statut est connu. Dans l'historique des lignes et du réseau, il porte sur les observations au retard connu dans cette même bande. La part historique non sévère aux arrêts est un indicateur distinct.",
+  "methodology.delay_unit": "Les retards sont mesurés en secondes par rapport à l'horaire GTFS du fournisseur, puis affichés en minutes.",
+  "methodology.percentiles": "Les p50/p90 du réseau en direct portent sur les retards moyens par trajet actuellement rapportés, avec le même poids par trajet. Le p90 de tendance utilise la fenêtre détaillée configurée (14 derniers jours par défaut). Les percentiles quotidiens par ligne et par arrêt portent sur les observations de leur jour de capture local; les mises à jour répétées ne sont pas des voyageurs distincts.",
+  "methodology.retention": "Par défaut : données détaillées, 14 jours; agrégats quotidiens, 730 jours. La provenance indique la politique configurée.",
+  "attribution.disclaimer": "Site indépendant, non affilié à r2guard_plain et non approuvé par r2guard_plain.",
+  "metric.network_health": "Santé du réseau",
+  "metric.operations_map": "Carte opérationnelle",
+  "metric.hotspots": "Points chauds",
+  "metric.network_habits": "Habitudes du réseau",
+  "metric.history": "Historique",
+  "metric.data_trust": "Confiance des données",
+  "metric.citizen_accountability": "Responsabilité citoyenne"
+ }
+}

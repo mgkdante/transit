@@ -1,0 +1,79 @@
+{
+ "schema_version": 1,
+ "methodology_version": "alerts-2",
+ "publish_generation_id": "r2guard_alerts@T0+0s",
+ "generated_utc": "T0+0s",
+ "feed_captured_utc": "T0-10s",
+ "alerts": [
+  {
+   "id": "B90",
+   "message": {
+    "snapshot_id": "8610790",
+    "alert_index": 1,
+    "captured_utc": "T0-10s",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_key": "Avis",
+   "header_text": "Avis",
+   "description": null,
+   "header_text_en": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "T0-3610s",
+   "end_utc": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "T0-3610s",
+     "end_utc": null
+    }
+   ]
+  },
+  {
+   "id": "A90",
+   "message": {
+    "snapshot_id": "8610790",
+    "alert_index": 0,
+    "captured_utc": "T0-10s",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_key": "Travaux",
+   "header_text": "Travaux",
+   "description": "Detour",
+   "header_text_en": null,
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "T0-3610s",
+   "end_utc": "T0+7190s",
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "T0-3610s",
+     "end_utc": "T0+7190s"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+  "messages": [
+    {
+      "id": "periods-fixture",
+      "header_texts": [
+        {
+          "language": "fr",
+          "text": "Fermeture fictive"
+        }
+      ],
+      "activePeriods": [
+        {
+          "start": "2026-05-25T04:00:00Z",
+          "end": "2026-05-25T05:00:00Z"
+        },
+        {
+          "start": "2026-06-01T04:00:00Z",
+          "end": "2026-06-01T05:00:00Z"
+        },
+        {
+          "start": "2026-06-08T04:00:00Z"
+        }
+      ],
+      "url": [
+        {
+          "language": "fr",
+          "text": "https://example.invalid/fr/periods"
+        },
+        {
+          "language": "en",
+          "text": "https://example.invalid/en/periods"
+        }
+      ]
+    }
+  ]
+}

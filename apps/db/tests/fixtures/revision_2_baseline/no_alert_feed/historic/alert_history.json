@@ -1,0 +1,12 @@
+{
+ "schema_version": 1,
+ "methodology_version": "alerts-2",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "alerts": [],
+ "breakdown": null,
+ "window_start": "<clock>",
+ "window_end": "<clock>",
+ "total_in_window": 0,
+ "truncated": false
+}

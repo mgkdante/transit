@@ -1,0 +1,6 @@
+header { gtfs_realtime_version: "2.0" }
+entity { id: "" alert {
+ header_text { translation { text: "Synthetic anonymous notice" } }
+ informed_entity { route_id: "anonymous-route" }
+ active_period { start: 0 }
+} }
