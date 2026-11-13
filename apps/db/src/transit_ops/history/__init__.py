@@ -1,0 +1,1 @@
+"""Capture history byte formats."""
