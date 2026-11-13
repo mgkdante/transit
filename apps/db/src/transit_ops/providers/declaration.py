@@ -1,5 +1,8 @@
-from collections.abc import Mapping
+import os
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Annotated, Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -283,3 +286,150 @@ def load_declaration(path: Path) -> Declaration:
     if declaration.id != path.stem:
         raise DeclarationError(f"{path.name}: id must equal the file name without .yaml")
     return declaration
+
+
+_ENDPOINT_KEYS = {
+    ("schedule", "gtfs"): "static_schedule",
+    ("geometry", "stm-gis-zip"): "gis_static",
+    ("trip_updates", "gtfs-rt"): "trip_updates",
+    ("vehicle_positions", "gtfs-rt"): "vehicle_positions",
+    ("alerts", "stm-etatservice-json"): "i3_alerts",
+    ("alerts", "gtfs-rt"): "service_alerts",
+}
+_CADENCES = {
+    "schedule": 86400,
+    "geometry": 86400,
+    "trip_updates": 30,
+    "vehicle_positions": 30,
+    "alerts": 300,
+}
+
+
+@dataclass(frozen=True)
+class Feed:
+    family: str
+    format: str
+    endpoint_key: str
+    url: str | None
+    auth: FeedAuth | None
+    every_seconds: int
+    phase_seconds: int | None
+
+
+@dataclass(frozen=True)
+class Provider:
+    id: str
+    name: str
+    labels: Mapping[str, LocaleLabels]
+    timezone: str
+    default_locale: str
+    feed_languages: tuple[str, ...]
+    stage: str
+    licence: Licence
+    attribution: Mapping[str, str]
+    feeds: tuple[Feed, ...]
+    lines_without_live_data: tuple[GapDeclaration, ...]
+    reading_population: ReadingPopulation | None
+    live_source_lag_seconds: int
+    map: MapBlock | None
+    overrides: Overrides | None
+    website: str | None
+    currency: str | None
+    disclaimer: Mapping[str, str] | None
+    alert_links: Mapping[str, str] | None
+
+    def feed(self, family: str) -> Feed | None:
+        return next((feed for feed in self.feeds if feed.family == family), None)
+
+    @property
+    def families(self) -> tuple[str, ...]:
+        return tuple(feed.family for feed in self.feeds)
+
+
+@dataclass(frozen=True)
+class Providers(Mapping[str, Provider]):
+    _providers: Mapping[str, Provider]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "_providers", MappingProxyType(dict(sorted(self._providers.items())))
+        )
+
+    def __getitem__(self, key: str) -> Provider:
+        return self._providers[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._providers)
+
+    def __len__(self) -> int:
+        return len(self._providers)
+
+    def at_stage(self, *stages: str) -> "Providers":
+        if set(stages) - {"candidate", "capturing", "public"}:
+            raise ValueError("stages must be candidate, capturing or public")
+        return Providers({key: value for key, value in self.items() if value.stage in stages})
+
+
+def _resolve_feed(feed: FeedDeclaration, env: Mapping[str, str]) -> Feed:
+    format_name = feed.format or ("gtfs" if feed.family == "schedule" else "gtfs-rt")
+    override = env.get(feed.url_env) if feed.url_env else None
+    return Feed(
+        family=feed.family,
+        format=format_name,
+        endpoint_key=_ENDPOINT_KEYS[feed.family, format_name],
+        url=override or (str(feed.url) if feed.url is not None else None),
+        auth=feed.auth,
+        every_seconds=feed.every_seconds or _CADENCES[feed.family],
+        phase_seconds=feed.phase_seconds,
+    )
+
+
+def _resolve_provider(declaration: Declaration, env: Mapping[str, str]) -> Provider:
+    attribution: dict[str, str] = {key: value for key, value in declaration.attribution.items()}
+    return Provider(
+        id=declaration.id,
+        name=declaration.name,
+        labels=MappingProxyType({key: value for key, value in declaration.labels.items()}),
+        timezone=declaration.timezone,
+        default_locale=declaration.default_locale,
+        feed_languages=tuple(declaration.feed_languages),
+        stage=declaration.stage,
+        licence=declaration.licence,
+        attribution=MappingProxyType(
+            {locale: attribution.get(locale, attribution[declaration.default_locale])
+             for locale in SITE_LOCALES}
+        ),
+        feeds=tuple(_resolve_feed(feed, env) for feed in declaration.feeds),
+        lines_without_live_data=tuple(declaration.lines_without_live_data or ()),
+        reading_population=declaration.reading_population,
+        live_source_lag_seconds=declaration.live_source_lag_seconds or 0,
+        map=declaration.map,
+        overrides=declaration.overrides,
+        website=str(declaration.website) if declaration.website is not None else None,
+        currency=declaration.currency,
+        disclaimer=(
+            MappingProxyType({key: value for key, value in declaration.disclaimer.items()})
+            if declaration.disclaimer is not None else None
+        ),
+        alert_links=(
+            MappingProxyType({key: str(url) for key, url in declaration.alert_links.items()})
+            if declaration.alert_links is not None else None
+        ),
+    )
+
+
+def load_providers(
+    config_dir: Path | None = None, *, env: Mapping[str, str] | None = None
+) -> Providers:
+    directory = (
+        config_dir if config_dir is not None
+        else Path(__file__).resolve().parents[3] / "config" / "providers"
+    )
+    if not directory.is_dir():
+        raise DeclarationError(f"{directory}: directory: must be an existing declaration directory")
+    environment = dict(os.environ) if env is None else env
+    providers = {}
+    for path in sorted(directory.glob("*.yaml")):
+        declaration = load_declaration(path)
+        providers[declaration.id] = _resolve_provider(declaration, environment)
+    return Providers(providers)
