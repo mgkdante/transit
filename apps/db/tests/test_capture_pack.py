@@ -14,7 +14,7 @@ def payloads():
     base = bytearray(rng.randbytes(50_000))
     items = []
     for i in range(20):
-        base[i * 10:i * 10 + 4] = rng.randbytes(4)
+        base[i * 10 : i * 10 + 4] = rng.randbytes(4)
         items.append(bytes(base))
     return items
 
@@ -45,8 +45,8 @@ def test_two_streams_read_back_as_one_and_the_second_alone_by_range():
     assert lzma.decompress(data) == b"".join(items)
     assert list(read_pack(io.BytesIO(data), result.streams, result.captures)) == items
     second = result.streams[1]
-    source = io.BytesIO(data[second.byte_offset:second.byte_offset + second.byte_size])
-    entries = result.captures[second.first_capture:second.first_capture + second.capture_count]
+    source = io.BytesIO(data[second.byte_offset : second.byte_offset + second.byte_size])
+    entries = result.captures[second.first_capture : second.first_capture + second.capture_count]
     assert list(read_stream(source, second, entries)) == items[2:4]
     offset = 0
     for index, stream in enumerate(result.streams):
@@ -62,7 +62,7 @@ def test_corrupt_pack_fails_on_the_first_bad_capture():
     damaged = bytearray(data)
     damaged[second.byte_offset + second.byte_size // 2] ^= 1
     reader = read_pack(io.BytesIO(damaged), result.streams, result.captures)
-    for item in items[:second.first_capture]:
+    for item in items[: second.first_capture]:
         assert next(reader) == item
     yielded = second.first_capture
     with pytest.raises(PackCorrupt) as error:

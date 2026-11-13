@@ -52,8 +52,12 @@ class PackCorrupt(ValueError):
         self.capture_index = capture_index
 
 
-def write_pack(captures: Iterable[bytes], out: BinaryWriter, *,
-               stream_max_source_bytes: int = STREAM_MAX_SOURCE_BYTES) -> PackResult | None:
+def write_pack(
+    captures: Iterable[bytes],
+    out: BinaryWriter,
+    *,
+    stream_max_source_bytes: int = STREAM_MAX_SOURCE_BYTES,
+) -> PackResult | None:
     if stream_max_source_bytes < 1:
         raise ValueError("stream limit must be positive")
     streams: list[StreamEntry] = []
@@ -71,8 +75,9 @@ def write_pack(captures: Iterable[bytes], out: BinaryWriter, *,
     def finish() -> None:
         assert compressor is not None
         emit(compressor.flush())
-        streams.append(StreamEntry(len(streams), start, size - start, source_size,
-                                   first, len(entries) - first))
+        streams.append(
+            StreamEntry(len(streams), start, size - start, source_size, first, len(entries) - first)
+        )
 
     for capture in captures:
         if compressor is not None and source_size + len(capture) > stream_max_source_bytes:
@@ -80,17 +85,26 @@ def write_pack(captures: Iterable[bytes], out: BinaryWriter, *,
             compressor = None
         if compressor is None:
             start, source_size, first = size, 0, len(entries)
-            compressor = lzma.LZMACompressor(format=lzma.FORMAT_XZ, check=lzma.CHECK_CRC64,
-                                           preset=XZ_PRESET)
-        entries.append(PackedCapture(len(streams), source_size, len(capture),
-                                     hashlib.sha256(capture).hexdigest()))
+            compressor = lzma.LZMACompressor(
+                format=lzma.FORMAT_XZ, check=lzma.CHECK_CRC64, preset=XZ_PRESET
+            )
+        entries.append(
+            PackedCapture(
+                len(streams), source_size, len(capture), hashlib.sha256(capture).hexdigest()
+            )
+        )
         emit(compressor.compress(capture))
         source_size += len(capture)
     if compressor is None:
         return None
     finish()
-    return PackResult(size, digest.hexdigest(), sum(s.source_bytes for s in streams),
-                      tuple(streams), tuple(entries))
+    return PackResult(
+        size,
+        digest.hexdigest(),
+        sum(s.source_bytes for s in streams),
+        tuple(streams),
+        tuple(entries),
+    )
 
 
 def _decoded(source: BinaryReader, stream: StreamEntry) -> Iterator[bytes]:
@@ -115,8 +129,9 @@ def _decoded(source: BinaryReader, stream: StreamEntry) -> Iterator[bytes]:
         raise PackCorrupt("stream size differs from its entry")
 
 
-def read_stream(source: BinaryReader, stream: StreamEntry,
-                captures: Sequence[PackedCapture]) -> Iterator[bytes]:
+def read_stream(
+    source: BinaryReader, stream: StreamEntry, captures: Sequence[PackedCapture]
+) -> Iterator[bytes]:
     chunks = _decoded(source, stream)
     pending = b""
     offset, position = 0, stream.first_capture
@@ -146,8 +161,9 @@ def read_stream(source: BinaryReader, stream: StreamEntry,
         raise PackCorrupt(str(exc), position) from exc
 
 
-def read_pack(source: BinaryReader, streams: Sequence[StreamEntry],
-              captures: Sequence[PackedCapture]) -> Iterator[bytes]:
+def read_pack(
+    source: BinaryReader, streams: Sequence[StreamEntry], captures: Sequence[PackedCapture]
+) -> Iterator[bytes]:
     position = offset = 0
     for index, stream in enumerate(streams):
         if (stream.index, stream.byte_offset, stream.first_capture) != (index, offset, position):
