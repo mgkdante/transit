@@ -1,3 +1,4 @@
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -754,4 +755,20 @@ describe('AccountabilityReceipt S13 re-granulated cuts', () => {
 		expect(document.querySelector('[data-slot="receipt-state-cuts"]')).toBeNull();
 		expect(document.querySelector('[data-slot="receipt-not-reported"]')).toBeNull();
 	});
+});
+
+it('shows the record stamp and no publication time', async () => {
+	const { container } = render(AccountabilityReceipt);
+	const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+	const expected = stampCopy.en.record(
+		formatDateKey(receiptData!.date, 'en'),
+		formatDateKey(receiptData!.generated_utc.slice(0, 10), 'en'),
+		'day',
+	);
+	await waitFor(() => expect(header).toHaveTextContent(expected));
+	expect(header.querySelector('time')).toHaveAttribute(
+		'datetime',
+		receiptData!.generated_utc.slice(0, 10),
+	);
+	expect(container.querySelector('[data-slot="article-keywords"]')).toBeNull();
 });

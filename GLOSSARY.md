@@ -62,6 +62,9 @@ _Avoid_: mode, resolution
 One specific span at a grain, such as the week of 27 October.
 _Avoid_: period, range
 
+**Record**:
+Published figures for completed days.
+
 **Closed day**:
 A provider-local day whose figures are final in the published record.
 _Avoid_: finished UTC day, build day

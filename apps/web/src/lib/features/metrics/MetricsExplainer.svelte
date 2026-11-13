@@ -1,16 +1,15 @@
 <script lang="ts">
+	import type { Manifest } from '#lib/v1/schemas/index.ts';
+	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
-	import { getV1Runtime } from '#lib/v1/runtime.ts';
-	const clock = getV1Runtime().clock;
-	import { publicationPresentation } from '#lib/v1/live/livePresentation.ts';
+	import { desktop } from '@yesid/ui/state';
 	import { Badge } from '@yesid/ui/badge';
 	import { useAvailableSectionJump } from '#lib/site/availableSectionJump.svelte.ts';
 	import { intl, getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import ConformanceBadge from '#lib/components/surface/ConformanceBadge.svelte';
-	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
-	import { ArticleKeywords, ArticleSectionStack } from '#lib/components/layout/index.ts';
+	import { ArticleSectionStack } from '#lib/components/layout/index.ts';
 	import { DetailFrame } from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import {
@@ -22,8 +21,6 @@
 		type TocEntry,
 	} from '@yesid/ui/brand';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
-	import { desktop } from '@yesid/ui/state';
-	import { formatUtc } from '#lib/utils/time.ts';
 	import { TypedInformationCard } from '#lib/components/shared/index.ts';
 	import {
 		METRICS,
@@ -36,7 +33,8 @@
 
 	const localizeHref = getLocalizeHref();
 
-	let { sqlHtml }: { sqlHtml?: MetricSqlHtml } = $props();
+	let { sqlHtml, manifest = null }: { sqlHtml?: MetricSqlHtml; manifest?: Manifest | null } =
+		$props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
@@ -46,20 +44,11 @@
 	const LIVE_POSITIONS_ANCHOR = 'live-positions';
 
 	const provenance = createResource(() => getProvenance());
-
 	let desktopRailVisited = $state(false);
 	$effect(() => {
 		if (desktop.current) desktopRailVisited = true;
 	});
 
-	const generatedMeta = $derived(
-		provenance.data?.generated_utc != null
-			? {
-					text: formatUtc(provenance.data.generated_utc, locale),
-					datetime: provenance.data.generated_utc,
-				}
-			: null,
-	);
 	const provenanceUnavailable = $derived(
 		provenance.settled && !provenance.data?.conformance && provenance.error != null,
 	);
@@ -88,9 +77,13 @@
 
 	const orderedMetrics = $derived(groups.flatMap((g) => g.entries));
 
+	const record = createRecordStamp(
+		() => manifest,
+		() => provenance.data?.generated_utc ?? null,
+	);
 	const articleMeta = $derived(
 		[
-			generatedMeta,
+			record.meta(locale),
 			`${orderedMetrics.length} ${t.statRail.coverage.metrics}`,
 			`${groups.length} ${t.statRail.coverage.families}`,
 		].filter((x) => x != null),
@@ -141,7 +134,6 @@
 		() => tocEntries,
 		(id) => id === CONFIDENCE_INTERVALS_ANCHOR,
 	);
-	$effect(() => clock.subscribe());
 </script>
 
 {#snippet statCards()}
@@ -186,26 +178,6 @@
 				</ul>
 			</div>
 		</CollapsibleSection>
-
-		{#if desktopRailVisited && provenance.data?.generated_utc}
-			<CollapsibleSection title={t.statRail.freshness.title} headerVariant="article-summary">
-				{#snippet icon()}
-					<SectionIcon name="eye" class="h-4 w-4 shrink-0 text-primary" />
-				{/snippet}
-				<div class="metrics-stat__body" data-slot="stat-freshness">
-					<FreshnessStamp
-						class="metrics-freshness-stamp"
-						variant="updated"
-						presentation={publicationPresentation(
-							provenance.data.generated_utc,
-							clock.serverNow,
-							locale,
-						)}
-						{locale}
-					/>
-				</div>
-			</CollapsibleSection>
-		{/if}
 	</div>
 {/snippet}
 
@@ -232,6 +204,7 @@
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
+			metaPending={provenance.loading || !provenance.settled || record.pending}
 			titleId="metrics-title"
 		>
 			{#snippet controls()}
@@ -255,7 +228,6 @@
 			<aside class="metrics-stat-aside" aria-label={t.statRail.label}>
 				{@render statCards()}
 			</aside>
-			<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 		</div>
 	{/snippet}
 
@@ -441,14 +413,6 @@
 			</CollapsibleSection>
 		</div>
 	</ArticleSectionStack>
-
-	{#snippet after()}
-		<ArticleKeywords
-			class="px-[var(--space-page-x)] pb-8 lg:hidden"
-			label={t.article.tagsAria}
-			keywords={t.article.tags}
-		/>
-	{/snippet}
 </DetailFrame>
 
 <style>
@@ -477,25 +441,6 @@
 		flex-direction: column;
 		gap: 0.5rem;
 		min-width: 0;
-	}
-	.metrics-stat__body[data-slot='stat-freshness'] :global(.freshness-stamp-label) {
-		flex-shrink: 0;
-		white-space: nowrap;
-	}
-	.metrics-stat__body[data-slot='stat-freshness']
-		:global(.freshness-stamp--updated.metrics-freshness-stamp) {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		column-gap: 0.5rem;
-		row-gap: 0.25rem;
-		align-items: center;
-		justify-items: start;
-	}
-	.metrics-stat__body[data-slot='stat-freshness']
-		:global(.metrics-freshness-stamp .freshness-stamp-label),
-	.metrics-stat__body[data-slot='stat-freshness']
-		:global(.metrics-freshness-stamp .freshness-stamp-age) {
-		grid-column: 2;
 	}
 	.metrics-stat__count {
 		display: flex;

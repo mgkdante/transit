@@ -1,3 +1,5 @@
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
 import {
 	fireEvent,
 	render as renderSvelte,
@@ -349,10 +351,6 @@ describe('AlertHistory article shell', () => {
 		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="article-header"]')).not.toBeNull();
 		expect(screen.getByRole('link', { name: '← Back to overview' })).toHaveAttribute('href', '/');
-		const keywords = container.querySelector('[data-slot="article-keywords"]');
-		expect(keywords).toHaveTextContent('Page keywords');
-		expect(keywords).toHaveTextContent('alerts · archive · duration · reach');
-		expect(screen.getByText('AS OF')).toBeInTheDocument();
 		expect(screen.getByText('2 matches')).toBeInTheDocument();
 		expect(screen.getByText('3 sections')).toBeInTheDocument();
 
@@ -592,11 +590,15 @@ describe('AlertHistory log', () => {
 
 	it('renders the archive generation timestamp as semantic article metadata', () => {
 		render(AlertHistoryScreen);
-		const generated = document.querySelector(
-			'time[datetime="2026-06-20T00:00:00Z"]',
-		) as HTMLTimeElement;
+		const generated = document.querySelector('time[datetime="2026-06-20"]') as HTMLTimeElement;
 		expect(generated).not.toBeNull();
-		expect(generated).toHaveTextContent('Jun 19, 2026, 8:00 p.m.');
+		expect(generated).toHaveTextContent(
+			stampCopy.en.record(
+				null,
+				formatDateKey(fixture.generated_utc.slice(0, 10), 'en', true),
+				'window',
+			),
+		);
 		expect(document.querySelector('[data-slot="freshness-stamp"]')).toBeNull();
 	});
 
@@ -1385,4 +1387,20 @@ describe('AlertHistory empty state', () => {
 		expect(screen.queryByRole('list', { name: /past service alerts, newest first/i })).toBeNull();
 		expect(container.querySelector('[data-slot="alert-breakdown"]')).toBeNull();
 	});
+});
+
+it('shows the record stamp and no publication time', async () => {
+	const { container } = render(AlertHistoryScreen);
+	const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+	const expected = stampCopy.en.record(
+		null,
+		formatDateKey(fixture.generated_utc.slice(0, 10), 'en', true),
+		'window',
+	);
+	await waitFor(() => expect(header).toHaveTextContent(expected));
+	expect(header.querySelector('time')).toHaveAttribute(
+		'datetime',
+		fixture.generated_utc.slice(0, 10),
+	);
+	expect(container.querySelector('[data-slot="article-keywords"]')).toBeNull();
 });

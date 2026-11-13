@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { sectionsToggleCopy } from '../src/lib/components/shared/sectionsToggle.copy';
 import { AUDIT_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, INTL_TAGS, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';
+import { stampCopy } from '../src/lib/v1/stamp.copy';
 
 const metrics = AUDIT_NAV.find((item) => item.key === 'metrics')!.href;
 const localized = (href: string, locale: Locale) =>
@@ -23,21 +24,26 @@ test.beforeEach(async ({ page }) => {
 for (const locale of PUBLISHED_LOCALES) {
 	const copy = sectionsToggleCopy[locale];
 
-	test(`${locale}: the metrics freshness stamp reads its age in the locale and moves with the clock`, async ({
+	test(`${locale}: the metrics header keeps its date-only record stamp as the clock moves`, async ({
 		page,
-	}, testInfo) => {
-		test.skip(testInfo.project.name !== 'desktop', 'the stamp sits in the desktop rail');
-		const ago = (minutes: number) =>
-			new Intl.RelativeTimeFormat(INTL_TAGS[locale], { numeric: 'auto' }).format(
-				-minutes,
-				'minute',
-			);
+	}) => {
+		const published = generated_utc.slice(0, 10);
+		// The core manifest has no time zone; retain the year instead of guessing one.
+		const date = new Intl.DateTimeFormat(INTL_TAGS[locale], {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+			timeZone: 'UTC',
+		}).format(new Date(published));
+		const expected = stampCopy[locale].record(null, date, 'window');
 		await page.clock.install({ time: generated + 3 * 60_000 });
 		await page.goto(localized(metrics, locale));
-		await expect(page.getByText(ago(3))).toBeVisible();
-		// Reduced motion (the suite's default) ticks every 30 s.
+		const stamp = page.locator('[data-slot="article-header"] time');
+		await expect(stamp).toHaveText(expected);
+		await expect(stamp).toHaveAttribute('datetime', published);
 		await page.clock.fastForward('02:00');
-		await expect(page.getByText(ago(5))).toBeVisible();
+		await expect(stamp).toHaveText(expected);
+		await expect(page.locator('[data-slot="stat-freshness"]')).toHaveCount(0);
 	});
 
 	test(`${locale}: page actions affect content only and reload restores the bulk choice`, async ({

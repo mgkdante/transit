@@ -1,3 +1,5 @@
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
 import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
 import {
 	act,
@@ -280,7 +282,6 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(container.querySelector('[role="tablist"]')).toBeNull();
 		expect(container.querySelector('[role="tab"]')).toBeNull();
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
-		expect(header).toHaveTextContent('AS OF');
 		expect(header).toHaveTextContent('3 sections');
 		expect(header).not.toHaveTextContent('Recurrence read over the latest trailing week');
 	});
@@ -918,4 +919,20 @@ describe('RepeatOffenders — legacy fallback ledger (by_grain absent)', () => {
 			screen.queryByRole('list', { name: /ranked by average delay/i }),
 		).not.toBeInTheDocument();
 	});
+});
+
+it('shows the record stamp and no publication time', async () => {
+	const { container } = render(RepeatOffenders);
+	const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+	const expected = stampCopy.en.record(
+		null,
+		formatDateKey(payload.current!.generated_utc.slice(0, 10), 'en', true),
+		'window',
+	);
+	await waitFor(() => expect(header).toHaveTextContent(expected));
+	expect(header.querySelector('time')).toHaveAttribute(
+		'datetime',
+		payload.current!.generated_utc.slice(0, 10),
+	);
+	expect(container.querySelector('[data-slot="article-keywords"]')).toBeNull();
 });
