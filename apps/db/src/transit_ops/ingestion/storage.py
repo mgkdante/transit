@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
-from contextlib import suppress
+import shutil
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -17,9 +19,45 @@ from transit_ops.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+class ObjectAlreadyExists(FileExistsError):
+    def __init__(self, message: str, http_status: int | None = None) -> None:
+        super().__init__(message)
+        self.http_status = http_status
+
+
+class ByteStream(Protocol):
+    def read(self, size: int = -1) -> bytes: ...
+
+
+class _LimitedStream:
+    def __init__(self, stream: ByteStream, remaining: int) -> None:
+        self.stream, self.remaining = stream, remaining
+
+    def read(self, size: int = -1) -> bytes:
+        payload = self.stream.read(self.remaining if size < 0 else min(size, self.remaining))
+        self.remaining -= len(payload)
+        return payload
+
+
+def _validate_range(byte_range: tuple[int, int] | None) -> None:
+    if byte_range is not None and (byte_range[0] < 0 or byte_range[1] < 1):
+        raise ValueError("byte_range requires a nonnegative offset and positive length")
+
+
 @dataclass(frozen=True)
 class BronzeStorage:
     storage_backend: str
+
+    def put_if_absent(self, temp_path: Path, storage_path: str) -> str:
+        raise NotImplementedError
+
+    def open_stream(
+        self, storage_path: str, *, byte_range: tuple[int, int] | None = None
+    ) -> AbstractContextManager[ByteStream]:
+        raise NotImplementedError
+
+    def list_keys(self, prefix: str) -> Iterator[str]:
+        raise NotImplementedError
 
     def persist_temp_file(self, temp_path: Path, storage_path: str) -> str:
         raise NotImplementedError
@@ -59,6 +97,44 @@ type BronzeStorageResolver = Callable[[str], BronzeStorage]
 class LocalBronzeStorage(BronzeStorage):
     root: Path
 
+    def put_if_absent(self, temp_path: Path, storage_path: str) -> str:
+        final_path = self.root / Path(storage_path)
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        with temp_path.open("rb") as source:
+            try:
+                destination = final_path.open("xb")
+            except FileExistsError as exc:
+                raise ObjectAlreadyExists(
+                    f"Bronze archive path already exists: {final_path}"
+                ) from exc
+            try:
+                with destination:
+                    shutil.copyfileobj(source, destination)
+            except BaseException:
+                final_path.unlink()
+                raise
+        temp_path.unlink()
+        return str(final_path)
+
+    @contextmanager
+    def open_stream(
+        self, storage_path: str, *, byte_range: tuple[int, int] | None = None
+    ) -> Iterator[ByteStream]:
+        _validate_range(byte_range)
+        with (self.root / Path(storage_path)).open("rb") as stream:
+            if byte_range is None:
+                yield stream
+            else:
+                stream.seek(byte_range[0])
+                yield _LimitedStream(stream, byte_range[1])
+
+    def list_keys(self, prefix: str) -> Iterator[str]:
+        yield from sorted(
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*")
+            if path.is_file() and path.relative_to(self.root).as_posix().startswith(prefix)
+        )
+
     def persist_temp_file(self, temp_path: Path, storage_path: str) -> str:
         final_path = self.root / Path(storage_path)
         if final_path.exists():
@@ -85,6 +161,66 @@ class S3BronzeStorage(BronzeStorage):
     bucket: str
     endpoint_url: str
     client: object
+
+    def put_if_absent(self, temp_path: Path, storage_path: str) -> str:
+        try:
+            with temp_path.open("rb") as handle:
+                self.client.put_object(
+                    Bucket=self.bucket, Key=storage_path, Body=handle, IfNoneMatch="*"
+                )
+        except (BotoCoreError, ClientError, OSError) as exc:
+            status = (
+                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+                if isinstance(exc, ClientError)
+                else None
+            )
+            message = (
+                f"Failed to upload Bronze artifact to {self.describe_location(storage_path)} "
+                f"via endpoint {self.endpoint_url}: {exc}"
+            )
+            if status in (409, 412):
+                raise ObjectAlreadyExists(f"{message} (HTTP {status})", status) from exc
+            raise BronzeStorageError(message) from exc
+        temp_path.unlink(missing_ok=True)
+        return self.describe_location(storage_path)
+
+    @contextmanager
+    def open_stream(
+        self, storage_path: str, *, byte_range: tuple[int, int] | None = None
+    ) -> Iterator[ByteStream]:
+        _validate_range(byte_range)
+        request = (
+            {} if byte_range is None else {"Range": f"bytes={byte_range[0]}-{sum(byte_range) - 1}"}
+        )
+        try:
+            body = self.client.get_object(Bucket=self.bucket, Key=storage_path, **request)["Body"]
+        except (BotoCoreError, ClientError, OSError) as exc:
+            raise BronzeStorageError(
+                "Failed to download Bronze artifact from "
+                f"{self.describe_location(storage_path)} via endpoint {self.endpoint_url}: {exc}"
+            ) from exc
+        try:
+            yield body if byte_range is None else _LimitedStream(body, byte_range[1])
+        finally:
+            body.close()
+
+    def list_keys(self, prefix: str) -> Iterator[str]:
+        keys = []
+        request = {}
+        try:
+            while True:
+                page = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix, **request)
+                keys.extend(item["Key"] for item in page.get("Contents", []))
+                token = page.get("NextContinuationToken")
+                if token is None:
+                    break
+                request["ContinuationToken"] = token
+        except (BotoCoreError, ClientError, OSError) as exc:
+            raise BronzeStorageError(
+                f"Failed to list Bronze artifacts at {self.describe_location(prefix)} "
+                f"via endpoint {self.endpoint_url}: {exc}"
+            ) from exc
+        yield from sorted(keys)
 
     def persist_temp_file(self, temp_path: Path, storage_path: str) -> str:
         if self.exists(storage_path):

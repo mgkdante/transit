@@ -37,8 +37,30 @@ class FakeS3Client:
                 "HeadObject",
             )
 
-    def get_object(self, Bucket: str, Key: str) -> dict[str, BytesIO]:  # noqa: N803
-        return {"Body": BytesIO(self.objects[(Bucket, Key)])}
+    def put_object(self, *, Bucket, Key, Body, IfNoneMatch):
+        assert IfNoneMatch == "*"
+        if (Bucket, Key) in self.objects:
+            raise ClientError({"ResponseMetadata": {"HTTPStatusCode": 412}}, "PutObject")
+        self.objects[(Bucket, Key)] = Body.read()
+
+    def get_object(self, Bucket: str, Key: str, **kwargs) -> dict[str, BytesIO]:  # noqa: N803
+        self.last_range = kwargs.get("Range")
+        payload = self.objects[(Bucket, Key)]
+        if self.last_range:
+            start, end = map(int, self.last_range.removeprefix("bytes=").split("-"))
+            payload = payload[start : end + 1]
+        self.last_body = BytesIO(payload)
+        return {"Body": self.last_body}
+
+    def list_objects_v2(self, *, Bucket, Prefix, ContinuationToken="0"):
+        keys = sorted(
+            key for bucket, key in self.objects if bucket == Bucket and key.startswith(Prefix)
+        )
+        offset = int(ContinuationToken)
+        page = {"Contents": [{"Key": key} for key in keys[offset : offset + 2]]}
+        if offset + 2 < len(keys):
+            page["NextContinuationToken"] = str(offset + 2)
+        return page
 
     def delete_objects(self, **kwargs):  # noqa: ANN003, ANN201
         self.delete_objects_calls.append(kwargs)
@@ -514,3 +536,111 @@ def test_build_s3_client_uses_r2_friendly_config() -> None:
     assert client.meta.region_name == "auto"
     assert client.meta.config.signature_version == "s3v4"
     assert client.meta.config.s3 == {"addressing_style": "path"}
+
+
+@pytest.fixture(params=["local", "s3"])
+def store(request, tmp_path):
+    if request.param == "local":
+        return LocalBronzeStorage("local", tmp_path / "bronze")
+    return S3BronzeStorage("s3", "bucket", "https://example.invalid", FakeS3Client())
+
+
+def test_put_if_absent_refuses_an_existing_key(store, tmp_path, monkeypatch):
+    if isinstance(store, S3BronzeStorage):
+        monkeypatch.setattr(
+            store.client, "head_object", lambda **kw: pytest.fail("unexpected HEAD")
+        )
+    source = tmp_path / "source"
+    source.write_bytes(b"first")
+    assert store.put_if_absent(source, "a/key") == store.describe_location("a/key")
+    assert not source.exists()
+    source.write_bytes(b"second")
+    with pytest.raises(storage_module.ObjectAlreadyExists) as error:
+        store.put_if_absent(source, "a/key")
+    assert error.value.http_status == (412 if isinstance(store, S3BronzeStorage) else None)
+    assert store.read_bytes("a/key") == b"first"
+    assert source.read_bytes() == b"second"
+    if isinstance(store, S3BronzeStorage):
+        for status in (409, 500):
+
+            def refuse(status=status, **kwargs):
+                raise ClientError({"Error": {"Code": str(status)},
+                                   "ResponseMetadata": {"HTTPStatusCode": status}}, "PutObject")
+
+            monkeypatch.setattr(store.client, "put_object", refuse)
+            expected = storage_module.ObjectAlreadyExists if status == 409 else BronzeStorageError
+            with pytest.raises(expected, match=str(status)) as error:
+                store.put_if_absent(source, "another")
+            if status == 409:
+                assert error.value.http_status == 409
+            assert source.read_bytes() == b"second"
+
+
+def test_open_stream_reads_a_byte_range(store, tmp_path):
+    source = tmp_path / "source"
+    source.write_bytes(b"0123456789")
+    store.persist_temp_file(source, "key")
+    for byte_range, expected in [(None, b"0123456789"), ((3, 4), b"3456"), ((8, 2), b"89")]:
+        with store.open_stream("key", byte_range=byte_range) as stream:
+            assert b"".join(iter(lambda: stream.read(2), b"")) == expected
+            assert stream.read() == b""
+        if isinstance(store, S3BronzeStorage):
+            assert store.client.last_body.closed
+            assert store.client.last_range == (
+                None if byte_range is None else f"bytes={byte_range[0]}-{sum(byte_range) - 1}"
+            )
+    for invalid in [(-1, 1), (0, 0), (0, -1)]:
+        with pytest.raises(ValueError), store.open_stream("key", byte_range=invalid):
+            pytest.fail("invalid range entered")
+    with pytest.raises(RuntimeError), store.open_stream("key"):
+        raise RuntimeError("caller failed")
+    if isinstance(store, S3BronzeStorage):
+        assert store.client.last_body.closed
+
+
+def test_s3_stream_and_listing_wrap_request_failures(store, monkeypatch):
+    if isinstance(store, LocalBronzeStorage):
+        with pytest.raises(FileNotFoundError), store.open_stream("absent"):
+            pytest.fail("missing object entered")
+        return
+    def refuse(**kwargs):
+        raise ClientError({"Error": {"Code": "AccessDenied"}}, "Request")
+    monkeypatch.setattr(store.client, "get_object", refuse)
+    monkeypatch.setattr(store.client, "list_objects_v2", refuse)
+    with pytest.raises(BronzeStorageError, match="s3://bucket/absent"), store.open_stream("absent"):
+        pytest.fail("failed request entered")
+    with pytest.raises(BronzeStorageError, match="https://example.invalid"):
+        list(store.list_keys("a/"))
+
+
+def test_list_keys_returns_every_key_under_a_prefix(store, tmp_path):
+    keys = [
+        "a/b/2026-11-12.c2.pack.xz",
+        "a/other",
+        "a/b/2026-11-13.c1.pack.xz",
+        "a/b/2026-11-12.c1.pack.xz",
+        "z/last",
+    ]
+    for key in keys:
+        source = tmp_path / "source"
+        source.write_bytes(b"payload")
+        store.persist_temp_file(source, key)
+    assert list(store.list_keys("")) == sorted(keys)
+    assert list(store.list_keys("a/b/2026-11-12.")) == [keys[3], keys[0]]
+    assert list(store.list_keys("absent")) == []
+
+
+def test_put_if_absent_leaves_no_partial_object_when_the_copy_fails(tmp_path, monkeypatch):
+    store = LocalBronzeStorage("local", tmp_path / "bronze")
+    source = tmp_path / "source"
+    source.write_bytes(b"complete")
+
+    def fail_copy(source_handle, destination):
+        destination.write(b"partial")
+        raise OSError("copy failed")
+
+    monkeypatch.setattr(storage_module.shutil, "copyfileobj", fail_copy)
+    with pytest.raises(OSError, match="copy failed"):
+        store.put_if_absent(source, "a/key")
+    assert not store.exists("a/key")
+    assert source.read_bytes() == b"complete"
