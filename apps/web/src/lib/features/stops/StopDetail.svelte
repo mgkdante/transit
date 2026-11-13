@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
@@ -6,7 +7,7 @@
 	import { provideLiveAbsenceContext } from '#lib/site/absence.ts';
 	import { getV1Runtime } from '#lib/v1/runtime.ts';
 	const clock = getV1Runtime().clock;
-	import { publicationPresentation, feedPresentation } from '#lib/v1/live/livePresentation.ts';
+	import { feedPresentation } from '#lib/v1/live/livePresentation.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { ToggleChip, SectionLabel, CollapsibleSection, type TocEntry } from '@yesid/ui/brand';
 	import { onMount, untrack } from 'svelte';
@@ -52,7 +53,7 @@
 	import { mapHrefFor } from '#lib/nav/index.ts';
 	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '@yesid/ui/badge';
-	import { formatUtc, formatDateKey } from '#lib/utils/time.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import { StopReliabilitySurface } from './reliability';
 	import {
 		createStopHistoryResource,
@@ -153,26 +154,22 @@
 	const reliability = createResource((signal) => getStopReliability(id, { signal }), {
 		key: () => id,
 	});
-	const articleGeneratedUtc = $derived(
-		detailTabController.active === 'reliability'
-			? (reliability.data?.generated_utc ?? null)
-			: (stop.data?.generated_utc ?? null),
+	const record = createRecordStamp(
+		() => manifest,
+		() => reliability.data?.generated_utc ?? null,
 	);
 	const articleEdgeLeft = $derived([t.kicker, stop.data?.code].filter(Boolean).join(' '));
-	const articleEdgeRight = $derived(
-		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
-	);
 	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
 		const values: ArticleMetaEntry[] = [
 			...(stop.data?.code ? [{ label: t.info.code, text: stop.data.code }] : []),
 			{ label: t.article.provider, text: shortName },
 		];
-		if (articleGeneratedUtc)
-			values.push({
-				label: detailTabController.active === 'reliability' ? t.report.historic : t.article.updated,
-				text: formatUtc(articleGeneratedUtc, locale),
-				datetime: articleGeneratedUtc,
-			});
+		const stamp = detailTabController.active === 'reliability' ? record.meta(locale) : null;
+		if (stamp) values.push(stamp);
+		if (detailTabController.active === 'schedule' && stop.data?.generated_utc) {
+			const date = stop.data.generated_utc.slice(0, 10);
+			values.push({ text: t.schedule.loadedOn(formatDateKey(date, locale, true)), datetime: date });
+		}
 		return values;
 	});
 	const stopSummaryPeriod = $derived.by(() => {
@@ -342,28 +339,15 @@
 {/snippet}
 
 {#snippet historicStatus()}
-	{#if reliability.data}
-		<div class="stop-report" data-source="historic">
-			<FreshnessStamp
-				variant="updated"
-				presentation={publicationPresentation(
-					reliability.data.generated_utc,
-					clock.serverNow,
-					locale,
-				)}
-				label={t.report.historic}
-				{locale}
-				class="stop-report-stamp"
-			/>
-			{#if reliability.error}<StateNotice
-					title={t.report.historicRefreshUnavailable}
-					body={t.report.retainedHistoric}
-					tone="warning"
-					presentation="silo"
-					role="status"
-					aria-live="polite"
-				/>{/if}
-		</div>
+	{#if reliability.data && reliability.error}
+		<StateNotice
+			title={t.report.historicRefreshUnavailable}
+			body={t.report.retainedHistoric}
+			tone="warning"
+			presentation="silo"
+			role="status"
+			aria-live="polite"
+		/>
 	{/if}
 {/snippet}
 
@@ -461,11 +445,6 @@
 		data-slot="stop-reliability-summary"
 		aria-label={reliabilityT.paneHeading}
 	>
-		<p class="stop-summary-basis">
-			{useDailySummary && stopSummaryDaily?.date
-				? t.summary.day(formatDateKey(stopSummaryDaily.date, locale, true))
-				: t.summary.reported}
-		</p>
 		<MetricDisplay
 			value={stopSummarySevere}
 			absentReason="no-observations"
@@ -499,8 +478,9 @@
 			backHref={localizeHref('/stops', locale)}
 			backLabel={t.back}
 			meta={articleMeta}
+			metaPending={detailTabController.active === 'reliability' && record.pending}
 			edgeLeft={articleEdgeLeft}
-			edgeRight={articleEdgeRight}
+			edgeRight={shortName}
 			titleId="stop-title"
 		>
 			{#snippet controls()}
@@ -734,12 +714,7 @@
 	:global(.stop-report-stamp > *) {
 		white-space: nowrap;
 	}
-	.stop-summary-basis,
-	.stop-reliability-summary > .stop-report {
-		flex-basis: 100%;
-	}
-	.stop-report-note,
-	.stop-summary-basis {
+	.stop-report-note {
 		margin: 0;
 		color: var(--muted-foreground);
 		font-size: var(--text-small);

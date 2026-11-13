@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
+import { stampCopy } from '../src/lib/v1/stamp.copy';
+import { intl } from '../src/lib/i18n/copy';
 import { detailCopy as stopCopy } from '../src/lib/features/stops/stops.copy';
 import { detailCopy } from '../src/lib/features/lines/lines.copy';
 import { reliabilityCopy } from '../src/lib/features/lines/reliability/reliability.copy';
@@ -10,7 +12,12 @@ import { localizeHref } from '../src/lib/i18n/routing';
 const read = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 const b9 = read('../scripts/__fixtures__/b9/rich.json');
 const line = read('./routes-index.json').routes[0];
-const provider = read('./manifest.json').provider;
+const manifest = read('./manifest.json');
+const provider = manifest.provider;
+const publication = b9.files[`historic/route_reliability/${line.id}.json`].generated_utc.slice(
+	0,
+	10,
+);
 const route = b9.files[`static/routes/${line.id}.json`];
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -43,6 +50,17 @@ for (const locale of PUBLISHED_LOCALES) {
 				(url) => url.searchParams.get('tab') === (key === 'detail' ? null : key),
 			);
 		}
+		const date = intl
+			.dateTime(locale, {
+				month: 'short',
+				day: 'numeric',
+				timeZone: 'UTC',
+				...(!manifest.tz ? { year: 'numeric' as const } : {}),
+			})
+			.format(new Date(publication));
+		const header = page.locator('[data-slot="article-header"]');
+		await expect(header.locator('time')).toHaveText(stampCopy[locale].record(null, date, 'window'));
+		await expect(header.locator('time')).toHaveAttribute('datetime', publication);
 		for (const section of Object.values(reliabilityCopy[locale].sections)) {
 			if (typeof section !== 'object') continue;
 			await expect(page.getByRole('region', { name: section.label, exact: true })).toBeVisible();

@@ -59,7 +59,9 @@ vi.mock('#lib/v1/repositories/provenance.ts', () => ({
 	getProvenance: async () => ({ gaps: [] }),
 }));
 vi.mock('#lib/v1/boot.ts', () => ({
-	getV1Context: () => ({ manifest: { provider: 'stm', short_name: 'STM', display_name: 'STM' } }),
+	getV1Context: () => ({
+		manifest: { provider: 'stm', short_name: 'STM', display_name: 'STM', files: { historic: {} } },
+	}),
 }));
 vi.mock('#lib/v1/live/routeStopPredictions.ts', () => ({
 	deriveRouteStopPredictions: () => new Map(),

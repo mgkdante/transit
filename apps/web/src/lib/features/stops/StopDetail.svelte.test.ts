@@ -1,3 +1,5 @@
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
 import { detailCopy } from './stops.copy';
 import {
 	render as renderSvelte,
@@ -555,19 +557,22 @@ describe('StopDetail article contract', () => {
 		const summary = container.querySelector('[data-slot="stop-reliability-summary"]');
 		expect(summary).toHaveTextContent('20%');
 		expect(summary).toHaveTextContent('2.7 min');
-		expect(summary).toHaveTextContent('Jun 15, 2026');
 	});
 
-	it('uses historic freshness on the reliability tab', () => {
-		reliabilityData = {
-			...RELIABILITY,
-			generated_utc: '2026-06-14T06:00:00Z' as StopReliability['generated_utc'],
-		};
+	it('shows one date-only record on Reliability and the schedule date', async () => {
+		const locale = 'en';
 		stopDetailNav.page.url = new URL('http://localhost/stop/57191?tab=reliability');
 		const { container } = render(StopDetail, { props: { id: '57191' } });
-		expect(container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
-			'datetime',
-			'2026-06-14T06:00:00Z',
+		const date = RELIABILITY.generated_utc.slice(0, 10);
+		const expected = stampCopy[locale].record(null, formatDateKey(date, locale, true), 'window');
+		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		expect(within(header).getByText(expected)).toHaveAttribute('datetime', date);
+		expect(container.querySelector('[data-source="historic"] time')).toBeNull();
+		await fireEvent.click(screen.getByRole('tab', { name: detailCopy[locale].tabs.schedule }));
+		expect(header).toHaveTextContent(
+			detailCopy[locale].schedule.loadedOn(
+				formatDateKey(STOP_FILE.generated_utc.slice(0, 10), locale, true),
+			),
 		);
 	});
 
@@ -611,6 +616,16 @@ describe('StopDetail article contract', () => {
 		expect(container.querySelector('[data-slot="article-header"]')).not.toHaveTextContent(
 			detailCopy.fr.info.code,
 		);
+		fireEvent.click(screen.getByRole('tab', { name: detailCopy.fr.tabs.reliability }));
+		expect(
+			within(container.querySelector('[data-slot="article-header"]') as HTMLElement).getByText(
+				stampCopy.fr.record(
+					null,
+					formatDateKey(RELIABILITY.generated_utc.slice(0, 10), 'fr', true),
+					'window',
+				),
+			),
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole('link', { name: /Voir l’arrêt Station test sur la carte/ }),
 		).toBeInTheDocument();

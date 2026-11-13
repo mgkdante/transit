@@ -1,5 +1,4 @@
 import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
-import type { AffectedAlertsCopy, SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 import { articleCopy } from '#lib/components/layout/articleCopy.ts';
 
 export const indexCopy = defineCopy({
@@ -54,7 +53,7 @@ export const indexCopy = defineCopy({
 		searchPlaceholder: 'Stop name or code…',
 		searchLabel: 'Search stops',
 		noMatches: 'No stops match this search.',
-		more: (n) => `+${n} more stops, refine the search`,
+		more: (n: number) => `+${n} more stops, refine the search`,
 		mapAction: 'Map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
 		controlsLabel: 'Filters',
@@ -82,13 +81,13 @@ export const indexCopy = defineCopy({
 			heading: 'Browse stops by line',
 			lede: 'Choose a line to see every published stop, grouped by direction.',
 			chooseLine: (short, long) => `Browse stops on line ${short}${long ? ` ${long}` : ''}`,
-			showMoreLines: (n) => `Show ${n} more lines`,
+			showMoreLines: (n: number) => `Show ${n} more lines`,
 			progressLabel: 'Stop catalogue progress',
 			progress: (shown, total) => `Showing ${shown} of ${total} stops`,
-			loadMore: (n) => `Load ${n} more stops`,
+			loadMore: (n: number) => `Load ${n} more stops`,
 		},
 	},
-}) satisfies Readonly<Record<Locale, SurfaceHeadCopy>>;
+});
 
 export type StopsIndexCopy = (typeof indexCopy)[Locale];
 
@@ -173,11 +172,11 @@ export const detailCopy = defineCopy({
 			from: 'À partir de',
 			until: 'Jusqu’à',
 			severity: { critical: 'Critique', high: 'Élevé', watch: 'À surveiller' },
-			more: (n) => `+${n} de plus`,
+			more: (n: number) => `+${n} de plus`,
 			showLess: 'Réduire',
 			link: 'Détails',
 			linkAria: (host: string) => `Ouvrir les détails de l’avis sur ${host} (nouvel onglet)`,
-		} satisfies AffectedAlertsCopy,
+		},
 		info: {
 			position: 'Position',
 			code: 'Code d’arrêt',
@@ -188,6 +187,7 @@ export const detailCopy = defineCopy({
 			routesServed: 'Lignes desservies',
 		},
 		schedule: {
+			loadedOn: (date: string) => `D’après l’horaire chargé le ${date}.`,
 			heading: 'Exemple d’horaire en semaine',
 			none: 'Aucun exemple d’horaire publié pour cet arrêt.',
 			scope:
@@ -230,7 +230,10 @@ export const detailCopy = defineCopy({
 			historicRefreshUnavailable: 'Reliability could not refresh',
 			retainedHistoric: 'Showing the last reliability report received.',
 		},
-		summary: { reported: 'Reported daily summary', day: (date) => `Observations on ${date}` },
+		summary: {
+			reported: 'Reported daily summary',
+			day: (date: string) => `Observations on ${date}`,
+		},
 		alertState: {
 			none: 'No matching alerts for this stop in this report.',
 			limited:
@@ -278,11 +281,11 @@ export const detailCopy = defineCopy({
 			from: 'From',
 			until: 'Until',
 			severity: { critical: 'Critical', high: 'High', watch: 'Watch' },
-			more: (n) => `+${n} more`,
+			more: (n: number) => `+${n} more`,
 			showLess: 'Show less',
 			link: 'Details',
 			linkAria: (host) => `Open the alert details on ${host} (new tab)`,
-		} satisfies AffectedAlertsCopy,
+		},
 		info: {
 			position: 'Position',
 			code: 'Stop code',
@@ -293,6 +296,7 @@ export const detailCopy = defineCopy({
 			routesServed: 'Lines served',
 		},
 		schedule: {
+			loadedOn: (date: string) => `From the schedule loaded on ${date}.`,
 			heading: 'Sample weekday schedule',
 			none: 'No sample schedule published for this stop.',
 			scope:
@@ -303,7 +307,7 @@ export const detailCopy = defineCopy({
 				destination: 'Destination',
 				departures: 'Departures',
 			},
-			moreTimes: (n) => `+${n} more times`,
+			moreTimes: (n: number) => `+${n} more times`,
 		},
 	},
 });
