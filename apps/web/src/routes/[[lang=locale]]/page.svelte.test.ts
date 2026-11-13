@@ -43,7 +43,6 @@ const destinations = [
 	['/network', 'Network health', 'Santé du réseau'],
 	['/map', 'Network map', 'Carte du réseau'],
 	['/stops', 'Stops', 'Arrêts'],
-	['/search', 'Search', 'Rechercher'],
 	['/lines', 'Lines', 'Lignes'],
 	['/hotspots', 'Hotspots', 'Points chauds'],
 	['/receipt', 'Daily receipt', 'Reçu quotidien'],
@@ -76,36 +75,53 @@ describe('Home civic overview and directory', () => {
 		'preserves every destination once as a native localized link in %s',
 		(locale) => {
 			state.locale = locale;
-			renderHome();
-			const links = within(nav()).getAllByRole('link');
-			expect(links).toHaveLength(11);
+			const { container } = renderHome();
+			const strip = container.querySelector('[data-slot="home-pulse-shortcuts"]') as HTMLElement;
+			const links = [...within(strip).getAllByRole('link'), ...within(nav()).getAllByRole('link')];
+			expect(links).toHaveLength(10);
 			for (const [path, en, fr] of destinations) {
 				const href = locale === 'fr' ? `/fr${path}` : path;
 				const link = links.find((candidate) => candidate.getAttribute('href') === href);
 				expect(link, href).toHaveTextContent(locale === 'fr' ? fr : en);
 				expect(link).not.toHaveAttribute('tabindex', '-1');
 			}
-			expect(new Set(links.map((link) => link.getAttribute('href'))).size).toBe(11);
+			expect(new Set(links.map((link) => link.getAttribute('href'))).size).toBe(10);
 		},
 	);
 
-	it('introduces the civic purpose, then the network overview and map, without fetching live data', () => {
+	it('introduces the civic purpose, a search invitation, then the live strip before the directory', () => {
 		const { container } = renderHome();
 		expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
 			'How Montréal’s transit holds up.',
 		);
 		expect(container.querySelector('[data-slot="home-audit-brief"]')).toHaveTextContent(
-			'the limits of public data',
+			'It is not a trip planner, and it is not affiliated with Fixture Transit.',
 		);
-		const primary = container.querySelector('[data-slot="home-primary"]') as HTMLElement;
+		const search = screen.getByRole('search');
+		expect(search).toHaveAttribute('action', '/search');
+		expect(search.querySelector('input[name="provider"]')).toHaveValue('fixture');
+		const strip = container.querySelector('[data-slot="home-pulse"]') as HTMLElement;
 		expect(
-			within(primary)
+			within(strip)
 				.getAllByRole('link')
 				.map((link) => link.getAttribute('href')),
-		).toEqual(['/network', '/map']);
-		expect(nav().firstElementChild).toBe(primary);
+		).toEqual(['/map', '/network']);
+		expect(strip.compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 		expect(createLiveStoreSpy).not.toHaveBeenCalled();
+	});
+
+	it('invites other cities and names the hosting constraint without a funding pitch', () => {
+		renderHome();
+		const invite = screen.getByRole('region', { name: 'Bring Transit to your city' });
+		expect(within(invite).getByRole('link', { name: /Get in touch/ })).toHaveAttribute(
+			'href',
+			'https://yesid.dev/contact',
+		);
+		expect(within(invite).getByRole('link', { name: /View the code/ })).toHaveAttribute(
+			'href',
+			'https://github.com/yesid-dev/transit',
+		);
 	});
 
 	it('retains all four question groups while making the remaining directory compact', () => {
@@ -121,14 +137,13 @@ describe('Home civic overview and directory', () => {
 	});
 
 	it('filters all destinations by question, including the featured network overview', async () => {
-		const { container } = renderHome();
+		renderHome();
 		await fireEvent.click(screen.getByRole('radio', { name: 'Which line can I trust?' }));
 		expect(
 			within(nav())
 				.getAllByRole('link')
 				.map((link) => link.getAttribute('href')),
 		).toEqual(['/lines', '/network', '/hotspots']);
-		expect(container.querySelector('[data-slot="home-primary"]')).toBeNull();
 		expect(screen.getAllByText('3 destinations').length).toBeGreaterThan(0);
 	});
 
@@ -141,7 +156,7 @@ describe('Home civic overview and directory', () => {
 				.map((link) => link.getAttribute('href')),
 		).toEqual(['/lines', '/hotspots', '/receipt', '/repeat-offenders']);
 		await fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-		expect(within(nav()).getAllByRole('link')).toHaveLength(11);
+		expect(within(nav()).getAllByRole('link')).toHaveLength(8);
 	});
 
 	it('keeps the exact question and kind intersection for a single result', async () => {
@@ -173,7 +188,7 @@ describe('Home civic overview and directory', () => {
 					name: locale === 'fr' ? 'Effacer les filtres' : 'Clear filters',
 				}),
 			);
-			expect(within(nav()).getAllByRole('link')).toHaveLength(11);
+			expect(within(nav()).getAllByRole('link')).toHaveLength(8);
 		},
 	);
 
@@ -230,7 +245,8 @@ describe('Home civic overview and directory', () => {
 			]);
 			const { body } = renderSsr(module.default, { context, props: { data: pageData() } });
 			expect(body).toContain('How Montréal’s');
-			expect(body).toContain('the limits of public data');
+			expect(body).toContain('independent public record');
+			expect(body).toContain('action="/search"');
 			for (const [href] of destinations) expect(body).toContain(`href="${href}"`);
 		} finally {
 			await server.close();

@@ -3,6 +3,9 @@
 	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { Surface } from '@yesid/ui/layout';
 	import HomeExplore from '#lib/features/home/HomeExplore.svelte';
+	import HomeInvite from '#lib/features/home/HomeInvite.svelte';
+	import HomePulse from '#lib/features/home/HomePulse.svelte';
+	import HomeSearch from '#lib/features/home/HomeSearch.svelte';
 	import { homeCopy } from '#lib/features/home/home.copy.ts';
 	import type { PageData } from './$types';
 
@@ -14,12 +17,23 @@
 			data.v1?.manifest.provider ??
 			'',
 	);
+	const operator = $derived(
+		data.provider?.labels[locale].operator ?? data.v1?.manifest.display_name ?? city,
+	);
 	const copy = $derived({
 		...homeCopy[locale],
 		headline: homeCopy[locale].headline.replace('{city}', city),
+		auditBody: homeCopy[locale].auditBody.replace('{city}', city).replace('{operator}', operator),
+		audience: homeCopy[locale].audience.replace('{operator}', operator),
 	});
 </script>
 
 <Surface>
-	<HomeExplore {locale} {copy} alertsAvailable={providerHasAlerts(data.provider)} />
+	<HomeExplore {locale} {copy} alertsAvailable={providerHasAlerts(data.provider)}>
+		{#snippet pulse()}
+			<HomeSearch {locale} provider={data.provider?.id} />
+			<HomePulse {locale} {city} manifest={data.v1?.manifest ?? null} />
+		{/snippet}
+	</HomeExplore>
+	<HomeInvite {locale} />
 </Surface>

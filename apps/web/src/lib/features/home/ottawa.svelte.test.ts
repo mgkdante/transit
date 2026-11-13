@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import HomeExplore from './HomeExplore.svelte';
 import { homeCopy, homeGroups } from './home.copy';
@@ -22,25 +22,32 @@ describe.each(['en', 'fr'] as const)('provider cosmetics in %s', (locale) => {
 		expect(container.querySelector('[data-filter-group="crowding"]') != null).toBe(supported);
 		expect(container.querySelector('[data-filter-group="alerts"]') != null).toBe(supported);
 	});
-	it.each(['octranspo', 'stm'])('%s home map copy reflects alerts availability', (provider) => {
-		const available = providerHasAlerts({
-			id: provider,
-			labels: {
-				en: { city: provider, operator: provider },
-				fr: { city: provider, operator: provider },
-			},
-			inputs: { i3_alerts: provider === 'stm', service_alerts: provider === 'stm' },
-			alert_links: {},
-		});
-		render(HomeExplore, { props: { locale, copy: homeCopy[locale], alertsAvailable: available } });
-		const entry = homeGroups(homeCopy[locale], available)[0]!.entries[0]!;
-		expect(screen.getByRole('link', { name: new RegExp(entry.title[locale]) })).toHaveTextContent(
-			entry.desc[locale],
-		);
-		expect(
-			entry.desc[locale].includes(locale === 'en' ? 'service alerts' : 'avis de service'),
-		).toBe(available);
-	});
+	it.each(['octranspo', 'stm'])(
+		'%s home map copy reflects alerts availability',
+		async (provider) => {
+			const available = providerHasAlerts({
+				id: provider,
+				labels: {
+					en: { city: provider, operator: provider },
+					fr: { city: provider, operator: provider },
+				},
+				inputs: { i3_alerts: provider === 'stm', service_alerts: provider === 'stm' },
+				alert_links: {},
+			});
+			render(HomeExplore, {
+				props: { locale, copy: homeCopy[locale], alertsAvailable: available },
+			});
+			// The map's directory entry appears once its question is selected; the strip owns the shortcut.
+			await fireEvent.click(screen.getByRole('radio', { name: homeCopy[locale].qWhere }));
+			const entry = homeGroups(homeCopy[locale], available)[0]!.entries[0]!;
+			expect(screen.getByRole('link', { name: new RegExp(entry.title[locale]) })).toHaveTextContent(
+				entry.desc[locale],
+			);
+			expect(
+				entry.desc[locale].includes(locale === 'en' ? 'service alerts' : 'avis de service'),
+			).toBe(available);
+		},
+	);
 	it('uses local search examples and a neutral fallback', () => {
 		expect(searchExamples('octranspo', locale)).toContain('Rideau');
 		expect(searchExamples('stm', locale)).toEqual(['747', 'Berri-UQAM', 'Métro']);
