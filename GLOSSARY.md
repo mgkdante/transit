@@ -3,6 +3,22 @@ A public dashboard that tells riders how reliable their transit service is, from
 
 ## Language
 
+**Dataset**:
+One declared kind of kept record with one key, such as the captures of one feed or the rows of one table.
+_Avoid_: edition (a schedule edition, which the code calls a dataset version)
+
+**Archive grain**:
+The kind of span a dataset is archived by: UTC day, service day, month or edition.
+_Avoid_: grain (the reporting span: day, week, month)
+
+**Hot window**:
+The age after which a verified window may have its working copy trimmed.
+_Avoid_: deletion age (trim also requires a verified archive copy)
+
+**Fold**:
+A closed-period file or cell built from the windows of another dataset, such as a month file built from day cells.
+_Avoid_: archive grain, reporting grain
+
 **Verdict**:
 The one-word answer to "how reliable is this line, stop or network over this window": reliable, patchy, unreliable, tentative or absent.
 _Avoid_: status, badge, OTP status
