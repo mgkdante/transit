@@ -152,6 +152,11 @@ def capture_days(
     return sorted(days)
 
 
+def capture_providers(connection: Connection, *, now: datetime) -> list[str]:
+    """Discover historical and open-day attempts before provider-wide cleanup."""
+    return _providers(connection, datetime.min.replace(tzinfo=UTC), _instant(now), None)
+
+
 def _working(connection: Connection, day: CaptureDay, endpoint: str) -> tuple[str, bool]:
     start = datetime.combine(day.utc_date, time(), UTC)
     row = connection.execute(
