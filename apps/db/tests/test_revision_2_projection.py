@@ -507,3 +507,108 @@ def test_the_baseline_lists_every_output_it_does_not_guard():
             elif not real and path not in listed:
                 problems.append(f"{name}: {path} is empty and not listed")
     assert problems == []
+
+
+def _history_graph(files):
+    from transit_ops.snapshots import historic_tree
+
+    root = historic_tree.HISTORY_ROOT_PATH
+    assert root in files, f"missing root: {root}"
+    record = {
+        "root": {root: hashlib.sha256(files[root]).hexdigest()},
+        "range_leaves": {},
+        "point_leaves": {},
+    }
+    pending = [(ref["family"], ref["index_path"]) for ref in json.loads(files[root])["families"]]
+    reached = {root}
+    while pending:
+        name, key = pending.pop()
+        if key in reached:
+            continue
+        assert key in files, f"missing reachable object: {key}"
+        reached.add(key)
+        family = historic_tree.FAMILIES[name]
+        matched = historic_tree.family_path_role(key)
+        assert matched is not None, f"unknown history object: {key}"
+        if matched[1] == "leaf":
+            group = "range_leaves" if family.selection_mode == "range" else "point_leaves"
+            record[group][key] = hashlib.sha256(files[key]).hexdigest()
+        else:
+            pending.extend((name, edge.path) for edge in family.edges(json.loads(files[key])))
+    for group in ("range_leaves", "point_leaves"):
+        record[group] = dict(sorted(record[group].items()))
+        assert record[group], f"root reaches no {group}"
+    return record
+
+
+def _compare_history_graph(label, expected, current):
+    assert expected.keys() == current.keys(), label
+    for group in expected:
+        old, new = expected[group], current[group]
+        assert old.keys() == new.keys(), (
+            label,
+            group,
+            "missing",
+            sorted(old.keys() - new.keys()),
+            "added",
+            sorted(new.keys() - old.keys()),
+        )
+        for key in old:
+            assert old[key] == new[key], f"{label}/{key}: changed {group} SHA-256"
+
+
+class _HistoryGraphStore(MemorySnapshotStore):
+    def _check_leaf(self, key, body):
+        from transit_ops.snapshots import historic_tree
+
+        matched = historic_tree.family_path_role(key)
+        if matched is not None and matched[1] == "leaf" and key in self.objects:
+            assert self.objects[key] == body, f"{key}: leaf rewritten with different bytes"
+
+    def put_bytes(self, rel_key, body, *, tier):
+        self._check_leaf(rel_key, body)
+        return super().put_bytes(rel_key, body, tier=tier)
+
+    def put_immutable_json_outcome(self, rel_key, payload):
+        from transit_ops.snapshots.serialization import snapshot_json_bytes
+
+        self._check_leaf(rel_key, snapshot_json_bytes(payload))
+        return super().put_immutable_json_outcome(rel_key, payload)
+
+
+@pytest.mark.parametrize("label", seed.PROVIDERS)
+def test_revision_2_history_graph_is_reused(published, monkeypatch, label):
+    _pin(monkeypatch, seed.HISTORY_CLOCK)
+    provider_id = seed.PROVIDERS[label]
+    store = _HistoryGraphStore()
+
+    def publish_history():
+        result = publish.publish_snapshot(
+            provider_id,
+            tier="historic",
+            settings=published.settings,
+            engine=published.engine,
+            storage=store,
+        )
+        assert result.gate_report is not None and result.gate_report["errors"] == 0
+
+    # Select the fixture's first publication independently of any later output.
+    original = {
+        k: v for k, v in published.files[label].items() if published.lane_of[k] == "historic"
+    }
+    publish_history()
+    first_files = {k: v for k, v in store.objects.items() if not k.startswith("_meta/")}
+    first = _history_graph(first_files)
+    _compare_history_graph(label, _history_graph(original), first)
+    leaf_keys = first["range_leaves"].keys() | first["point_leaves"].keys()
+    writes = [key for key in store.keys if key in leaf_keys]
+    publish_history()
+    second_files = {k: v for k, v in store.objects.items() if not k.startswith("_meta/")}
+    _compare_history_graph(label, first, _history_graph(second_files))
+    assert [key for key in store.keys if key in leaf_keys] == writes, "leaf written twice"
+    target = BASELINE / label / "history_graph.json"
+    if os.environ.get(WRITE_BASELINE) == "1":
+        target.write_bytes((json.dumps(first, ensure_ascii=False, indent=1) + "\n").encode())
+        pytest.fail(f"baseline written; run again without {WRITE_BASELINE}")
+    assert target.is_file(), f"missing baseline: {label}/history_graph.json"
+    _compare_history_graph(label, json.loads(target.read_bytes()), first)
