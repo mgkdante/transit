@@ -100,7 +100,7 @@ describe('MapHoverPeek', () => {
 		expect(container.querySelector('.peek-kind')).toHaveTextContent('Vehicle');
 		expect(container.querySelector('h2')).toHaveTextContent('bus-24');
 		const lede = container.querySelector('[data-slot="peek-lede"]')!;
-		expect(lede).toHaveTextContent('Route 24');
+		expect(lede).toHaveTextContent('Line 24');
 		expect(lede).toHaveTextContent('Sherbrooke');
 		expect(container).toHaveTextContent('No recent position');
 		expect(container).toHaveTextContent('3 min');
@@ -230,7 +230,7 @@ describe('MapHoverPeek', () => {
 			props: { peek: { ...route, directionLabel: 'East · toward Frontenac' }, locale: 'en' },
 		});
 
-		expect(container.querySelector('.peek-kind')).toHaveTextContent('Route');
+		expect(container.querySelector('.peek-kind')).toHaveTextContent('Line');
 		expect(container.querySelector('h2')).toHaveTextContent('24');
 		expect(container.querySelector('[data-slot="peek-lede"]')).toHaveTextContent('Sherbrooke');
 		expect(definitionValue(container, 'Live vehicles')).toHaveTextContent('2 vehicles visible');
@@ -241,7 +241,7 @@ describe('MapHoverPeek', () => {
 	it('marks inferred vehicle route copy and labels an unnamed stop honestly', () => {
 		const inferredVehicle: MapHoverPeekModel = {
 			...vehicleFresh,
-			route: { id: '1', longName: 'Route 1', type: 1, labelInferred: true },
+			route: { id: '1', longName: null, type: 1, labelInferred: true },
 		};
 		const unnamedStop: MapHoverPeekModel = {
 			kind: 'stop',

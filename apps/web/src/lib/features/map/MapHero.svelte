@@ -449,8 +449,13 @@
 			if (disposed) return;
 			if (!heroEl) return;
 			const inset = measureMapFocusInset({ getContainer: () => heroEl! });
-			const controlsWidth =
-				heroEl.querySelector('.map-filter-panel')?.getBoundingClientRect().width ?? 0;
+			const width = (selector: string) =>
+				heroEl!.querySelector(selector)?.getBoundingClientRect().width ?? 0;
+			// On desktop the title block shares the controls column; banners keep clear of both.
+			const controlsWidth = Math.max(
+				width('.map-filter-panel'),
+				desktop.current ? width('.map-head') : 0,
+			);
 			heroEl.style.setProperty('--map-controls-width', controlsWidth + 'px');
 			if (!inset.containerWidth || !inset.containerHeight) return;
 			if (import.meta.env.MODE === 'e2e')

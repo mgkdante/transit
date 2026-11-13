@@ -37,7 +37,8 @@ export interface MapHoverPeekContext {
 
 export interface MapHoverPeekRouteRef {
 	readonly id: string;
-	readonly longName: string;
+	/** Null when the provider publishes no long name; the peek labels it from copy. */
+	readonly longName: string | null;
 	readonly type: number | null;
 	readonly labelInferred: boolean;
 }
@@ -67,7 +68,8 @@ export interface RouteHoverPeek {
 	readonly kind: 'route';
 	readonly id: string;
 	readonly title: string;
-	readonly longName: string;
+	/** Null when the provider publishes no long name; the peek labels it from copy. */
+	readonly longName: string | null;
 	readonly type: number;
 	readonly labelInferred: boolean;
 	readonly visibleVehicleCount: number;
@@ -97,7 +99,7 @@ function routeRef(
 	const publishedLongName = route?.long?.trim();
 	return {
 		id: routeId,
-		longName: publishedLongName || `Route ${routeId}`,
+		longName: publishedLongName || null,
 		type: route?.type ?? null,
 		labelInferred: !publishedLongName,
 	};
@@ -168,7 +170,7 @@ export function resolveMapHoverPeek(
 			kind: 'route',
 			id: route.id,
 			title: route.short || route.id,
-			longName: publishedLongName || `Route ${route.short || route.id}`,
+			longName: publishedLongName || null,
 			type: route.type,
 			labelInferred: !publishedLongName,
 			visibleVehicleCount,

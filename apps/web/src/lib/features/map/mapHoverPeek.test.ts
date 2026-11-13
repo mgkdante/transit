@@ -177,7 +177,7 @@ describe('resolveMapHoverPeek', () => {
 
 		expect(peek).toMatchObject({
 			kind: 'route',
-			longName: 'Route 1',
+			longName: null,
 			labelInferred: true,
 		});
 		expect(peek).not.toHaveProperty('direction');
