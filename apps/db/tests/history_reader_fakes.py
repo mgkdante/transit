@@ -1,8 +1,12 @@
 """Real reader values with explicit defaults for offline consumer tests."""
 
 import hashlib
-from datetime import UTC, date, datetime
+from collections.abc import Iterator, Sequence
+from dataclasses import replace
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
+
+from sqlalchemy import Connection
 
 from transit_ops.history.datasets import IndexFamily
 from transit_ops.history.reader import (
@@ -11,10 +15,92 @@ from transit_ops.history.reader import (
     NotAvailableReason,
     Poll,
     ProcessingRecord,
+    WindowNotAvailable,
 )
+from transit_ops.ingestion.storage import BronzeStorageResolver
 
 _START = datetime(2026, 1, 2, tzinfo=UTC)
 _END = datetime(2026, 1, 2, 0, 0, 4, tzinfo=UTC)
+
+
+class FakeCaptureWindow:
+    def __init__(
+        self,
+        days,
+        polls,
+        captures,
+        processing,
+        unreadable=(),
+        *,
+        provider_id=None,
+        feeds=None,
+        start_utc=None,
+        end_utc=None,
+    ) -> None:
+        self.days = tuple(days)
+        self.unreadable = list(unreadable)
+        self.provider_id = (
+            provider_id
+            if provider_id is not None
+            else (self.days[0].provider_id if self.days else "fake_provider")
+        )
+        self.feeds = (
+            tuple(feeds)
+            if feeds is not None
+            else tuple(sorted({day.endpoint_key for day in self.days}))
+        )
+        dates = [day.utc_date for day in self.days] or [_START.date()]
+        self.start_utc = (
+            start_utc if start_utc is not None else datetime.combine(min(dates), time(), UTC)
+        )
+        self.end_utc = (
+            end_utc
+            if end_utc is not None
+            else datetime.combine(max(dates) + timedelta(days=1), time(), UTC)
+        )
+        self._polls, self._captures, self._processing = (
+            tuple(polls),
+            tuple(captures),
+            tuple(processing),
+        )
+
+    def require_available(self) -> None:
+        missing = tuple(day for day in self.days if day.state == "not_available")
+        if missing:
+            raise WindowNotAvailable(missing)
+
+    def polls(self) -> Iterator[Poll]:
+        yield from self._polls
+
+    def captures(self, *, with_bytes: bool = True) -> Iterator[Capture]:
+        for capture in self._captures:
+            yield capture if with_bytes else replace(capture, payload=None)
+
+    def processing(self) -> Iterator[ProcessingRecord]:
+        yield from self._processing
+
+
+def fake_open_window(windows):
+    windows = iter(windows)
+    calls = []
+
+    def open_window(
+        provider: str,
+        feeds: Sequence[str],
+        start_utc: datetime,
+        end_utc: datetime,
+        *,
+        connection: Connection,
+        storage: BronzeStorageResolver,
+    ) -> FakeCaptureWindow:
+        calls.append((provider, tuple(feeds), start_utc, end_utc))
+        try:
+            return next(windows)
+        except StopIteration:
+            raise AssertionError("no fake windows remain") from None
+
+    open_window.calls = calls
+    return open_window
 
 
 class _Unset:

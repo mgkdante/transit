@@ -79,3 +79,74 @@ def test_window_not_available_carries_its_days():
     assert error.days is days
     for day in days:
         assert f"{day.endpoint_key} {day.utc_date} {day.reason}" in str(error)
+
+
+def test_fake_window_has_the_members_of_the_real_window():
+    from history_reader_fakes import FakeCaptureWindow
+
+    from transit_ops.history.reader import CaptureWindow
+
+    day, poll, capture, processing = fake_feed_day(), fake_poll(), fake_capture(), fake_processing()
+    fake = FakeCaptureWindow([day], [poll], [capture], [processing], [poll])
+    real = CaptureWindow(
+        provider_id=day.provider_id,
+        feeds=(day.endpoint_key,),
+        start_utc=fake.start_utc,
+        end_utc=fake.end_utc,
+        days=(day,),
+        connection=None,
+        storage=None,
+        records={},
+    )
+    for name in dir(real):
+        if not name.startswith("_"):
+            assert hasattr(fake, name)
+            if callable(getattr(real, name)):
+                assert (
+                    signature(getattr(fake, name)).parameters
+                    == signature(getattr(real, name)).parameters
+                )
+    assert fake.days == (day,) and fake.unreadable == [poll]
+    assert (fake.provider_id, fake.feeds) == (day.provider_id, (day.endpoint_key,))
+    assert fake.start_utc == datetime(2026, 1, 2, tzinfo=UTC)
+    assert fake.end_utc == datetime(2026, 1, 3, tzinfo=UTC)
+    assert list(fake.polls()) == [poll] and list(fake.processing()) == [processing]
+    assert list(fake.captures()) == [capture]
+    assert list(fake.captures(with_bytes=False)) == [replace(capture, payload=None)]
+    assert fake.require_available() is None
+    missing = fake_feed_day(state="not_available")
+    with pytest.raises(WindowNotAvailable) as error:
+        FakeCaptureWindow([missing], [], [], []).require_available()
+    assert error.value.days == (missing,)
+
+
+def test_fake_open_window_returns_its_windows_in_order():
+    from history_reader_fakes import FakeCaptureWindow, fake_open_window
+
+    from transit_ops.history.reader import open_window
+
+    windows = [FakeCaptureWindow([], [], [], []) for _ in range(2)]
+    opener = fake_open_window(iter(windows))
+    assert signature(opener).parameters == signature(open_window).parameters
+    for window in windows:
+        assert (
+            opener(
+                "provider",
+                iter(["feed"]),
+                window.start_utc,
+                window.end_utc,
+                connection=None,
+                storage=None,
+            )
+            is window
+        )
+    assert opener.calls == [("provider", ("feed",), w.start_utc, w.end_utc) for w in windows]
+    with pytest.raises(AssertionError):
+        opener(
+            "provider",
+            ["feed"],
+            windows[0].start_utc,
+            windows[0].end_utc,
+            connection=None,
+            storage=None,
+        )

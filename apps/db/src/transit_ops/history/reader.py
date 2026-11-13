@@ -1,8 +1,9 @@
 """Archive reader values shared by history consumers."""
 
 import hashlib
+import heapq
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
@@ -10,7 +11,7 @@ from sqlalchemy import Connection, text
 
 from transit_ops.history import ledger
 from transit_ops.history.datasets import CaptureSource, IndexFamily, get_dataset, utc_day_closes_at
-from transit_ops.history.manifest import read_copy_manifest
+from transit_ops.history.manifest import Manifest, read_copy_manifest
 from transit_ops.history.poll_record import PollRecord, poll_record_sha256
 from transit_ops.history.working_captures import _INDEX, read_working_day, rows_fingerprint
 from transit_ops.ingestion.storage import BronzeStorageResolver
@@ -155,10 +156,52 @@ class CaptureWindow:
             raise WindowNotAvailable(missing)
 
     def polls(self) -> Iterator[Poll]:
-        raise NotImplementedError("H06a4 implements polls")
+        yield from heapq.merge(
+            *(self._day_polls(day) for day in self.days if day.state == "available"),
+            key=lambda p: (p.time_utc, p.endpoint_key, p.ingestion_run_id),
+        )
+
+    def _day_record(self, day: FeedDay) -> PollRecord | Manifest:
+        key = day.endpoint_key, day.utc_date
+        if day.form == "objects":
+            return self._records[key]
+        return read_copy_manifest(self._storage, self._copies[key])
+
+    def _day_polls(self, day: FeedDay) -> Iterator[Poll]:
+        for entry in self._day_record(day).polls:
+            if self.start_utc <= entry.time_utc < self.end_utc:
+                values = {
+                    f.name: getattr(entry, f.name)
+                    for f in fields(Poll)
+                    if f.name not in ("provider_id", "endpoint_key")
+                }
+                yield Poll(provider_id=self.provider_id, endpoint_key=day.endpoint_key, **values)
 
     def captures(self, *, with_bytes: bool = True) -> Iterator[Capture]:
-        raise NotImplementedError("H06a4 implements captures")
+        if with_bytes:
+            raise NotImplementedError("H06b implements capture payload reads")
+        yield from heapq.merge(
+            *(self._day_captures(day) for day in self.days if day.state == "available"),
+            key=lambda c: (c.captured_at_utc, c.endpoint_key, c.capture_row_id),
+        )
+
+    def _day_captures(self, day: FeedDay) -> Iterator[Capture]:
+        for entry in self._day_record(day).captures:
+            if day.form == "archive_copy" and not entry.packed:
+                continue
+            if self.start_utc <= entry.captured_at_utc < self.end_utc:
+                values = {
+                    f.name: getattr(entry, f.name)
+                    for f in fields(Capture)
+                    if f.name not in ("provider_id", "endpoint_key", "payload", "checksum_sha256")
+                }
+                yield Capture(
+                    provider_id=self.provider_id,
+                    endpoint_key=day.endpoint_key,
+                    checksum_sha256=entry.sha256,
+                    payload=None,
+                    **values,
+                )
 
     def processing(self) -> Iterator[ProcessingRecord]:
         raise NotImplementedError("H06b implements processing")
@@ -364,13 +407,24 @@ def _working_record(
         )
         copy = next(copy for copy in copies if copy.content_version == version)
         current = read_copy_manifest(storage, copy)
-    return read_working_day(
+    record = read_working_day(
         connection,
         provider_id=provider,
         endpoint_key=feed,
         utc_date=day,
         current=current,
     )
+    if current is not None:
+        polls = {p.ingestion_run_id for p in record.polls}
+        captures = {c.capture_row_id for c in record.captures}
+        missing_polls = sum(p.ingestion_run_id not in polls for p in current.polls)
+        missing_captures = sum(c.capture_row_id not in captures for c in current.captures)
+        if missing_polls or missing_captures:
+            raise WorkingRowsMissing(
+                f"{provider}/{feed} {day}: {missing_polls} missing polls, "
+                f"{missing_captures} missing captures"
+            )
+    return record
 
 
 def _plan_day(
