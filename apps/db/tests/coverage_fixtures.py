@@ -1,10 +1,15 @@
-from collections.abc import Collection, Sequence
-from datetime import date, datetime, timedelta
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 from transit_ops.capture_coverage.rules import (
+    ABSENCE_FLOOR,
+    RATE_FLOOR,
     RULES_VERSION,
     CaptureKey,
     CoverageBuild,
+    CoverageFloor,
     CoveredInterval,
     Feed,
     PollFacts,
@@ -102,3 +107,99 @@ class RecordingCoverageBuilder:
             reader_states=dict.fromkeys(feeds),
             usable_poll_counts=dict.fromkeys(feeds, 0),
         )
+
+
+@dataclass(frozen=True)
+class CoverageCase:
+    polls: tuple[PollFacts, ...]
+    read_source: ReadSource
+    consumed_captures: frozenset[CaptureKey] | None
+    service_spans: tuple[tuple[datetime, datetime], ...]
+    source_lag_seconds: int
+    start_utc: datetime
+    end_utc: datetime
+    judge: Literal["absence", "window"]
+    floor: CoverageFloor | None
+    declared_interval_seconds: int | None
+    expected_verdict: Literal["covered", "not_covered", "too_short", "no_window"]
+
+
+def _case_time(seconds: int) -> datetime:
+    return datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=seconds)
+
+
+CASES: Mapping[str, CoverageCase] = {
+    "ten_minute_gap_holds_a_short_line": CoverageCase(
+        tuple(
+            make_polls(
+                "trip_updates",
+                _case_time(0),
+                _case_time(1200),
+                outages=[(_case_time(330), _case_time(870))],
+            )
+        ),
+        "worker_facts",
+        None,
+        ((_case_time(420), _case_time(780)),),
+        0,
+        _case_time(420),
+        _case_time(780),
+        "absence",
+        None,
+        30,
+        "not_covered",
+    ),
+    "trip_between_two_usable_polls": CoverageCase(
+        tuple(
+            make_polls(
+                "trip_updates",
+                _case_time(0),
+                _case_time(120),
+                outages=[(_case_time(30), _case_time(90))],
+            )
+        ),
+        "worker_facts",
+        None,
+        ((_case_time(20), _case_time(100)),),
+        0,
+        _case_time(20),
+        _case_time(100),
+        "absence",
+        None,
+        30,
+        "too_short",
+    ),
+    "cancel_flag_then_outage": CoverageCase(
+        tuple(
+            make_polls(
+                "trip_updates",
+                _case_time(33000),
+                _case_time(36600),
+                outages=[(_case_time(33030), _case_time(35970))],
+            )
+        ),
+        "worker_facts",
+        None,
+        ((_case_time(33000), _case_time(36600)),),
+        0,
+        _case_time(33000),
+        _case_time(36600),
+        "window",
+        ABSENCE_FLOOR,
+        None,
+        "not_covered",
+    ),
+    "fully_covered_day": CoverageCase(
+        tuple(make_polls("trip_updates", _case_time(18000), _case_time(90000))),
+        "worker_facts",
+        None,
+        ((_case_time(21600), _case_time(88200)),),
+        0,
+        _case_time(21600),
+        _case_time(88200),
+        "window",
+        RATE_FLOOR,
+        None,
+        "covered",
+    ),
+}
