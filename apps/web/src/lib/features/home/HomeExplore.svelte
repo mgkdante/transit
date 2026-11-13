@@ -5,6 +5,7 @@
 	import { desktop } from '@yesid/ui/state';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { scrollChain } from '@yesid/motion/actions';
+	import type { Snippet } from 'svelte';
 	import {
 		HOME_FILTER_COUNT_LABEL,
 		homeGroups,
@@ -20,9 +21,14 @@
 		readonly locale: Locale;
 		readonly alertsAvailable?: boolean;
 		readonly copy: HomeCopy;
+		/** The live numbers and the search invitation, between the introduction and the directory. */
+		readonly pulse?: Snippet;
 	}
 
-	let { locale, copy: t, alertsAvailable = true }: Props = $props();
+	let { locale, copy: t, alertsAvailable = true, pulse }: Props = $props();
+
+	// The headline scales with its container: one line on desktop, two on mobile, any city or language.
+	const headlineChars = $derived(t.headline.length + 1 + t.headlineAccent.length);
 
 	function entryHref(entry: HomeEntry): string {
 		const href = entry.kind === 'surface' ? routeFor(entry.target) : entry.href;
@@ -107,22 +113,22 @@
 
 <svelte:window onkeydown={closeFilters} />
 <section class="home-explore" data-slot="home-explore" aria-labelledby="home-explore-title">
-	<header class="home-intro" data-slot="home-audit-brief">
+	<header class="home-intro" data-slot="home-audit-brief" style:--headline-chars={headlineChars}>
 		<h1 id="home-explore-title">{t.headline} <span>{t.headlineAccent}</span></h1>
 		<p class="home-lede">{t.auditBody}</p>
+		<details class="home-more" data-slot="home-more">
+			<summary
+				><span class="home-more-closed">{t.readMore}</span><span class="home-more-open"
+					>{t.readLess}</span
+				><span class="home-more-mark" aria-hidden="true">+</span></summary
+			>
+			<p>{t.auditMore}</p>
+			<p>{t.audience}</p>
+			<p>{t.cadence}</p>
+		</details>
 	</header>
+	{@render pulse?.()}
 	<nav aria-label={t.exploreNav}>
-		{#if !filtersActive}
-			<ul class="home-primary" data-slot="home-primary">
-				{#each primaryEntries as entry (entryHref(entry))}
-					<li>
-						<a class="home-entry home-entry--primary" href={entryHref(entry)}
-							>{@render entryBody(entry)}</a
-						>
-					</li>
-				{/each}
-			</ul>
-		{/if}
 		<div class="directory-head">
 			<h2>{t.exploreNav}</h2>
 			<span class="label-metric" aria-live="polite">{matchSummary}</span>
@@ -212,6 +218,9 @@
 		width: 100%;
 		padding-bottom: 3rem;
 	}
+	.home-intro {
+		container-type: inline-size;
+	}
 	.home-intro h1 {
 		margin: 0;
 		font-family: var(--font-heading);
@@ -225,28 +234,71 @@
 		display: block;
 		color: var(--primary);
 	}
+	/*
+	 * On desktop the headline sits on one line for any city or language: heavy Inter at -0.04em
+	 * tracking runs about 0.47em per character, and 0.5 leaves a margin.
+	 */
+	@media (--desktop-min) {
+		.home-intro h1 {
+			font-size: clamp(2.5rem, calc(100cqi / (var(--headline-chars) * 0.5)), 8rem);
+			line-height: 0.95;
+		}
+		.home-intro h1 span {
+			display: inline;
+		}
+	}
 	.home-lede {
 		max-width: var(--measure-body);
 		margin: 1.25rem 0 0;
-		font-size: var(--text-reading-support);
+		font-size: var(--text-body);
 		line-height: 1.7;
 		color: var(--secondary-foreground);
 	}
-	.home-primary,
+	.home-more {
+		max-width: var(--measure-body);
+	}
+	.home-more summary {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 44px;
+		color: var(--accent-text);
+		font-family: var(--font-mono);
+		font-size: var(--text-small);
+		cursor: pointer;
+		list-style: none;
+	}
+	.home-more summary::-webkit-details-marker {
+		display: none;
+	}
+	.home-more summary:focus-visible {
+		outline: 2px solid var(--accent-text);
+		outline-offset: 4px;
+	}
+	.home-more-open,
+	.home-more[open] .home-more-closed {
+		display: none;
+	}
+	.home-more[open] .home-more-open {
+		display: inline;
+	}
+	.home-more[open] .home-more-mark {
+		transform: rotate(45deg);
+	}
+	.home-more p {
+		margin: 0.5rem 0 0;
+		line-height: 1.7;
+		color: var(--secondary-foreground);
+	}
+	@media (min-width: 640px) {
+		.home-lede {
+			font-size: var(--text-reading-support);
+		}
+	}
 	.launch-grid {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-	}
-	.home-primary {
-		display: grid;
-		gap: 1px;
-		background: var(--border-brand);
-		border: 1px solid var(--border-brand);
-	}
-	.home-primary li {
-		min-width: 0;
-		display: flex;
 	}
 	.home-entry {
 		display: flex;
@@ -261,11 +313,6 @@
 		color: var(--foreground);
 		transition: color var(--duration-fast) var(--ease-default);
 	}
-	.home-entry--primary {
-		padding: clamp(1.25rem, 3vw, 2rem);
-		background: var(--card);
-		border: 0;
-	}
 	.home-entry-copy {
 		display: flex;
 		flex-direction: column;
@@ -277,9 +324,6 @@
 		font-weight: 800;
 		line-height: 1.25;
 		letter-spacing: var(--tracking-tight);
-	}
-	.home-entry--primary .home-entry-title {
-		font-size: var(--text-heading);
 	}
 	.home-entry-description {
 		color: var(--muted-foreground);
@@ -305,16 +349,13 @@
 		outline: 2px solid var(--accent-text);
 		outline-offset: 4px;
 	}
-	.home-entry--primary:focus-visible {
-		outline-offset: -5px;
-	}
 	.directory-head {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
 		justify-content: space-between;
 		gap: 0.75rem;
-		margin: 2.5rem 0 1.5rem;
+		margin: 0 0 1.5rem;
 		padding-bottom: 1rem;
 		border-bottom: 1px solid var(--border-brand);
 	}
@@ -393,9 +434,6 @@
 		flex-basis: 100%;
 	}
 	@media (min-width: 640px) {
-		.home-primary {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
 		.launch-grid {
 			display: grid;
 			grid-template-columns: repeat(2, minmax(0, 1fr));

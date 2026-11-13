@@ -3,6 +3,12 @@ import type { SurfaceTarget } from '#lib/nav/index.ts';
 
 type CopyKey =
 	| 'auditBody'
+	| 'auditMore'
+	| 'readMore'
+	| 'readLess'
+	| 'audience'
+	| 'cadence'
+	| 'cadenceLive'
 	| 'headline'
 	| 'headlineAccent'
 	| 'clearFilters'
@@ -23,7 +29,16 @@ type CopyKey =
 export const homeCopy = defineCopy({
 	fr: {
 		auditBody:
-			'Un regard citoyen sur la santé du réseau : retards, fiabilité et limites des données publiques.',
+			'Transit est un registre public et indépendant du service d’autobus que {city} reçoit réellement.',
+		auditMore:
+			'Il montre à quelle fréquence les autobus du réseau {operator} sont en retard, de combien, et sur quelles lignes et à quels arrêts, à partir des données ouvertes de la société de transport.',
+		readMore: 'En savoir plus',
+		readLess: 'Réduire',
+		audience:
+			'Il s’adresse aux résidents, aux groupes citoyens, aux journalistes et aux élus qui veulent des faits pour exiger un meilleur service. Ce n’est pas un planificateur de trajets, et le site n’est pas affilié au réseau {operator}.',
+		cadence:
+			'Le bilan de fiabilité est republié chaque semaine. Quand une donnée manque, nous le disons.',
+		cadenceLive: 'Les données en direct sont actualisées environ toutes les {seconds} secondes.',
 		headline: 'Le transport à {city},',
 		headlineAccent: 'à l’épreuve des données.',
 		clearFilters: 'Effacer les filtres',
@@ -43,8 +58,15 @@ export const homeCopy = defineCopy({
 		exploreNav: 'Tout explorer',
 	},
 	en: {
-		auditBody:
-			'A citizen’s view of network health: delays, reliability, and the limits of public data.',
+		auditBody: 'Transit is an independent public record of the bus service {city} actually gets.',
+		auditMore:
+			'It shows how often {operator} buses run late, by how much, and on which lines and stops, using the agency’s own open data.',
+		readMore: 'Read more',
+		readLess: 'Show less',
+		audience:
+			'It is for residents, advocates, journalists and councillors who want evidence when they ask for better service. It is not a trip planner, and it is not affiliated with {operator}.',
+		cadence: 'The reliability record is republished every week. When data is missing, we say so.',
+		cadenceLive: 'Live data refreshes about every {seconds} seconds.',
 		headline: 'How {city}’s',
 		headlineAccent: 'transit holds up.',
 		clearFilters: 'Clear filters',
@@ -65,6 +87,13 @@ export const homeCopy = defineCopy({
 } satisfies Readonly<Record<Locale, Readonly<Record<CopyKey, string>>>>);
 
 export type HomeCopy = (typeof homeCopy)[Locale];
+
+/** How current the data is. The live rate comes from the network; none is assumed. */
+export function homeCadence(locale: Locale, liveSeconds: number | null | undefined): string {
+	const t = homeCopy[locale];
+	if (liveSeconds == null) return t.cadence;
+	return `${t.cadenceLive.replace('{seconds}', String(liveSeconds))} ${t.cadence}`;
+}
 
 export type HomeTempo = 'now' | 'record' | 'method';
 
@@ -114,16 +143,6 @@ export function homeGroups(t: HomeCopy, alertsAvailable = true): readonly HomeGr
 						en: 'Predicted departures and reported reliability at each stop.',
 					},
 				},
-				{
-					kind: 'surface',
-					target: { kind: 'search' },
-					tempo: 'now',
-					title: { fr: 'Rechercher', en: 'Search' },
-					desc: {
-						fr: 'Trouvez une ligne, un arrêt ou un véhicule par son nom ou son numéro.',
-						en: 'Find a line, a stop or a vehicle by its name or number.',
-					},
-				},
 			],
 		},
 		{
@@ -156,8 +175,8 @@ export function homeGroups(t: HomeCopy, alertsAvailable = true): readonly HomeGr
 					tempo: 'record',
 					title: { fr: 'Points chauds', en: 'Hotspots' },
 					desc: {
-						fr: 'Les endroits où les retards s’accumulent, sur l’ensemble du réseau.',
-						en: 'The places where delays pile up, mapped across the whole network.',
+						fr: 'Les lignes et les arrêts le plus souvent en retard de plus de 5 minutes, classés sur l’ensemble du réseau.',
+						en: 'The lines and stops most often more than 5 minutes late, ranked across the whole network.',
 					},
 				},
 			],
@@ -182,8 +201,8 @@ export function homeGroups(t: HomeCopy, alertsAvailable = true): readonly HomeGr
 					tempo: 'record',
 					title: { fr: 'Récidivistes', en: 'Repeat offenders' },
 					desc: {
-						fr: 'Les lignes qui accumulent les retards, jour après jour, classées au grand jour.',
-						en: 'The lines that keep running late, day after day, ranked in the open.',
+						fr: 'Les trajets et les véhicules le plus souvent en retard de plus de 5 minutes, classés au grand jour.',
+						en: 'The trips and buses most often more than 5 minutes late, ranked in the open.',
 					},
 				},
 				{
