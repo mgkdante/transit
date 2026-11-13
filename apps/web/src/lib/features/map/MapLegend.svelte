@@ -116,8 +116,12 @@
 	.mf-legend-text {
 		min-width: 0;
 	}
+	[data-legend-group='status'] .mf-legend-text {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) calc(var(--spacing) * 4);
+	}
 	.mf-legend-glyph {
-		margin-inline-start: calc(var(--spacing) * 2);
+		text-align: center;
 	}
 	.mf-legend-note {
 		margin: calc(var(--spacing) * 3) 0 0;

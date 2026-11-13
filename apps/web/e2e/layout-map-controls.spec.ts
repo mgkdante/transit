@@ -88,6 +88,9 @@ for (const locale of ['en', 'fr'])
 				labels: rows.map(
 					(row) => row.querySelector('[data-slot="map-legend-label"]')!.getBoundingClientRect().x,
 				),
+				glyphs: [...root.querySelectorAll('.mf-legend-glyph')].map(
+					(el) => el.getBoundingClientRect().x,
+				),
 				clipped: [root, ...rows].some((row) => row.scrollWidth > row.clientWidth + 1),
 			};
 		});
@@ -95,6 +98,8 @@ for (const locale of ['en', 'fr'])
 			expect(Math.abs(value - geometry.centres[0])).toBeLessThanOrEqual(1);
 		for (const value of geometry.labels)
 			expect(Math.abs(value - geometry.labels[0])).toBeLessThanOrEqual(1);
+		for (const value of geometry.glyphs)
+			expect(Math.abs(value - geometry.glyphs[0])).toBeLessThanOrEqual(1);
 		expect(geometry.clipped).toBe(false);
 		expect(geometry.x).toBeGreaterThanOrEqual(0);
 		expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width);
