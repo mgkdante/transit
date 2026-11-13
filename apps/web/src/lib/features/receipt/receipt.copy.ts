@@ -78,6 +78,9 @@ export const copy = defineCopy({
 			next: 'Next date',
 			coverage: (first, last) => `Available receipts: ${first}–${last}`,
 			selection: (date) => `Showing: ${date}`,
+			latestCompleteLabel: 'Latest complete day',
+			latestComplete: (date: string) => `Latest complete day: ${date}`,
+			incompleteDay: 'This day is not complete yet. Figures can change.',
 			correction: {
 				malformed: 'That date was not valid. Showing the latest receipt.',
 				'outside-coverage':
@@ -228,6 +231,9 @@ export const copy = defineCopy({
 			next: 'Date suivante',
 			coverage: (first: string, last: string) => `Reçus disponibles : ${first} au ${last}`,
 			selection: (date: string) => `Affichage : ${date}`,
+			latestCompleteLabel: 'Dernier jour complet',
+			latestComplete: (date: string) => `Dernier jour complet : ${date}`,
+			incompleteDay: 'Cette journée n’est pas encore complète. Les chiffres peuvent changer.',
 			correction: {
 				malformed: 'Cette date n’était pas valide. Affichage du reçu le plus récent.',
 				'outside-coverage':

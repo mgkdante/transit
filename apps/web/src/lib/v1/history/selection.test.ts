@@ -12,6 +12,7 @@ import {
 	availabilityFromPointCollectionIndex,
 	availabilityFromReceiptsIndex,
 	datesForAvailability,
+	latestAvailableDateThrough,
 	defaultWindowFromCollectionIndex,
 	nextAvailableDate,
 	previousAvailableDate,
@@ -34,6 +35,42 @@ const discrete: HistoryAvailability = {
 };
 
 const defaultWindow: DateWindow = { from: '2026-03-02', to: '2026-03-08' };
+
+it('uses the given default date', () => {
+	for (const raw of [undefined, '2026-03-03']) {
+		expect(resolveHistoryDate(raw, discrete, '2026-03-03')).toEqual({
+			selection: '2026-03-03',
+			canonicalDate: null,
+			correction: null,
+		});
+	}
+	expect(resolveHistoryDate('2026-03-10', discrete, '2026-03-03')).toEqual({
+		selection: '2026-03-10',
+		canonicalDate: '2026-03-10',
+		correction: null,
+	});
+	for (const [raw, reason] of [
+		['bad', 'malformed'],
+		['2026-03-02', 'unpublished'],
+	]) {
+		expect(resolveHistoryDate(raw, discrete, '2026-03-03')).toMatchObject({
+			selection: '2026-03-03',
+			canonicalDate: null,
+			correction: { reason },
+		});
+	}
+	for (const raw of [undefined, 'bad', '2026-03-02', '2026-03-10', '2026-03-03']) {
+		expect(resolveHistoryDate(raw, discrete, '2026-03-05')).toEqual(
+			resolveHistoryDate(raw, discrete),
+		);
+	}
+});
+
+it('finds the newest listed date on or before a closed day', () => {
+	expect(latestAvailableDateThrough(discrete, '2026-03-05')).toBe('2026-03-03');
+	expect(latestAvailableDateThrough(discrete, null)).toBeNull();
+	expect(latestAvailableDateThrough(discrete, '2026-02-28')).toBeNull();
+});
 
 describe('strict ISO calendar dates and UTC arithmetic', () => {
 	it('accepts real YYYY-MM-DD dates and rejects shape-valid impossible dates', () => {

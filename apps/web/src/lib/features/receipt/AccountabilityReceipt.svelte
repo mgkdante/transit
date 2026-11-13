@@ -15,7 +15,12 @@
 		fmtPct as sharedFmtPct,
 	} from '#lib/utils/index.ts';
 	import { shiftLabel } from '#lib/features/reliability/shiftGrains.ts';
-	import { getAdvertisedReceipt, getReceiptsIndex } from '#lib/v1/repositories/historic.ts';
+	import {
+		getAdvertisedReceipt,
+		getReceiptsIndex,
+		getHistoricAvailability,
+	} from '#lib/v1/repositories/historic.ts';
+	import { recordClosedThrough, isClosedDay } from '#lib/v1/closedWindow.ts';
 	import type { Receipt } from '#lib/v1/index.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import { receiptObservation } from './selectors/observation';
@@ -23,6 +28,7 @@
 	import {
 		availabilityFromReceiptsIndex,
 		datesForAvailability,
+		latestAvailableDateThrough,
 		nextAvailableDate,
 		previousAvailableDate,
 		resolveHistoryDate,
@@ -69,13 +75,18 @@
 	const edgeLayout = $derived(desktop.current ? 'desktop' : 'mobile');
 
 	const index = createResource((signal) => getReceiptsIndex({ signal }));
+	const anchor = createResource((signal) => getHistoricAvailability({ signal }));
+	const closedThrough = $derived(recordClosedThrough(anchor.error ? null : anchor.data));
 	const historyAvailability = $derived(availabilityFromReceiptsIndex(index.data));
+	const defaultDate = $derived(latestAvailableDateThrough(historyAvailability, closedThrough));
 	const availableDates = $derived(datesForAvailability(historyAvailability));
 	const dateOptions = $derived(availableDates.map((date) => ({ date })));
 	const hasDates = $derived(availableDates.length > 0);
 
 	const seededDate = new URLSearchParams(page.url.search).get('date');
 	let selectedDate = $state('');
+	const selectedClosed = $derived(isClosedDay(selectedDate, closedThrough));
+	const latestComplete = $derived(selectedDate === defaultDate && selectedClosed);
 	let canonicalDate = $state<string | null>(null);
 	let historyAnnouncement = $state<string | null>(null);
 	let dateSeeded = $state(false);
@@ -84,7 +95,7 @@
 		return t.history.correction[reason];
 	}
 	function selectDate(rawDate: unknown): void {
-		const resolved = resolveHistoryDate(rawDate, historyAvailability);
+		const resolved = resolveHistoryDate(rawDate, historyAvailability, defaultDate ?? undefined);
 		const resetControlledInput =
 			dateSeeded && resolved.correction != null && resolved.selection === selectedDate;
 		selectedDate = resolved.selection ?? '';
@@ -93,7 +104,13 @@
 		if (resetControlledInput) navigatorRevision += 1;
 	}
 	$effect(() => {
-		if (!dateSeeded && index.settled && index.error == null && index.data != null) {
+		if (
+			!dateSeeded &&
+			index.settled &&
+			anchor.settled &&
+			index.error == null &&
+			index.data != null
+		) {
 			selectDate(seededDate);
 			dateSeeded = true;
 		}
@@ -118,7 +135,11 @@
 				),
 	);
 	const historySelectionText = $derived(
-		selectedDate ? t.history.selection(formatDateKey(selectedDate, locale)) : null,
+		selectedDate
+			? (latestComplete ? t.history.latestComplete : t.history.selection)(
+					formatDateKey(selectedDate, locale),
+				)
+			: null,
 	);
 
 	const receipt = createResource<Receipt | null>((signal) => {
@@ -292,13 +313,17 @@
 			});
 		}
 		if (selectedDate) {
-			entries.push({ text: formatDateKey(selectedDate, locale), label: t.article.selectedLabel });
+			entries.push({
+				text: formatDateKey(selectedDate, locale),
+				label: latestComplete ? t.history.latestCompleteLabel : t.article.selectedLabel,
+			});
 		}
 		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
 		return entries;
 	});
 	const metaPending = $derived(
 		index.loading ||
+			!anchor.settled ||
 			!index.settled ||
 			(selectedDate !== '' && (receipt.loading || !receipt.settled)),
 	);
@@ -405,6 +430,13 @@
 	{/snippet}
 
 	<ResourceBoundary resource={index} lang={locale}>
+		{#if selectedDate && !selectedClosed}
+			<StateNotice
+				title={t.history.incompleteDay}
+				presentation="card"
+				data-slot="receipt-incomplete-day"
+			/>
+		{/if}
 		{#if !hasDates}
 			<StateNotice
 				title={t.emptyIndex}

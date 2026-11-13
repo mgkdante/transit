@@ -11,6 +11,7 @@ vi.mock('$app/env/public', async () => ({
 }));
 
 const ports = vi.hoisted(() => ({
+	getHistoricAvailability: vi.fn(),
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
 	getAdvertisedReceipt: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 }));
 
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
+	getHistoricAvailability: ports.getHistoricAvailability,
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
 }));
@@ -155,6 +157,7 @@ beforeEach(() => {
 	vi.stubGlobal('IntersectionObserver', ReceiptIntersectionObserver);
 	receiptGates = new Map(DATES.map((date) => [date, deferred<Receipt | null>()]));
 	ports.getReceiptsIndex.mockReset();
+	ports.getHistoricAvailability.mockReset().mockResolvedValue(null);
 	ports.getReceipt.mockReset();
 	ports.getAdvertisedReceipt.mockReset();
 	ports.getReceiptsIndex.mockResolvedValue(INDEX);

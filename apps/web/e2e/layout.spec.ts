@@ -25,6 +25,7 @@ const pages = [
 	'/repeat-offenders',
 	'/alerts',
 	'/receipt',
+	'/receipt?date=2026-08-30',
 	'/status',
 	`/trip/${trip}`,
 	`/search?q=${encodeURIComponent(fixture('stops-index').stops[0].name)}`,

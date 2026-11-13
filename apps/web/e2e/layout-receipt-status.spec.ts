@@ -48,6 +48,8 @@ for (const provider of ['stm', 'octranspo'])
 					if (await open.isVisible()) await open.click();
 					const date = page.locator('input[type="date"]:visible');
 					await expect(date).toHaveValue('2026-08-29');
+					expect(new URL(page.url()).searchParams.has('date')).toBe(false);
+					await expect(page.locator('[data-slot="receipt-incomplete-day"]')).toHaveCount(0);
 					const fits = await date.evaluate((input) => {
 						const label = input.closest('label')!;
 						const caption = label.querySelector('span')!;

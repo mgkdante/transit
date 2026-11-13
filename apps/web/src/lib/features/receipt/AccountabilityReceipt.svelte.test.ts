@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
 import AccountabilityReceipt from './AccountabilityReceipt.svelte';
 import { copy as receiptCopy } from './receipt.copy';
+import { formatDateKey } from '#lib/utils/time.ts';
+import { HistoricAvailabilityIndexSchema } from '#lib/v1/schemas/index.ts';
+import { mirrorSearchParam } from '#lib/site/urlMirror.ts';
+vi.mock('#lib/site/urlMirror.ts', () => ({ mirrorSearchParam: vi.fn() }));
 import { assertRailIndependence } from '../../../tests/railIndependence';
 
 vi.mock('$app/env/public', async () => ({
@@ -101,6 +105,7 @@ function resetReceiptState(): void {
 }
 
 const ports = vi.hoisted(() => ({
+	getHistoricAvailability: vi.fn(),
 	getReceiptsIndex: vi.fn(),
 	getReceipt: vi.fn(),
 	getAdvertisedReceipt: vi.fn(),
@@ -113,6 +118,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 }));
 
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
+	getHistoricAvailability: ports.getHistoricAvailability,
 	getReceiptsIndex: ports.getReceiptsIndex,
 	getReceipt: ports.getReceipt,
 	getAdvertisedReceipt: ports.getAdvertisedReceipt,
@@ -121,13 +127,19 @@ vi.mock('#lib/v1/repositories/historic.ts', () => ({
 vi.mock('#lib/v1/resource.svelte.ts', () => ({
 	createResource: <T>(fetcher: (signal: AbortSignal) => Promise<T> | T) => {
 		let data: T | null = null;
+		let error: unknown = null;
 		const signal = new AbortController().signal;
 		const pump = () => {
 			const v = fetcher(signal) as T | Promise<T>;
 			if (v != null && typeof (v as Promise<T>).then === 'function') {
-				void (v as Promise<T>).then((r) => {
-					data = r;
-				});
+				void (v as Promise<T>)
+					.then((r) => {
+						data = r;
+					})
+					.catch((reason) => {
+						data = null;
+						error = reason;
+					});
 			} else {
 				data = v as T;
 			}
@@ -138,7 +150,9 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 				pump();
 				return data;
 			},
-			error: null,
+			get error() {
+				return error;
+			},
 			loading: false,
 			settled: true,
 			reload: vi.fn(),
@@ -147,6 +161,8 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 }));
 
 beforeEach(async () => {
+	ports.getHistoricAvailability.mockReset().mockReturnValue(null);
+	vi.mocked(mirrorSearchParam).mockClear();
 	resetReceiptState();
 	Element.prototype.scrollIntoView = vi.fn();
 	indexData = {
@@ -177,6 +193,82 @@ beforeEach(async () => {
 });
 
 afterEach(resetReceiptState);
+
+describe('receipt closed days', () => {
+	beforeEach(() => {
+		indexData = { ...indexData, dates: ['2026-11-10', '2026-11-11'] };
+		ports.getReceipt.mockImplementation((date: string) => ({ ...receiptData, date }));
+	});
+
+	it('opens on the latest complete day and says which', async () => {
+		ports.getHistoricAvailability.mockReturnValue(
+			HistoricAvailabilityIndexSchema.parse({
+				generated_utc: '2026-11-11T07:00:00Z',
+				families: [
+					{
+						family: 'network',
+						index_path: 'historic/history/network/index.json',
+						selection_mode: 'range',
+						last_available_date: '2026-11-10',
+					},
+				],
+			}),
+		);
+		const { container } = render(AccountabilityReceipt);
+		const t = receiptCopy.en;
+		expect(screen.getByLabelText(t.datePicker.label)).toHaveValue('2026-11-10');
+		expect(
+			screen.getByText(t.history.latestComplete(formatDateKey('2026-11-10', 'en'))),
+		).toBeInTheDocument();
+		expect(screen.getByText(t.history.latestCompleteLabel)).toBeInTheDocument();
+		expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', null);
+		expect(container.querySelector('[data-slot="receipt-incomplete-day"]')).toBeNull();
+		await fireEvent.change(screen.getByLabelText(t.datePicker.label), {
+			target: { value: '2026-11-11' },
+		});
+		expect(container.querySelector('[data-slot="receipt-incomplete-day"]')).toHaveTextContent(
+			t.history.incompleteDay,
+		);
+		expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', '2026-11-11');
+		await fireEvent.change(screen.getByLabelText(t.datePicker.label), {
+			target: { value: '2026-11-10' },
+		});
+		expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', null);
+	});
+
+	it.each(['absent', 'rejected'])(
+		'with no closed anchor (%s), opens on the newest day and says it is not complete',
+		async (state) => {
+			if (state === 'rejected')
+				ports.getHistoricAvailability.mockImplementation(() =>
+					Promise.reject(new Error('unavailable')),
+				);
+			const { container } = render(AccountabilityReceipt);
+			expect(screen.getByLabelText(receiptCopy.en.datePicker.label)).toHaveValue('2026-11-11');
+			expect(container.querySelector('[data-slot="receipt-incomplete-day"]')).toHaveTextContent(
+				receiptCopy.en.history.incompleteDay,
+			);
+			expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', null);
+			expect(screen.queryByRole('alert')).toBeNull();
+		},
+	);
+
+	it('a missing figure on an open day stays absent', () => {
+		ports.getReceipt.mockImplementation((date: string) => ({
+			...receiptData,
+			date,
+			otp_pct: null,
+		}));
+		const { container } = render(AccountabilityReceipt);
+		const headline = container.querySelector('[data-slot="receipt-headline"]')!;
+		const onTime = [...headline.querySelectorAll<HTMLElement>('[data-slot="metric-display"]')].find(
+			(metric) => within(metric).queryByText(receiptCopy.en.metrics.onTime, { exact: true }),
+		);
+		expect(onTime?.querySelector('[data-slot="absent-value"]')).toBeInTheDocument();
+		expect(within(onTime!).queryByText(/^0%?$/)).toBeNull();
+		expect(container.querySelector('[data-slot="receipt-incomplete-day"]')).toBeInTheDocument();
+	});
+});
 
 describe('AccountabilityReceipt article shell', () => {
 	it('renders one article heading and hides the bulk action for a single content section', async () => {
