@@ -11,6 +11,7 @@ from transit_ops.maintenance.i3 import (
     prune_i3_raw_snapshots,
     prune_i3_silver_closed_rows,
 )
+from transit_ops.settings import Settings
 
 PROVIDER = "stm_i3ret_test"
 ENDPOINT_ID = 991014
@@ -211,6 +212,47 @@ def test_prune_i3_raw_keeps_silver_referenced_and_latest_snapshots(conn, run_kin
             {"p": PROVIDER},
         ).scalars()
     ) == {RUN_IDS[0], RUN_IDS[2]}
+
+
+@pytest.mark.parametrize("age_days,selected", [(399, False), (401, True)])
+def test_i3_raw_prune_uses_default_retention_boundary(conn, age_days, selected):
+    captured = T3 - timedelta(days=age_days)
+    conn.execute(
+        text("UPDATE raw.ingestion_runs SET started_at_utc=:captured WHERE ingestion_run_id=:r"),
+        {"captured": captured, "r": RUN_IDS[1]},
+    )
+    conn.execute(
+        text(
+            "UPDATE raw.i3_alert_snapshots SET captured_at_utc=:captured "
+            "WHERE i3_alert_snapshot_id=:s"
+        ),
+        {"captured": captured, "s": SNAP_IDS[1]},
+    )
+    storage = FakeBronze()
+    _, counts, meta_counts, failed = prune_i3_raw_snapshots(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=Settings.model_fields["BRONZE_I3_RETENTION_DAYS"].default,
+        bronze_storage=storage,
+        now_utc=T3,
+    )
+    assert counts == {"i3_raw": int(selected)}
+    assert failed == set()
+    assert storage.deleted == (
+        [f"{PROVIDER}/i3_alerts/captured_at_utc={SNAP_IDS[1]}/payload.json"] if selected else []
+    )
+    assert meta_counts == {
+        "raw.i3_alert_snapshots": int(selected),
+        "raw.ingestion_objects": int(selected),
+        "raw.ingestion_runs": int(selected),
+    }
+    surviving = set(
+        conn.execute(
+            text("SELECT i3_alert_snapshot_id FROM raw.i3_alert_snapshots WHERE provider_id=:p"),
+            {"p": PROVIDER},
+        ).scalars()
+    )
+    assert surviving == (set(SNAP_IDS) - {SNAP_IDS[1]} if selected else set(SNAP_IDS))
 
 
 @pytest.mark.parametrize("equal_time", [False, True])

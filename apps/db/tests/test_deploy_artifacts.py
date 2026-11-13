@@ -817,6 +817,22 @@ def test_bronze_retention_defaults_match_compose_and_env_template() -> None:
     assert "BRONZE_REALTIME_RETENTION_DAYS=400" in _active_lines(env_example)
 
 
+def test_alert_retention_defaults_match_compose_and_env_template() -> None:
+    assert Settings.model_fields["BRONZE_I3_RETENTION_DAYS"].default == 400
+    assert Settings.model_fields["SILVER_I3_CLOSED_RETENTION_DAYS"].default == 90
+    environments = [
+        service["environment"]
+        for service in _compose()["services"].values()
+        if "BRONZE_I3_RETENTION_DAYS" in service.get("environment", {})
+    ]
+    assert environments
+    for environment in environments:
+        assert environment["BRONZE_I3_RETENTION_DAYS"] == "${BRONZE_I3_RETENTION_DAYS:-400}"
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "BRONZE_I3_RETENTION_DAYS=400" in _active_lines(env_example)
+    assert "SILVER_I3_CLOSED_RETENTION_DAYS=90" in _active_lines(env_example)
+
+
 def test_compose_bronze_realtime_defaults_match_settings() -> None:
     default = Settings.model_fields["BRONZE_REALTIME_RETENTION_DAYS"].default
     assert default == 400
