@@ -21,7 +21,7 @@
 		readonly locale: Locale;
 		readonly alertsAvailable?: boolean;
 		readonly copy: HomeCopy;
-		/** The live accountability strip, shown between the introduction and the directory. */
+		/** The live numbers and the search invitation, between the introduction and the directory. */
 		readonly pulse?: Snippet;
 	}
 
@@ -29,7 +29,6 @@
 
 	// The headline scales with its container: one line on desktop, two on mobile, any city or language.
 	const headlineChars = $derived(t.headline.length + 1 + t.headlineAccent.length);
-	const lineChars = $derived(Math.max(t.headline.length, t.headlineAccent.length));
 
 	function entryHref(entry: HomeEntry): string {
 		const href = entry.kind === 'surface' ? routeFor(entry.target) : entry.href;
@@ -114,15 +113,19 @@
 
 <svelte:window onkeydown={closeFilters} />
 <section class="home-explore" data-slot="home-explore" aria-labelledby="home-explore-title">
-	<header
-		class="home-intro"
-		data-slot="home-audit-brief"
-		style:--headline-chars={headlineChars}
-		style:--line-chars={lineChars}
-	>
+	<header class="home-intro" data-slot="home-audit-brief" style:--headline-chars={headlineChars}>
 		<h1 id="home-explore-title">{t.headline} <span>{t.headlineAccent}</span></h1>
 		<p class="home-lede">{t.auditBody}</p>
-		<p class="home-lede home-lede--support">{t.audience} {t.cadence}</p>
+		<details class="home-more" data-slot="home-more">
+			<summary
+				><span class="home-more-closed">{t.readMore}</span><span class="home-more-open"
+					>{t.readLess}</span
+				><span class="home-more-mark" aria-hidden="true">+</span></summary
+			>
+			<p>{t.auditMore}</p>
+			<p>{t.audience}</p>
+			<p>{t.cadence}</p>
+		</details>
 	</header>
 	{@render pulse?.()}
 	<nav aria-label={t.exploreNav}>
@@ -218,13 +221,12 @@
 	.home-intro {
 		container-type: inline-size;
 	}
-	/* Heavy Inter at -0.04em tracking runs about 0.47em per character; 0.5 leaves a margin. */
 	.home-intro h1 {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: clamp(1.75rem, calc(100cqi / (var(--line-chars) * 0.5)), 4.5rem);
+		font-size: clamp(2.5rem, 8vw, 7rem);
 		font-weight: 900;
-		line-height: 0.95;
+		line-height: 0.88;
 		letter-spacing: -0.04em;
 		text-wrap: balance;
 	}
@@ -232,9 +234,14 @@
 		display: block;
 		color: var(--primary);
 	}
+	/*
+	 * On desktop the headline sits on one line for any city or language: heavy Inter at -0.04em
+	 * tracking runs about 0.47em per character, and 0.5 leaves a margin.
+	 */
 	@media (--desktop-min) {
 		.home-intro h1 {
 			font-size: clamp(2.5rem, calc(100cqi / (var(--headline-chars) * 0.5)), 8rem);
+			line-height: 0.95;
 		}
 		.home-intro h1 span {
 			display: inline;
@@ -243,14 +250,50 @@
 	.home-lede {
 		max-width: var(--measure-body);
 		margin: 1.25rem 0 0;
-		font-size: var(--text-reading-support);
+		font-size: var(--text-body);
 		line-height: 1.7;
 		color: var(--secondary-foreground);
 	}
-	.home-lede--support {
-		margin-top: 0.75rem;
+	.home-more {
+		max-width: var(--measure-body);
+	}
+	.home-more summary {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		min-height: 44px;
+		color: var(--accent-text);
+		font-family: var(--font-mono);
 		font-size: var(--text-small);
-		color: var(--muted-foreground);
+		cursor: pointer;
+		list-style: none;
+	}
+	.home-more summary::-webkit-details-marker {
+		display: none;
+	}
+	.home-more summary:focus-visible {
+		outline: 2px solid var(--accent-text);
+		outline-offset: 4px;
+	}
+	.home-more-open,
+	.home-more[open] .home-more-closed {
+		display: none;
+	}
+	.home-more[open] .home-more-open {
+		display: inline;
+	}
+	.home-more[open] .home-more-mark {
+		transform: rotate(45deg);
+	}
+	.home-more p {
+		margin: 0.5rem 0 0;
+		line-height: 1.7;
+		color: var(--secondary-foreground);
+	}
+	@media (min-width: 640px) {
+		.home-lede {
+			font-size: var(--text-reading-support);
+		}
 	}
 	.launch-grid {
 		list-style: none;

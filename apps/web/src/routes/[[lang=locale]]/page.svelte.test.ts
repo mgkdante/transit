@@ -89,15 +89,18 @@ describe('Home civic overview and directory', () => {
 		},
 	);
 
-	it('introduces the civic purpose, a search invitation, then the live strip before the directory', () => {
+	it('states the purpose, then shows the numbers before the search invitation and the directory', () => {
 		const { container } = renderHome();
 		expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
 			'How Montréal’s transit holds up.',
 		);
 		expect(container.querySelector('[data-slot="home-audit-brief"]')).toHaveTextContent(
-			'It is not a trip planner, and it is not affiliated with Fixture Transit.',
+			'independent public record of the bus service Montréal actually gets',
 		);
+		expect(
+			screen.getByText(/It is not a trip planner, and it is not affiliated with Fixture Transit\./),
+		).toBeInTheDocument();
 		const search = screen.getByRole('search');
 		expect(search).toHaveAttribute('action', '/search');
 		expect(search.querySelector('input[name="provider"]')).toHaveValue('fixture');
@@ -107,8 +110,18 @@ describe('Home civic overview and directory', () => {
 				.getAllByRole('link')
 				.map((link) => link.getAttribute('href')),
 		).toEqual(['/map', '/network']);
-		expect(strip.compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(strip.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(search.compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 		expect(createLiveStoreSpy).not.toHaveBeenCalled();
+	});
+
+	it('keeps the introduction to one sentence until Read more is opened', () => {
+		const { container } = renderHome();
+		const brief = container.querySelector('[data-slot="home-audit-brief"]') as HTMLElement;
+		const more = within(brief).getByText('Read more').closest('details') as HTMLDetailsElement;
+		expect(more.open).toBe(false);
+		expect(more).toHaveTextContent('residents, advocates, journalists and councillors');
+		expect(more).toHaveTextContent('When data is missing, we say so.');
 	});
 
 	it('invites other cities and names the hosting constraint without a funding pitch', () => {
@@ -194,7 +207,7 @@ describe('Home civic overview and directory', () => {
 
 	it('keeps the same native disclosure available on desktop', async () => {
 		const { container } = renderHome();
-		const details = container.querySelector('details') as HTMLDetailsElement;
+		const details = container.querySelector('details.home-filters') as HTMLDetailsElement;
 		await vi.waitFor(() => expect(details.open).toBe(true));
 		details.open = false;
 		await fireEvent(details, new Event('toggle'));
@@ -214,7 +227,7 @@ describe('Home civic overview and directory', () => {
 	it('keeps one inline mobile filter tree and restores its disclosure focus on Escape', async () => {
 		state.desktop = false;
 		const { container } = renderHome();
-		const details = container.querySelector('details') as HTMLDetailsElement;
+		const details = container.querySelector('details.home-filters') as HTMLDetailsElement;
 		const summary = details.querySelector('summary') as HTMLElement;
 		expect(details.open).toBe(false);
 		details.open = true;

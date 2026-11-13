@@ -134,9 +134,13 @@
 									>{#if rank.detail}<span class="pulse-rank-detail">{rank.detail}</span
 										>{/if}{:else}{rank.label}{/if}</span
 							>
-							{#if rank.severePct != null}<span class="pulse-rank-rate"
+							{#if rank.severePct != null}
+								<!-- The caption above names the measure; each row repeats it for screen readers. -->
+								<span class="pulse-rank-rate" aria-hidden="true">{pct(rank.severePct)}</span>
+								<span class="sr-only"
 									>{t.severeRate.replace('{pct}', pct(rank.severePct) ?? '')}</span
-								>{/if}
+								>
+							{/if}
 						</a>
 					</li>
 				{/each}
@@ -215,6 +219,9 @@
 	.pulse-worst-lists {
 		display: grid;
 		gap: 1.25rem;
+	}
+	.pulse-rank {
+		min-width: 0;
 	}
 	.pulse-rank h3 {
 		margin: 0 0 0.5rem;

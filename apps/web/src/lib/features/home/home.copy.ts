@@ -3,6 +3,9 @@ import type { SurfaceTarget } from '#lib/nav/index.ts';
 
 type CopyKey =
 	| 'auditBody'
+	| 'auditMore'
+	| 'readMore'
+	| 'readLess'
 	| 'audience'
 	| 'cadence'
 	| 'cadenceLive'
@@ -26,9 +29,13 @@ type CopyKey =
 export const homeCopy = defineCopy({
 	fr: {
 		auditBody:
-			'Transit est un registre public et indépendant du service d’autobus que {city} reçoit réellement. Il montre à quelle fréquence les autobus de {operator} sont en retard, de combien, et sur quelles lignes et à quels arrêts, à partir des données ouvertes de la société de transport.',
+			'Transit est un registre public et indépendant du service d’autobus que {city} reçoit réellement.',
+		auditMore:
+			'Il montre à quelle fréquence les autobus du réseau {operator} sont en retard, de combien, et sur quelles lignes et à quels arrêts, à partir des données ouvertes de la société de transport.',
+		readMore: 'En savoir plus',
+		readLess: 'Réduire',
 		audience:
-			'Il s’adresse aux résidents, aux groupes citoyens, aux journalistes et aux élus qui veulent des faits pour exiger un meilleur service. Ce n’est pas un planificateur de trajets, et le site n’est pas affilié à {operator}.',
+			'Il s’adresse aux résidents, aux groupes citoyens, aux journalistes et aux élus qui veulent des faits pour exiger un meilleur service. Ce n’est pas un planificateur de trajets, et le site n’est pas affilié au réseau {operator}.',
 		cadence:
 			'Le bilan de fiabilité est republié chaque semaine. Quand une donnée manque, nous le disons.',
 		cadenceLive: 'Les données en direct sont actualisées environ toutes les {seconds} secondes.',
@@ -51,8 +58,11 @@ export const homeCopy = defineCopy({
 		exploreNav: 'Tout explorer',
 	},
 	en: {
-		auditBody:
-			'Transit is an independent public record of the bus service {city} actually gets. It shows how often {operator} buses run late, by how much, and on which lines and stops, using the agency’s own open data.',
+		auditBody: 'Transit is an independent public record of the bus service {city} actually gets.',
+		auditMore:
+			'It shows how often {operator} buses run late, by how much, and on which lines and stops, using the agency’s own open data.',
+		readMore: 'Read more',
+		readLess: 'Show less',
 		audience:
 			'It is for residents, advocates, journalists and councillors who want evidence when they ask for better service. It is not a trip planner, and it is not affiliated with {operator}.',
 		cadence: 'The reliability record is republished every week. When data is missing, we say so.',

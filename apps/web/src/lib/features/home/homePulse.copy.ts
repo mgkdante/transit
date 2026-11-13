@@ -41,7 +41,7 @@ export const homePulseCopy = defineCopy({
 		worstLines: 'Lignes les plus en retard',
 		worstStops: 'Arrêts les plus en retard',
 		worstNote:
-			'Taux de retards graves sur 7 jours, données jusqu’au {date}. Le bilan est republié chaque semaine.',
+			'Taux de retards graves sur 7 jours (données jusqu’au {date}). Le bilan est republié chaque semaine.',
 		worstUnavailable: 'Aucun classement hebdomadaire publié pour l’instant.',
 		severeRate: '{pct} en retard grave',
 		allHotspots: 'Tous les points chauds',
@@ -66,7 +66,7 @@ export const homePulseCopy = defineCopy({
 		worstLines: 'Most delayed lines',
 		worstStops: 'Most delayed stops',
 		worstNote:
-			'Severe-delay rate over 7 days, data through {date}. The record is republished weekly.',
+			'Severe-delay rate over 7 days (data through {date}). The record is republished weekly.',
 		worstUnavailable: 'No weekly ranking has been published yet.',
 		severeRate: '{pct} severely late',
 		allHotspots: 'All hotspots',

@@ -24,7 +24,8 @@
 		...homeCopy[locale],
 		cadence: homeCadence(locale, data.v1?.manifest.files.live.ttl_s),
 		headline: homeCopy[locale].headline.replace('{city}', city),
-		auditBody: homeCopy[locale].auditBody.replace('{city}', city).replace('{operator}', operator),
+		auditBody: homeCopy[locale].auditBody.replace('{city}', city),
+		auditMore: homeCopy[locale].auditMore.replace('{operator}', operator),
 		audience: homeCopy[locale].audience.replace('{operator}', operator),
 	});
 </script>
@@ -32,8 +33,8 @@
 <Surface>
 	<HomeExplore {locale} {copy} alertsAvailable={providerHasAlerts(data.provider)}>
 		{#snippet pulse()}
-			<HomeSearch {locale} provider={data.provider?.id} />
 			<HomePulse {locale} {city} manifest={data.v1?.manifest ?? null} />
+			<HomeSearch {locale} provider={data.provider?.id} />
 		{/snippet}
 	</HomeExplore>
 	<HomeInvite {locale} />
