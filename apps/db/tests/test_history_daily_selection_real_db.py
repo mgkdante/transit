@@ -358,3 +358,25 @@ def test_provider_discovery_can_use_the_bounded_run_index(conn):
         column in condition
         for column in ("provider_id", "feed_endpoint_id", "started_at_utc", ">=", "<")
     )
+
+
+def test_empty_calendar_starts_after_endpoint_creation(conn):
+    from transit_ops.history.daily_selection import _DAYS
+
+    seed(conn, status="failed", with_capture=False)
+    conn.execute(text("UPDATE core.feed_endpoints SET created_at_utc=:at WHERE provider_id=:p"),
+                 dict(at=AT + timedelta(hours=1), p=P))
+    assert [d.utc_date for d in days(conn, start=date.min, end=date(2026, 1, 4),
+                                   empty_since=AT)] == [date(2026, 1, d) for d in (4, 3, 2)]
+    plan = conn.execute(text("EXPLAIN (ANALYZE, FORMAT JSON) " + _DAYS), dict(
+        endpoint="trip_updates", dataset=DS, providers=[P], start_day=date.min,
+        end_day=date(2026, 1, 4), start_at=datetime.min.replace(tzinfo=UTC),
+        end_at=AT + timedelta(days=3), empty_at=AT, empty_start_day=AT.date(),
+    )).scalar_one()
+    pending, generated = [plan[0]["Plan"]], []
+    while pending:
+        node = pending.pop()
+        pending.extend(node.get("Plans", []))
+        if node["Node Type"] == "Function Scan":
+            generated.append(node["Actual Rows"] + node.get("Rows Removed by Filter", 0))
+    assert generated and max(generated) == 2

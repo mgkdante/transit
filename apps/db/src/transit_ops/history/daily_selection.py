@@ -1,7 +1,7 @@
 """Read-only discovery and classification of capture archive work."""
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from functools import total_ordering
@@ -38,6 +38,15 @@ class CaptureDayStatus:
     state: Literal["needs_work", "refused", "unchanged"]
     reason: str
     overdue_first_seal: bool = False
+
+
+class DiscoveryStopped(RuntimeError):
+    """The caller's admission boundary stopped discovery before another query."""
+
+
+def _admit(before_query: Callable[[], bool] | None) -> None:
+    if before_query is not None and not before_query():
+        raise DiscoveryStopped
 
 
 def _source(dataset_id: str) -> declarations.CaptureSource:
@@ -83,7 +92,12 @@ WITH evidenced AS (
 ), absent AS (
     SELECT e.provider_id, d::date AS day
     FROM core.feed_endpoints e
-    CROSS JOIN generate_series(CAST(:start_day AS date)::timestamp,
+    CROSS JOIN LATERAL generate_series(
+        CASE WHEN CAST(:empty_start_day AS date) IS NOT NULL THEN GREATEST(
+            CAST(:empty_start_day AS date),
+            (e.created_at_utc AT TIME ZONE 'UTC')::date + CASE
+                WHEN (e.created_at_utc AT TIME ZONE 'UTC')::time = time '00:00:00'
+                THEN 0 ELSE 1 END) END::timestamp,
                               CAST(:end_day AS date)::timestamp, interval '1 day') d
     WHERE e.provider_id = ANY(:providers) AND e.endpoint_key = :endpoint
       AND CAST(:empty_at AS timestamptz) IS NOT NULL
@@ -95,13 +109,15 @@ SELECT provider_id, day FROM evidenced UNION SELECT provider_id, day FROM absent
 
 
 def _providers(
-    connection: Connection, start: datetime, end: datetime, empty_since: datetime | None
+    connection: Connection, start: datetime, end: datetime, empty_since: datetime | None,
+    before_query: Callable[[], bool] | None = None,
 ) -> list[str]:
     captures = [
         (k, v.source)
         for k, v in declarations.HISTORY_DATASETS.items()
         if isinstance(v.source, declarations.CaptureSource)
     ]
+    _admit(before_query)
     rows = connection.execute(
         text(_PROVIDERS),
         dict(
@@ -121,6 +137,7 @@ def capture_days(
     start: date,
     end: date,
     empty_since: datetime | None,
+    before_query: Callable[[], bool] | None = None,
 ) -> list[CaptureDay]:
     """Return all evidenced and proven empty days, without a work-limit prefilter."""
     sources = [(dataset, _source(dataset)) for dataset in datasets]
@@ -130,11 +147,18 @@ def capture_days(
         raise ValueError("start must not be after end")
     if empty_since is not None:
         empty_since = _instant(empty_since)
+    empty_start_day = None
+    if empty_since is not None:
+        floor = empty_since.date() + timedelta(days=empty_since.time() != time())
+        empty_start_day = max(start, floor)
     days: set[CaptureDay] = set()
     start_at = datetime.combine(start, time(), UTC)
     end_at = datetime.combine(end, time(), UTC) + timedelta(days=1)
-    providers = _providers(connection, start_at, end_at, empty_since) if sources else []
+    providers = (
+        _providers(connection, start_at, end_at, empty_since, before_query) if sources else []
+    )
     for dataset, source in sources:
+        _admit(before_query)
         rows = connection.execute(
             text(_DAYS),
             dict(
@@ -146,10 +170,20 @@ def capture_days(
                 start_day=start,
                 end_day=end,
                 empty_at=empty_since,
+                empty_start_day=empty_start_day,
             ),
         )
         days.update(CaptureDay(p, dataset, d, empty_since) for p, d in rows)
     return sorted(days)
+
+
+def capture_providers(
+    connection: Connection, *, now: datetime, before_query: Callable[[], bool] | None = None
+) -> list[str]:
+    """Discover historical and open-day attempts before provider-wide cleanup."""
+    return _providers(
+        connection, datetime.min.replace(tzinfo=UTC), _instant(now), None, before_query
+    )
 
 
 def _working(connection: Connection, day: CaptureDay, endpoint: str) -> tuple[str, bool]:

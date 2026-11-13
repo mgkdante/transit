@@ -7,7 +7,7 @@ import re
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TypedDict
 
@@ -58,7 +58,7 @@ def _reusable_copy(
         current is not None
         and current.details["rows_fingerprint"] == fingerprint
         and current.verified_at_utc is not None
-        and window.working_changed_at_utc <= current.verified_at_utc
+        and window.working_changed_at_utc.astimezone(UTC) <= current.verified_at_utc.astimezone(UTC)
     ):
         return current
     waiting = max(
@@ -74,7 +74,8 @@ def _reusable_copy(
     if (
         waiting is not None
         and waiting.details["rows_fingerprint"] == fingerprint
-        and window.working_changed_at_utc <= waiting.allocated_at_utc
+        and window.working_changed_at_utc.astimezone(UTC)
+        <= waiting.allocated_at_utc.astimezone(UTC)
     ):
         return waiting
     return None
