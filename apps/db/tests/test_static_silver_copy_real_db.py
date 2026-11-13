@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 import real_db_seed as db_seed
 from psycopg.errors import UniqueViolation
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 import transit_ops.silver.static_gtfs as static_silver_module
 from transit_ops.silver.static_gtfs import BronzeStaticArchive, load_static_zip_to_silver
@@ -189,6 +189,48 @@ def _cleanup(engine, provider_id: str) -> None:  # noqa: ANN001
             text("DELETE FROM core.providers WHERE provider_id = :provider_id"),
             {"provider_id": provider_id},
         )
+
+
+def test_new_rows_are_analyzed_before_trip_spans_are_computed(
+    real_db_engine, seed_provider
+) -> None:
+    statements: list[str] = []
+
+    def record_statement(conn, cursor, statement, parameters, context, executemany):
+        statements.append(" ".join(statement.split()).upper())
+
+    with real_db_engine.connect() as connection, connection.begin():
+        _seed_lineage(
+            connection, provider_id=PARITY_PROVIDER, base=PARITY_BASE,
+            seed_provider=seed_provider,
+        )
+        payload = _zip_bytes(_edge_members())
+        event.listen(connection, "before_cursor_execute", record_statement)
+        try:
+            result = load_static_zip_to_silver(
+                connection,
+                archive=_archive(provider_id=PARITY_PROVIDER, base=PARITY_BASE, payload=payload),
+                bronze_storage=MemoryBronzeStorage(payload),
+            )
+        finally:
+            event.remove(connection, "before_cursor_execute", record_statement)
+
+        span_insert = next(
+            i for i, sql in enumerate(statements)
+            if sql.startswith("INSERT INTO GOLD.TRIP_SERVICE_SPAN ")
+        )
+        for table in ("SILVER.TRIPS", "SILVER.STOP_TIMES"):
+            positions = [i for i, sql in enumerate(statements) if sql == f"ANALYZE {table}"]
+            assert len(positions) == 1, (table, positions)
+            assert positions[0] < span_insert
+        assert connection.execute(
+            text("""
+                SELECT route_id, trip_id, service_id, first_seconds, last_seconds
+                FROM gold.trip_service_span WHERE dataset_version_id = :version_id
+            """),
+            {"version_id": result.dataset_version_id},
+        ).all() == [("R1", "T1", "WK", 92400, 92100)]
+        connection.rollback()
 
 
 def test_static_copy_round_trips_typed_rows_on_real_postgres(real_db_engine, seed_provider) -> None:

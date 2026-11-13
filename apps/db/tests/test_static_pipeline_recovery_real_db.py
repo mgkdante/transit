@@ -333,7 +333,10 @@ def test_analyze_failure_rolls_back_materialization_and_retries_identical_source
         analyzed.clear()
         retried = subject.run()
         assert retried.static_ingestion["content_changed"] is False
-        assert analyzed == [f"ANALYZE {table}" for table in silver._POST_LOAD_ANALYZE_TABLES]
+        assert analyzed == [
+            "ANALYZE silver.trips", "ANALYZE silver.stop_times",
+            *[f"ANALYZE {table}" for table in silver._POST_LOAD_ANALYZE_TABLES],
+        ]
         current, gold_version = subject.state()
         assert current == gold_version and current != previous[0]
         analyzed.clear()

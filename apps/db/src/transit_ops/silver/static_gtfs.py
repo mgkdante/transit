@@ -1603,6 +1603,10 @@ def load_static_zip_to_silver(
                 statement=CALENDAR_DATES_INSERT,
             ),
         }
+        # The span join needs fresh statistics for the rows just copied, or the planner
+        # may read every stop time of the version once per trip.
+        connection.execute(text("ANALYZE silver.trips"))
+        connection.execute(text("ANALYZE silver.stop_times"))
         refresh_trip_service_spans(
             connection, provider_id=archive.provider_id, dataset_version_id=dataset_version_id
         )
@@ -1717,9 +1721,7 @@ _POST_LOAD_ANALYZE_TABLES = (
     "silver.agency",
     "silver.feed_info",
     "silver.routes",
-    "silver.trips",
     "silver.stops",
-    "silver.stop_times",
     "silver.calendar",
     "silver.calendar_dates",
     "silver.shapes",
