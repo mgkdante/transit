@@ -64,6 +64,13 @@ afterEach(() => {
 });
 
 describe('Home civic overview and directory', () => {
+	it.each(['en', 'fr'] as const)('omits the directory destination total in %s', (locale) => {
+		state.locale = locale;
+		renderHome();
+		expect(within(nav()).queryByText(/^[0-9]+ destinations?$/)).toBeNull();
+		expect(within(nav()).queryByRole('status')).toBeNull();
+	});
+
 	it.each(['en', 'fr'] as const)('uses the selected city in the %s heading', (locale) => {
 		state.locale = locale;
 		state.city = 'Ottawa';

@@ -20,9 +20,6 @@ export const copy = defineCopy({
 		idleTitle: 'Search a line, stop or bus',
 		idleBody: 'Type a line number, a line or stop name, a stop code, or a live bus id to find it.',
 		census: {
-			label: 'The network right now',
-			lines: (n) => `${n} lines`,
-			stops: (n) => `${n} stops`,
 			examplesLabel: 'Try',
 			examples: ['747', 'Berri-UQAM', 'Métro'],
 		},
@@ -56,9 +53,6 @@ export const copy = defineCopy({
 		idleBody:
 			'Saisissez un numéro de ligne, un nom de ligne ou d’arrêt, un code d’arrêt, ou un identifiant de bus en direct pour le trouver.',
 		census: {
-			label: 'Le réseau en ce moment',
-			lines: (n: string) => `${n} lignes`,
-			stops: (n: string) => `${n} arrêts`,
 			examplesLabel: 'Essayez',
 			examples: ['747', 'Berri-UQAM', 'Métro'],
 		},
