@@ -41,7 +41,7 @@ test('boot CSP, responsive header and reload language redirect', async ({ page }
 				timeout: 1000,
 			});
 		}).toPass();
-		await expect(page.getByRole('dialog').getByText('Navigation · All routes')).toBeVisible();
+		await expect(page.getByRole('dialog').getByText('Navigation · All routes')).toHaveCount(0);
 		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 			true,
 		);
