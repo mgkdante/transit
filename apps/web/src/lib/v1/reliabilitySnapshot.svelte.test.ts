@@ -45,6 +45,14 @@ function routeFile(id: string, otps: Array<number | null>): RouteReliability {
 	return {
 		generated_utc: '2026-06-18T00:00:00Z',
 		id,
+		periods_by_grain: [
+			{ grain: 'day', date: '2026-06-17' },
+			{
+				grain: 'week',
+				date: '2026-06-11',
+				by_daytype: [{ grain: 'weekday', observation_count: 20, on_time: 19 }],
+			},
+		],
 		periods: otps.map((otp_pct, i) => ({
 			grain: 'day',
 			date: `2026-06-${String(i + 1).padStart(2, '0')}`,
@@ -76,7 +84,7 @@ describe('createReliabilityLoader — cache', () => {
 		cleanup();
 	});
 
-	it('summarizes the latest day OTP into a ready verdict snapshot', async () => {
+	it('summarizes the published closed week into a ready verdict snapshot', async () => {
 		routeFetch.mockResolvedValue(routeFile('24', [70, 80, 95]));
 		let snap = { phase: 'idle', otpPct: null as number | null, verdict: null as string | null };
 		const cleanup = $effect.root(() => {
@@ -432,5 +440,18 @@ describe('createReliabilityLoader — route_reliability discovery index (primary
 		await vi.waitFor(() => expect(routeFetch).toHaveBeenCalledWith('11'));
 		expect(routeReliabilityIndexFetch).toHaveBeenCalledTimes(1);
 		cleanup();
+	});
+});
+
+it('list verdict and sparkline end on the last closed day', async () => {
+	const { closedWeek } = await import('#lib/features/lines/reliability/__fixtures__/closedWeek.ts');
+	routeFetch.mockResolvedValue(closedWeek);
+	const loader = createReliabilityLoader('route');
+	loader.request({ id: closedWeek.id, known: true });
+	await vi.waitFor(() => expect(loader.get(closedWeek.id).phase).toBe('ready'));
+	expect(loader.get(closedWeek.id)).toMatchObject({
+		otpPct: 84,
+		observationCount: 227378,
+		series: [85],
 	});
 });

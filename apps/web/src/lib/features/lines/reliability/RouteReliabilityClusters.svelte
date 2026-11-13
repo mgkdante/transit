@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '#lib/utils/index.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import { selectDailyPercentiles } from '#lib/site/dailyPercentiles.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { selectVerdictWindow } from '#lib/v1/verdict.ts';
@@ -21,6 +22,7 @@
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { toReliabilityClusters } from './clusters';
 	import { retainedDelayHeadline } from '#lib/v1/verdict.ts';
+	import { routeClosedThrough, trailingRouteWindow } from '#lib/v1/closedWindow.ts';
 	import { reliabilityCopy } from './reliability.copy';
 	import { applyRetainedLineHistory, clearRetainedLineHistory } from './data/retainedHistory';
 	import type { LineHistoryResource } from './data/lineHistoryResource.svelte';
@@ -49,6 +51,22 @@
 	}: RouteReliabilityClustersProps = $props();
 
 	const copy = $derived(reliabilityCopy[locale]);
+	const windowLabels = $derived.by(() => {
+		const format = (date: string) => formatDateKey(date, locale);
+		const through = routeClosedThrough(data);
+		const label = (grain: 'week' | 'month', text: string) => {
+			const window = trailingRouteWindow(data, grain)?.window;
+			return window
+				? `${text} · ${copy.controls.closedSpan(format(window.from), format(window.to))}`
+				: text;
+		};
+		return {
+			day: through ? `${copy.controls.latestDay} · ${format(through)}` : copy.controls.latestDay,
+			week: label('week', copy.controls.thisWeek),
+			month: label('month', copy.controls.thisMonth),
+			range: copy.controls.dateRange,
+		};
+	});
 
 	const view = createReliabilityViewState({
 		snapshot: () => data,
@@ -57,18 +75,22 @@
 			copy: () => ({ ...copy.history, noData: absenceSentence('no-retained-data', locale) }),
 		},
 		grains: {
-			keys: ['day', 'week', 'month', 'range'] as const,
-			labels: () => ({
-				day: copy.controls.latestDay,
-				week: copy.controls.thisWeek,
-				month: copy.controls.thisMonth,
-				range: copy.controls.dateRange,
-			}),
+			keys: ['week', 'day', 'month', 'range'] as const,
+			labels: () => windowLabels,
+			present: () =>
+				new Set(
+					(['day', 'week', 'month'] as const).filter((grain) =>
+						grain === 'day'
+							? routeClosedThrough(data) != null
+							: trailingRouteWindow(data, grain) != null,
+					),
+				),
 		},
 		apply: (current, retained) =>
 			retained ? applyRetainedLineHistory(current, retained) : clearRetainedLineHistory(current),
 		locale: () => locale,
 		verdict: {
+			kind: 'route',
 			file: (data) => data,
 			headline: (retained) => retainedDelayHeadline(retained.aggregate.delay.value),
 		},
@@ -90,7 +112,7 @@
 					dateRange: normalizedRange,
 					...(retainedReady && view.history.value != null ? { retained: view.history.value } : {}),
 				}
-			: { grain: mode, automaticHeadline: view.verdictWindow.grain == null },
+			: { grain: mode },
 	);
 
 	const clusters = $derived(
@@ -113,9 +135,18 @@
 			if (agg && agg.days > 0) return aw.range(agg.days, agg.start, agg.end);
 			return aw.rangeSelection(normalizedRange.start, normalizedRange.end);
 		}
-		if (mode === 'week') return aw.week;
-		if (mode === 'month') return aw.month;
-		const latest = selectVerdictWindow(selectedData.periods ?? [], 'day');
+		if (mode === 'week' || mode === 'month') {
+			const window = trailingRouteWindow(selectedData, mode)?.window;
+			return window
+				? aw.rangeSelection(formatDateKey(window.from, locale), formatDateKey(window.to, locale))
+				: aw.unavailable;
+		}
+		const latest = selectVerdictWindow(
+			selectedData.periods ?? [],
+			'day',
+			undefined,
+			routeClosedThrough(selectedData),
+		);
 		return aw.day(latest?.grain === 'day' ? (latest.date ?? null) : null);
 	});
 

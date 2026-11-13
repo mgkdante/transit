@@ -127,8 +127,22 @@ describe('the same reliability evidence across every surface', () => {
 			id: '24',
 			generated_utc: isoUtc().parse('2026-11-02T00:00:00Z'),
 			periods: [{ ...point, grain: 'day', on_time: 3400 }],
+			periods_by_grain: [
+				{ grain: 'day', date: point.date },
+				{
+					grain: 'week',
+					date: '2026-10-27',
+					by_daytype: [{ grain: 'weekday', observation_count: 4000, on_time: 3400 }],
+				},
+			],
 		};
-		harness.stop = { ...harness.route, periods: [{ ...point, grain: 'day' }] };
+		harness.stop = {
+			id: '24',
+			generated_utc: harness.route.generated_utc,
+			periods: [
+				{ grain: 'day', otp_pct: 85, observation_count: 4000, wilson_lo: 84, wilson_hi: 86 },
+			],
+		};
 		harness.network = { generated_utc: harness.route.generated_utc, series: [point] };
 		for (const mount of [
 			() => render(RouteDetail, { props: { id: '24', seed: { id: '24', name: '24' } } }),
@@ -187,10 +201,24 @@ it.each(['line', 'stop', 'network'] as const)(
 			wilson_lo: 84,
 			wilson_hi: 86,
 		};
-		const month = { date: '2026-10-01', grain: 'month', otp_pct: 40, observation_count: 12 };
-		harness.route = { id: '24', generated_utc, periods: [day, week, month] } as RouteReliability;
+		const month = { date: '2026-10-04', grain: 'month', otp_pct: 40, observation_count: 12 };
+		harness.route = {
+			id: '24',
+			generated_utc,
+			periods: [day, week, month],
+			periods_by_grain: [
+				{ grain: 'day', date: day.date },
+				{ grain: 'week', date: week.date, by_daytype: [{ ...week, grain: 'weekday' }] },
+				{
+					grain: 'month',
+					date: month.date,
+					by_daytype: [{ ...month, grain: 'weekday', on_time: 5 }],
+				},
+			],
+		} as RouteReliability;
 		harness.stop = {
-			...harness.route,
+			id: '24',
+			generated_utc,
 			periods: harness.route.periods?.map((window) => ({
 				grain: window.grain,
 				otp_pct: window.otp_pct,
@@ -213,7 +241,7 @@ it.each(['line', 'stop', 'network'] as const)(
 				'reliable',
 			),
 		);
-		await fireEvent.click(view.getAllByRole('radio', { name: /month/i })[0]);
+		await fireEvent.click(view.getAllByRole('radio', { name: /month|30 days/i })[0]);
 		await waitFor(() =>
 			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
 				'data-status',
@@ -229,7 +257,11 @@ it.each(['line', 'stop', 'network'] as const)(
 				'tentative',
 			),
 		);
-		await fireEvent.click(view.getAllByRole('radio', { name: /day|daily/i })[0]);
+		await fireEvent.click(
+			view.getAllByRole('radio', {
+				name: entity === 'line' ? /Latest complete day/i : /^day|daily/i,
+			})[0],
+		);
 		await waitFor(() =>
 			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
 				'data-status',
@@ -249,3 +281,51 @@ it.each(['line', 'stop', 'network'] as const)(
 		expect(view.container.querySelector('[data-slot="verdict"]')).toHaveTextContent('12');
 	},
 );
+
+it('banner, list and pane agree on one window', async () => {
+	const { closedWeek } = await import('../lines/reliability/__fixtures__/closedWeek');
+	harness.route = { ...closedWeek, id: '24' };
+	for (const mount of [
+		() => render(RouteDetail, { props: { id: '24', seed: { id: '24', name: '24' } } }),
+		() => render(RouteReliabilityClusters, { props: { data: harness.route!, locale: 'en' } }),
+	]) {
+		harness.page.url = new URL('http://localhost/lines/24');
+		const view = mount();
+		await waitFor(() =>
+			expect(view.container.querySelector('[data-slot="verdict"]')).toHaveTextContent('84%'),
+		);
+		if (view.queryAllByRole('radio').length)
+			expect(view.getByRole('radio', { name: /Last 7 days/, checked: true })).toBeInTheDocument();
+		cleanup();
+	}
+});
+
+it('list uses the same closed week on arrival', async () => {
+	const { closedWeek } = await import('../lines/reliability/__fixtures__/closedWeek');
+	harness.route = { ...closedWeek, id: '24' };
+	const view = render(LinesIndex);
+	await fireEvent.click(await view.findByTestId('lines-sort-worst'));
+	await waitFor(() =>
+		expect(view.container.querySelector('[data-slot="reliability-badge"]')).toHaveAccessibleName(
+			/84.*week to Nov 10/,
+		),
+	);
+});
+
+it.each([true, false])('opens an enabled closed choice when a week exists: %s', async (hasWeek) => {
+	const { closedWeek } = await import('../lines/reliability/__fixtures__/closedWeek');
+	const data = hasWeek
+		? closedWeek
+		: {
+				...closedWeek,
+				periods_by_grain: closedWeek.periods_by_grain!.filter((p) => p.grain === 'day'),
+			};
+	harness.page.url = new URL('http://localhost/lines/24');
+	const view = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
+	const choice = view.getByRole('radio', { checked: true });
+	expect(choice).toBeEnabled();
+	expect(choice).toHaveAccessibleName(hasWeek ? /Last 7 days/ : /Latest complete day/);
+	expect(view.container.querySelector('[data-slot="verdict"]')).toHaveTextContent(
+		hasWeek ? '84%' : '85%',
+	);
+});

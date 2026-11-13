@@ -729,3 +729,34 @@ describe('finished Verdict for the selected Window', () => {
 		});
 	});
 });
+
+it('ignores a day period after closed-through', async () => {
+	const { closedWeek } = await import('#lib/features/lines/reliability/__fixtures__/closedWeek.ts');
+	expect(verdictForWindow(closedWeek)).toMatchObject({
+		otpPct: 84,
+		observationCount: 227378,
+		onTime: 190827,
+		grain: 'week',
+	});
+	expect(verdictForWindow(closedWeek, { grain: 'day' })).toMatchObject({
+		otpPct: 85,
+		observationCount: 43815,
+	});
+	expect(verdictForWindow({ ...closedWeek, periods_by_grain: [] }).status).toBe('absent');
+	expect(verdictForWindow({ id: closedWeek.id, periods: closedWeek.periods }).status).toBe(
+		'absent',
+	);
+});
+
+it('honours an explicit stop kind over route-shaped fields', () => {
+	expect(
+		verdictForWindow(
+			{
+				id: 'test',
+				periods_by_grain: [],
+				periods: [{ grain: 'week', otp_pct: 85, observation_count: 100, on_time: 85 }],
+			},
+			{ kind: 'stop' },
+		),
+	).toMatchObject({ otpPct: 85, observationCount: 100 });
+});

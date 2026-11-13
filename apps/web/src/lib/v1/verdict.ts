@@ -1,6 +1,10 @@
 import { verdictCopy } from './verdict.copy';
 import type { Locale } from '#lib/i18n/index.ts';
 import { wilsonBoundsProportion } from '#lib/v1/stats.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
+import { DEFAULT_LOCALE, PUBLISHED_LOCALES } from '#lib/i18n/config.ts';
+import { isClosedDay, routeClosedThrough, trailingRouteWindow } from './closedWindow';
+import type { RouteReliability } from './index';
 
 export type VerdictStatus = 'reliable' | 'patchy' | 'unreliable' | 'tentative' | 'absent';
 
@@ -29,6 +33,8 @@ export interface ReliabilityWindow {
 }
 
 export interface ReliabilityVerdictFile {
+	readonly id?: string;
+	readonly periods_by_grain?: RouteReliability['periods_by_grain'];
 	readonly periods?: readonly ReliabilityWindow[];
 	readonly series?: readonly ReliabilityWindow[];
 	readonly weekly?: readonly ReliabilityWindow[];
@@ -41,6 +47,7 @@ export interface ReliabilityVerdictFile {
 }
 
 export interface VerdictWindow {
+	readonly kind?: 'route' | 'stop';
 	readonly grain?: string;
 	readonly selectedDate?: string;
 	readonly from?: string;
@@ -91,7 +98,12 @@ export function selectVerdictWindow<T extends ReliabilityWindow>(
 	windows: readonly T[],
 	grain?: string,
 	selectedDate?: string,
+	closedThrough?: string | null,
 ): T | null {
+	if (closedThrough !== undefined)
+		windows = windows.filter(
+			(p) => p.grain !== 'day' || (p.date != null && isClosedDay(p.date, closedThrough)),
+		);
 	if (grain === 'day' || grain === 'week' || grain === 'month') {
 		const matches = windows.filter((window) => window.grain === grain);
 		return selectedDate
@@ -122,7 +134,31 @@ export function reliabilityVerdict(
 		...(file?.weekly ?? []).map((p) => ({ ...p, grain: 'week' })),
 		...(file?.monthly ?? []).map((p) => ({ ...p, grain: 'month' })),
 	];
-	const headlineWindow = selectVerdictWindow(windows, window.grain, window.selectedDate);
+	const route =
+		window.kind === 'route' ||
+		(window.kind === undefined &&
+			file != null &&
+			('periods_by_grain' in file ||
+				(file.id != null && file.periods?.some((p) => p.date != null || p.on_time != null))));
+	const trailingGrain = window.grain === 'month' ? 'month' : 'week';
+	const trailing = route && file ? trailingRouteWindow(file, trailingGrain) : null;
+	const headlineWindow =
+		route && (window.grain == null || window.grain === 'week' || window.grain === 'month')
+			? trailing && {
+					grain: trailingGrain,
+					otp_pct:
+						trailing.observationCount > 0
+							? (100 * trailing.onTime) / trailing.observationCount
+							: null,
+					observation_count: trailing.observationCount,
+					on_time: trailing.onTime,
+				}
+			: selectVerdictWindow(
+					windows,
+					window.grain ?? (window.kind === 'stop' ? 'week' : undefined),
+					window.selectedDate,
+					route && file ? routeClosedThrough(file) : undefined,
+				);
 	let headline: VerdictHeadline = {
 		otpPct: headlineWindow?.otp_pct ?? null,
 		observationCount: headlineWindow?.observation_count ?? null,
@@ -187,12 +223,26 @@ export function reliabilityVerdict(
 		otpPct: headline.otpPct == null ? null : Math.round(headline.otpPct),
 	};
 	const mode = window.from && window.to ? 'range' : grain;
+	const dateLocale = PUBLISHED_LOCALES.find((locale) => locale === copy.locale) ?? DEFAULT_LOCALE;
+	const presentation =
+		trailing && !window.from && copy.closedWindow
+			? {
+					...copy,
+					windowPhrase: {
+						...copy.windowPhrase,
+						[trailingGrain]: copy.closedWindow(
+							formatDateKey(trailing.window.from, dateLocale),
+							formatDateKey(trailing.window.to, dateLocale),
+						),
+					},
+				}
+			: copy;
 	return {
 		...shownHeadline,
 		interval: classification.interval,
-		...formatVerdict(shownHeadline, classification, mode, copy),
+		...formatVerdict(shownHeadline, classification, mode, presentation),
 		grain,
-		hedge: formatVerdict(headline, classification, mode, copy).sentence,
+		hedge: formatVerdict(headline, classification, mode, presentation).sentence,
 	};
 }
 
@@ -222,6 +272,8 @@ export interface VerdictSentenceArgs {
 }
 
 export interface VerdictCopy {
+	readonly locale?: string;
+	readonly closedWindow?: (from: string, to: string) => string;
 	readonly windowPhrase: {
 		readonly day: string;
 		readonly week: string;

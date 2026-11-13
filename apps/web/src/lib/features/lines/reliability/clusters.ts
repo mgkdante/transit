@@ -14,6 +14,7 @@ import type {
 } from '#lib/v1/index.ts';
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '#lib/features/reliability/shiftGrains.ts';
 import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
+import { routeClosedThrough, trailingRouteWindow, isClosedDay } from '#lib/v1/closedWindow.ts';
 import type { RetainedLineHistory } from './data/retainedHistory';
 import type { Locale } from '#lib/i18n/index.ts';
 import {
@@ -144,7 +145,6 @@ export interface ToReliabilityClustersOpts {
 	readonly verdict?: ReliabilityVerdict;
 	readonly locale?: Locale;
 	readonly grain?: string;
-	readonly automaticHeadline?: boolean;
 	readonly selectedDate?: string;
 	readonly dateRange?: { readonly start: string; readonly end: string };
 	readonly retained?: Pick<RetainedLineHistory, 'aggregate' | 'retainedDayCount'>;
@@ -263,21 +263,23 @@ function windowByGrain<T extends { date?: string | null }>(
 	grain: string,
 	selectedDate: string | undefined,
 	dateRange: { readonly start: string; readonly end: string } | undefined,
+	closedThrough?: string | null,
 ): readonly T[] {
 	const dated = rows.filter((r): r is T & { date: string } => r.date != null);
-	if (dated.length === 0) return rows;
+	if (dated.length === 0) return closedThrough === undefined ? rows : [];
 	if (dateRange) {
 		const lo = dateRange.start <= dateRange.end ? dateRange.start : dateRange.end;
 		const hi = dateRange.start <= dateRange.end ? dateRange.end : dateRange.start;
 		return dated.filter((r) => r.date >= lo && r.date <= hi);
 	}
-	const latest = dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
+	if (closedThrough === null) return [];
+	const latest = closedThrough ?? dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
 	if (grain === 'day') {
 		const target = selectedDate ?? latest;
 		return dated.filter((r) => r.date === target);
 	}
 	const cutoff = isoMinusDays(latest, (grain === 'week' ? 7 : 30) - 1);
-	return dated.filter((r) => r.date >= cutoff);
+	return dated.filter((r) => r.date >= cutoff && r.date <= latest);
 }
 
 function lastNDays<T extends { date?: string | null }>(
@@ -423,16 +425,9 @@ export function toReliabilityClusters(
 	const selectedDate = opts?.selectedDate;
 	const dateRange = opts?.dateRange;
 	const retained = opts?.retained;
-	const headlineGrain =
-		dateRange || selectedDate
-			? grain
-			: opts?.automaticHeadline === undefined
-				? grain === 'day'
-					? undefined
-					: grain
-				: opts.automaticHeadline
-					? undefined
-					: grain;
+	const headlineGrain = grain;
+	const closedThrough = routeClosedThrough(data);
+	const trailing = grain === 'week' || grain === 'month' ? trailingRouteWindow(data, grain) : null;
 
 	const allPeriods = data.periods ?? [];
 	const allHeadway = data.headway ?? [];
@@ -442,7 +437,11 @@ export function toReliabilityClusters(
 	const allDayOfWeek = data.day_of_week ?? [];
 	const allWeakStops = data.weak_stops ?? [];
 
-	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	const closedCuts = grain === 'week' || grain === 'month';
+	const periodsGrain =
+		closedCuts && !trailing
+			? null
+			: ((data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null);
 	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 
@@ -453,7 +452,9 @@ export function toReliabilityClusters(
 		...partition.calendar.month,
 	];
 
-	const dayTrendAsc = dayTrend(partition.calendar.day);
+	const dayTrendAsc = dayTrend(partition.calendar.day).filter(
+		(p) => dateRange || (p.date != null && isClosedDay(p.date, closedThrough)),
+	);
 	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
 	const hasRange = rangeDays.length > 0;
 	const TREND_DAYS_DAY = 14;
@@ -468,23 +469,41 @@ export function toReliabilityClusters(
 
 	const exactCancellation = retained?.aggregate.cancellation.value ?? null;
 	const exactSkippedStops = retained?.aggregate.skippedStops.value ?? null;
+	const closedRates = !dateRange && ['day', 'week', 'month'].includes(grain);
+	const rateThrough = grain === 'day' ? (selectedDate ?? closedThrough) : closedThrough;
+	const cancellationRows = windowByGrain(
+		allCancellations,
+		grain,
+		selectedDate,
+		dateRange,
+		closedRates ? rateThrough : undefined,
+	);
+	const skippedRows = windowByGrain(
+		allSkipped,
+		grain,
+		selectedDate,
+		dateRange,
+		closedRates ? rateThrough : undefined,
+	);
+	const cancelFallback = closedRates ? (grain === 'day' ? cancellationRows : []) : allCancellations;
+	const skipFallback = closedRates ? (grain === 'day' ? skippedRows : []) : allSkipped;
 	const cancellationRatePct =
 		exactCancellation?.cancellationRatePct == null
 			? (pooledRate(
-					windowByGrain(allCancellations, grain, selectedDate, dateRange),
+					cancellationRows,
 					(c) => c.canceled_trip_days,
 					(c) => c.total_trip_days,
 					1,
-				) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct))
+				) ?? mostRecentRate(cancelFallback, (c) => c.cancellation_rate_pct))
 			: roundHalfAwayFromZero(exactCancellation.cancellationRatePct, 1);
 	const skippedStopRatePct =
 		exactSkippedStops == null
 			? (pooledRate(
-					windowByGrain(allSkipped, grain, selectedDate, dateRange),
+					skippedRows,
 					(s) => s.skipped_stop_count,
 					(s) => s.stop_time_update_count,
 					1,
-				) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct))
+				) ?? mostRecentRate(skipFallback, (s) => s.skipped_stop_rate_pct))
 			: roundHalfAwayFromZero(exactSkippedStops.skippedStopRatePct, 1);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 
@@ -541,8 +560,18 @@ export function toReliabilityClusters(
 							end: dateRange.end,
 						};
 		}
+	} else if (grain === 'week' || grain === 'month') {
+		avgDelayMin =
+			trailing?.avgDelayMin == null ? null : roundHalfAwayFromZero(trailing.avgDelayMin, 1);
+		severePct = trailing?.severePct == null ? null : roundHalfAwayFromZero(trailing.severePct, 1);
+		p50Min = p90Min = null;
 	} else {
-		const stripPeriod = selectVerdictWindow(calendarPeriods, headlineGrain, selectedDate);
+		const stripPeriod = selectVerdictWindow(
+			calendarPeriods,
+			headlineGrain,
+			selectedDate,
+			closedThrough,
+		);
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
@@ -556,6 +585,7 @@ export function toReliabilityClusters(
 		verdictForWindow(
 			data,
 			{
+				kind: 'route',
 				grain: headlineGrain,
 				selectedDate,
 				...(dateRange ? { from: dateRange.start, to: dateRange.end } : {}),
@@ -587,17 +617,17 @@ export function toReliabilityClusters(
 	};
 
 	const trend = hasRange ? rangeDays : grainTrendAsc;
-	const dayOfWeek = (periodsGrain?.day_of_week ?? allDayOfWeek)
+	const dayOfWeek = (periodsGrain?.day_of_week ?? (closedCuts ? [] : allDayOfWeek))
 		.filter(dayOfWeekHasSignal)
 		.slice()
 		.sort((a, b) => a.day_of_week_iso - b.day_of_week_iso);
 	const weakStops = weakStopsGrain
 		? (weakStopsGrain.stops ?? []).filter((w) => w.observation_count != null)
 		: allWeakStops.filter((w) => w.avg_delay_min != null);
-	const byShift = (periodsGrain?.by_shift ?? partition.byShift)
+	const byShift = (periodsGrain?.by_shift ?? (closedCuts ? [] : partition.byShift))
 		.filter(periodHasSignal)
 		.map(toComparisonRow);
-	const byDayType = (periodsGrain?.by_daytype ?? partition.byDayType)
+	const byDayType = (periodsGrain?.by_daytype ?? (closedCuts ? [] : partition.byDayType))
 		.filter(periodHasSignal)
 		.map(toComparisonRow);
 	const peakOffPeak: PeakOffPeakVM = {
@@ -605,9 +635,11 @@ export function toReliabilityClusters(
 		byDayType,
 		isEmpty: byShift.length === 0 && byDayType.length === 0,
 	};
-	const byShiftDaytype = (periodsGrain?.by_shift_daytype ?? data.by_shift_daytype ?? []).filter(
-		crosstabHasSignal,
-	);
+	const byShiftDaytype = (
+		periodsGrain?.by_shift_daytype ??
+		(closedCuts ? [] : data.by_shift_daytype) ??
+		[]
+	).filter(crosstabHasSignal);
 	const punctuality: PunctualityVM = {
 		headline: {
 			...verdict,

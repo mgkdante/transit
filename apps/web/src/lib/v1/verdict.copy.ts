@@ -1,7 +1,27 @@
 import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 import type { VerdictCopy, VerdictSentenceArgs } from './verdict';
+export const reliabilityBadgeCopy = defineCopy({
+	en: {
+		hedgeFallback: 'Not enough data to judge reliability',
+		compactHedges: { tentative: 'Uncertain', absent: 'Not enough data' },
+		share: 'on time',
+		stopShare: 'not severely late',
+		weekTo: (date: string) => `week to ${date}`,
+		week: 'last 7 days',
+	},
+	fr: {
+		hedgeFallback: 'Données insuffisantes pour juger la fiabilité',
+		compactHedges: { tentative: 'Incertaine', absent: 'Données insuffisantes' },
+		share: 'à l’heure',
+		stopShare: 'sans retard grave',
+		weekTo: (date: string) => `semaine au ${date}`,
+		week: '7 derniers jours',
+	},
+});
 export const verdictCopy = defineCopy({
 	fr: {
+		locale: 'fr' satisfies Locale,
+		closedWindow: (from: string, to: string) => `du ${from} au ${to} (jours complets)`,
 		windowPhrase: {
 			day: 'selon le dernier bilan',
 			week: 'cette semaine',
@@ -26,6 +46,8 @@ export const verdictCopy = defineCopy({
 		hedgeCI: (otp: number, lo: number, hi: number) => ` (${otp} %, IC 95 % : ${lo}–${hi} %)`,
 	},
 	en: {
+		locale: 'en' satisfies Locale,
+		closedWindow: (from, to) => `from ${from} to ${to} (complete days)`,
 		windowPhrase: {
 			day: 'in the latest summary',
 			week: 'this week',

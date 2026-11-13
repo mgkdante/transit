@@ -10,8 +10,14 @@
 				{
 					"id": "stm",
 					"labels": {
-						"en": { "city": "Montréal", "operator": "STM" },
-						"fr": { "city": "Montréal", "operator": "STM" }
+						"en": {
+							"city": "Montréal",
+							"operator": "STM"
+						},
+						"fr": {
+							"city": "Montréal",
+							"operator": "STM"
+						}
 					},
 					"inputs": {},
 					"alert_links": {}
@@ -26,7 +32,10 @@
 			"bbox": [-74.2, 45.2, -73.2, 45.9],
 			"attribution": "B9 synthetic STM fixture",
 			"dataset_version": "b9-rich-v1",
-			"labels": { "en": "labels/en.json", "fr": "labels/fr.json" },
+			"labels": {
+				"en": "labels/en.json",
+				"fr": "labels/fr.json"
+			},
 			"files": {
 				"live": {
 					"generated_utc": "2026-08-30T15:55:00Z",
@@ -41,7 +50,8 @@
 					"generated_utc": "2026-08-29T04:00:00Z",
 					"routes_prefix": "static/routes/",
 					"stops_prefix": "static/stops/",
-					"ttl_s": 86400
+					"ttl_s": 86400,
+					"routes_index": "static/routes_index.json"
 				},
 				"historic": {
 					"generated_utc": "2026-08-30T06:00:00Z",
@@ -79,15 +89,33 @@
 				{
 					"dir": 0,
 					"headsign": "West B9",
-					"stops": [{ "id": "52095", "seq": 1, "name": "B9 Atwater" }]
+					"stops": [
+						{
+							"id": "52095",
+							"seq": 1,
+							"name": "B9 Atwater"
+						}
+					]
 				},
 				{
 					"dir": 1,
 					"headsign": "East B9",
-					"stops": [{ "id": "52095", "seq": 1, "name": "B9 Atwater" }]
+					"stops": [
+						{
+							"id": "52095",
+							"seq": 1,
+							"name": "B9 Atwater"
+						}
+					]
 				}
 			],
-			"service_periods": [{ "shift": "am_peak", "window": "06:00–09:00", "headway_min": 8 }],
+			"service_periods": [
+				{
+					"shift": "am_peak",
+					"window": "06:00–09:00",
+					"headway_min": 8
+				}
+			],
 			"first_departure": "05:00",
 			"last_departure": "25:30",
 			"schema_version": 1,
@@ -101,7 +129,13 @@
 			"lon": -73.58602,
 			"code": "B952095",
 			"routes_served": ["24", "51", "99"],
-			"scheduled": [{ "route": "24", "headsign": "East B9", "times": ["05:00", "25:30"] }],
+			"scheduled": [
+				{
+					"route": "24",
+					"headsign": "East B9",
+					"times": ["05:00", "25:30"]
+				}
+			],
 			"wheelchair": true,
 			"schema_version": 1,
 			"methodology_version": "b9"
@@ -134,7 +168,13 @@
 			"generated_utc": "2026-08-30T15:55:00Z",
 			"vehicles_in_service": 37,
 			"on_time_pct": 73,
-			"status_dist": { "early": 2, "on_time": 21, "late": 7, "severe": 4, "unknown": 3 },
+			"status_dist": {
+				"early": 2,
+				"on_time": 21,
+				"late": 7,
+				"severe": 4,
+				"unknown": 3
+			},
 			"delay_p50_min": 2,
 			"delay_p90_min": 11,
 			"non_responding": 9,
@@ -148,19 +188,60 @@
 				"full": 0.12
 			},
 			"delay_histogram": [
-				{ "lo_min": null, "hi_min": -5, "count": 2 },
-				{ "lo_min": -5, "hi_min": -2, "count": 4 },
-				{ "lo_min": -2, "hi_min": 0, "count": 8 },
-				{ "lo_min": 0, "hi_min": 2, "count": 16 },
-				{ "lo_min": 2, "hi_min": 5, "count": 20 },
-				{ "lo_min": 5, "hi_min": 10, "count": 10 },
-				{ "lo_min": 10, "hi_min": 15, "count": 5 },
-				{ "lo_min": 15, "hi_min": null, "count": 3 }
+				{
+					"lo_min": null,
+					"hi_min": -5,
+					"count": 2
+				},
+				{
+					"lo_min": -5,
+					"hi_min": -2,
+					"count": 4
+				},
+				{
+					"lo_min": -2,
+					"hi_min": 0,
+					"count": 8
+				},
+				{
+					"lo_min": 0,
+					"hi_min": 2,
+					"count": 16
+				},
+				{
+					"lo_min": 2,
+					"hi_min": 5,
+					"count": 20
+				},
+				{
+					"lo_min": 5,
+					"hi_min": 10,
+					"count": 10
+				},
+				{
+					"lo_min": 10,
+					"hi_min": 15,
+					"count": 5
+				},
+				{
+					"lo_min": 15,
+					"hi_min": null,
+					"count": 3
+				}
 			],
 			"non_responding_by_route": [
-				{ "route_id": "99", "count": 5 },
-				{ "route_id": "24", "count": 3 },
-				{ "route_id": "51", "count": 1 }
+				{
+					"route_id": "99",
+					"count": 5
+				},
+				{
+					"route_id": "24",
+					"count": 3
+				},
+				{
+					"route_id": "51",
+					"count": 1
+				}
 			],
 			"schema_version": 1,
 			"methodology_version": "b9"
@@ -314,20 +395,44 @@
 		"provenance.json": {
 			"generated_utc": "2026-08-30T06:00:00Z",
 			"sources": [
-				{ "feed": "gtfs-rt", "last_loaded_utc": "2026-08-30T15:55:00Z", "chain": "STM B9" }
+				{
+					"feed": "gtfs-rt",
+					"last_loaded_utc": "2026-08-30T15:55:00Z",
+					"chain": "STM B9"
+				}
 			],
-			"freshness": [{ "feed": "gtfs-rt", "age_s": 17, "status": "fresh" }],
+			"freshness": [
+				{
+					"feed": "gtfs-rt",
+					"age_s": 17,
+					"status": "fresh"
+				}
+			],
 			"gaps": [],
-			"retention": { "historic": 90 },
-			"methodology": { "oracle": "b9" },
-			"conformance": { "status": "compliant", "extra_row_count": 0, "unknown_members": [] },
+			"retention": {
+				"historic": 90
+			},
+			"methodology": {
+				"oracle": "b9"
+			},
+			"conformance": {
+				"status": "compliant",
+				"extra_row_count": 0,
+				"unknown_members": []
+			},
 			"schema_version": 1,
 			"methodology_version": "b9"
 		},
 		"historic/receipts/index.json": {
 			"generated_utc": "2026-08-30T06:00:00Z",
 			"dates": ["2026-08-29"],
-			"available": [{ "date": "2026-08-29", "has_data": true, "has_schedule": true }],
+			"available": [
+				{
+					"date": "2026-08-29",
+					"has_data": true,
+					"has_schedule": true
+				}
+			],
 			"schema_version": 1,
 			"methodology_version": "b9"
 		},
@@ -499,7 +604,13 @@
 						"delivered_trip_days": 28,
 						"silent_trip_days": 2
 					},
-					"occupancy": { "empty": 1, "many_seats": 7, "few_seats": 1, "standing": 1, "full": 0 },
+					"occupancy": {
+						"empty": 1,
+						"many_seats": 7,
+						"few_seats": 1,
+						"standing": 1,
+						"full": 0
+					},
 					"service_span": {
 						"trip_count": 30,
 						"first_trip_utc": "2026-08-27T09:00:00Z",
@@ -507,7 +618,10 @@
 						"first_trip_delay_seconds": 0,
 						"last_trip_delay_seconds": 60
 					},
-					"skipped_stops": { "skipped_stop_count": 0, "stop_time_update_count": 1 }
+					"skipped_stops": {
+						"skipped_stop_count": 0,
+						"stop_time_update_count": 1
+					}
 				},
 				{
 					"date": "2026-08-28",
@@ -530,7 +644,13 @@
 						"delivered_trip_days": 27,
 						"silent_trip_days": 3
 					},
-					"occupancy": { "empty": 1, "many_seats": 9, "few_seats": 3, "standing": 2, "full": 0 },
+					"occupancy": {
+						"empty": 1,
+						"many_seats": 9,
+						"few_seats": 3,
+						"standing": 2,
+						"full": 0
+					},
 					"service_span": {
 						"trip_count": 31,
 						"first_trip_utc": "2026-08-28T09:00:00Z",
@@ -538,7 +658,10 @@
 						"first_trip_delay_seconds": -30,
 						"last_trip_delay_seconds": 120
 					},
-					"skipped_stops": { "skipped_stop_count": 0, "stop_time_update_count": 1 }
+					"skipped_stops": {
+						"skipped_stop_count": 0,
+						"stop_time_update_count": 1
+					}
 				},
 				{
 					"date": "2026-08-29",
@@ -561,7 +684,13 @@
 						"delivered_trip_days": 38,
 						"silent_trip_days": 2
 					},
-					"occupancy": { "empty": 2, "many_seats": 20, "few_seats": 11, "standing": 7, "full": 0 },
+					"occupancy": {
+						"empty": 2,
+						"many_seats": 20,
+						"few_seats": 11,
+						"standing": 7,
+						"full": 0
+					},
 					"service_span": {
 						"trip_count": 77,
 						"first_trip_utc": "2026-08-29T09:00:00Z",
@@ -569,7 +698,10 @@
 						"first_trip_delay_seconds": -90,
 						"last_trip_delay_seconds": 270
 					},
-					"skipped_stops": { "skipped_stop_count": 5, "stop_time_update_count": 198 }
+					"skipped_stops": {
+						"skipped_stop_count": 5,
+						"stop_time_update_count": 198
+					}
 				}
 			],
 			"schema_version": 1,
@@ -725,7 +857,7 @@
 					"grain": "day",
 					"date": "2026-08-27",
 					"otp_pct": 70,
-					"avg_delay_min": 3.0,
+					"avg_delay_min": 3,
 					"p50_min": 1.2,
 					"p90_min": 10.5,
 					"severe_pct": 15,
@@ -739,8 +871,8 @@
 					"date": "2026-08-28",
 					"otp_pct": 75,
 					"avg_delay_min": 2.5,
-					"p50_min": 1.0,
-					"p90_min": 9.0,
+					"p50_min": 1,
+					"p90_min": 9,
 					"severe_pct": 12,
 					"observation_count": 80,
 					"wilson_lo": 64,
@@ -758,7 +890,44 @@
 					"observation_count": 100,
 					"wilson_lo": 71,
 					"wilson_hi": 87,
-					"on_time": 80
+					"on_time": 80,
+					"delay_histogram": [
+						{
+							"lo_sec": null,
+							"hi_sec": -300,
+							"count": 2
+						},
+						{
+							"lo_sec": -300,
+							"hi_sec": -120,
+							"count": 5
+						},
+						{
+							"lo_sec": -120,
+							"hi_sec": 0,
+							"count": 20
+						},
+						{
+							"lo_sec": 0,
+							"hi_sec": 120,
+							"count": 80
+						},
+						{
+							"lo_sec": 120,
+							"hi_sec": 300,
+							"count": 50
+						},
+						{
+							"lo_sec": 300,
+							"hi_sec": 600,
+							"count": 20
+						},
+						{
+							"lo_sec": 600,
+							"hi_sec": null,
+							"count": 7
+						}
+					]
 				},
 				{
 					"grain": "week",
@@ -773,13 +942,41 @@
 					"wilson_hi": 81,
 					"on_time": 220,
 					"delay_histogram": [
-						{ "lo_sec": null, "hi_sec": -300, "count": 2 },
-						{ "lo_sec": -300, "hi_sec": -120, "count": 5 },
-						{ "lo_sec": -120, "hi_sec": 0, "count": 20 },
-						{ "lo_sec": 0, "hi_sec": 120, "count": 80 },
-						{ "lo_sec": 120, "hi_sec": 300, "count": 50 },
-						{ "lo_sec": 300, "hi_sec": 600, "count": 20 },
-						{ "lo_sec": 600, "hi_sec": null, "count": 7 }
+						{
+							"lo_sec": null,
+							"hi_sec": -300,
+							"count": 2
+						},
+						{
+							"lo_sec": -300,
+							"hi_sec": -120,
+							"count": 5
+						},
+						{
+							"lo_sec": -120,
+							"hi_sec": 0,
+							"count": 20
+						},
+						{
+							"lo_sec": 0,
+							"hi_sec": 120,
+							"count": 80
+						},
+						{
+							"lo_sec": 120,
+							"hi_sec": 300,
+							"count": 50
+						},
+						{
+							"lo_sec": 300,
+							"hi_sec": 600,
+							"count": 20
+						},
+						{
+							"lo_sec": 600,
+							"hi_sec": null,
+							"count": 7
+						}
 					]
 				},
 				{
@@ -794,6 +991,13 @@
 					"wilson_lo": 71,
 					"wilson_hi": 77,
 					"on_time": 666
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-30",
+					"observation_count": 1191,
+					"on_time": 893,
+					"otp_pct": 75
 				}
 			],
 			"headway": [
@@ -1019,15 +1223,56 @@
 				]
 			},
 			"day_of_week": [
-				{ "day_of_week_iso": 1, "avg_delay_min": 1.1, "severe_pct": 5, "observation_count": 40 },
-				{ "day_of_week_iso": 2, "avg_delay_min": 2.2, "severe_pct": 7, "observation_count": 41 },
-				{ "day_of_week_iso": 3, "avg_delay_min": 3.3, "severe_pct": 9, "observation_count": 42 },
-				{ "day_of_week_iso": 4, "avg_delay_min": 4.4, "severe_pct": 11, "observation_count": 43 },
-				{ "day_of_week_iso": 5, "avg_delay_min": 5.5, "severe_pct": 13, "observation_count": 44 },
-				{ "day_of_week_iso": 6, "avg_delay_min": 2.6, "severe_pct": 8, "observation_count": 45 },
-				{ "day_of_week_iso": 7, "avg_delay_min": 1.7, "severe_pct": 6, "observation_count": 46 }
+				{
+					"day_of_week_iso": 1,
+					"avg_delay_min": 1.1,
+					"severe_pct": 5,
+					"observation_count": 40
+				},
+				{
+					"day_of_week_iso": 2,
+					"avg_delay_min": 2.2,
+					"severe_pct": 7,
+					"observation_count": 41
+				},
+				{
+					"day_of_week_iso": 3,
+					"avg_delay_min": 3.3,
+					"severe_pct": 9,
+					"observation_count": 42
+				},
+				{
+					"day_of_week_iso": 4,
+					"avg_delay_min": 4.4,
+					"severe_pct": 11,
+					"observation_count": 43
+				},
+				{
+					"day_of_week_iso": 5,
+					"avg_delay_min": 5.5,
+					"severe_pct": 13,
+					"observation_count": 44
+				},
+				{
+					"day_of_week_iso": 6,
+					"avg_delay_min": 2.6,
+					"severe_pct": 8,
+					"observation_count": 45
+				},
+				{
+					"day_of_week_iso": 7,
+					"avg_delay_min": 1.7,
+					"severe_pct": 6,
+					"observation_count": 46
+				}
 			],
-			"weak_stops": [{ "id": "legacy", "name": "Legacy B9", "avg_delay_min": 12 }],
+			"weak_stops": [
+				{
+					"id": "legacy",
+					"name": "Legacy B9",
+					"avg_delay_min": 12
+				}
+			],
 			"cancellations": [
 				{
 					"grain": "day",
@@ -1130,7 +1375,7 @@
 					"shift": "pm_peak",
 					"day_type": "weekend",
 					"otp_pct": 78,
-					"avg_delay_min": 2.0,
+					"avg_delay_min": 2,
 					"severe_pct": 9,
 					"observation_count": 40
 				}
@@ -1328,6 +1573,26 @@
 							"avg_delay_min": 2,
 							"severe_pct": 9,
 							"observation_count": 40
+						}
+					]
+				},
+				{
+					"grain": "week",
+					"date": "2026-08-23",
+					"by_daytype": [
+						{
+							"grain": "weekday",
+							"observation_count": 220,
+							"on_time": 170,
+							"avg_delay_min": 2,
+							"severe_pct": 10
+						},
+						{
+							"grain": "weekend",
+							"observation_count": 70,
+							"on_time": 50,
+							"avg_delay_min": 4,
+							"severe_pct": 20
 						}
 					]
 				}
@@ -1766,14 +2031,38 @@
 				]
 			},
 			"day_of_week": [
-				{ "day_of_week_iso": 1, "avg_delay_min": 1.1, "severe_pct": 8, "observation_count": 40 },
-				{ "day_of_week_iso": 3, "avg_delay_min": 3.3, "severe_pct": 18, "observation_count": 42 },
-				{ "day_of_week_iso": 5, "avg_delay_min": 5.5, "severe_pct": 28, "observation_count": 44 }
+				{
+					"day_of_week_iso": 1,
+					"avg_delay_min": 1.1,
+					"severe_pct": 8,
+					"observation_count": 40
+				},
+				{
+					"day_of_week_iso": 3,
+					"avg_delay_min": 3.3,
+					"severe_pct": 18,
+					"observation_count": 42
+				},
+				{
+					"day_of_week_iso": 5,
+					"avg_delay_min": 5.5,
+					"severe_pct": 28,
+					"observation_count": 44
+				}
 			],
 			"by_route": [
-				{ "route": "51", "avg_delay_min": 2 },
-				{ "route": "99", "avg_delay_min": 11 },
-				{ "route": "24", "avg_delay_min": 6 }
+				{
+					"route": "51",
+					"avg_delay_min": 2
+				},
+				{
+					"route": "99",
+					"avg_delay_min": 11
+				},
+				{
+					"route": "24",
+					"avg_delay_min": 6
+				}
 			],
 			"occupancy_mix": {
 				"empty": 0.05,
@@ -1807,7 +2096,23 @@
 			],
 			"schema_version": 1,
 			"methodology_version": "b9"
+		},
+		"static/routes_index.json": {
+			"generated_utc": "2026-08-29T04:00:00Z",
+			"routes": [
+				{
+					"id": "24",
+					"short": "24",
+					"long": "Sherbrooke",
+					"type": 3,
+					"reliability": true
+				}
+			]
+		},
+		"historic/route_reliability/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"route_ids": ["24"]
 		}
 	},
-	"not_found": ["static/routes_index.json"]
+	"not_found": []
 }

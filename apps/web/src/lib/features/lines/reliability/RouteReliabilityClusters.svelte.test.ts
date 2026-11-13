@@ -1,3 +1,6 @@
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost/lines/141?grain=day'), state: {} },
+}));
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
@@ -30,6 +33,35 @@ const utc = (value: string): IsoUtc => value as IsoUtc;
 
 const populated: RouteReliability = {
 	id: '141',
+	periods_by_grain: [
+		{ grain: 'day', date: '2026-06-19' },
+		{
+			grain: 'week',
+			date: '2026-06-13',
+			by_daytype: [
+				{
+					grain: 'weekday',
+					observation_count: 10000,
+					on_time: 7700,
+					avg_delay_min: 4.1,
+					severe_pct: 7,
+				},
+			],
+		},
+		{
+			grain: 'month',
+			date: '2026-05-21',
+			by_daytype: [
+				{
+					grain: 'weekday',
+					observation_count: 10000,
+					on_time: 7900,
+					avg_delay_min: 3.8,
+					severe_pct: 6,
+				},
+			],
+		},
+	],
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	periods: [
 		{
@@ -175,22 +207,19 @@ describe('RouteReliabilityClusters', () => {
 				locale === 'en'
 					? ['Median of reported predicted delays', '90th percentile of reported predicted delays']
 					: ['Médiane des relevés de retard prédit', '90e percentile des relevés de retard prédit'];
-			const estimated =
-				locale === 'en'
-					? [
-							'Estimated median of reported predicted delays',
-							'Estimated 90th percentile of reported predicted delays',
-						]
-					: [
-							'Médiane estimée des relevés de retard prédit',
-							'90e percentile estimé des relevés de retard prédit',
-						];
+			const estimated = [t.strip.notPublished, t.strip.notPublished];
 			expect.soft(captions()).toEqual(exact);
 			for (const name of [t.controls.thisWeek, t.controls.thisMonth]) {
-				await fireEvent.click(view.getByRole('radio', { name }));
-				expect.soft(captions()).toEqual(estimated);
+				await fireEvent.click(view.getByRole('radio', { name: new RegExp(name) }));
+				expect(
+					[
+						...view.container.querySelectorAll(
+							'[data-slot="verdict-kpis"] [data-slot="absent-value"]',
+						),
+					].map((node) => node.textContent),
+				).toEqual(estimated);
 			}
-			await fireEvent.click(view.getByRole('radio', { name: t.controls.latestDay }));
+			await fireEvent.click(view.getByRole('radio', { name: new RegExp(t.controls.latestDay) }));
 			expect(captions()).toEqual(exact);
 		},
 	);
@@ -234,8 +263,12 @@ describe('RouteReliabilityClusters', () => {
 		expect(screen.getAllByText('82%').length).toBeGreaterThan(0);
 
 		expect(screen.getAllByText(copy.controls.latestDay).length).toBeGreaterThan(0);
-		expect(screen.getByText(copy.controls.thisWeek)).toBeInTheDocument();
-		expect(screen.getByText(copy.controls.thisMonth)).toBeInTheDocument();
+		expect(
+			screen.getByRole('radio', { name: new RegExp(copy.controls.thisWeek) }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole('radio', { name: new RegExp(copy.controls.thisMonth) }),
+		).toBeInTheDocument();
 	});
 
 	it('renders the SEC n/m position readout in the sticky ToC rail (H4)', () => {
@@ -270,9 +303,11 @@ describe('RouteReliabilityClusters', () => {
 
 		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.day('2026-06-19'));
 
-		await fireEvent.click(screen.getByRole('radio', { name: copy.controls.thisWeek }));
+		await fireEvent.click(screen.getByRole('radio', { name: new RegExp(copy.controls.thisWeek) }));
 		await tick();
-		expect(activeWindowText(container)).toBe(copy.controls.activeWindow.week);
+		expect(activeWindowText(container)).toBe(
+			copy.controls.activeWindow.rangeSelection('Jun 13', 'Jun 19'),
+		);
 	});
 
 	it('does not call an explicitly unscheduled observed date the latest closed day', () => {
@@ -494,6 +529,7 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		const withoutMonth: RouteReliability = {
 			...populated,
 			periods: populated.periods?.filter((period) => period.grain !== 'month'),
+			periods_by_grain: populated.periods_by_grain?.filter((period) => period.grain !== 'month'),
 		};
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: withoutMonth, locale: 'en' },
@@ -508,7 +544,7 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		expect(reasonIds).toHaveLength(1);
 		expect(new Set(reasonIds).size).toBe(reasonIds.length);
 
-		const monthRadios = screen.getAllByRole('radio', { name: copy.controls.thisMonth });
+		const monthRadios = screen.getAllByRole('radio', { name: new RegExp(copy.controls.thisMonth) });
 		expect(monthRadios).toHaveLength(1);
 		expect(monthRadios[0]?.getAttribute('aria-describedby')).toBe(reasonIds[0]);
 		for (const radio of monthRadios) {

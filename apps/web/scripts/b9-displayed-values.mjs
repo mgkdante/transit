@@ -1,3 +1,4 @@
+import runnerCases from './__fixtures__/b9/runner-cases.json' with { type: 'json' };
 import { spawn } from 'node:child_process';
 import {
 	existsSync,
@@ -34,27 +35,7 @@ const WRANGLER = join(WEB_ROOT, '../../node_modules/wrangler/bin/wrangler.js');
 const EXPECTED_WRANGLER = JSON.parse(readFileSync(join(WEB_ROOT, '../../package.json'), 'utf8'))
 	.devDependencies?.wrangler;
 const REPLAY_PREFIX = '/v1/stm/';
-const CELLS = Object.freeze([
-	{
-		fixture: 'rich',
-		locale: 'en',
-		surface: 'line',
-		path: '/lines/24?tab=reliability&from=2026-08-27&to=2026-08-29',
-	},
-	{ fixture: 'rich', locale: 'fr', surface: 'line', path: '/fr/lines/24?tab=reliability' },
-	{ fixture: 'rich', locale: 'en', surface: 'stop', path: '/stop/52095?tab=reliability' },
-	{ fixture: 'rich', locale: 'fr', surface: 'stop', path: '/fr/stop/52095?tab=reliability' },
-	{
-		fixture: 'rich',
-		locale: 'en',
-		surface: 'network',
-		path: '/network?from=2026-08-27&to=2026-08-29',
-	},
-	{ fixture: 'rich', locale: 'fr', surface: 'network', path: '/fr/network' },
-	{ fixture: 'sparse', locale: 'en', surface: 'line', path: '/lines/24?tab=reliability' },
-	{ fixture: 'sparse', locale: 'en', surface: 'stop', path: '/stop/52095?tab=reliability' },
-	{ fixture: 'sparse', locale: 'en', surface: 'network', path: '/network' },
-]);
+const CELLS = Object.freeze(runnerCases.cells);
 
 function invariant(condition, message) {
 	if (!condition) throw new Error(`B9 runner invariant: ${message}`);
@@ -359,7 +340,7 @@ async function collectLine(page, cell) {
 	const severe = parseNumber(severeText);
 	const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
 	const week = grain.getByRole('radio', {
-		name: cell.locale === 'fr' ? 'Cette semaine' : 'This week',
+		name: cell.locale === 'fr' ? /Dernier jour complet/ : /Latest complete day/,
 	});
 	let histogram = null;
 	if ((await week.count()) > 0 && (await week.isEnabled())) {
@@ -372,8 +353,8 @@ async function collectLine(page, cell) {
 						? 'Plage de dates'
 						: 'Date range'
 					: cell.locale === 'fr'
-						? 'Dernier jour'
-						: 'Latest day',
+						? /Dernier jour complet/
+						: /Latest complete day/,
 			})
 			.click();
 	}
@@ -885,7 +866,12 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'live/network.json', 200, 1],
 		],
 	}[cell.surface];
-	expected.push(['ssr', 'static/routes_index.json', 404, 1]);
+	expected.push([
+		'ssr',
+		'static/routes_index.json',
+		fixture.not_found.includes('static/routes_index.json') ? 404 : 200,
+		1,
+	]);
 	if (selectedLine && historyStatus === 404)
 		expected.push(['ssr', 'historic/history/index.json', 404, 1]);
 	const selectedRefs = (index) => {
@@ -1173,7 +1159,7 @@ function latestDatedRow(rows) {
 
 function expectedSurfaceState(cell, fixture) {
 	const rows = {
-		line: fixture.files['historic/route_reliability/24.json']?.periods?.filter(
+		line: fixture.files['historic/route_reliability/24.json']?.periods_by_grain?.filter(
 			(row) => row.grain === 'day',
 		),
 		stop: fixture.files['historic/stop_reliability/52095.json']?.daily,
@@ -1233,7 +1219,9 @@ async function verifyControls(page, cell) {
 		const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
 		await page.evaluate(() => (window.__b9Phase = 'week'));
 		await grain
-			.getByRole('radio', { name: cell.locale === 'fr' ? 'Cette semaine' : 'This week' })
+			.getByRole('radio', {
+				name: cell.locale === 'fr' ? /Dernier jour complet/ : /Latest complete day/,
+			})
 			.click();
 		await page.locator('[data-slot="histogram-mark"]').waitFor({ state: 'attached' });
 		await page.evaluate(() => (window.__b9Phase = 'range'));
@@ -1275,7 +1263,9 @@ async function verifyControls(page, cell) {
 			`${cell.path} multi-day percentiles did not stand down`,
 		);
 		await grain
-			.getByRole('radio', { name: cell.locale === 'fr' ? 'Dernier jour' : 'Latest day' })
+			.getByRole('radio', {
+				name: cell.locale === 'fr' ? /Dernier jour complet/ : /Latest complete day/,
+			})
 			.click();
 	} else if (cell.surface === 'stop') {
 		const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
@@ -1342,6 +1332,11 @@ const MARK_SIGNATURES = Object.freeze({
 		unit: 's',
 		// -1 and 1 min are thinned next to the pinned zero at this width.
 		axis: ['Delay (min)', '-5', '0', '5', '10', '30'],
+	},
+	lineHistogram: {
+		domain: [-300, 1800],
+		unit: 's',
+		axis: ['Delay, early to late (min)', '-5', '0', '5', '10', '30'],
 	},
 	'dot-strip': {
 		domain: [0, 100],
@@ -1435,9 +1430,14 @@ const MARK_SIGNATURES = Object.freeze({
 	},
 });
 
-async function verifyGeometry(page, seen) {
+async function verifyGeometry(page, seen, cell) {
 	for (const [kind, [rootSelector, markSelector]] of Object.entries(MARK_SELECTORS)) {
-		if (seen.has(kind) || (await page.locator(rootSelector).count()) === 0) continue;
+		if (
+			(seen.has(kind) &&
+				(kind !== 'histogram' || seen.get(kind).surfaces.includes(cell.surface))) ||
+			(await page.locator(rootSelector).count()) === 0
+		)
+			continue;
 		const root = page.locator(rootSelector).first();
 		await root.scrollIntoViewIfNeeded();
 		const frame = root.locator('[data-slot="chart-frame"]').first();
@@ -1450,7 +1450,10 @@ async function verifyGeometry(page, seen) {
 			box && box.width > 0 && box.height > 0,
 			`${kind} representative mark has zero geometry`,
 		);
-		const signature = MARK_SIGNATURES[kind];
+		const signature =
+			kind === 'histogram' && cell.surface === 'line'
+				? MARK_SIGNATURES.lineHistogram
+				: MARK_SIGNATURES[kind];
 		const axis = (await root.locator('svg text').allTextContents())
 			.map((value) => value.trim())
 			.filter((value) => kind !== 'trend' || !/^[A-Z][a-z]{2} \d{1,2}$/u.test(value));
@@ -1484,7 +1487,11 @@ async function verifyGeometry(page, seen) {
 				'sparkline no longer uses its [4,8] representative domain',
 			);
 		}
-		seen.set(kind, { domain: signature.domain, unit: signature.unit });
+		seen.set(kind, {
+			domain: signature.domain,
+			unit: signature.unit,
+			surfaces: [...(seen.get(kind)?.surfaces ?? []), cell.surface],
+		});
 	}
 	if ((await page.locator('[data-slot="histogram-mark"]').count()) > 0) {
 		const figure = page.locator('[data-slot="histogram-mark"]').first();
@@ -1775,9 +1782,18 @@ function builtAssetPaths() {
 	);
 }
 
-async function installNetworkBoundary(context, pageOrigin, replay, cell) {
+function documentsForCell(cell) {
+	return [
+		cell.path,
+		...(cell.fixture === 'rich' && cell.surface === 'line'
+			? [(cell.locale === 'fr' ? '/fr' : '') + '/lines']
+			: []),
+	];
+}
+
+async function installNetworkBoundary(context, pageOrigin, replay, documentPaths) {
 	const assets = builtAssetPaths();
-	const document = new URL(cell.path, pageOrigin);
+	const documents = new Set(documentPaths.map((path) => new URL(path, pageOrigin).href));
 	await context.route('**/*', async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
@@ -1786,10 +1802,7 @@ async function installNetworkBoundary(context, pageOrigin, replay, cell) {
 			return;
 		}
 		if (url.origin === pageOrigin) {
-			const exactDocument =
-				request.isNavigationRequest() &&
-				url.pathname === document.pathname &&
-				url.search === document.search;
+			const exactDocument = request.isNavigationRequest() && documents.has(url.href);
 			if (exactDocument || assets.has(decodeURIComponent(url.pathname))) {
 				await route.continue();
 				return;
@@ -1885,6 +1898,38 @@ async function settleSurface(page, cell, fixture) {
 	);
 }
 
+async function verifyClosedWeek(page, cell, fixture) {
+	if (cell.surface !== 'line' || cell.fixture !== 'rich') return;
+	const week = expectedDefaultLineHeadline(fixture);
+	invariant(
+		parseNumber(await page.locator('[data-slot="verdict"]').first().innerText()) === week.otp_pct,
+		'banner closed-week percentage mismatch',
+	);
+	const through = fixture.files['historic/route_reliability/24.json'].periods_by_grain.find(
+		(row) => row.grain === 'day',
+	).date;
+	const date = new Intl.DateTimeFormat(cell.locale, {
+		month: 'short',
+		day: 'numeric',
+		timeZone: 'UTC',
+	}).format(new Date(through + 'T00:00:00Z'));
+	invariant(
+		(await page.locator('[data-slot="verdict"]').first().innerText()).includes(date),
+		'banner closed-week date mismatch',
+	);
+	await page.goto(new URL((cell.locale === 'fr' ? '/fr' : '') + '/lines', page.url()).href);
+	await page.getByTestId('lines-sort-worst').click();
+	const badge = page
+		.locator('[data-slot="reliability-badge"], [data-slot="reliability-hedge"]')
+		.first();
+	await badge.waitFor({ state: 'visible' });
+	const label = await badge.getAttribute('aria-label');
+	invariant(
+		Number(label?.match(/(\d+)\s*%/u)?.[1]) === week.otp_pct && label.includes(date),
+		'list closed-week percentage or date mismatch',
+	);
+}
+
 async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic = true } = {}) {
 	const selfCheck = runRunnerSelfCheck();
 	const built = await ensureBuild();
@@ -1922,7 +1967,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				});
 				await context.addInitScript({ content: freezeClockScript(fixture.frozen_utc) });
 				await context.addInitScript({ content: svgGuardScript() });
-				await installNetworkBoundary(context, preview.origin, replay, cell);
+				await installNetworkBoundary(context, preview.origin, replay, documentsForCell(cell));
 				const page = await context.newPage();
 				const errors = [];
 				page.on('response', (response) => {
@@ -2050,7 +2095,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					}
 				}
 				if (run === 0 && cell.fixture === 'rich' && cell.locale === 'en') {
-					await verifyGeometry(page, geometrySeen);
+					await verifyGeometry(page, geometrySeen, cell);
 				}
 				await verifyControls(page, cell);
 				await verifyResponsiveRailFocus(page, cell);
@@ -2098,6 +2143,12 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						.map((entry) => `${entry.lane}|${entry.path}|${entry.status}`)
 						.sort(),
 				});
+				await verifyClosedWeek(page, cell, fixture);
+				invariant(
+					replay.state.outbound.length === 0 &&
+						replay.state.ledger.every((entry) => entry.status !== 599),
+					'closed-week list replay escaped its fixture',
+				);
 				await context.close();
 			}
 			transcripts.push(transcript);
@@ -2145,42 +2196,13 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 }
 
 function runRunnerSelfCheck() {
-	for (const [text, expected] of [
-		['Reliability is uncertain: 80% of 100 delay observations in the on-time band.', 100],
-		['Fiabilité incertaine : 80 % de 100 relevés de retard dans la plage de ponctualité.', 100],
-		['Reliability is uncertain: 1000 delay observations, but no usable uncertainty range.', 1000],
-		[
-			'Fiabilité incertaine : 1000 relevés de retard, mais aucune plage d’incertitude exploitable.',
-			1000,
-		],
-		['Not enough delay observations (12) to judge reliability.', 12],
-		[
-			'Ran reliably, about 9 in 10 delay observations in the on-time band (87%, 95% CI: 80–92%).',
-			null,
-		],
-		[
-			'Service fiable, environ 9 relevés de retard sur 10 dans la plage de ponctualité (87 %, IC 95 % : 80–92 %).',
-			null,
-		],
-	]) {
+	for (const [text, expected] of runnerCases.line) {
 		invariant(
 			lineVerdictObservationCount(text) === expected,
 			`line verdict observation count: ${text}`,
 		);
 	}
-	for (const [text, expected] of [
-		['In this daily summary, 85% of 120 known predictions are not severely late.', 120],
-		['Dans ce résumé quotidien, 85 % de 120 prévisions connues sont sans retard grave.', 120],
-		['This daily summary contains only 29 eligible known predictions.', 29],
-		['Ce résumé quotidien contient seulement 29 prévisions connues admissibles.', 29],
-		['This daily summary contains 1000 known predictions, but no usable uncertainty range.', 1000],
-		[
-			'Ce résumé quotidien contient 1000 prévisions connues, mais aucune plage d’incertitude exploitable.',
-			1000,
-		],
-		['In this daily summary, about 9 in 10 known predictions are not severely late.', null],
-		['Dans ce résumé quotidien, environ 9 prévisions connues sur 10 sont sans retard grave.', null],
-	]) {
+	for (const [text, expected] of runnerCases.stop) {
 		invariant(
 			stopVerdictObservationCount(text) === expected,
 			`stop verdict observation count: ${text}`,

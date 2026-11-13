@@ -536,22 +536,25 @@ function rawFile(fixture, path) {
 function routeFile(fixture) {
 	return rawFile(fixture, 'historic/route_reliability/24.json');
 }
-
 export function expectedDefaultLineHeadline(fixture) {
-	const windows = ['day', 'week', 'month'].map(
-		(grain) =>
-			(routeFile(fixture).periods ?? [])
-				.filter((window) => window.grain === grain)
-				.slice()
-				.sort((left, right) => String(left.date ?? '').localeCompare(String(right.date ?? '')))
-				.at(-1) ?? null,
-	);
-	return windows.find((window) => finite(window?.observation_count) >= 30) ?? windows[0];
+	const file = routeFile(fixture);
+	const through = file.periods_by_grain?.find((row) => row.grain === 'day')?.date;
+	const rows = file.periods_by_grain?.find((row) => row.grain === 'week')?.by_daytype;
+	if (!through || !rows?.length) return null;
+	const n = rows.reduce((n, r) => n + r.observation_count, 0);
+	const on = rows.reduce((n, r) => n + r.on_time, 0);
+	return {
+		grain: 'week',
+		otp_pct: n > 0 ? Math.round((100 * on) / n) : null,
+		observation_count: n,
+		on_time: on,
+	};
 }
-
 export function expectedScheduleTruth(fixture) {
 	const route = routeFile(fixture);
-	const date = latestDated((route.periods ?? []).filter((row) => row.grain === 'day'))?.date;
+	const date =
+		route.periods_by_grain?.find((row) => row.grain === 'day')?.date ??
+		latestDated((route.periods ?? []).filter((row) => row.grain === 'day'))?.date;
 	const receiptsPath = fixture.files['manifest.json'].files.historic.receipts_index;
 	const receipts = fixture.files[receiptsPath];
 	const availability = (receipts?.available ?? []).find((row) => row.date === date);
@@ -622,6 +625,8 @@ function sumField(rows, group, field) {
 
 function lineOracle(fixture, locale, view) {
 	const raw = routeFile(fixture);
+	const closedDate = raw.periods_by_grain?.find((row) => row.grain === 'day')?.date;
+	const closedDay = (raw.periods ?? []).find((p) => p.grain === 'day' && p.date === closedDate);
 	const retained = retainedLineDays(fixture, view);
 	const observationN = sumField(retained, 'delay', 'observation_count');
 	const delayN = sumField(retained, 'delay', 'in_clamp_observation_count');
@@ -644,7 +649,7 @@ function lineOracle(fixture, locale, view) {
 				severe_pct: pct(sumField(retained, 'delay', 'severe_count'), delayN),
 				observation_count: sumField(retained, 'delay', 'observation_count'),
 			}
-		: expectedDefaultLineHeadline(fixture);
+		: closedDay;
 	const cancellation = retained.length
 		? Object.fromEntries(
 				[
@@ -714,10 +719,12 @@ function lineOracle(fixture, locale, view) {
 		independentlyRanked.every((row, index) => row.id === eligibleStops[index]?.id),
 		'weak-stop publisher order does not match Wilson, delay, and id ranking',
 	);
-	const histogram =
-		latestDated((raw.periods ?? []).filter((row) => row.grain === 'week'))?.delay_histogram ?? null;
 	const trendRows = (raw.periods ?? [])
-		.filter((row) => row.grain === 'day')
+		.filter(
+			(row) =>
+				row.grain === 'day' &&
+				row.date <= raw.periods_by_grain?.find((row) => row.grain === 'day')?.date,
+		)
 		.slice()
 		.sort((a, b) => a.date.localeCompare(b.date));
 	const recentTrendRows = trendRows.slice(-14);
@@ -770,7 +777,9 @@ function lineOracle(fixture, locale, view) {
 			return [
 				iso,
 				finite(
-					(breakdown.day_of_week ?? []).find((row) => row.day_of_week_iso === iso)?.avg_delay_min,
+					(breakdown.day_of_week ?? raw.day_of_week ?? []).find(
+						(row) => row.day_of_week_iso === iso,
+					)?.avg_delay_min,
 				),
 			];
 		}),
@@ -911,6 +920,7 @@ function lineOracle(fixture, locale, view) {
 		finite((raw.delay_by_crowding ?? []).find((row) => row.band === band)?.avg_delay_min),
 	]);
 	const c = TABLE_COPY[locale];
+	const histogram = histogramTable(closedDay?.delay_histogram ?? [], locale, true, c.observations);
 	return [
 		observation('line.day.otp_pct', finite(day?.otp_pct)),
 		observation('line.day.avg_delay_min', finite(day?.avg_delay_min)),
@@ -1014,12 +1024,7 @@ function lineOracle(fixture, locale, view) {
 				? table([c.crowdingBand, c.avg], delayByCrowdingRows, [' min'])
 				: table([], []),
 		),
-		observation(
-			'line.week.histogram',
-			histogram == null
-				? null
-				: histogramTable(histogram, locale, true, TABLE_COPY[locale].observations),
-		),
+		observation('line.week.histogram', histogram),
 	];
 }
 
@@ -1503,6 +1508,17 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	for (const value of [0, null, undefined]) {
+		const fixture = structuredClone(FIXTURES.sparse);
+		routeFile(fixture).day_of_week[0].avg_delay_min = value;
+		expectLiteral(
+			expectedDomainObservationsFromFixture(fixture, 'line').find(
+				(row) => row.id === 'line.time.rows',
+			)?.value.weekday.rows[0][1],
+			{ text: value === 0 ? '0' : '·', value: value ?? null },
+			'explicit zero and absent weekday averages stay distinct',
+		);
+	}
 	expectLiteral(
 		verdictCount(87, 120, null, 80, 92),
 		null,
@@ -1559,8 +1575,8 @@ export function runOracleSelfCheck() {
 		expectLiteral(verdictCount(otp, n, onTime), expected, `${otp}% at n=${n} hedge count`);
 	}
 	for (const [fixture, expected] of [
-		[FIXTURES.rich, ['day', 80, 100]],
-		[FIXTURES.sparse, ['day', 0, 0]],
+		[FIXTURES.rich, ['week', 76, 290]],
+		[FIXTURES.sparse, [undefined, undefined, undefined]],
 	]) {
 		const window = expectedDefaultLineHeadline(fixture);
 		expectLiteral(
@@ -1570,14 +1586,11 @@ export function runOracleSelfCheck() {
 		);
 	}
 	const thinCurrentDay = structuredClone(FIXTURES.rich);
-	routeFile(thinCurrentDay).periods.find(
-		(window) => window.grain === 'day' && window.date === '2026-08-29',
-	).observation_count = 29;
-	const fallbackWindow = expectedDefaultLineHeadline(thinCurrentDay);
+	routeFile(thinCurrentDay).periods.at(-1).observation_count = 29;
 	expectLiteral(
-		[fallbackWindow?.grain, fallbackWindow?.otp_pct, fallbackWindow?.observation_count],
-		['week', 76, 290],
-		'thin current day uses qualifying week',
+		expectedDefaultLineHeadline(thinCurrentDay),
+		expectedDefaultLineHeadline(FIXTURES.rich),
+		'open count does not change the closed week',
 	);
 	expectLiteral(
 		expectedDomainObservations('sparse', 'line').find(
@@ -1810,7 +1823,7 @@ export function runOracleSelfCheck() {
 		(row) => row.id === 'line.week.histogram',
 	)?.value;
 	const onTimeBin = weekHistogram.rows.find((bin) => bin.lo === 0 && bin.hi === 120);
-	expectLiteral(onTimeBin.count / (onTimeBin.hi - onTimeBin.lo), 2 / 3, 'hand density');
+	expectLiteral(onTimeBin.count / (onTimeBin.hi - onTimeBin.lo), 2 / 3, 'hand closed-day density');
 	expectLiteral(
 		expectedScheduleTruth(FIXTURES.rich),
 		{ date: '2026-08-29', hasData: true, hasSchedule: true },

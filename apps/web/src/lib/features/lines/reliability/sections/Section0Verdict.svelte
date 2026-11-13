@@ -207,7 +207,8 @@
 					spec={p50Bullet}
 					{locale}
 					info={p50Info}
-					caption={estimatedPercentiles ? copy.strip.p50EstimatedCaption : copy.strip.p50Caption}
+					absenceLabel={estimatedPercentiles ? copy.strip.notPublished : undefined}
+					caption={estimatedPercentiles ? undefined : copy.strip.p50Caption}
 				/>
 				<MetricBullet
 					label={copy.strip.p90Min}
@@ -215,7 +216,8 @@
 					spec={p90Bullet}
 					{locale}
 					info={p90Info}
-					caption={estimatedPercentiles ? copy.strip.p90EstimatedCaption : copy.strip.p90Caption}
+					absenceLabel={estimatedPercentiles ? copy.strip.notPublished : undefined}
+					caption={estimatedPercentiles ? undefined : copy.strip.p90Caption}
 				/>
 			</div>
 		{/if}
@@ -273,7 +275,8 @@
 					<Chart spec={distSpec} />
 				{:else}
 					<p class="caption">
-						<AbsentValue reason={distSpec.reason} variant="row" {locale} />
+						{#if estimatedPercentiles}<span data-slot="absent-value">{copy.strip.notPublished}</span
+							>{:else}<AbsentValue reason={distSpec.reason} variant="row" {locale} />{/if}
 					</p>
 				{/if}
 				{#if dailyPercentiles != null}

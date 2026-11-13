@@ -8,6 +8,7 @@ import Section0Verdict from './Section0Verdict.svelte';
 it('a click on the pinned distribution readout leaves its card open', async () => {
 	const vm = toReliabilityClusters({
 		id: '24',
+		periods_by_grain: [{ grain: 'day', date: '2026-06-19' }],
 		generated_utc: isoUtc().parse('2026-06-19T02:00:00Z'),
 		periods: [{ grain: 'day', date: '2026-06-19', p50_min: 2, p90_min: 9 }],
 	}).punctuality;
@@ -22,40 +23,14 @@ it('a click on the pinned distribution readout leaves its card open', async () =
 	expect(trigger).toHaveAttribute('aria-expanded', 'true');
 });
 
-it.each(['week', 'month'] as const)(
-	'labels percentile estimates from a qualifying %s headline window',
-	async (grain) => {
-		const vm = toReliabilityClusters(
-			{
-				id: '24',
-				generated_utc: isoUtc().parse('2026-11-02T00:00:00Z'),
-				periods: [
-					{
-						grain: 'day',
-						date: '2026-11-02',
-						otp_pct: 20,
-						observation_count: 12,
-						p50_min: 1,
-						p90_min: 3,
-					},
-					{
-						grain,
-						date: '2026-10-27',
-						otp_pct: 85,
-						observation_count: 4000,
-						p50_min: 2,
-						p90_min: 5,
-					},
-				],
-			},
-			{ grain: 'day' },
-		).punctuality;
-		const { container, getByText, getByRole } = render(Section0Verdict, {
-			props: { vm, locale: 'en', copy: reliabilityCopy.en },
-		});
-		expect(getByText(reliabilityCopy.en.strip.p50EstimatedCaption)).toBeInTheDocument();
-		expect(getByText(reliabilityCopy.en.strip.p90EstimatedCaption)).toBeInTheDocument();
-		await fireEvent.click(getByRole('button', { name: reliabilityCopy.en.sections.detailShow }));
-		expect(container.querySelector('[data-slot="percentile-nudge"]')).toBeNull();
-	},
-);
+it.each(['week', 'month'] as const)('keeps unpublished %s percentiles absent', async (grain) => {
+	const { closedWeek } = await import('../__fixtures__/closedWeek');
+	const vm = toReliabilityClusters(closedWeek, { grain }).punctuality;
+	const { container } = render(Section0Verdict, {
+		props: { vm, mode: grain, locale: 'en', copy: reliabilityCopy.en },
+	});
+	expect(vm.headline.p50Min).toBeNull();
+	expect(vm.headline.p90Min).toBeNull();
+	expect(vm.headline.delayHistogram).toBeNull();
+	expect(container.querySelector('[data-slot="percentile-nudge"]')).toBeNull();
+});

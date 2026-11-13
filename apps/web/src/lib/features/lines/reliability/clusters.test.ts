@@ -1,5 +1,6 @@
-import { verdictForWindow } from '#lib/v1/verdict.ts';
-import { verdictCopy } from '#lib/v1/verdict.copy.ts';
+import { closedWeek, juneClosedDays, withClosedPeriods } from './__fixtures__/closedWeek';
+import { verdictForWindow, selectHeadlinePeriod } from '#lib/v1/verdict.ts';
+import { selectDayVerdictHeadline } from './selectors/dayVerdictHeadline';
 import { describe, expect, it } from 'vitest';
 import type { RouteReliability, IsoUtc, LineHistoryRange } from '#lib/v1/index.ts';
 import { toReliabilityClusters } from './clusters';
@@ -45,12 +46,12 @@ describe('toReliabilityClusters — empty contract', () => {
 	});
 });
 
-const populated: RouteReliability = {
+const populated: RouteReliability = withClosedPeriods({
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	id: '161',
 	periods: [
 		{ grain: 'week', otp_pct: 71, avg_delay_min: 3.2, p50_min: 1.0, p90_min: 8.4, severe_pct: 4 },
-		{ grain: 'day', otp_pct: 82, avg_delay_min: 2.1, p50_min: 0.5, p90_min: 6.0, severe_pct: 3 },
+		...juneClosedDays,
 		{ grain: 'month', otp_pct: 68, avg_delay_min: 3.9, p50_min: 1.2, p90_min: 9.1, severe_pct: 5 },
 	],
 	headway: [
@@ -94,7 +95,7 @@ const populated: RouteReliability = {
 		{ id: 'S1', name: 'Côte-des-Neiges', avg_delay_min: 4.2 },
 		{ id: 'S2', name: 'Van Horne' },
 	],
-};
+});
 
 describe('toReliabilityClusters — populated fixture', () => {
 	it('selects the requested grain for the strip (default day)', () => {
@@ -110,12 +111,17 @@ describe('toReliabilityClusters — populated fixture', () => {
 		const c = toReliabilityClusters(populated, { grain: 'month' });
 		expect(c.strip.grain).toBe('month');
 		expect(c.strip.otpPct).toBe(68);
-		expect(c.strip.p90Min).toBe(9.1);
+		expect(c.strip.p90Min).toBeNull();
 	});
 
+	it.each([
+		['week', 76],
+		['month', 74],
+	] as const)('picks the MOST-RECENT %s (F1)', (grain, otp_pct) => {
+		expect(selectHeadlinePeriod(granular.periods ?? [], grain)).toMatchObject({ grain, otp_pct });
+	});
 	it('falls back to the first CALENDAR period when the grain is absent', () => {
-		const c = toReliabilityClusters(populated, { grain: 'year' });
-		expect(c.strip.otpPct).toBe(82);
+		expect(toReliabilityClusters(populated, { grain: 'year' }).strip.otpPct).toBe(82);
 	});
 
 	it('carries p50 onto the strip (daily grain)', () => {
@@ -191,7 +197,7 @@ describe('toReliabilityClusters — populated fixture', () => {
 	});
 });
 
-const granular: RouteReliability = {
+const granular: RouteReliability = withClosedPeriods({
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	id: '10',
 	periods: [
@@ -229,19 +235,9 @@ const granular: RouteReliability = {
 		{ grain: 'weekday', otp_pct: 80, avg_delay_min: 2.4, severe_pct: 8 },
 		{ grain: 'weekend', otp_pct: 88, avg_delay_min: 1.1, severe_pct: 4 },
 	],
-};
+});
 
 describe('toReliabilityClusters — F1 most-recent week/month + grain partition', () => {
-	it('picks the MOST-RECENT week, not the oldest (F1)', () => {
-		const c = toReliabilityClusters(granular, { grain: 'week' });
-		expect(c.strip.otpPct).toBe(76);
-	});
-
-	it('picks the MOST-RECENT month, not the oldest (F1)', () => {
-		const c = toReliabilityClusters(granular, { grain: 'month' });
-		expect(c.strip.otpPct).toBe(74);
-	});
-
 	it('trend is the dated DAY-grain series only, chronological ascending', () => {
 		const c = toReliabilityClusters(granular);
 		expect(c.punctuality.trend.map((p) => p.date)).toEqual([
@@ -494,7 +490,7 @@ describe('toReliabilityClusters — retained scheduled-service honesty', () => {
 });
 
 describe('toReliabilityClusters — duplicate-day dedup', () => {
-	const dupDay: RouteReliability = {
+	const dupDay: RouteReliability = withClosedPeriods({
 		generated_utc: utc('2026-06-19T02:00:00Z'),
 		id: '11',
 		periods: [
@@ -502,7 +498,7 @@ describe('toReliabilityClusters — duplicate-day dedup', () => {
 			{ grain: 'day', date: '2026-06-17', otp_pct: 60, avg_delay_min: 5.0 },
 			{ grain: 'day', date: '2026-06-17', otp_pct: 90, avg_delay_min: 1.0 },
 		],
-	};
+	});
 
 	it('collapses a duplicate day in the trend (one point per date, last write wins)', () => {
 		const c = toReliabilityClusters(dupDay);
@@ -588,6 +584,7 @@ describe('toReliabilityClusters — grain-aware trend (S7)', () => {
 			generated_utc: utc('2026-06-19T02:00:00Z'),
 			id: '99',
 			periods: days,
+			periods_by_grain: [{ grain: 'day', date: '2026-06-18' }],
 		};
 		const week = toReliabilityClusters(data, { grain: 'week' });
 		const month = toReliabilityClusters(data, { grain: 'month' });
@@ -790,8 +787,10 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		],
 		habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] },
 		periods_by_grain: [
+			populated.periods_by_grain![0],
 			{
 				grain: 'week',
+				date: '2026-06-12',
 				by_shift: [
 					{
 						grain: 'am_peak',
@@ -889,7 +888,7 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 	});
 
 	it('falls back to scalar + flags windowed=false when the grain has no windowed entry', () => {
-		const c = toReliabilityClusters(windowed, { grain: 'day' });
+		const c = toReliabilityClusters({ ...windowed, periods_by_grain: [] }, { grain: 'day' });
 		expect(c.punctuality.windowed).toBe(false);
 		expect(c.punctuality.weakStopsWindowed).toBe(false);
 		expect(c.waitRegularity.windowed).toBe(false);
@@ -917,7 +916,10 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 	});
 
 	it('absent *_by_grain (pre-deploy) → all windowed flags false (regression guard)', () => {
-		const c = toReliabilityClusters(populated, { grain: 'week' });
+		const c = toReliabilityClusters(
+			{ ...populated, periods_by_grain: undefined },
+			{ grain: 'week' },
+		);
 		expect(c.punctuality.windowed).toBe(false);
 		expect(c.punctuality.weakStopsWindowed).toBe(false);
 		expect(c.waitRegularity.windowed).toBe(false);
@@ -928,9 +930,7 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 			{
 				generated_utc: utc('2026-06-19T02:00:00Z'),
 				id: '51',
-				periods_by_grain: [
-					{ grain: 'week', by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }] },
-				],
+				periods_by_grain: windowed.periods_by_grain,
 			},
 			{ grain: 'week' },
 		);
@@ -981,7 +981,8 @@ describe('shared confidence for service metric tones', () => {
 				{
 					id: '24',
 					generated_utc: utc('2026-11-02T00:00:00Z'),
-					periods: [{ grain: 'day', ...window }],
+					periods: [{ grain: 'day', date: '2026-11-02', ...window }],
+					periods_by_grain: [{ grain: 'day', date: '2026-11-02' }],
 					cancellations: [
 						{
 							grain: 'day',
@@ -992,7 +993,7 @@ describe('shared confidence for service metric tones', () => {
 						},
 					],
 				},
-				{ grain: 'day', automaticHeadline: false },
+				{ grain: 'day' },
 			);
 			expect(result.serviceDelivered.serviceCompletenessPct).toBe(100);
 			expect(result.serviceDelivered.verdictStatus).toBe('tentative');
@@ -1001,18 +1002,12 @@ describe('shared confidence for service metric tones', () => {
 });
 
 describe('cluster Verdict entry point', () => {
-	const data: RouteReliability = {
-		...empty,
-		periods: [{ grain: 'week', otp_pct: 85, observation_count: 4000, on_time: 3400 }],
-	};
-	it.each(['en', 'fr'] as const)(
-		'returns a finished Verdict for standalone %s callers',
-		(locale) => {
-			const mapped = toReliabilityClusters(data, { locale });
-			expect(mapped.punctuality.headline).toMatchObject(verdictForWindow(data, {}, locale));
-			expect(mapped.punctuality.headline.sentence).toContain(verdictCopy[locale].windowPhrase.week);
-		},
-	);
+	const data = closedWeek;
+	it.each(['en', 'fr'] as const)('banner, list and pane agree on one window in %s', (locale) => {
+		const mapped = toReliabilityClusters(data, { locale, grain: 'week' });
+		expect(mapped.punctuality.headline).toMatchObject(selectDayVerdictHeadline(data, locale));
+		expect(mapped.punctuality.headline.otpPct).toBe(84);
+	});
 	it('uses the supplied view Verdict for the headline, strip and service summary', () => {
 		const verdict = verdictForWindow(
 			null,

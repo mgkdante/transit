@@ -68,6 +68,7 @@ interface ViewOptions<
 	};
 	readonly apply?: (snapshot: S, retained: R | null) => D;
 	readonly verdict?: {
+		readonly kind?: 'route' | 'stop';
 		readonly file: (data: S | D) => ReliabilityVerdictFile | null | undefined;
 		readonly headline?: (retained: R) => VerdictHeadline | undefined;
 		readonly copy?: () => VerdictCopy;
@@ -96,10 +97,20 @@ export function createReliabilityViewState<
 	const rangeChoice = options.grains.keys.find((key) => key === 'range');
 	const firstGrain = options.grains.keys[0];
 	// Hotspots' exact shift token is an extension to the shared calendar parser.
-	const seededGrain =
-		options.grains.keys.some((key) => key === 'shift') && params.get('grain') === 'shift'
-			? 'shift'
-			: seed.grain;
+	const seededGrain = untrack(() => {
+		const hint =
+			options.grains.keys.some((key) => key === 'shift') && params.get('grain') === 'shift'
+				? 'shift'
+				: params.has('grain')
+					? seed.grain
+					: firstGrain;
+		const present = rangeChoice == null ? undefined : options.grains.present?.();
+		return present &&
+			!present.has(options.grains.keys.find((key) => key === hint) ?? firstGrain) &&
+			options.grains.keys.some((key) => key === 'day' && present.has(key))
+			? 'day'
+			: hint;
+	});
 	const explicitRangeToken = rangeChoice != null && params.get('grain') === rangeChoice;
 	const initialRequest =
 		rangeChoice == null ? emptyRequest() : historyRangeRequestFromSearchParams(params);
@@ -233,13 +244,12 @@ export function createReliabilityViewState<
 				else if (grain === rangeChoice && !explicitRangeToken) grain = firstGrain;
 				if (grain === rangeChoice && availableDates.length === 0) grain = firstGrain;
 			}
-			if (
-				rangeChoice != null &&
-				!selected &&
-				(grain === 'week' || grain === 'month') &&
-				!available.has(grain)
-			)
-				grain = firstGrain;
+			if (rangeChoice != null && (grain === 'week' || grain === 'month') && !available.has(grain))
+				grain =
+					options.grains.keys.find((key) => key === 'day' && available.has(key)) ??
+					options.grains.keys.find((key) => available.has(key)) ??
+					options.grains.keys.find((key) => key === 'day') ??
+					firstGrain;
 		}
 		if (
 			rangeChoice == null &&
@@ -337,7 +347,8 @@ export function createReliabilityViewState<
 	});
 
 	const verdictWindow = $derived<VerdictWindow>({
-		grain: selected ? grain : undefined,
+		kind: options.verdict?.kind,
+		grain: selected || options.verdict?.kind === 'route' ? grain : undefined,
 		...(window ? { from: window.from, to: window.to } : {}),
 		...(active && retainedValue != null && window
 			? { aggregate: options.verdict?.headline?.(retainedValue) }
