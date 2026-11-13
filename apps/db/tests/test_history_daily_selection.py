@@ -93,3 +93,14 @@ def test_noncapture_dataset_fails_before_reads(monkeypatch):
             conn, datasets=("table",), start=date.today(), end=date.today(), empty_since=None
         )
     conn.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("hour,expected", [(0, 2), (1, 3)])
+def test_empty_floor_is_separate_from_older_evidence(hour, expected):
+    conn = Mock()
+    conn.execute.side_effect = [Mock(scalars=lambda: ["network"]), []]
+    capture_days(conn, datasets=["capture.trip_updates"], start=date.min,
+                 end=date(2026, 1, 5), empty_since=datetime(2026, 1, 2, hour, tzinfo=UTC))
+    params = conn.execute.call_args.args[1]
+    assert params["empty_start_day"] == date(2026, 1, expected)
+    assert params["start_day"] == date.min

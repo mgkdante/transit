@@ -1,11 +1,13 @@
 from contextlib import contextmanager
+from dataclasses import fields, replace
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from transit_ops.history import daily, ledger, store
+from transit_ops.history import daily, ledger, seal_captures, store
 from transit_ops.history import daily_selection as selection
 from transit_ops.history.daily_selection import CaptureDay, CaptureDayStatus
 from transit_ops.history.seal_captures import CopyContentMissing
@@ -371,3 +373,116 @@ def test_status_failure_is_a_day_failure(runner, monkeypatch):
     result = runner.run()
     assert not result.success and result.counts["failed"] == 1
     assert "private" not in result.errors[0] and not runner.active
+
+
+def test_status_failure_after_cap_is_retained(runner, monkeypatch):
+    runner.days += [CaptureDay("inactive", FEED, date(2026, 11, d)) for d in (9, 8, 7)]
+    original = selection.capture_day_status
+
+    def status(c, day, **kw):
+        if day.utc_date.day == 7:
+            raise RuntimeError("private response")
+        return original(c, day, **kw)
+
+    monkeypatch.setattr(selection, "capture_day_status", status)
+    result = runner.run()
+    assert not result.success and result.errors
+    assert result.outcomes[-1].day.utc_date.day == 7
+    assert result.counts["attempted"] == 3 and result.remaining_work
+
+
+@pytest.mark.parametrize("expire_after", [1, 2, 3, 4, 5])
+def test_discovery_checks_deadline_before_every_query(runner, monkeypatch, expire_after):
+    original = runner.conn.execute.side_effect
+    queries = []
+
+    class Rows(list):
+        def scalars(self):
+            return ["inactive"]
+
+    def execute(sql, params=None):
+        if str(sql) == "probe discovery":
+            queries.append(params)
+            if len(queries) == expire_after:
+                runner.t = 1
+            return Rows()
+        return original(sql, params)
+
+    # Keep real selector orchestration, script only database result boundaries.
+    monkeypatch.setattr(selection, "capture_days", REAL_DAYS)
+    runner.conn.execute.side_effect = execute
+    monkeypatch.setattr(selection, "_PROVIDERS", "probe discovery")
+    monkeypatch.setattr(selection, "_DAYS", "probe discovery")
+    result = runner.run(
+        datasets=[FEED, "capture.vehicle_positions", "capture.i3_alerts", "capture.service_alerts"],
+        time_budget_seconds=1,
+    )
+    assert len(queries) == expire_after
+    assert result.stop_reason == "time_budget" and result.remaining_work
+    assert not any(op == "seal" for op, _ in runner.calls)
+
+
+def _fall_back_copies(waiting):
+    zone = ZoneInfo("America/Toronto")
+    before = datetime(2026, 11, 1, 1, 50, tzinfo=zone, fold=0)
+    changed = datetime(2026, 11, 1, 1, 10, tzinfo=zone, fold=1)
+    day = CaptureDay("inactive", FEED, date(2026, 10, 30))
+    values = {f.name: None for f in fields(ledger.ArchiveCopy)}
+    values.update(
+        dataset_id=FEED,
+        provider_id="inactive",
+        revision=0,
+        window_key=str(day.utc_date),
+        content_version=1,
+        allocated_at_utc=before,
+        sealed_at_utc=before,
+        verified_at_utc=None if waiting else before,
+        details={"rows_fingerprint": "same"},
+    )
+    copies = [ledger.ArchiveCopy(**values)]
+    window = NS(
+        current_version=None if waiting else 1,
+        working_state="present",
+        working_changed_at_utc=changed,
+        hold_reason=None,
+    )
+    return day, copies, window
+
+
+@pytest.mark.parametrize("waiting", [False, True])
+def test_fall_back_processing_change_reaches_sealer_and_verification(runner, monkeypatch, waiting):
+    day, copies, window = _fall_back_copies(waiting)
+    runner.days = [day]
+    monkeypatch.setattr(selection, "capture_day_status", REAL_STATUS)
+    monkeypatch.setattr(store, "seal", REAL_SEAL)
+    monkeypatch.setattr(ledger, "window_state", lambda *a, **kw: window)
+    monkeypatch.setattr(ledger, "find_copies", lambda *a, **kw: copies)
+    monkeypatch.setattr(selection, "_working", lambda *a: ("same", True))
+    monkeypatch.setattr(seal_captures, "rows_fingerprint", lambda *a, **kw: "same")
+    monkeypatch.setattr(seal_captures, "_repair_allocated", lambda *a: None)
+    monkeypatch.setattr(seal_captures, "_changed_record", lambda *a: object())
+    monkeypatch.setattr(seal_captures, "pack_working_day", lambda *a, **kw: object())
+    monkeypatch.setattr(seal_captures, "_highest_version", lambda *a: 1)
+    monkeypatch.setattr(seal_captures, "_day_copies", lambda *a: copies)
+    monkeypatch.setattr(seal_captures, "_write_objects", lambda *a: None)
+    monkeypatch.setattr(seal_captures, "_mark_sealed", lambda *a: None)
+
+    def allocate(*a):
+        copies.append(replace(copies[0], content_version=2, verified_at_utc=None))
+        return NS(content_version=2), b"manifest"
+
+    monkeypatch.setattr(seal_captures, "_allocate", allocate)
+    original = runner.conn.execute.side_effect
+    runner.conn.execute.side_effect = lambda sql, params=None: (
+        NS(one_or_none=lambda: NS(feed_endpoint_id=1, feed_kind="trip_updates"))
+        if "SELECT feed_endpoint_id" in str(sql)
+        else Mock()
+        if "SET TRANSACTION" in str(sql)
+        else original(sql, params)
+    )
+    result = runner.run()
+    assert result.success and [c.content_version for c in copies] == [1, 2]
+    assert ("verify", 2) in runner.calls
+
+
+REAL_STATUS, REAL_SEAL, REAL_DAYS = selection.capture_day_status, store.seal, selection.capture_days

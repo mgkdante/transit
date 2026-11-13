@@ -235,7 +235,9 @@ def _prepare(
     if not admission.available():
         return None
     with connection.begin():
-        providers = selection.capture_providers(connection, now=now)
+        providers = selection.capture_providers(
+            connection, now=now, before_query=admission.available
+        )
     for provider in providers:
         if not admission.available(switch=True):
             return None
@@ -252,7 +254,10 @@ def _prepare(
             start=start or date.min,
             end=end or now.date(),
             empty_since=admission.enabled_at,
+            before_query=admission.available,
         )
+    if not admission.available():
+        return None
     return days, now
 
 
@@ -282,6 +287,7 @@ def _run_days(
                 attempts[key] += 1
                 _record(result, outcome)
             else:
+                _record(result, outcome, admitted=False)
                 result.counts["deferred"] += 1
                 result.remaining_work = True
             continue
@@ -307,10 +313,10 @@ def _run_days(
         result.stop_reason = "day_cap"
 
 
-def _record(result: DailyHistoryResult, outcome: DayOutcome) -> None:
+def _record(result: DailyHistoryResult, outcome: DayOutcome, *, admitted: bool = True) -> None:
     result.outcomes.append(outcome)
     result.errors.extend(outcome.errors)
-    result.counts["attempted"] += 1
+    result.counts["attempted"] += int(admitted)
     result.counts[outcome.state] += 1
     result.counts["verified"] += sum(
         v.outcome == "verified" and v.copy.state == "verified" for v in outcome.verifications
@@ -356,7 +362,10 @@ def run_capture_history(
     admission.enabled_at = _preflight(admission)
     if admission.enabled_at is None:
         return result
-    prepared = _prepare(admission, datasets, start, end, actor)
+    try:
+        prepared = _prepare(admission, datasets, start, end, actor)
+    except selection.DiscoveryStopped:
+        return result
     if prepared is not None:
         days, now = prepared
         _run_days(
