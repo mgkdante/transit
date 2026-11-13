@@ -1,12 +1,21 @@
 """Archive reader values shared by history consumers."""
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
-from typing import Literal
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any, Literal
 
-from transit_ops.history.datasets import IndexFamily
+from sqlalchemy import Connection, text
+
+from transit_ops.history import ledger
+from transit_ops.history.datasets import CaptureSource, IndexFamily, get_dataset
+from transit_ops.history.manifest import read_copy_manifest
+from transit_ops.history.poll_record import PollRecord, poll_record_sha256
+from transit_ops.history.working_captures import _INDEX, read_working_day
+from transit_ops.ingestion.storage import BronzeStorageResolver
 
 NotAvailableReason = Literal["never_collected", "pruned_before_archive", "no_polls", "still_open"]
+UTC_DAY_CLOSE_DELAY = timedelta(hours=6)
 
 
 @dataclass(frozen=True)
@@ -109,3 +118,277 @@ class WindowNotAvailable(Exception):
 
 class ArchiveNotVerified(RuntimeError):
     """A day's only archive copy has not been verified after a ledger rebuild."""
+
+
+class CaptureWindow:
+    def __init__(
+        self,
+        *,
+        provider_id: str,
+        feeds: tuple[str, ...],
+        start_utc: datetime,
+        end_utc: datetime,
+        days: tuple[FeedDay, ...],
+        connection: Connection,
+        storage: BronzeStorageResolver,
+        records: dict[tuple[str, date], PollRecord],
+    ) -> None:
+        self.provider_id = provider_id
+        self.feeds = feeds
+        self.start_utc = start_utc
+        self.end_utc = end_utc
+        self.days = days
+        self.unreadable: list[Poll] = []
+        self._connection = connection
+        self._storage = storage
+        self._records = records
+
+    def require_available(self) -> None:
+        missing = tuple(day for day in self.days if day.state == "not_available")
+        if missing:
+            raise WindowNotAvailable(missing)
+
+    def polls(self) -> Iterator[Poll]:
+        raise NotImplementedError("H06a4 implements polls")
+
+    def captures(self, *, with_bytes: bool = True) -> Iterator[Capture]:
+        raise NotImplementedError("H06a4 implements captures")
+
+    def processing(self) -> Iterator[ProcessingRecord]:
+        raise NotImplementedError("H06b implements processing")
+
+
+def _utc_day_closes_at(utc_date: date) -> datetime:
+    return datetime.combine(utc_date, time(), UTC) + timedelta(days=1) + UTC_DAY_CLOSE_DELAY
+
+
+def _unavailable(provider: str, feed: str, day: date, reason: NotAvailableReason) -> FeedDay:
+    return FeedDay(
+        provider,
+        feed,
+        day,
+        "not_available",
+        reason,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        False,
+        False,
+    )
+
+
+def _object_day(record: PollRecord) -> FeedDay:
+    key = record.feed_day
+    return FeedDay(
+        key.provider_id,
+        key.endpoint_key,
+        key.utc_date,
+        "available",
+        None,
+        "objects",
+        None,
+        len(record.polls),
+        len(record.captures),
+        record.polls[0].time_utc if record.polls else None,
+        record.polls[-1].time_utc if record.polls else None,
+        record.declared_interval_seconds,
+        record.observed_interval_ms / 1000 if record.observed_interval_ms is not None else None,
+        poll_record_sha256(record),
+        False,
+        False,
+    )
+
+
+def _poll_days(connection: Connection, source: CaptureSource, params: dict[str, Any]) -> set[date]:
+    table, _ = _INDEX[source.index_family]
+    return set(
+        connection.execute(
+            text(f"""
+        SELECT (r.started_at_utc AT TIME ZONE 'UTC')::date AS utc_date
+        FROM raw.ingestion_runs r LEFT JOIN {table} i ON i.ingestion_run_id = r.ingestion_run_id
+        WHERE r.provider_id = :provider_id AND r.feed_endpoint_id = :feed_endpoint_id
+          AND r.run_kind <> 'silver_load' AND r.started_at_utc < :end_utc
+        GROUP BY 1
+        HAVING max(COALESCE(i.captured_at_utc, r.completed_at_utc, r.started_at_utc)) >= :start_utc
+            OR (r.started_at_utc AT TIME ZONE 'UTC')::date >= :first_date
+    """),
+            params,
+        ).scalars()
+    )
+
+
+def _working_record(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    provider: str,
+    feed: str,
+    day: date,
+    version: int | None,
+) -> PollRecord:
+    current = None
+    if version is not None:
+        copies = ledger.find_copies(
+            connection,
+            dataset_id="capture." + feed,
+            provider_id=provider,
+            start=day,
+            end=day,
+        )
+        copy = next(copy for copy in copies if copy.content_version == version)
+        current = read_copy_manifest(storage, copy)
+    return read_working_day(
+        connection,
+        provider_id=provider,
+        endpoint_key=feed,
+        utc_date=day,
+        current=current,
+    )
+
+
+def _plan_day(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    provider: str,
+    feed: str,
+    day: date,
+    now: datetime,
+    created: date,
+    has_polls: bool,
+    window: dict[str, Any],
+    records: dict[tuple[str, date], PollRecord],
+) -> FeedDay:
+    if now < _utc_day_closes_at(day):
+        return _unavailable(provider, feed, day, "still_open")
+    state, version = window.get("working_state"), window.get("current_version")
+    if state in ("partial", "trimmed"):
+        raise NotImplementedError("H06a3 implements partial and trimmed windows")
+    if has_polls:
+        record = _working_record(connection, storage, provider, feed, day, version)
+        records[feed, day] = record
+        return _object_day(record)
+    if state == "empty":
+        return _unavailable(provider, feed, day, "no_polls")
+    if state == "present" and version is not None:
+        raise NotImplementedError("H06a3 implements present copies without working polls")
+    reason: NotAvailableReason = "never_collected" if day < created else "pruned_before_archive"
+    return _unavailable(provider, feed, day, reason)
+
+
+def _endpoint(connection: Connection, params: dict[str, Any]) -> dict[str, Any] | None:
+    row = (
+        connection.execute(
+            text(
+                "SELECT feed_endpoint_id, created_at_utc FROM core.feed_endpoints "
+                "WHERE provider_id=:provider_id AND endpoint_key=:endpoint_key"
+            ),
+            params,
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return dict(row) if row is not None else None
+
+
+def _windows(connection: Connection, params: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rows = connection.execute(
+        text(
+            "SELECT window_key, working_state, current_version FROM core.history_window "
+            "WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=0 "
+            "AND window_key=ANY(:keys)"
+        ),
+        params,
+    ).mappings()
+    return {row["window_key"]: dict(row) for row in rows}
+
+
+def _feed_plan(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    provider: str,
+    feed: str,
+    start: datetime,
+    end: datetime,
+    now: datetime,
+    dates: set[date],
+    records: dict[tuple[str, date], PollRecord],
+) -> list[FeedDay]:
+    source = get_dataset("capture." + feed).source
+    assert isinstance(source, CaptureSource)
+    params: dict[str, Any] = dict(provider_id=provider, endpoint_key=feed)
+    endpoint = _endpoint(connection, params)
+    if endpoint is None:
+        return [_unavailable(provider, feed, day, "never_collected") for day in dates]
+    params.update(
+        feed_endpoint_id=endpoint["feed_endpoint_id"],
+        start_utc=start,
+        end_utc=end,
+        first_date=start.date(),
+    )
+    poll_days = _poll_days(connection, source, params)
+    candidates = dates | poll_days
+    params.update(dataset_id="capture." + feed, keys=[d.isoformat() for d in candidates])
+    by_key = _windows(connection, params)
+    created = endpoint["created_at_utc"].astimezone(UTC).date()
+    return [
+        _plan_day(
+            connection,
+            storage,
+            provider,
+            feed,
+            day,
+            now,
+            created,
+            day in poll_days,
+            by_key.get(day.isoformat(), {}),
+            records,
+        )
+        for day in sorted(candidates)
+    ]
+
+
+def open_window(
+    provider: str,
+    feeds: Sequence[str],
+    start_utc: datetime,
+    end_utc: datetime,
+    *,
+    connection: Connection,
+    storage: BronzeStorageResolver,
+) -> CaptureWindow:
+    feeds = tuple(feeds)
+    if not provider or not feeds or len(feeds) != len(set(feeds)):
+        raise ValueError("provider and distinct feeds are required")
+    if start_utc.utcoffset() is None or end_utc.utcoffset() is None:
+        raise ValueError("window times must be timezone-aware")
+    if start_utc >= end_utc:
+        raise ValueError("start_utc must be before end_utc")
+    for feed in feeds:
+        get_dataset("capture." + feed)
+    start_utc, end_utc = start_utc.astimezone(UTC), end_utc.astimezone(UTC)
+    now = connection.execute(text("SELECT now()")).scalar_one()
+    first, last = start_utc.date(), (end_utc - timedelta(microseconds=1)).date()
+    dates = {first + timedelta(days=n) for n in range((last - first).days + 1)}
+    records: dict[tuple[str, date], PollRecord] = {}
+    days = [
+        day
+        for feed in feeds
+        for day in _feed_plan(
+            connection, storage, provider, feed, start_utc, end_utc, now, dates, records
+        )
+    ]
+    return CaptureWindow(
+        provider_id=provider,
+        feeds=feeds,
+        start_utc=start_utc,
+        end_utc=end_utc,
+        days=tuple(sorted(days, key=lambda d: (d.utc_date, d.endpoint_key))),
+        connection=connection,
+        storage=storage,
+        records=records,
+    )
