@@ -20,7 +20,7 @@ describe('Daily Receipt article copy', () => {
 	it('matches the approved English article, rail, card, and caveat contract', () => {
 		expect(copy.en.article).toEqual({
 			watermark: 'Receipt',
-			back: '← Back to the dashboard',
+			back: '← Back to overview',
 			tagsAria: 'Page keywords',
 			tags: ['receipt', 'reliability', 'service', 'accountability'],
 			generatedLabel: 'GENERATED',
@@ -63,7 +63,7 @@ describe('Daily Receipt article copy', () => {
 	it('matches the approved French article, rail, card, and caveat contract', () => {
 		expect(copy.fr.article).toEqual({
 			watermark: 'Reçu',
-			back: '← Retour au tableau de bord',
+			back: '← Retour à l’aperçu',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['reçu', 'fiabilité', 'service', 'imputabilité'],
 			generatedLabel: 'PRODUIT',

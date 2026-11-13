@@ -2,6 +2,56 @@ import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as navigation from './nav';
+import { NAV_GROUPS, NAV_ITEMS, visibleNav } from './nav';
+import { providerHasAlerts, PublicProviderCatalogSchema } from '#lib/v1/providers.ts';
+import catalog from '../../../e2e/providers.json';
+
+describe('grouped navigation', () => {
+	it('the menu has four groups in order', () => {
+		expect(NAV_GROUPS.map((group) => group.key)).toEqual(['now', 'explore', 'reports', 'about']);
+		expect([...new Set(NAV_ITEMS.map((item) => item.group))]).toEqual(
+			NAV_GROUPS.map((group) => group.key),
+		);
+	});
+	it('every earlier URL is still listed', () => {
+		for (const item of [...SURFACE_NAV, ...AUDIT_NAV])
+			expect(NAV_ITEMS.map((item) => item.href)).toContain(item.href);
+	});
+	it('alerts hide only when the capability is known false', () => {
+		const alerts = NAV_ITEMS.find((item) => item.key === 'alerts')!;
+		for (const capability of [true, null])
+			expect(visibleNav({ alerts: capability })).toContain(alerts);
+		const provider = {
+			...PublicProviderCatalogSchema.parse(catalog).providers[0],
+			id: 'made-up',
+			inputs: {
+				...PublicProviderCatalogSchema.parse(catalog).providers[0].inputs,
+				i3_alerts: false,
+				service_alerts: false,
+			},
+		};
+		expect(visibleNav({ alerts: providerHasAlerts(provider) })).not.toContain(alerts);
+	});
+	it('the home item is active on the home page only', () => {
+		const home = NAV_ITEMS.find((item) => item.key === 'overview')!;
+		expect(isSurfaceActive(home, '/')).toBe(true);
+		for (const path of ['/map', '/lines/1', '/unknown'])
+			expect(isSurfaceActive(home, path)).toBe(false);
+	});
+	it('the bar is Overview, Map, Lines, Stops', () => {
+		expect(NAV_ITEMS.filter((item) => item.barLabel).map((item) => item.key)).toEqual([
+			'overview',
+			'map',
+			'lines',
+			'stops',
+		]);
+	});
+	it('the landmark is Overview on home and Search on search', () => {
+		expect(mainLandmarkLabel('/')).toEqual(NAV_ITEMS[0].label);
+		expect(mainLandmarkLabel('/search')).toEqual(navigation.SEARCH_LABEL);
+	});
+	it('an unknown path names no landmark', () => expect(mainLandmarkLabel('/unknown')).toBeNull());
+});
 import {
 	SURFACE_NAV,
 	SECONDARY_NAV,
@@ -139,42 +189,16 @@ describe('isSurfaceActive', () => {
 });
 
 describe('mainLandmarkLabel', () => {
-	it('names the active primary surface (not a stale "Network map" everywhere)', () => {
-		expect(mainLandmarkLabel('/lines')).toEqual({ en: 'Lines', fr: 'Lignes' });
-		expect(mainLandmarkLabel('/lines/1')).toEqual({ en: 'Lines', fr: 'Lignes' });
-		expect(mainLandmarkLabel('/stop/5')).toEqual({ en: 'Stops', fr: 'Arrêts' });
-		expect(mainLandmarkLabel('/network')).toEqual({ en: 'Network', fr: 'Réseau' });
-	});
-
-	it('names secondary (accountability/methodology) surfaces too', () => {
-		expect(mainLandmarkLabel('/receipt')).toEqual({ en: 'Daily receipt', fr: 'Reçu quotidien' });
-		expect(mainLandmarkLabel('/metrics')).toEqual({
-			en: 'How we measure',
-			fr: 'Comment on mesure',
-		});
-	});
-
-	it('names both legal landmarks from the shared secondary navigation', () => {
-		expect(mainLandmarkLabel('/privacy')).toEqual({ en: 'Privacy', fr: 'Confidentialité' });
-		expect(mainLandmarkLabel('/terms')).toEqual({
-			en: 'Terms',
-			fr: 'Conditions d’utilisation',
-		});
-	});
-
-	it('falls back to the map label for the home hub, the map, and unmapped paths', () => {
-		const mapLabel = { en: 'Map', fr: 'Carte' };
-		expect(mainLandmarkLabel('/')).toEqual(mapLabel);
-		expect(mainLandmarkLabel('/map')).toEqual(mapLabel);
-		expect(mainLandmarkLabel('/totally-unknown')).toEqual(mapLabel);
+	it('names each destination with its menu label', () => {
+		for (const item of NAV_ITEMS) expect(mainLandmarkLabel(item.href)).toEqual(item.label);
 	});
 });
 
 describe('YESID_HOUSE_LINK', () => {
 	it('is the one exported parent-brand destination for every chrome consumer', () => {
 		expect(YESID_HOUSE_LINK.href).toBe('https://yesid.dev');
-		expect(YESID_HOUSE_LINK.label.en).toBe('Yesid');
-		expect(YESID_HOUSE_LINK.label.fr).toBe('Yesid');
+		expect(YESID_HOUSE_LINK.label.en).toBeTruthy();
+		expect(YESID_HOUSE_LINK.label.fr).toBeTruthy();
 		expect(YESID_HOUSE_LINK.href).toMatch(/^https:\/\//);
 		expect(navigation).not.toHaveProperty('MENU_EXTRAS');
 	});

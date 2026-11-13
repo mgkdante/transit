@@ -4,6 +4,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '#lib/features/map/__fixtures__/KitNavigationSimulator.ts';
 import type { V1Context } from '#lib/v1/boot.ts';
 import type { IsoUtc } from '#lib/v1/schemas/index.ts';
+import { NAV_GROUPS } from '#lib/content/nav.ts';
+import { footerCopy } from '#lib/components/layout/footer.copy.ts';
+
+it.each(['en', 'fr'] as const)('the footer shows the four groups, then Legal in %s', (locale) => {
+	const view = renderWithoutV1(locale === 'en' ? '/privacy' : '/fr/privacy', locale);
+	const groups = within(view.getByTestId('footer')).getAllByRole('navigation');
+	const labels = [...NAV_GROUPS.map((group) => group.label[locale]), footerCopy[locale].legalLabel];
+	for (const [index, name] of labels.entries())
+		expect(groups[index]).toBe(
+			within(view.getByTestId('footer')).getByRole('navigation', {
+				name: (accessibleName) => accessibleName === name,
+			}),
+		);
+	expect(groups).toHaveLength(labels.length);
+});
 
 const harness = vi.hoisted(() => {
 	const beforeNavigateCallbacks: Array<(navigation: unknown) => unknown> = [];
