@@ -349,6 +349,25 @@ _TREND = {
     for measure in ("otp_pct", "avg_delay_min", "observation_count", "wilson_lo", "wilson_hi")
 }
 _NETWORK_LEVEL = "a network-level collection names no entity"
+_NO_EN, _NO_URL = "the seeded alerts carry no English variant", "the seeded alerts carry no url"
+_ALERT_TEXT = {f"alerts[*].{k}_en": _NO_EN for k in ("header_text", "description", "url")}
+_ALERT_TEXT["alerts[*].url"] = _NO_URL
+_GAP = {
+    path: "the builder sets no gap reason (history_common.py:769)"
+    for path in ("gaps[*].reason", "metrics[*].gaps[*].reason")
+}
+_NAMES = "names are valid from the seed's Gold build, after the 2025 days (marts.py:400)"
+_FLOOR = "no entity reaches MIN_N_RATE observations (ranking_kernel.py:28)"
+_SPAN = "built a capture day late; no seeded capture day has a successor"
+_HOT_TRAY = {
+    f"by_grain[*].tray[*].{k}": "the unranked tray sets none (ranking_kernel.py:122)"
+    for k in ("rank", "issue_count", "otp_delta_pts", "severity", "wilson_lo", "wilson_hi")
+} | {"by_grain[*].entries": _FLOOR}
+_OFFENDER_TRAY = {
+    f"by_grain[*].tray[*].{k}": "the unranked tray sets none (ranking_kernel.py:323)"
+    for k in ("rank", "wilson_lo", "wilson_hi")
+} | {"by_grain[*].entries": _FLOOR}
+_WINDOWED = "windowed periods are built without date and histogram (_spine.py:284)"
 UNGUARDED: dict[str, dict[str, str]] = {
     "historic/network_trend.json": _TREND
     | {
@@ -368,29 +387,69 @@ UNGUARDED: dict[str, dict[str, str]] = {
         "delay_by_crowding": _DB_DATE.format(30),
         "headway": _BUILD_WINDOW,
         "headway_by_grain": "needs two trips of a route direction at one stop and shift",
-        "weak_stops_by_grain": "needs enough observations per stop in its window",
-        "service_spans": "built a capture day late; no seeded capture day has a successor",
+        "weak_stops_by_grain": "no stop reaches the Wilson floor in its window (_spine.py:545)",
+        "service_spans": _SPAN,
+        "habits_by_grain[*].habits": "no hour cell reaches 30 observations (_spine.py:145)",
+        **{
+            f"periods[*].prior_{k}": "prior attaches only to periods_by_grain (_spine.py:326)"
+            for k in ("observation_count", "on_time", "otp_pct")
+        },
+        **{
+            f"periods_by_grain[*].{g}[*].{k}": _WINDOWED
+            for g in ("by_shift", "by_daytype")
+            for k in ("date", "delay_histogram")
+        },
+        **{
+            f"weak_stops[*].{k}": "sets only id, name and delay (route_reliability.py:363)"
+            for k in ("observation_count", "severe_pct", "wilson_lo", "wilson_hi")
+        },
     },
     "historic/stop_reliability/{id}.json": {
         "daily": _DB_DATE.format(90),
         "occupancy_mix": _DB_DATE.format(30),
         "habits": _BUILD_WINDOW,
     },
-    "historic/history/network/generations/{h}/index.json": {"entity_id": _NETWORK_LEVEL},
+    "historic/alert_history.json": _ALERT_TEXT
+    | {"alerts[*].impact_passages": "always null (small_surfaces.py:1016)"},
+    "historic/alerts/generations/{h}/{date}/{id}.json": _ALERT_TEXT
+    | {"alerts[*].impact_passages": "always null (alert_archive.py:133)"},
+    "historic/history/index.json": {f"families[*].{k}": v for k, v in _GAP.items()},
+    "historic/history/network/generations/{h}/index.json": _GAP | {"entity_id": _NETWORK_LEVEL},
+    "historic/history/lines/{id}/generations/{h}/index.json": _GAP,
+    "historic/history/lines/{id}/generations/{h}/{date}.json": {"days[*].service_span": _SPAN},
+    "historic/history/stops/{id}/generations/{h}/index.json": _GAP,
+    "historic/history/stops/{id}/generations/{h}/{date}.json": {
+        "days[*].occupancy": "the seeded vehicles report no stop_id (rollups.py:424)"
+    },
     "historic/history/hotspots/generations/{h}/index.json": {
+        "gaps[*].reason": _GAP["gaps[*].reason"],
         "entity_id": _NETWORK_LEVEL,
         "metrics": "point collections declare no metrics",
     },
+    "historic/history/hotspots/generations/{h}/{date}.json": _HOT_TRAY
+    | {"by_grain[*].tray[*].name": _NAMES, "hotspots[*].name": _NAMES},
     "historic/history/repeat_offenders/generations/{h}/index.json": {
+        "gaps[*].reason": _GAP["gaps[*].reason"],
         "entity_id": _NETWORK_LEVEL,
         "metrics": "point collections declare no metrics",
     },
-    "historic/history/repeat_offenders/generations/{h}/{date}.json": {
-        "offenders": "needs severe delays on 3 days of its window; seeded days are 2 weeks apart"
+    "historic/history/repeat_offenders/generations/{h}/{date}.json": _OFFENDER_TRAY
+    | {
+        "by_grain[*].tray[*].route_name": _NAMES,
+        "offenders": "needs severe delays on 3 days of its window; seeded days are 2 weeks apart",
     },
+    "historic/hotspots.json": _HOT_TRAY,
+    "historic/repeat_offenders.json": _OFFENDER_TRAY,
+    "live/alerts.json": _ALERT_TEXT,
     "live/network.json": {"non_responding_by_route": "every running seeded trip has a trip update"},
     "manifest.json": {"basemap": "the invented providers have no registry entry"},
-    "provenance.json": {"gaps": "the invented providers have no registry entry"},
+    "provenance.json": {
+        "gaps": "the invented providers have no registry entry",
+        "sources[*].chain": "the seeded dataset has no storage path or source url",
+    },
+    "static/routes/{id}.json": {"service_periods[*].headway_min": "one trip per direction"},
+    "static/routes_index.json": {"routes[*].color": "the seed sets no route_color"},
+    "static/stops_index.json": {"stops[*].code": "the seed sets no stop_code"},
     "static/stops/{id}.json": {"code": "the seed sets no stop_code"},
 }
 _ENVELOPE_KEYS = {"schema_version", "methodology_version", "publish_generation_id", "generated_utc"}
@@ -418,6 +477,19 @@ def _at(value, parts):
         yield from _at(value[parts[0]], parts[1:])
 
 
+def _sections(value, path=""):
+    """Top-level keys, and every key of an object inside a list, at any depth."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            here = f"{path}.{key}" if path else key
+            if not path or path.endswith("[*]"):
+                yield here
+            yield from _sections(child, here)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _sections(child, f"{path}[*]")
+
+
 def test_the_baseline_lists_every_output_it_does_not_guard():
     families: dict[str, list] = {}
     for label in seed.PROVIDERS:
@@ -426,12 +498,12 @@ def test_the_baseline_lists_every_output_it_does_not_guard():
     problems = [f"{name}: listed but not published" for name in UNGUARDED.keys() - families.keys()]
     for name, payloads in sorted(families.items()):
         listed = UNGUARDED.get(name, {})
-        sections = {key for payload in payloads for key in payload} - _ENVELOPE_KEYS
-        for section in sorted(sections - set(listed)):
-            if not any(_real(payload.get(section)) for payload in payloads):
-                problems.append(f"{name}: {section} is empty and not listed")
-        for path in listed:
+        sections = {path for payload in payloads for path in _sections(payload)}
+        for path in sorted(sections - _ENVELOPE_KEYS | set(listed)):
             parts = path.replace("[*]", ".*").split(".")
-            if any(_real(value) for payload in payloads for value in _at(payload, parts)):
+            real = any(_real(value) for payload in payloads for value in _at(payload, parts))
+            if real and path in listed:
                 problems.append(f"{name}: {path} is listed but holds a value")
+            elif not real and path not in listed:
+                problems.append(f"{name}: {path} is empty and not listed")
     assert problems == []
