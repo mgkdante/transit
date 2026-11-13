@@ -1,0 +1,42 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": null,
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "month": "2025-07",
+ "entity_id": "S3",
+ "days": [
+  {
+   "date": "2025-07-03",
+   "delay": {
+    "observation_count": 2,
+    "in_clamp_observation_count": 2,
+    "on_time_count": null,
+    "severe_count": 1,
+    "sum_delay_seconds": 780
+   },
+   "delay_percentiles": {
+    "observation_count": 2,
+    "p50_delay_seconds": 390.0,
+    "p90_delay_seconds": 558.0
+   },
+   "occupancy": null
+  },
+  {
+   "date": "2025-07-19",
+   "delay": {
+    "observation_count": 2,
+    "in_clamp_observation_count": 2,
+    "on_time_count": null,
+    "severe_count": 1,
+    "sum_delay_seconds": 780
+   },
+   "delay_percentiles": {
+    "observation_count": 2,
+    "p50_delay_seconds": 390.0,
+    "p90_delay_seconds": 558.0
+   },
+   "occupancy": null
+  }
+ ]
+}

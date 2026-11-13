@@ -1,0 +1,58 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_plain@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "stops": [
+  {
+   "id": "S1",
+   "code": null,
+   "name": "Arret S1",
+   "lat": 45.501,
+   "lon": -73.601,
+   "mode": "metro",
+   "routes": [
+    "B20",
+    "M1"
+   ]
+  },
+  {
+   "id": "S2",
+   "code": null,
+   "name": "Arret S2",
+   "lat": 45.512,
+   "lon": -73.592,
+   "mode": "metro",
+   "routes": [
+    "B10",
+    "B20",
+    "M1"
+   ]
+  },
+  {
+   "id": "S3",
+   "code": null,
+   "name": "Arret S3",
+   "lat": 45.523,
+   "lon": -73.583,
+   "mode": "metro",
+   "routes": [
+    "B10",
+    "B20",
+    "M1"
+   ]
+  },
+  {
+   "id": "S4",
+   "code": null,
+   "name": "Arret S4",
+   "lat": 45.534,
+   "lon": -73.574,
+   "mode": "bus",
+   "routes": [
+    "B10",
+    "B20"
+   ]
+  }
+ ]
+}

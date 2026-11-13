@@ -1,0 +1,65 @@
+{
+ "schema_version": 1,
+ "methodology_version": "live-2",
+ "publish_generation_id": "r2guard_alerts@T0+0s",
+ "generated_utc": "T0+0s",
+ "feed_captured_utc": "T0-30s",
+ "stops": {
+  "S1": [
+   {
+    "route": "M1",
+    "trip": "L2",
+    "eta_utc": "T0+2280s",
+    "delay_min": -2
+   }
+  ],
+  "S2": [
+   {
+    "route": "M1",
+    "trip": "L2",
+    "eta_utc": "T0+480s",
+    "delay_min": -2
+   },
+   {
+    "route": "M1",
+    "trip": "L1",
+    "eta_utc": "T0+630s",
+    "delay_min": 1
+   },
+   {
+    "route": "B10",
+    "trip": "L4",
+    "eta_utc": "T0+3000s",
+    "delay_min": 10
+   }
+  ],
+  "S3": [
+   {
+    "route": "B10",
+    "trip": "L3",
+    "eta_utc": "T0+780s",
+    "delay_min": 3
+   },
+   {
+    "route": "B10",
+    "trip": "L4",
+    "eta_utc": "T0+1200s",
+    "delay_min": 10
+   },
+   {
+    "route": "M1",
+    "trip": "L1",
+    "eta_utc": "T0+2430s",
+    "delay_min": 1
+   }
+  ],
+  "S4": [
+   {
+    "route": "B10",
+    "trip": "L3",
+    "eta_utc": "T0+2580s",
+    "delay_min": 3
+   }
+  ]
+ }
+}

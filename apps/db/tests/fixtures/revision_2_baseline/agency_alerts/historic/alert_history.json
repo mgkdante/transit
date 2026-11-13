@@ -1,0 +1,482 @@
+{
+ "schema_version": 1,
+ "methodology_version": "alerts-2",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "alerts": [
+  {
+   "id": "A5",
+   "message": {
+    "snapshot_id": "8610705",
+    "alert_index": 0,
+    "captured_utc": "2025-08-19T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_text": "Travaux",
+   "header_text_en": null,
+   "description": "Detour",
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "2025-08-19T13:00:00Z",
+   "end_utc": "2025-08-19T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-08-19T13:00:00Z",
+     "end_utc": "2025-08-19T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "B5",
+   "message": {
+    "snapshot_id": "8610705",
+    "alert_index": 1,
+    "captured_utc": "2025-08-19T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_text": "Avis",
+   "header_text_en": null,
+   "description": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "2025-08-19T13:00:00Z",
+   "end_utc": "2025-08-19T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-08-19T13:00:00Z",
+     "end_utc": "2025-08-19T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "A4",
+   "message": {
+    "snapshot_id": "8610704",
+    "alert_index": 0,
+    "captured_utc": "2025-08-03T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_text": "Travaux",
+   "header_text_en": null,
+   "description": "Detour",
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "2025-08-03T13:00:00Z",
+   "end_utc": "2025-08-03T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-08-03T13:00:00Z",
+     "end_utc": "2025-08-03T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "B4",
+   "message": {
+    "snapshot_id": "8610704",
+    "alert_index": 1,
+    "captured_utc": "2025-08-03T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_text": "Avis",
+   "header_text_en": null,
+   "description": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "2025-08-03T13:00:00Z",
+   "end_utc": "2025-08-03T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-08-03T13:00:00Z",
+     "end_utc": "2025-08-03T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "A3",
+   "message": {
+    "snapshot_id": "8610703",
+    "alert_index": 0,
+    "captured_utc": "2025-07-19T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_text": "Travaux",
+   "header_text_en": null,
+   "description": "Detour",
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "2025-07-19T13:00:00Z",
+   "end_utc": "2025-07-19T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-07-19T13:00:00Z",
+     "end_utc": "2025-07-19T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "B3",
+   "message": {
+    "snapshot_id": "8610703",
+    "alert_index": 1,
+    "captured_utc": "2025-07-19T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_text": "Avis",
+   "header_text_en": null,
+   "description": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "2025-07-19T13:00:00Z",
+   "end_utc": "2025-07-19T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-07-19T13:00:00Z",
+     "end_utc": "2025-07-19T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "A2",
+   "message": {
+    "snapshot_id": "8610702",
+    "alert_index": 0,
+    "captured_utc": "2025-07-03T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_text": "Travaux",
+   "header_text_en": null,
+   "description": "Detour",
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "2025-07-03T13:00:00Z",
+   "end_utc": "2025-07-03T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-07-03T13:00:00Z",
+     "end_utc": "2025-07-03T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "B2",
+   "message": {
+    "snapshot_id": "8610702",
+    "alert_index": 1,
+    "captured_utc": "2025-07-03T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_text": "Avis",
+   "header_text_en": null,
+   "description": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "2025-07-03T13:00:00Z",
+   "end_utc": "2025-07-03T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-07-03T13:00:00Z",
+     "end_utc": "2025-07-03T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "A1",
+   "message": {
+    "snapshot_id": "8610701",
+    "alert_index": 0,
+    "captured_utc": "2025-06-19T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_text": "Travaux",
+   "header_text_en": null,
+   "description": "Detour",
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "2025-06-19T13:00:00Z",
+   "end_utc": "2025-06-19T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-06-19T13:00:00Z",
+     "end_utc": "2025-06-19T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "B1",
+   "message": {
+    "snapshot_id": "8610701",
+    "alert_index": 1,
+    "captured_utc": "2025-06-19T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_text": "Avis",
+   "header_text_en": null,
+   "description": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "2025-06-19T13:00:00Z",
+   "end_utc": "2025-06-19T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-06-19T13:00:00Z",
+     "end_utc": "2025-06-19T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "A0",
+   "message": {
+    "snapshot_id": "8610700",
+    "alert_index": 0,
+    "captured_utc": "2025-06-03T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "high",
+   "header_text": "Travaux",
+   "header_text_en": null,
+   "description": "Detour",
+   "description_en": null,
+   "routes": [
+    "B10"
+   ],
+   "stops": [],
+   "start_utc": "2025-06-03T13:00:00Z",
+   "end_utc": "2025-06-03T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": "CONSTRUCTION",
+   "effect": "DETOUR",
+   "severity_level": "warning",
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-06-03T13:00:00Z",
+     "end_utc": "2025-06-03T16:00:00Z"
+    }
+   ]
+  },
+  {
+   "id": "B0",
+   "message": {
+    "snapshot_id": "8610700",
+    "alert_index": 1,
+    "captured_utc": "2025-06-03T14:00:00Z",
+    "header_language": null,
+    "description_language": null,
+    "url_language": null
+   },
+   "severity": "watch",
+   "header_text": "Avis",
+   "header_text_en": null,
+   "description": null,
+   "description_en": null,
+   "routes": [
+    "M1"
+   ],
+   "stops": [
+    "S2"
+   ],
+   "start_utc": "2025-06-03T13:00:00Z",
+   "end_utc": "2025-06-03T16:00:00Z",
+   "duration_min": 180.0,
+   "impact_passages": null,
+   "cause": null,
+   "effect": null,
+   "severity_level": null,
+   "url": null,
+   "url_en": null,
+   "active_periods": [
+    {
+     "start_utc": "2025-06-03T13:00:00Z",
+     "end_utc": "2025-06-03T16:00:00Z"
+    }
+   ]
+  }
+ ],
+ "breakdown": {
+  "by_cause": [
+   {
+    "key": "CONSTRUCTION",
+    "count": 6,
+    "median_duration_min": 180.0
+   },
+   {
+    "key": "unknown",
+    "count": 6,
+    "median_duration_min": 180.0
+   }
+  ],
+  "by_effect": [
+   {
+    "key": "DETOUR",
+    "count": 6,
+    "median_duration_min": 180.0
+   },
+   {
+    "key": "unknown",
+    "count": 6,
+    "median_duration_min": 180.0
+   }
+  ],
+  "by_severity": [
+   {
+    "key": "high",
+    "count": 6,
+    "median_duration_min": 180.0
+   },
+   {
+    "key": "watch",
+    "count": 6,
+    "median_duration_min": 180.0
+   }
+  ]
+ },
+ "window_start": "<clock>",
+ "window_end": "<clock>",
+ "total_in_window": 12,
+ "truncated": false
+}

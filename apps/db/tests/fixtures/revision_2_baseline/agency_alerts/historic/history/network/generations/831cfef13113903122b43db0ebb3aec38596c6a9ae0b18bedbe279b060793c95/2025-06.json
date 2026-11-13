@@ -1,0 +1,69 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": null,
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "month": "2025-06",
+ "days": [
+  {
+   "date": "2025-06-03",
+   "delay": {
+    "observation_count": 4,
+    "in_clamp_observation_count": 4,
+    "on_time_count": 2,
+    "severe_count": 1,
+    "sum_delay_seconds": 690
+   },
+   "delay_percentiles": {
+    "observation_count": 4,
+    "p50_delay_seconds": null,
+    "p90_delay_seconds": 474.00000000000006
+   },
+   "cancellation": {
+    "canceled_trip_days": 1,
+    "total_trip_days": 6,
+    "scheduled_trip_days": 6,
+    "delivered_trip_days": 5,
+    "silent_trip_days": 0
+   },
+   "occupancy": {
+    "empty": 2,
+    "many_seats": 1,
+    "few_seats": 1,
+    "standing": 2,
+    "full": 0
+   },
+   "vehicles": 4
+  },
+  {
+   "date": "2025-06-19",
+   "delay": {
+    "observation_count": 4,
+    "in_clamp_observation_count": 4,
+    "on_time_count": 2,
+    "severe_count": 1,
+    "sum_delay_seconds": 690
+   },
+   "delay_percentiles": {
+    "observation_count": 4,
+    "p50_delay_seconds": null,
+    "p90_delay_seconds": 474.00000000000006
+   },
+   "cancellation": {
+    "canceled_trip_days": 1,
+    "total_trip_days": 6,
+    "scheduled_trip_days": 6,
+    "delivered_trip_days": 5,
+    "silent_trip_days": 0
+   },
+   "occupancy": {
+    "empty": 2,
+    "many_seats": 1,
+    "few_seats": 1,
+    "standing": 2,
+    "full": 0
+   },
+   "vehicles": 4
+  }
+ ]
+}

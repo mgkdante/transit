@@ -1,0 +1,11 @@
+{
+ "schema_version": 1,
+ "methodology_version": "reliability-2",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "route_ids": [
+  "B10",
+  "B20",
+  "M1"
+ ],
+ "generated_utc": "2025-09-02T00:00:00Z"
+}
