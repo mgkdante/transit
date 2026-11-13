@@ -25,7 +25,9 @@ function confirmsDrift(previous: ClockSample | null, epochMs: number, receivedAt
  * `serverNow` can trail real time by more than that tolerance and fresh data reads as unknown age.
  * Data ages use one shared second tick independently of decorative motion preferences.
  * After initial synchronization, elapsed monotonic time drives the counter; normal HTTP jitter
- * cannot retime it. A substantial drift requires two consistent advancing samples to resynchronize.
+ * cannot retime it. A response Date can lag the true time, because a cache replays it unchanged,
+ * but it can never lead it. So a reading well ahead of the counter is believed at once, and a
+ * reading well behind it only when a second, consistently advancing one confirms it.
  */
 export function preciseServerClock(
 	clock: TickingServerClock,
@@ -55,7 +57,8 @@ export function preciseServerClock(
 				correction = null;
 				return;
 			}
-			if (sample && !confirmsDrift(correction, serverEpochMs, receivedAt)) {
+			const behind = sample !== null && serverEpochMs < projected;
+			if (behind && !confirmsDrift(correction, serverEpochMs, receivedAt)) {
 				if (correction?.epochMs !== serverEpochMs)
 					correction = { epochMs: serverEpochMs, receivedAt };
 				return;
