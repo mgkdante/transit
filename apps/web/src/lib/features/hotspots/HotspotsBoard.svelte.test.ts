@@ -562,7 +562,7 @@ describe('HotspotsBoard article', () => {
 			within(stopTable)
 				.getAllByRole('columnheader')
 				.map((cell) => cell.textContent?.trim()),
-		).toEqual(['Item', 'Type / ID', 'Readings']);
+		).toEqual(['Item', 'Type', 'Readings']);
 		const detail = within(stopTable).getByRole('link', { name: 'Quiet Ave' });
 		expect(detail).toHaveAttribute('href', '/stop/S2');
 		const servedRow = detail.closest('tr') as HTMLTableRowElement;

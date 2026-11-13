@@ -1,9 +1,7 @@
 <script lang="ts">
-	import '../hotspots/rankingTargets.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { createOffenderNames } from './offenderNames';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
-	const display = transitDisplay();
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
@@ -84,6 +82,7 @@
 	import RepeatOffendersSection from './sections/RepeatOffendersSection.svelte';
 	import { copy as COPY } from './repeatOffenders.copy';
 
+	const display = transitDisplay();
 	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
@@ -713,6 +712,7 @@
 		text-decoration: none;
 	}
 	a.offenders-hero-name {
+		min-height: 44px;
 		border-bottom: 1px solid transparent;
 		transition: border-color var(--duration-fast) var(--ease-default);
 		width: fit-content;

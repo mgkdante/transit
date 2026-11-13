@@ -1,3 +1,4 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { createRawSnippet } from 'svelte';
@@ -128,4 +129,3 @@ describe.each(['stm', 'octranspo'])('EntityRow route display for %s', (provider)
 		expect(link).toHaveTextContent(/^Rideau 1$/);
 	});
 });
-import { createLineDirectory } from '#lib/site/lineDirectory.ts';

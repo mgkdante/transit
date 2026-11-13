@@ -771,7 +771,7 @@ describe('RepeatOffenders retained date history', () => {
 				expect(document.querySelectorAll('.lc-tooltip-root, .lc-tooltip-content')).toHaveLength(0);
 				const dialog = await screen.findByRole('dialog', { name: heading });
 				expect(within(dialog).getAllByRole('link')).toHaveLength(1);
-				const action = within(dialog).getByRole('link', { name: `View detail for ${heading}` });
+				const action = within(dialog).getByRole('link', { name: 'View line' });
 				expect(action).toHaveTextContent('View line');
 				expect(action).toHaveAttribute('href', expectedHref);
 				expect(new URL(action.getAttribute('href')!, 'http://localhost').search).toBe('');

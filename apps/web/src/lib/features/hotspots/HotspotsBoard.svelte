@@ -1,8 +1,6 @@
 <script lang="ts">
-	import './rankingTargets.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
-	const display = transitDisplay();
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
@@ -64,6 +62,7 @@
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
 
+	const display = transitDisplay();
 	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
@@ -213,21 +212,20 @@
 	}
 
 	const activeLadder = $derived(ladders.get(grainKey));
-	function nameFor(entry: HotspotEntry, spoken = false): string {
-		return navKindFor(entry.type) === 'line'
+	const nameFor = (entry: HotspotEntry, spoken = false): string =>
+		navKindFor(entry.type) === 'line'
 			? display.lineName(entry.id, entry.name)[spoken ? 'spoken' : 'label']
 			: (entry.name ?? t.unnamed(entry.id));
-	}
 	const topHotspot = $derived<HotspotEntry | null>(activeLadder?.entries?.[0] ?? null);
-	function verdictFor(name: string): string {
-		if (!topHotspot) {
-			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
+	const topHotspotName = $derived(topHotspot ? nameFor(topHotspot) : null);
+	const verdictParts = $derived.by(() => {
+		if (!topHotspot || topHotspotName == null) {
+			const before = hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
+			return { before, after: '' };
 		}
 		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
-		return severe == null ? t.verdict.topNoRate(name) : t.verdict.topWithRate(name, severe);
-	}
-	const verdictLine = $derived(verdictFor(topHotspot ? nameFor(topHotspot) : ''));
-	const verdictParts = $derived(verdictFor('\0').split('\0'));
+		return { before: t.verdict.beforeName(), after: t.verdict.afterName(severe) };
+	});
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
 
 	function ladderFor(kind: 'route' | 'stop', total: number | null | undefined) {
@@ -469,17 +467,15 @@
 										data-slot="hotspots-verdict"
 										aria-label={t.verdict.label}
 									>
-										{#if topHotspotHref && topHotspot}
-											<p class="hotspots-verdict-line">
-												{verdictParts[0]}<a
+										<p class="hotspots-verdict-line">
+											{verdictParts.before}
+											{#if topHotspotHref && topHotspot}
+												<a
 													class="hotspots-verdict-line"
 													href={topHotspotHref}
-													aria-label={nameFor(topHotspot, true)}>{nameFor(topHotspot)}</a
-												>{verdictParts[1]}
-											</p>
-										{:else}
-											<p class="hotspots-verdict-line">{verdictLine}</p>
-										{/if}
+													aria-label={nameFor(topHotspot, true)}>{topHotspotName}</a
+												>{:else}{topHotspotName}{/if}{verdictParts.after}
+										</p>
 									</div>
 									<p class="hotspots-window hotspots-window--article">{windowCaption}</p>
 									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
@@ -551,6 +547,8 @@
 		text-decoration: none;
 	}
 	a.hotspots-verdict-line {
+		display: inline;
+		padding-block: 0.75em;
 		border-bottom: 1px solid transparent;
 		transition: border-color var(--duration-fast) var(--ease-default);
 	}

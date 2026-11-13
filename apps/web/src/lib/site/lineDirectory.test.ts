@@ -28,7 +28,7 @@ it('labels a line by its number, then its name', () => {
 			spoken: `${word} Lansdowne`,
 		});
 		expect(directory.name('104E').label).toBe(`${word} 104E`);
-		expect(directory.name('104E').spoken).toBe(`${word} ${word} 104E`);
+		expect(directory.name('104E').spoken).toBe(`${word} 104E`);
 		expect(directory.number('104E')).toBe('104E');
 		expect(directory.spoken('Confederation')).toBe(`${word} Confederation`);
 		expect(createLineDirectory(null, copy).name('49').number).toBeNull();

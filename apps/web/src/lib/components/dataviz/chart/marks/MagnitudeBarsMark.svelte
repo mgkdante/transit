@@ -30,7 +30,7 @@
 	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
 	const hasKeyboardRows = $derived(spec.rows.some((r) => r.tapPopover != null || r.href != null));
 	const BAND_PADDING = 0.42;
-	const MIN_POINTER_STEP_PX = Math.ceil(44 / (1 - BAND_PADDING));
+	const MIN_POINTER_STEP_PX = 44;
 	const popover = createChartDatumPopover();
 	let figure = $state<HTMLElement | null>(null);
 	const layerStructureKey = $derived(
@@ -75,9 +75,7 @@
 	const padding = $derived({ top: 12, right: 28, bottom: 42, left: gutter.left });
 	const remHeight = $derived(Math.max(3, spec.rows.length) * 1.35 + 3);
 	const pointerHeight = $derived(
-		Math.ceil(
-			(spec.rows.length + BAND_PADDING) * MIN_POINTER_STEP_PX + padding.top + padding.bottom,
-		),
+		(spec.rows.length + BAND_PADDING) * MIN_POINTER_STEP_PX + padding.top + padding.bottom,
 	);
 	const frameHeight = $derived(
 		hasKeyboardRows ? `max(${remHeight}rem, ${pointerHeight}px)` : `${remHeight}rem`,
@@ -195,10 +193,12 @@
 								<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
 							{/if}
 							{#each spec.rows as row (row.key)}
-								{@const rowY = context.yScale(row.key) as number | undefined}
-								{@const rowHeight =
-									(context.yScale as { bandwidth?: () => number }).bandwidth?.() ?? 0}
+								{@const band = context.yScale as ReturnType<typeof scaleBand>}
+								{@const rowY = band(row.key)}
+								{@const rowHeight = band.bandwidth()}
+								{@const rowStep = band.step()}
 								{#if Number.isFinite(rowY) && rowHeight > 0 && context.width > 0}
+									{@const rowTop = Number(rowY) - (rowStep - rowHeight) / 2}
 									{#if row.tapPopover}
 										<g
 											role="button"
@@ -210,7 +210,7 @@
 											onkeydown={(event) => onRowButtonActivate(event, row)}
 											onclick={(event) => onRowButtonActivate(event, row)}
 										>
-											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+											<rect x="0" y={rowTop} width={context.width} height={rowStep} />
 										</g>
 									{:else if row.href}
 										<a
@@ -218,7 +218,7 @@
 											aria-label={row.spoken ?? row.label}
 											class="dv-barmark-keyboard-row"
 										>
-											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+											<rect x="0" y={rowTop} width={context.width} height={rowStep} />
 										</a>
 									{/if}
 								{/if}

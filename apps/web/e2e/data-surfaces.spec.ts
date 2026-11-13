@@ -201,7 +201,16 @@ test('rankings name lines by number in both languages', async ({ page }) => {
 			exact: true,
 		});
 		await expect(unindexed).toBeVisible();
-		await expect(unindexed).toHaveText('Lansdowne');
+		const label =
+			(await unindexed.evaluate((element) => element.namespaceURI)) === 'http://www.w3.org/2000/svg'
+				? page
+						.locator('[data-slot="hotspot-section"]')
+						.first()
+						.locator('svg text')
+						.filter({ hasText: /^Lansdowne$/ })
+				: unindexed;
+		await expect(label).toBeVisible();
+		await expect(label).toHaveText('Lansdowne');
 		await page.goto(localizeHref('/repeat-offenders', lang));
 		await expect(page.locator('[data-slot="offenders-hero"]').getByRole('link')).toHaveText(
 			'1 · Confederation',

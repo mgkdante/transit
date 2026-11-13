@@ -27,7 +27,7 @@ export function createLineDirectory(
 			const name = publishedName?.trim() || route?.long?.trim() || null;
 			const suffix = number && name !== number ? name : null;
 			const label = [number, suffix].filter(Boolean).join(' · ') || name || copy.line(id);
-			return { number, name, label, spoken: spoken(label) };
+			return { number, name, label, spoken: number || name ? spoken(label) : label };
 		},
 	};
 }

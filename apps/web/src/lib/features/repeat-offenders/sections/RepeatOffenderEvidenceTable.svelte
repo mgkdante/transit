@@ -106,6 +106,11 @@
 		overflow-wrap: normal;
 		font-size: var(--text-detail-body-mobile);
 	}
+	:global(table.offender-evidence-table.data-table :is(th, td, .data-table-cell-content)) {
+		min-width: min-content;
+		overflow-wrap: normal;
+		word-break: normal;
+	}
 	.offender-evidence-link {
 		display: block;
 		min-height: 3em;

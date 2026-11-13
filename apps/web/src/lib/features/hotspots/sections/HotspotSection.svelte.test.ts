@@ -158,7 +158,7 @@ describe('HotspotSection evidence presentation', () => {
 			}));
 		expect(headers).toEqual([
 			{ text: 'Élément', column: 'item', align: 'start', numeric: null },
-			{ text: 'Type / ID', column: 'type-id', align: 'start', numeric: null },
+			{ text: 'Type', column: 'type-id', align: 'start', numeric: null },
 			{ text: 'Relevés', column: 'readings', align: 'end', numeric: 'true' },
 		]);
 		expect(within(table).getByRole('link', { name: /Voir le détail/ })).toHaveAttribute(
@@ -175,7 +175,7 @@ describe('HotspotSection evidence presentation', () => {
 		]);
 		expect(linkedCells.map((cell) => cell.getAttribute('data-col'))).toEqual([
 			'Élément',
-			'Type / ID',
+			'Type',
 			'Relevés',
 		]);
 		expect(linkedCells.map((cell) => cell.getAttribute('data-align'))).toEqual([

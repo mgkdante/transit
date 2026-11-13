@@ -54,11 +54,11 @@ const baseSpec = (ciLabel?: string, optedIn = false): MagnitudeBarsSpec => ({
 const cell = (c: HTMLElement): string =>
 	c.querySelector('table.sr-only tbody tr td')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-function renderReadyMark(spec: MagnitudeBarsSpec) {
+function renderReadyMark(spec: MagnitudeBarsSpec, height = 400) {
 	vi.stubGlobal('IntersectionObserver', undefined);
-	observeChartFrames(768, 400);
+	observeChartFrames(768, height);
 	vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(768);
-	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+	vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(height);
 	Object.defineProperty(Element.prototype, 'animate', {
 		configurable: true,
 		value: vi.fn(() => ({
@@ -128,6 +128,18 @@ describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)',
 });
 
 describe('MagnitudeBarsMark — localized semantic AT table', () => {
+	it.each([false, true])('keeps 44px hits in a compact ten-row frame (%s)', async (popover) => {
+		const spec = baseSpec(undefined, popover);
+		const rows = Array.from({ length: 10 }, (_, i) => ({ ...spec.rows[0], key: String(i) }));
+		const { container } = renderReadyMark({ ...spec, rows }, 512.48);
+		await rowOverlay(container);
+		const frame = container.querySelector<HTMLElement>('[data-slot="chart-frame"]')!;
+		const target = within(frame).getAllByRole(popover ? 'button' : 'link')[0];
+		const hitHeight = Number(target.querySelector('rect')!.getAttribute('height'));
+		expect.soft(hitHeight).toBeGreaterThanOrEqual(44);
+		const pixels = Number(/([\d.]+)px/.exec(frame.style.getPropertyValue('--chart-frame-h'))![1]);
+		expect.soft(pixels).toBeLessThanOrEqual(512.48);
+	});
 	it.each([undefined, 'Line 1 · Confederation', 'Ligne 1 · Confederation'])(
 		'uses the optional spoken name, falling back to the visible label (%s)',
 		(spoken) => {
