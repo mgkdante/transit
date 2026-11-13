@@ -121,3 +121,114 @@ def _processing(index_family, start):
         )
     )
     return tuple(processing)
+
+
+def _working_endpoint(connection, provider_id, endpoint_key):
+    from real_db_seed import feed_endpoints
+    from sqlalchemy import text
+
+    params = dict(p=provider_id, key=endpoint_key)
+    endpoint = connection.execute(
+        text(
+            "SELECT feed_endpoint_id FROM core.feed_endpoints "
+            "WHERE provider_id=:p AND endpoint_key=:key"
+        ),
+        params,
+    ).scalar_one_or_none()
+    if endpoint is None:
+        endpoint = connection.execute(
+            text(
+                "SELECT nextval(pg_get_serial_sequence('core.feed_endpoints', 'feed_endpoint_id'))"
+            )
+        ).scalar_one()
+        feed_endpoints(connection, dict(params, e=endpoint), endpoint_key=":key", feed_kind=":key")
+    return endpoint
+
+
+def _working_capture(connection, params, endpoint_key):
+    from real_db_seed import ingestion_objects, realtime_snapshot_index
+    from sqlalchemy import text
+
+    ingestion_objects(connection, params, checksum_sha256=":checksum", byte_size="12")
+    if endpoint_key in ("i3_alerts", "service_alerts"):
+        connection.execute(
+            text(
+                "INSERT INTO raw.i3_alert_snapshots (i3_alert_snapshot_id, provider_id, "
+                "feed_endpoint_id, ingestion_run_id, ingestion_object_id, captured_at_utc, "
+                "storage_backend, storage_path, checksum_sha256, byte_size, http_status_code, "
+                "api_version, alert_count, raw_payload_json) "
+                "VALUES (:s,:p,:e,:r,:o,:end,'s3',:path,:checksum,12,200,'v1',2,'{}'::jsonb)"
+            ),
+            params,
+        )
+    else:
+        realtime_snapshot_index(
+            connection,
+            params,
+            ingestion_object_id=":o",
+            feed_timestamp_utc=":stamp",
+            captured_at_utc=":end",
+        )
+
+
+def _working_run(connection, params, with_capture):
+    from real_db_seed import ingestion_runs
+    from sqlalchemy import text
+
+    ingestion_runs(
+        connection,
+        params,
+        run_kind=":kind",
+        status=":status",
+        started_at_utc=":start",
+        completed_at_utc="NULL" if params["status"] in ("pending", "running") else ":end",
+    )
+    connection.execute(
+        text(
+            "UPDATE raw.ingestion_runs SET requested_at_utc=:start, error_message=:error, "
+            "feed_timestamp_utc=CASE WHEN :stored THEN :stamp ELSE NULL END, "
+            "http_status_code=CASE WHEN :stored THEN 200 ELSE NULL END, "
+            "entity_count=CASE WHEN :stored THEN :n ELSE NULL END WHERE ingestion_run_id=:r"
+        ),
+        dict(params, stored=with_capture),
+    )
+
+
+def seed_working_day(
+    connection,
+    *,
+    provider_id,
+    endpoint_key,
+    run_id=1,
+    capture_id=1,
+    started_at_utc,
+    captured_at_utc=None,
+    feed_timestamp_utc=None,
+    status="succeeded",
+    error_message=None,
+    with_capture=True,
+    run_kind=None,
+):
+    """Seed one poll; the caller owns the provider and transaction. Return its endpoint id."""
+    endpoint = _working_endpoint(connection, provider_id, endpoint_key)
+    end = captured_at_utc or started_at_utc + timedelta(seconds=4)
+    params = dict(
+        p=provider_id,
+        e=endpoint,
+        r=run_id,
+        s=capture_id,
+        o=run_id,
+        start=started_at_utc,
+        end=end,
+        stamp=feed_timestamp_utc or end,
+        status=status,
+        kind=run_kind or endpoint_key,
+        error=error_message,
+        path=f"capture/{run_id}",
+        checksum="a" * 64,
+        n=2,
+    )
+    _working_run(connection, params, with_capture)
+    if with_capture:
+        _working_capture(connection, params, endpoint_key)
+    return endpoint
