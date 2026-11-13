@@ -12,7 +12,12 @@ from pathlib import Path
 from sqlalchemy import Connection, text
 
 from transit_ops.history import datasets, ledger
-from transit_ops.history.manifest import Manifest, build_manifest, encode_manifest
+from transit_ops.history.manifest import (
+    Manifest,
+    build_manifest,
+    encode_manifest,
+    read_copy_manifest,
+)
 from transit_ops.history.pack import PackResult, read_pack, write_pack
 from transit_ops.history.poll_record import (
     CaptureEntry,
@@ -31,14 +36,68 @@ class WindowNotClosed(ValueError):
     """The feed-day is still within its capture window."""
 
 
-def _read_day(
-    connection: Connection, provider_id: str, endpoint_key: str, utc_date: date
-) -> tuple[int, str, PollRecord, str]:
-    identity = dict(
-        dataset_id="capture." + endpoint_key,
-        provider_id=provider_id,
-        window_key=utc_date.isoformat(),
+class CopyContentMissing(ValueError):
+    """Working rows no longer hold all content of the current copy."""
+
+
+def _reusable_copy(
+    window: ledger.WindowState | None, copies: list[ledger.ArchiveCopy], fingerprint: str
+) -> ledger.ArchiveCopy | None:
+    if window is None:
+        return None
+    if window.working_state in ("partial", "trimmed"):
+        raise NotImplementedError(
+            "sealing a day whose working rows were trimmed is not built: "
+            "the new version must hold the old copy's content and the new rows together"
+        )
+    current = next((c for c in copies if c.content_version == window.current_version), None)
+    if (
+        current is not None
+        and current.details["rows_fingerprint"] == fingerprint
+        and current.verified_at_utc is not None
+        and window.working_changed_at_utc <= current.verified_at_utc
+    ):
+        return current
+    waiting = max(
+        (
+            c
+            for c in copies
+            if c.state == "sealed"
+            and (window.current_version is None or c.content_version > window.current_version)
+        ),
+        key=lambda c: c.content_version,
+        default=None,
     )
+    if (
+        waiting is not None
+        and waiting.details["rows_fingerprint"] == fingerprint
+        and window.working_changed_at_utc <= waiting.allocated_at_utc
+    ):
+        return waiting
+    return None
+
+
+def _require_content(current: Manifest, record: PollRecord) -> None:
+    day = record.feed_day
+    label = f"{day.provider_id}/{day.endpoint_key}/{day.utc_date}"
+    polls = {p.ingestion_run_id for p in record.polls}
+    for poll in current.polls:
+        if poll.ingestion_run_id not in polls:
+            raise CopyContentMissing(f"{label}: missing poll {poll.ingestion_run_id}")
+    captures = {(c.index_family, c.capture_row_id) for c in record.captures}
+    for capture in current.captures:
+        key = (capture.index_family, capture.capture_row_id)
+        if key not in captures:
+            raise CopyContentMissing(f"{label}: missing capture {key}")
+
+
+def _read_day(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    provider_id: str,
+    endpoint_key: str,
+    utc_date: date,
+) -> tuple[int, str, PollRecord, str] | ledger.ArchiveCopy:
     with connection.begin():
         connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
         now = connection.execute(text("SELECT now()")).scalar_one()
@@ -56,28 +115,52 @@ def _read_day(
             raise LookupError(f"feed not found: {provider_id}/{endpoint_key}")
         window = ledger.window_state(
             connection,
-            dataset_id=identity["dataset_id"],
+            dataset_id="capture." + endpoint_key,
             provider_id=provider_id,
             window_key=utc_date.isoformat(),
         )
         copies = ledger.find_copies(
             connection,
-            dataset_id=identity["dataset_id"],
+            dataset_id="capture." + endpoint_key,
             provider_id=provider_id,
             start=utc_date,
             end=utc_date,
         )
-        if (window is not None and window.current_version is not None) or any(
-            copy.state == "sealed" for copy in copies
-        ):
-            raise NotImplementedError("sealing an existing copy requires H04c4")
-        record = read_working_day(
-            connection, provider_id=provider_id, endpoint_key=endpoint_key, utc_date=utc_date
-        )
         fingerprint = rows_fingerprint(
             connection, provider_id=provider_id, endpoint_key=endpoint_key, utc_date=utc_date
         )
+        reusable = _reusable_copy(window, copies, fingerprint)
+        if reusable is not None:
+            return reusable
+        record = _changed_record(
+            connection, storage, window, copies, provider_id, endpoint_key, utc_date
+        )
         return feed.feed_endpoint_id, feed.feed_kind, record, fingerprint
+
+
+def _changed_record(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    window: ledger.WindowState | None,
+    copies: list[ledger.ArchiveCopy],
+    provider_id: str,
+    endpoint_key: str,
+    utc_date: date,
+) -> PollRecord:
+    current = next(
+        (c for c in copies if window and c.content_version == window.current_version), None
+    )
+    manifest = read_copy_manifest(storage, current) if current else None
+    record = read_working_day(
+        connection,
+        provider_id=provider_id,
+        endpoint_key=endpoint_key,
+        utc_date=utc_date,
+        current=manifest,
+    )
+    if manifest is not None:
+        _require_content(manifest, record)
+    return record
 
 
 def _insert_allocated(
@@ -137,6 +220,31 @@ def _prefix(provider_id: str, endpoint_key: str, utc_date: date) -> str:
     )
 
 
+def _allocation_state(
+    connection: Connection, identity: dict[str, str], record: PollRecord
+) -> int | None:
+    supersedes = connection.execute(
+        text(
+            "SELECT current_version FROM core.history_window "
+            "WHERE dataset_id=:dataset_id AND provider_id=:provider_id "
+            "AND revision=0 AND window_key=:window_key"
+        ),
+        identity,
+    ).scalar_one()
+    empty = not record.polls and not record.processing
+    if not empty or supersedes is None:
+        connection.execute(
+            text(
+                "UPDATE core.history_window SET working_state=:working_state "
+                "WHERE dataset_id=:dataset_id AND provider_id=:provider_id "
+                "AND revision=0 AND window_key=:window_key "
+                "AND working_state IN ('present', 'empty')"
+            ),
+            dict(identity, working_state="empty" if empty else "present"),
+        )
+    return int(supersedes) if supersedes is not None else None
+
+
 def _allocate(
     connection: Connection,
     local: "LocalPack",
@@ -161,15 +269,7 @@ def _allocate(
             window_key=key.utc_date.isoformat(),
             above_version=highest,
         )
-        if not local.record.polls and not local.record.processing:
-            connection.execute(
-                text(
-                    "UPDATE core.history_window SET working_state='empty' "
-                    "WHERE dataset_id=:dataset_id AND provider_id=:provider_id "
-                    "AND revision=0 AND window_key=:window_key"
-                ),
-                identity,
-            )
+        supersedes = _allocation_state(connection, identity, local.record)
         sealed_at = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
         pack_key = _prefix(key.provider_id, key.endpoint_key, key.utc_date) + f"{version}.pack.xz"
         manifest = build_manifest(
@@ -177,7 +277,7 @@ def _allocate(
             feed_endpoint_id=feed_id,
             feed_kind=feed_kind,
             content_version=version,
-            supersedes=None,
+            supersedes=supersedes,
             pack_path=pack_key if local.pack else None,
             pack=local.pack,
             sealed_at_utc=sealed_at,
@@ -242,9 +342,10 @@ def seal_capture_day(
         raise ValueError("invalid sealed_by, actor or archive_backend")
     if connection.in_transaction():
         raise ValueError("seal requires a connection without a transaction")
-    feed_id, feed_kind, record, fingerprint = _read_day(
-        connection, provider_id, endpoint_key, utc_date
-    )
+    day = _read_day(connection, storage, provider_id, endpoint_key, utc_date)
+    if isinstance(day, ledger.ArchiveCopy):
+        return day
+    feed_id, feed_kind, record, fingerprint = day
     with tempfile.TemporaryDirectory() as folder:
         directory = Path(folder)
         local = pack_working_day(record, storage, directory=directory)
