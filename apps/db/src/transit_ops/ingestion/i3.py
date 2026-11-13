@@ -18,6 +18,7 @@ from transit_ops.ingestion.common import (
     build_request_details,
     capture_deadline,
     check_capture_deadline,
+    check_capture_run_deadline,
     download_to_tempfile,
     finish_failed_capture,
     get_feed_endpoint_id,
@@ -418,6 +419,8 @@ def _run_alert_capture(
                 alert_count=metadata.alert_count,
                 raw_payload_json=metadata.raw_payload_json,
             )
+            check_capture_deadline(deadline)
+            check_capture_run_deadline(connection, ingestion_run_id=ingestion_run_id)
             mark_ingestion_run_succeeded(
                 connection,
                 ingestion_run_id=ingestion_run_id,

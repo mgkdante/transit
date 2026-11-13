@@ -19,6 +19,7 @@ from transit_ops.ingestion.common import (
     build_request_details,
     capture_deadline,
     check_capture_deadline,
+    check_capture_run_deadline,
     download_to_tempfile,
     finish_failed_capture,
     get_feed_endpoint_id,
@@ -361,6 +362,8 @@ def _capture_realtime_feed(
                 entity_count=metadata.entity_count,
                 captured_at_utc=completed_at_utc,
             )
+            check_capture_deadline(deadline)
+            check_capture_run_deadline(connection, ingestion_run_id=ingestion_run_id)
             mark_ingestion_run_succeeded(
                 connection,
                 ingestion_run_id=ingestion_run_id,

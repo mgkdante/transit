@@ -183,6 +183,7 @@ def _run_versioned_capture[ResultT: VersionedCaptureResult](
     artifact: DownloadedArtifact | None = None
     storage_path: str | None = None
     persisted = False
+    result_may_be_recorded = False
     try:
         artifact = spec.download(config.source_url, bronze_root / ".tmp")
         if spec.validate_download is not None:
@@ -276,6 +277,7 @@ def _run_versioned_capture[ResultT: VersionedCaptureResult](
                 completed_at_utc=completed_at_utc,
                 http_status_code=artifact.http_status_code,
             )
+            result_may_be_recorded = True
 
         return result_type(
             provider_id=config.provider_id,
@@ -308,5 +310,6 @@ def _run_versioned_capture[ResultT: VersionedCaptureResult](
             artifact=artifact,
             bronze_storage=bronze_storage,
             orphan_storage_path=storage_path if persisted else None,
+            result_may_be_recorded=result_may_be_recorded,
         )
         raise

@@ -36,6 +36,8 @@ class CaptureConnection(RecordingConnection):
             return FakeResult(mapping_value={
                 "status": "running", "started_at_utc": datetime.now(UTC),
             })
+        if "SELECT clock_timestamp() >=" in sql:
+            return FakeResult(scalar_value=False)
         if "clock_timestamp()" in sql:
             return FakeResult(scalar_value=datetime.now(UTC))
         if "FROM raw.realtime_snapshot_index AS rsi" in sql:

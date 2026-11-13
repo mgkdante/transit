@@ -160,10 +160,14 @@ def _state(engine):
     return run, rows
 
 
-def _assert_discarded(case, engine):
+def _assert_discarded(case, engine, *, uploaded=True):
     run, rows = _state(engine)
     assert all(not ids for ids in rows.values())
-    assert all(not (case.root / key).exists() for key in case.store.keys)
+    if uploaded:
+        assert case.store.keys
+        assert all(not (case.root / key).exists() for key in case.store.keys)
+    else:
+        assert case.store.keys == []
     assert case.downloads and all(not path.exists() for path in case.downloads)
     return run
 
@@ -172,7 +176,7 @@ def test_download_past_the_limit_fails_the_run(capture_case, engine, monkeypatch
     monkeypatch.setattr(common, "CAPTURE_TOTAL_TIMEOUT_SECONDS", 0)
     with pytest.raises(common.CaptureTimeLimitExceeded):
         capture_case.capture()
-    run = _assert_discarded(capture_case, engine)
+    run = _assert_discarded(capture_case, engine, uploaded=False)
     assert run["status"] == "failed"
     assert run["completed_at_utc"] is not None
     assert run["error_message"] == "Capture exceeded its total time limit of 0 s."
@@ -229,14 +233,25 @@ def test_capture_inside_its_limit_records_its_result(capture_case, engine):
 def test_download_stops_after_the_chunk_that_passes_its_deadline(tmp_path, monkeypatch):
     chunks = [b"first", b"second", b"third"]
     reads = []
+    timeouts = []
+    monkeypatch.setattr(common.time, "monotonic", lambda: 2)
 
     class Response(BytesIO):
         def read(self, size=-1):
-            reads.append(True)
+            reads.append("read")
+            return chunks.pop(0) if chunks else b""
+
+        def read1(self, size=-1):
+            reads.append("read1")
             return chunks.pop(0) if chunks else b""
 
     response = Response()
-    monkeypatch.setattr(common, "urlopen", lambda *a, **kw: response)
+
+    def open_response(*args, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return response
+
+    monkeypatch.setattr(common, "urlopen", open_response)
     with pytest.raises(common.CaptureTimeLimitExceeded):
         common.download_to_tempfile(
             source_url="https://example.test/feed",
@@ -244,7 +259,8 @@ def test_download_stops_after_the_chunk_that_passes_its_deadline(tmp_path, monke
             default_filename="feed",
             deadline=0,
         )
-    assert reads == [True]
+    assert reads == ["read1"]
+    assert timeouts == [1]
     assert response.closed
     assert list(tmp_path.iterdir()) == []
     chunks[:] = [b"first", b"second", b"third"]
@@ -255,6 +271,8 @@ def test_download_stops_after_the_chunk_that_passes_its_deadline(tmp_path, monke
         default_filename="feed",
         deadline=None,
     )
+    assert reads == ["read1", "read", "read", "read", "read"]
+    assert timeouts == [1, 120]
     assert artifact.byte_size == len(b"firstsecondthird")
     assert artifact.checksum_sha256 == hashlib.sha256(b"firstsecondthird").hexdigest()
     assert artifact.temp_path.read_bytes() == b"firstsecondthird"
@@ -318,3 +336,64 @@ def test_failed_commit_still_removes_the_uploaded_object(capture_case, engine):
     assert run["status"] == "failed"
     assert run["error_message"] == "commit failed before database commit"
     assert capture_case.store.keys
+
+
+def test_final_database_age_check_refuses_expiry_after_first_guard(
+    capture_case, engine, monkeypatch
+):
+    def insert_then_age(connection, **kwargs):
+        object_id = common.insert_ingestion_object(connection, **kwargs)
+        connection.execute(
+            text(
+                "UPDATE raw.ingestion_runs "
+                "SET started_at_utc=started_at_utc - interval '301 seconds' "
+                "WHERE ingestion_run_id=:id"
+            ),
+            {"id": kwargs["ingestion_run_id"]},
+        )
+        return object_id
+
+    monkeypatch.setattr(realtime_gtfs, "insert_ingestion_object", insert_then_age)
+    monkeypatch.setattr(i3, "insert_ingestion_object", insert_then_age)
+    with pytest.raises(common.CaptureTimeLimitExceeded):
+        capture_case.capture()
+    run = _assert_discarded(capture_case, engine)
+    assert run["status"] == "failed"
+    assert run["error_message"] == "Capture exceeded its total time limit of 300 s."
+
+
+@pytest.mark.parametrize("endpoint", ["trip_updates", "i3_alerts"])
+def test_final_monotonic_check_refuses_expiry_after_upload(
+    endpoint, settings, bronze_root, monkeypatch
+):
+    import test_i3_ingestion as alert_fakes
+    import test_realtime_ingestion as realtime_fakes
+
+    fakes = realtime_fakes if endpoint == "trip_updates" else alert_fakes
+    config = SimpleNamespace(
+        provider_id=PROVIDER,
+        endpoint_key=endpoint,
+        feed_kind=endpoint,
+        source_format="gtfs_rt_trip_updates",
+        source_url="https://example.test/feed",
+        request_url="https://example.test/feed",
+        request_headers={},
+        storage_backend="local",
+    )
+    paths = _replace_downloads(monkeypatch, config, bronze_root)
+    local = LocalBronzeStorage("local", bronze_root)
+    keys = []
+
+    def upload(path, key):
+        keys.append(key)
+        location = local.persist_temp_file(path, key)
+        monkeypatch.setattr(common.time, "monotonic", lambda: 301)
+        return location
+
+    monkeypatch.setattr(common.time, "monotonic", lambda: 0)
+    storage = SimpleNamespace(persist_temp_file=upload, delete_object=local.delete_object)
+    with pytest.raises(common.CaptureTimeLimitExceeded):
+        _capture(config, settings, fakes.FakeEngine(fakes.RecordingConnection()), storage)
+    assert keys
+    assert all(not (bronze_root / key).exists() for key in keys)
+    assert paths and all(not path.exists() for path in paths)

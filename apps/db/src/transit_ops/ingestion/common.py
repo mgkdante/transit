@@ -223,6 +223,19 @@ def lock_running_capture_run(connection: Connection, *, ingestion_run_id: int) -
         raise _capture_time_limit_error()
 
 
+def check_capture_run_deadline(connection: Connection, *, ingestion_run_id: int) -> None:
+    expired = connection.execute(
+        text(
+            "SELECT clock_timestamp() >= started_at_utc + "
+            "(:timeout_seconds * INTERVAL '1 second') FROM raw.ingestion_runs "
+            "WHERE ingestion_run_id = :ingestion_run_id"
+        ),
+        {"ingestion_run_id": ingestion_run_id, "timeout_seconds": CAPTURE_TOTAL_TIMEOUT_SECONDS},
+    ).scalar_one()
+    if expired:
+        raise _capture_time_limit_error()
+
+
 def download_to_tempfile(
     *,
     source_url: str,
@@ -242,12 +255,15 @@ def download_to_tempfile(
     byte_size = 0
     hasher = hashlib.sha256()
 
+    timeout = 120 if deadline is None else min(120, max(1, int(deadline - time.monotonic())))
     try:
-        with urlopen(request, timeout=120, context=ssl_context) as response, temp_path.open(
+        with urlopen(request, timeout=timeout, context=ssl_context) as response, temp_path.open(
             "wb"
         ) as handle:
             http_status_code = getattr(response, "status", 200) or 200
-            for chunk in iter(lambda: response.read(CHUNK_SIZE_BYTES), b""):
+            # A stalled stream ends by socket timeout: at most the limit plus one socket timeout.
+            read_chunk = response.read if deadline is None else response.read1
+            for chunk in iter(lambda: read_chunk(CHUNK_SIZE_BYTES), b""):
                 handle.write(chunk)
                 hasher.update(chunk)
                 byte_size += len(chunk)
