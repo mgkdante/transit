@@ -571,6 +571,8 @@ def test_combined_prune_stops_after_i3_archive_failure(conn, tmp_path, monkeypat
                 _env_file=None,
                 BRONZE_STORAGE_BACKEND="local",
                 BRONZE_LOCAL_ROOT=str(tmp_path),
+                # This scenario needs an eligible capture; it must not depend on the default.
+                BRONZE_I3_RETENTION_DAYS=30,
             ),
             prove=False,
         ),
