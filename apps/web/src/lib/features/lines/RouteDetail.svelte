@@ -5,7 +5,7 @@
 	import { liveTimingFor } from '#lib/components/map/liveTiming.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
-	const { line } = transitDisplay();
+	const { lineName } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
@@ -96,7 +96,6 @@
 
 	let {
 		id,
-		seed,
 		routeSeed,
 		reliabilitySeed,
 		lineHistorySeed,
@@ -120,13 +119,8 @@
 		key: () => id,
 		seed: () => routeSeed,
 	});
-	const articleTitle = $derived.by(() => {
-		const longName = route.data?.id === id ? route.data.long?.trim() : null;
-		if (seed.name.trim() === id && longName) return `${line(id)} ${longName}`;
-		return line(id) !== id && seed.name.startsWith(id)
-			? line(id) + seed.name.slice(id.length)
-			: seed.name;
-	});
+	const titleName = $derived(lineName(id, route.data?.id === id ? route.data.long : null));
+	const articleTitle = $derived(titleName.label);
 	const reliability = createResource<RouteReliability | null>(
 		() => {
 			const routeId = id;
@@ -197,7 +191,7 @@
 					reliability.data?.generated_utc ??
 					null),
 	);
-	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
+	const articleEdgeLeft = $derived([t.kicker, titleName.number].filter(Boolean).join(' '));
 	const articleTimeText = $derived(
 		articleGeneratedUtc
 			? preparedArticleTime?.routeId === id &&
@@ -360,7 +354,7 @@
 			watermark={t.article.watermark}
 			category={t.kicker}
 			title={articleTitle}
-			highlight={id}
+			highlight={titleName.number ?? undefined}
 			backHref={localizeHref('/lines', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
@@ -374,7 +368,7 @@
 			{#snippet actions()}
 				<MapDrilldownLink
 					href={localizeHref(mapHrefFor({ route: id }, locale), locale)}
-					context={t.viewRouteOnMap(id)}
+					context={t.viewRouteOnMap(titleName.number ?? titleName.name ?? id)}
 					label={t.viewOnMap}
 				/>
 			{/snippet}

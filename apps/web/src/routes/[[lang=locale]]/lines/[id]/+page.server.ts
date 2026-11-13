@@ -1,3 +1,6 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
+import { routeNameFallback } from '#lib/site/nameFallback.ts';
+import { linePageTitle } from '#lib/seo/riderPageTitle.ts';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { canonicalDetailTabLocation, detailTabFromSearchParams } from '#lib/site/detailTabs.ts';
@@ -13,7 +16,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const id = event.params.id.trim() || event.params.id;
 	const fallback: IdentitySeed = { id, name: id };
-	const { v1 } = await event.parent();
+	const { v1, routesIndex, lang } = await event.parent();
 	if (!v1) return { seed: fallback, routeSeed: null, reliabilitySeed: null, lineHistorySeed: null };
 	const context = {
 		...serverV1Context(event),
@@ -32,10 +35,14 @@ export const load: PageServerLoad = async (event) => {
 			: Promise.resolve(null),
 	]);
 	const route = routeResult.status === 'fulfilled' ? routeResult.value : undefined;
-	const longName = route?.long?.trim();
+	const directory = createLineDirectory(routesIndex?.routes ?? null, {
+		line: (id) => routeNameFallback(id, lang),
+	});
+	const name = directory.name(id, route?.long);
 
 	return {
-		seed: longName ? { id, name: `${id} ${longName}` } : fallback,
+		seed: { id, name: name.label },
+		seoTitle: linePageTitle(name),
 		routeSeed: routeResult.status === 'fulfilled' ? { key: id, data: routeResult.value } : null,
 		reliabilitySeed:
 			reliabilityResult.status === 'fulfilled' ? { key: id, data: reliabilityResult.value } : null,

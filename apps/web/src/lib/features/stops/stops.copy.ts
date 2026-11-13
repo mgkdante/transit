@@ -67,7 +67,7 @@ export const indexCopy = defineCopy({
 		direction: (dir, headsign) =>
 			headsign ? `Direction ${dir} · ${headsign}` : `Direction ${dir}`,
 		sortLabel: 'Sort',
-		sortDefault: 'Route order',
+		sortDefault: 'Order along the line',
 		sortWorst: 'Least reliable',
 		rankingPending: 'Calculating reliability ranking for the filtered stops…',
 		inventory: {
@@ -181,6 +181,7 @@ export const detailCopy = defineCopy({
 		info: {
 			position: 'Position',
 			code: 'Code d’arrêt',
+			feedId: 'ID du flux',
 			wheelchair: 'Accessibilité',
 			wheelchairYes: 'Accessible en fauteuil roulant',
 			wheelchairNo: 'Non accessible en fauteuil roulant',
@@ -285,10 +286,11 @@ export const detailCopy = defineCopy({
 		info: {
 			position: 'Position',
 			code: 'Stop code',
+			feedId: 'Feed id',
 			wheelchair: 'Accessibility',
 			wheelchairYes: 'Wheelchair accessible',
 			wheelchairNo: 'Not wheelchair accessible',
-			routesServed: 'Routes served',
+			routesServed: 'Lines served',
 		},
 		schedule: {
 			heading: 'Sample weekday schedule',

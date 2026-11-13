@@ -1,3 +1,4 @@
+import { detailCopy } from './stops.copy';
 import {
 	render as renderSvelte,
 	screen,
@@ -605,9 +606,17 @@ describe('StopDetail article contract', () => {
 			'/fr/stops',
 		);
 		expect(container.querySelector('[data-slot="article-header"]')).toHaveTextContent(
-			'ID arrêt 57191',
+			detailCopy.fr.kicker,
 		);
-		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);
+		expect(container.querySelector('[data-slot="article-header"]')).not.toHaveTextContent(
+			detailCopy.fr.info.code,
+		);
+		expect(
+			screen.getByRole('link', { name: /Voir l’arrêt Station test sur la carte/ }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(detailCopy.fr.info.feedId).closest('[data-slot="metric-display"]'),
+		).toHaveTextContent('57191');
 	});
 
 	it.each(['next', 'info', 'unknown'])(
@@ -983,23 +992,17 @@ describe('StopDetail retained-history singleton boundary', () => {
 
 describe('StopDetail map drilldown', () => {
 	it('links directly to the live map filtered to this stop', () => {
-		render(StopDetail, { props: { id: '57191' } });
-
-		expect(screen.getByRole('link', { name: /View stop 57191 on map/ })).toHaveAttribute(
+		const { container } = render(StopDetail, { props: { id: '57191' } });
+		expect(container.querySelector('[data-slot="article-header"]')).not.toHaveTextContent(
+			detailCopy.en.info.code,
+		);
+		expect(
+			screen.getByText(detailCopy.en.info.feedId).closest('[data-slot="metric-display"]'),
+		).toHaveTextContent('57191');
+		expect(screen.getByRole('link', { name: /View stop Test stop on map/ })).toHaveAttribute(
 			'href',
 			'/map?stop=57191&focus=stop%3A57191',
 		);
-	});
-});
-
-describe('StopDetail article head', () => {
-	it('shows real stop identity/provider metadata and a single back link', () => {
-		const { container } = render(StopDetail, { props: { id: '57191' } });
-
-		expect(screen.getAllByText(/Stop ID/i).length).toBeGreaterThan(0);
-		expect(screen.getAllByText('57191').length).toBeGreaterThan(0);
-		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);
-		expect(container.querySelectorAll('a[href="/stops"]')).toHaveLength(1);
 	});
 });
 
@@ -1498,3 +1501,23 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 		}
 	});
 });
+
+it.each(['en', 'fr'] as const)(
+	'leads with the stop code, and shows none when none is published (%s)',
+	(locale) => {
+		currentLocale = locale;
+		stopFileData = { ...STOP_FILE, code: '10254' };
+		const t = detailCopy[locale];
+		const view = render(StopDetail, { props: { id: STOP_FILE.id } });
+		const header = view.container.querySelector('[data-slot="article-header"]')!;
+		expect(within(header as HTMLElement).getByText(t.kicker + ' 10254')).toBeInTheDocument();
+		expect(within(header as HTMLElement).getByText(t.info.code)).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: new RegExp(t.viewStopOnMap('10254')) }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(t.info.feedId).closest('[data-slot="metric-display"]'),
+		).toHaveTextContent(STOP_FILE.id);
+		expect(screen.getByRole('link', { name: t.back })).toBeInTheDocument();
+	},
+);

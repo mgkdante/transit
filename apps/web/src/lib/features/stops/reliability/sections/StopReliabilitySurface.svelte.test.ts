@@ -92,7 +92,7 @@ const PRESENT_SECTIONS = [
 	['stop-rel-percentiles', 'Daily delay'],
 	['stop-rel-pane', 'Predicted delays'],
 	['stop-rel-crowding', 'Crowding on vehicles seen here'],
-	['stop-rel-by-route', 'Avg delay by route'],
+	['stop-rel-by-route', 'Avg delay by line'],
 ] as const;
 
 const disclosure = (container: HTMLElement, id: string): HTMLElement =>
@@ -259,7 +259,7 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 		expect(labels).toContain('Daily delay');
 		expect(labels).toContain('Predicted delays');
 		expect(labels).toContain('Crowding on vehicles seen here');
-		expect(labels).toContain('Avg delay by route');
+		expect(labels).toContain('Avg delay by line');
 		expect(labels).not.toContain('Relative severe-delay score by hour');
 		expect(labels).not.toContain('By day of week');
 		expect(labels).not.toContain('By time of day');
@@ -317,7 +317,7 @@ describe('StopReliabilitySurface — cohesive article disclosures', () => {
 	it('lets one disclosure collapse without changing the next card in the sequence', async () => {
 		const { container } = render(StopReliabilitySurface, { props: { data, locale: 'en' } });
 		const route = disclosure(container, 'stop-rel-by-route');
-		const routeTrigger = within(route).getByRole('button', { name: 'Avg delay by route' });
+		const routeTrigger = within(route).getByRole('button', { name: 'Avg delay by line' });
 		const routeBody = route.querySelector('[data-slot="collapsible-content"]');
 		const crowdingTrigger = disclosureTrigger(
 			container,

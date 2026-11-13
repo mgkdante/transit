@@ -1,3 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { createLineDirectory } from '../src/lib/site/lineDirectory';
+import { routeNameFallback } from '../src/lib/site/nameFallback';
+import { linePageTitle, stopPageTitle } from '../src/lib/seo/riderPageTitle';
+const fixture = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
@@ -85,3 +90,38 @@ test('ephemeral and error documents keep a single noindex tag', async ({ request
 		expect(head, path).not.toContain('max-image-preview:large');
 	}
 });
+
+for (const locale of ['en', 'fr'] as const) {
+	test(
+		locale + ': a line page and a stop page name themselves in the title',
+		async ({ request }) => {
+			// The fixture server resolves these unbranded requests to its default STM network.
+			const routes = fixture('./routes-index.json').routes;
+			const directory = createLineDirectory(routes, {
+				line: (id) => routeNameFallback(id, locale),
+			});
+			const b9 = fixture('../scripts/__fixtures__/b9/rich.json').files;
+			const stops = [b9['static/stops/52095.json'], fixture('./stop.json')];
+			const cases: [string, string][] = [
+				...routes.map(
+					(r: { id: string }) =>
+						['/lines/' + r.id, linePageTitle(directory.name(r.id))] as [string, string],
+				),
+				...stops.map(
+					(s) =>
+						['/stop/' + s.id, stopPageTitle(s.name, s.code ?? null, locale)] as [string, string],
+				),
+			];
+			for (const [path, title] of cases) {
+				const response = await request.get((locale === 'fr' ? '/fr' : '') + path);
+				expect(response.ok()).toBe(true);
+				const html = await response.text();
+				const head = html.slice(0, html.indexOf('</head>'));
+				expect(head.match(/<title>(.*?)<\/title>/s)?.[1]).toBe(title + ' · Transit');
+				expect(head.match(/<meta property="og:title" content="([^"]*)"/)?.[1]).toBe(
+					title + ' · Transit',
+				);
+			}
+		},
+	);
+}

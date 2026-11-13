@@ -23,7 +23,11 @@ function event(id = '1234'): Parameters<typeof load>[0] {
 		fetch: vi.fn(),
 		locals: { v1Cache: new Map() },
 		platform: undefined,
-		parent: async () => ({ v1: { manifest: harness.ctx.manifest } }),
+		parent: async () => ({
+			v1: { manifest: harness.ctx.manifest },
+			lang: 'en',
+			routesIndex: { routes: [{ id: '24', short: '24', long: 'Sherbrooke' }] },
+		}),
 	} as unknown as Parameters<typeof load>[0];
 }
 
@@ -67,10 +71,11 @@ describe('/stop/[id] server identity seed', () => {
 
 		expect(result).toEqual({
 			seed: { id: '1234', name: 'Van Horne / Rockland' },
+			seoTitle: 'Van Horne / Rockland (stop 56789)',
 			stopSeed: { key: '1234', data: stop },
 		});
 		if (!result) throw new Error('expected a stop identity seed');
-		expect(Object.keys(result)).toEqual(['seed', 'stopSeed']);
+		expect(Object.keys(result)).toEqual(['seed', 'stopSeed', 'seoTitle']);
 		expect(Object.keys(result.seed)).toEqual(['id', 'name']);
 		expect(harness.getStop).toHaveBeenCalledWith('1234', harness.ctx);
 		expect(harness.serverV1Context).toHaveBeenCalledTimes(1);
@@ -102,4 +107,22 @@ describe('/stop/[id] server identity seed', () => {
 			stopSeed: null,
 		});
 	});
+});
+
+it.each(['en', 'fr'] as const)('titles from the stop file in %s', async (lang) => {
+	const request = event();
+	Object.assign(request, {
+		parent: async () => ({ lang, v1: { manifest: harness.ctx.manifest } }),
+	});
+	harness.getStop.mockResolvedValue({ id: '1234', name: 'VAN HORNE / ROCKLAND', code: '1658' });
+	expect(await load(request)).toMatchObject({
+		seoTitle: 'Van Horne / Rockland (' + (lang === 'en' ? 'stop' : 'arrêt') + ' 1658)',
+	});
+	harness.getStop.mockResolvedValue({ id: '1234', name: 'Fixture stop' });
+	expect(await load(request)).toMatchObject({ seoTitle: 'Fixture stop' });
+});
+it('omits seoTitle without v1', async () => {
+	const request = event();
+	Object.assign(request, { parent: async () => ({ v1: null }) });
+	expect(await load(request)).not.toHaveProperty('seoTitle');
 });

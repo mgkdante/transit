@@ -186,8 +186,8 @@ export const stopReliabilityCopy = defineCopy({
 			crowding: 'How crowded were vehicles seen here?',
 			byRoute: 'Which lines are most delayed here?',
 		},
-		byRoute: 'Avg delay by route',
-		noRouteBreakdown: 'No per-route breakdown for this stop.',
+		byRoute: 'Avg delay by line',
+		noRouteBreakdown: 'No per-line breakdown for this stop.',
 		paneHeading: 'Predicted delays',
 		metrics: {
 			otp: 'Not-severe predictions',
