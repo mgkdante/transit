@@ -16,7 +16,7 @@ type PulseKey =
 	| 'worstStops'
 	| 'worstNote'
 	| 'worstUnavailable'
-	| 'severeRate'
+	| 'lateRate'
 	| 'allHotspots'
 	| 'openMap'
 	| 'openMapNote'
@@ -41,9 +41,9 @@ export const homePulseCopy = defineCopy({
 		worstLines: 'Lignes les plus en retard',
 		worstStops: 'Arrêts les plus en retard',
 		worstNote:
-			'Taux de retards graves sur 7 jours (données jusqu’au {date}). Le bilan est republié chaque semaine.',
+			'Part des mesures en retard de plus de 5 min, sur 7 jours (données jusqu’au {date}). Le bilan est republié chaque semaine.',
 		worstUnavailable: 'Aucun classement hebdomadaire publié pour l’instant.',
-		severeRate: '{pct} en retard grave',
+		lateRate: '{pct} des mesures en retard de plus de 5 min',
 		allHotspots: 'Tous les points chauds',
 		openMap: 'Carte du réseau',
 		openMapNote: 'Chaque bus en direct, là où il se signale',
@@ -66,9 +66,9 @@ export const homePulseCopy = defineCopy({
 		worstLines: 'Most delayed lines',
 		worstStops: 'Most delayed stops',
 		worstNote:
-			'Severe-delay rate over 7 days (data through {date}). The record is republished weekly.',
+			'Share of readings more than 5 min late, over 7 days (data through {date}). The record is republished weekly.',
 		worstUnavailable: 'No weekly ranking has been published yet.',
-		severeRate: '{pct} severely late',
+		lateRate: '{pct} of readings more than 5 min late',
 		allHotspots: 'All hotspots',
 		openMap: 'Network map',
 		openMapNote: 'Every bus, live, where it reports itself',

@@ -137,8 +137,7 @@
 							{#if rank.severePct != null}
 								<!-- The caption above names the measure; each row repeats it for screen readers. -->
 								<span class="pulse-rank-rate" aria-hidden="true">{pct(rank.severePct)}</span>
-								<span class="sr-only"
-									>{t.severeRate.replace('{pct}', pct(rank.severePct) ?? '')}</span
+								<span class="sr-only">{t.lateRate.replace('{pct}', pct(rank.severePct) ?? '')}</span
 								>
 							{/if}
 						</a>

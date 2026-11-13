@@ -133,7 +133,7 @@ describe('Home accountability strip', () => {
 		expect(line).toHaveAttribute('href', '/lines/7-354');
 		expect(within(line).getByText('7')).toBeInTheDocument();
 		expect(line).toHaveTextContent('Carleton <> St-Laurent');
-		expect(line).toHaveTextContent('24% severely late');
+		expect(line).toHaveTextContent('24% of readings more than 5 min late');
 		const stops = screen.getByRole('region', { name: 'Most delayed stops' });
 		expect(within(stops).getByRole('link')).toHaveAttribute('href', '/stop/S9');
 		expect(within(stops).getByRole('link')).toHaveTextContent('Rideau / Sussex');

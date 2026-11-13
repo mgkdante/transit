@@ -175,8 +175,8 @@ export function homeGroups(t: HomeCopy, alertsAvailable = true): readonly HomeGr
 					tempo: 'record',
 					title: { fr: 'Points chauds', en: 'Hotspots' },
 					desc: {
-						fr: 'Les lignes et les arrêts où les retards graves s’accumulent, classés sur l’ensemble du réseau.',
-						en: 'The lines and stops where severe delays pile up, ranked across the whole network.',
+						fr: 'Les lignes et les arrêts le plus souvent en retard de plus de 5 minutes, classés sur l’ensemble du réseau.',
+						en: 'The lines and stops most often more than 5 minutes late, ranked across the whole network.',
 					},
 				},
 			],
@@ -201,8 +201,8 @@ export function homeGroups(t: HomeCopy, alertsAvailable = true): readonly HomeGr
 					tempo: 'record',
 					title: { fr: 'Récidivistes', en: 'Repeat offenders' },
 					desc: {
-						fr: 'Les trajets et les véhicules le plus souvent en retard grave, classés au grand jour.',
-						en: 'The trips and buses most often severely late, ranked in the open.',
+						fr: 'Les trajets et les véhicules le plus souvent en retard de plus de 5 minutes, classés au grand jour.',
+						en: 'The trips and buses most often more than 5 minutes late, ranked in the open.',
 					},
 				},
 				{
