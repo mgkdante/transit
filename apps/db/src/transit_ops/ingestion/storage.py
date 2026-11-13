@@ -129,9 +129,12 @@ class LocalBronzeStorage(BronzeStorage):
                 yield _LimitedStream(stream, byte_range[1])
 
     def list_keys(self, prefix: str) -> Iterator[str]:
+        folder = self.root / prefix.rpartition("/")[0]
+        if not folder.is_dir():
+            return
         yield from sorted(
             path.relative_to(self.root).as_posix()
-            for path in self.root.rglob("*")
+            for path in folder.rglob("*")
             if path.is_file() and path.relative_to(self.root).as_posix().startswith(prefix)
         )
 

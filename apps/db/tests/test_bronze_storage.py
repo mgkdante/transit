@@ -630,6 +630,23 @@ def test_list_keys_returns_every_key_under_a_prefix(store, tmp_path):
     assert list(store.list_keys("absent")) == []
 
 
+def test_local_list_keys_reads_only_the_folder_of_the_prefix(tmp_path, monkeypatch):
+    store = LocalBronzeStorage("local", tmp_path / "bronze")
+    key = "a/b/2026-11-12.c1.pack.xz"
+    for storage_path in (key, "z/other"):
+        source = tmp_path / "source"
+        source.write_bytes(b"payload")
+        store.persist_temp_file(source, storage_path)
+    rglob = Path.rglob
+
+    def guarded_walk(path, pattern):
+        assert path.is_relative_to(store.root / "a/b"), "walk visited outside a/b"
+        yield from rglob(path, pattern)
+
+    monkeypatch.setattr(Path, "rglob", guarded_walk)
+    assert list(store.list_keys("a/b/2026-11-12.")) == [key]
+
+
 def test_put_if_absent_leaves_no_partial_object_when_the_copy_fails(tmp_path, monkeypatch):
     store = LocalBronzeStorage("local", tmp_path / "bronze")
     source = tmp_path / "source"
