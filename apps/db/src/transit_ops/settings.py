@@ -157,7 +157,8 @@ class Settings(BaseSettings):
     # A replaced edition's archive is the only source for rebuilding its service days.
     BRONZE_STATIC_RETENTION_DAYS: int = 400
     GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 730
-    BRONZE_I3_RETENTION_DAYS: int = 30
+    # Match other raw captures so a past day can be read again.
+    BRONZE_I3_RETENTION_DAYS: int = 400
     SILVER_I3_CLOSED_RETENTION_DAYS: int = 90
     BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH: int = 5000
     BRONZE_PRUNE_MAX_BATCHES: int = 2
