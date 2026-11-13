@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from importlib import import_module
 
 import pytest
@@ -429,3 +429,169 @@ def test_ledger_calls_run_as_the_pipeline_role(conn, monkeypatch):
             ).scalar_one()
             == "seal"
         )
+
+
+def test_hold_with_no_end_is_stored_as_infinity_and_read_back(conn):
+    ledger.lock_window(conn, **IDENTITY)
+    before = ledger.window_state(conn, **IDENTITY)
+    ledger.hold(conn, **IDENTITY, until_utc=ledger.HOLD_NO_END, reason="rebuilt")
+    assert (
+        conn.exec_driver_sql(
+            "SELECT hold_until_utc = 'infinity' FROM core.history_window"
+        ).scalar_one()
+        is True
+    )
+    assert ledger.window_state(conn, **IDENTITY).hold_until_utc == ledger.HOLD_NO_END
+    until = datetime(2026, 12, 1, 12, 30, 0, 123456, tzinfo=timezone(timedelta(hours=2)))
+    ledger.hold(conn, **IDENTITY, until_utc=until, reason="restored", actor="restore")
+    assert ledger.window_state(conn, **IDENTITY).hold_until_utc == until
+    ledger.hold(conn, **IDENTITY, until_utc=None, reason="released")
+    after = ledger.window_state(conn, **IDENTITY)
+    assert (after.hold_until_utc, after.hold_reason) == (None, None)
+    assert after.working_changed_at_utc == before.working_changed_at_utc
+    rows = conn.exec_driver_sql(
+        "SELECT kind, reason, details FROM core.history_event ORDER BY event_id"
+    ).all()
+    assert rows == [
+        ("changed", None, {}),
+        ("hold", "rebuilt", {"until_utc": "infinity"}),
+        ("hold", "restored", {"until_utc": "2026-12-01T10:30:00.123456Z"}),
+        ("unhold", "released", {}),
+    ]
+    assert (
+        conn.exec_driver_sql(
+            "SELECT actor FROM core.history_event WHERE reason='restored'"
+        ).scalar_one()
+        == "restore"
+    )
+
+
+def test_hold_needs_an_existing_window_and_an_aware_time(conn):
+    before = _ledger_counts(conn)
+    with pytest.raises(ledger.WindowNotFound, match="2026-11-01"):
+        ledger.hold(conn, **IDENTITY, until_utc=None, reason="missing")
+    assert _ledger_counts(conn) == before
+    for invalid in (
+        {"until_utc": datetime(2026, 11, 1)},
+        {"reason": ""},
+        {"actor": ""},
+        {"window_key": "2026-11"},
+        {"revision": 1},
+    ):
+        with pytest.raises(ValueError):
+            ledger.hold(None, **{**IDENTITY, "until_utc": None, "reason": "test", **invalid})
+    assert _ledger_counts(conn) == before
+
+
+def test_window_state_reads_the_row_and_the_remainder_of_the_newest_trim(conn):
+    assert ledger.window_state(conn, **IDENTITY) is None
+    ledger.lock_window(conn, **IDENTITY)
+    row = _ledger_row(conn)
+    assert ledger.window_state(conn, **IDENTITY) == ledger.WindowState(
+        **row, remainder_fingerprint=None
+    )
+    for fingerprint in ("older", "newest"):
+        ledger.record_event(
+            conn,
+            **IDENTITY,
+            revision=0,
+            kind="trim",
+            details={"remainder_fingerprint": fingerprint},
+        )
+    ledger.record_event(conn, **IDENTITY, revision=0, kind="restore")
+    for state in ("partial", "trimmed", "present", "empty"):
+        conn.execute(text("UPDATE core.history_window SET working_state=:state"), {"state": state})
+        assert ledger.window_state(conn, **IDENTITY).remainder_fingerprint == (
+            "newest" if state in ("partial", "trimmed") else None
+        )
+    ledger.lock_window(conn, **{**IDENTITY, "window_key": "2026-11-02"})
+    conn.exec_driver_sql("UPDATE core.history_window SET working_state='partial'")
+    assert (
+        ledger.window_state(conn, **{**IDENTITY, "window_key": "2026-11-02"}).remainder_fingerprint
+        is None
+    )
+
+
+def _range_copies(conn):
+    for day in (3, 2, 1):
+        identity = {**IDENTITY, "window_key": f"2026-11-{day:02d}"}
+        ledger.lock_window(conn, **identity)
+        for version in (4, 3, 2, 1):
+            conn.execute(
+                text("""
+                INSERT INTO core.history_archive_copy
+                    (dataset_id,provider_id,revision,window_key,content_version,schema_version,
+                     storage_backend,allocated_at_utc,sealed_at_utc,verified_at_utc,
+                     rejected_at_utc,reject_reason,details)
+                VALUES (:dataset_id,:provider_id,0,:window_key,:version,1,'local',now(),
+                        CASE WHEN :version >= 2 THEN now() END,
+                        CASE WHEN :version >= 3 THEN now() END,
+                        CASE WHEN :version = 4 THEN now() END,
+                        CASE WHEN :version = 4 THEN 'bad' END,'{"rows": 2}'::jsonb)
+                """),
+                {**identity, "version": version},
+            )
+    conn.exec_driver_sql("UPDATE core.history_window SET current_version=3")
+    # Same dataset and dates, but a different provider or revision must not leak in.
+    for provider, revision in (("elsewhere", 0), ("network", 1)):
+        conn.execute(
+            text("""
+            INSERT INTO core.history_window
+                (dataset_id,provider_id,revision,window_key,window_start,
+                 working_state,working_changed_at_utc)
+            VALUES (:dataset_id,:provider,:revision,'2026-11-01','2026-11-01','present',now())
+            """),
+            {"dataset_id": IDENTITY["dataset_id"], "provider": provider, "revision": revision},
+        )
+        _copy(conn, key=f"'capture.trip_updates','{provider}',{revision},'2026-11-01'")
+
+
+def test_find_copies_lists_every_copy_of_the_windows_in_a_date_range(conn):
+    _range_copies(conn)
+    scope = dict(dataset_id=IDENTITY["dataset_id"], provider_id=IDENTITY["provider_id"])
+    copies = ledger.find_copies(conn, **scope, start=date(2026, 11, 1), end=date(2026, 11, 2))
+    assert [
+        (c.window_start, c.window_key, c.content_version, c.state, c.is_current) for c in copies
+    ] == [
+        (date(2026, 11, day), f"2026-11-{day:02d}", version, state, version == 3)
+        for day in (1, 2)
+        for version, state in enumerate(("allocated", "sealed", "verified", "rejected"), 1)
+    ]
+    assert all(c.details == {"rows": 2} and c.byte_size is None for c in copies)
+    assert all(c.allocated_at_utc.tzinfo is not None for c in copies)
+    assert ledger.find_copies(conn, **scope, start=date(2026, 12, 1), end=date(2026, 12, 2)) == []
+    with pytest.raises(ValueError):
+        ledger.find_copies(None, **scope, start=date(2026, 11, 2), end=date(2026, 11, 1))
+
+
+def test_state_reads_and_holds_refuse_an_undeclared_dataset(conn):
+    identity = {**IDENTITY, "dataset_id": "capture.unknown"}
+    with pytest.raises(UndeclaredDataset):
+        ledger.hold(None, **identity, until_utc=None, reason="test")
+    with pytest.raises(UndeclaredDataset):
+        ledger.window_state(None, **identity)
+    with pytest.raises(UndeclaredDataset):
+        ledger.find_copies(
+            None,
+            dataset_id=identity["dataset_id"],
+            provider_id=identity["provider_id"],
+            start=date(2026, 11, 1),
+            end=date(2026, 11, 2),
+        )
+
+
+def test_holds_and_reads_run_as_the_pipeline_role(conn, monkeypatch):
+    with pipeline_role(conn, monkeypatch):
+        ledger.lock_window(conn, **IDENTITY)
+        ledger.hold(conn, **IDENTITY, until_utc=ledger.HOLD_NO_END, reason="rebuilt")
+        assert ledger.window_state(conn, **IDENTITY).hold_until_utc == ledger.HOLD_NO_END
+        ledger.hold(conn, **IDENTITY, until_utc=None, reason="released")
+        _copy(conn, key="'capture.trip_updates','network',0,'2026-11-01'")
+        copies = ledger.find_copies(
+            conn,
+            dataset_id=IDENTITY["dataset_id"],
+            provider_id=IDENTITY["provider_id"],
+            start=date(2026, 11, 1),
+            end=date(2026, 11, 1),
+        )
+        assert len(copies) == 1 and copies[0].state == "allocated"
