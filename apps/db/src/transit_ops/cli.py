@@ -1815,5 +1815,20 @@ def db_storage_report_command(
     typer.echo(json.dumps(report, indent=2))
 
 
+@app.command("history-close-runs")
+def history_close_runs_command(
+    provider: str = typer.Option(
+        ..., "--provider", help="Provider id whose capture runs are closed."
+    ),
+) -> None:
+    """Mark failed every capture run still without a result one hour after its start."""
+    from transit_ops.history.close_runs import close_unfinished_runs
+
+    engine = make_engine(get_settings())
+    with engine.begin() as connection:
+        count = close_unfinished_runs(connection, provider_id=provider)
+    typer.echo(f"Closed {count} unfinished capture run(s) for provider {provider}.")
+
+
 if __name__ == "__main__":
     app()
