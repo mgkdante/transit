@@ -106,7 +106,6 @@ export const copy = defineCopy({
 			heading: 'Scheduled but never appeared',
 			rowLabel: 'Line',
 			scheduled: (n) => `${n} scheduled`,
-			viewDetail: (id) => `View line ${id}`,
 			shownOfTotal: (shown, total) => `Showing ${shown} of ${total}`,
 			caveat:
 				'Lines with scheduled trips that never appeared in the live feed on the selected day and were not explicitly cancelled. This list identifies lines, not individual buses.',
@@ -257,7 +256,6 @@ export const copy = defineCopy({
 			heading: 'Planifiés mais jamais apparus',
 			rowLabel: 'Ligne',
 			scheduled: (n: number) => `${n} planifiés`,
-			viewDetail: (id: string) => `Voir la ligne ${id}`,
 			shownOfTotal: (shown: number, total: number) => `Affichage de ${shown} sur ${total}`,
 			caveat:
 				'Les lignes dont des trajets planifiés ne sont jamais apparus dans le flux en direct le jour sélectionné, sans annulation explicite. Cette liste identifie les lignes, pas les véhicules individuels.',

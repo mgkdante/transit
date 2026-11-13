@@ -212,7 +212,7 @@ describe('AccountabilityReceipt — asynchronous date transitions', () => {
 		receiptGates.get('2026-06-17')!.resolve(receipt('2026-06-17'));
 
 		expect(
-			await within(container).findByRole('link', { name: 'Voir la ligne 51' }),
+			await within(container).findByRole('link', { name: /Édouard-Montpetit/ }),
 		).toHaveAttribute('href', '/fr/lines/51');
 	});
 

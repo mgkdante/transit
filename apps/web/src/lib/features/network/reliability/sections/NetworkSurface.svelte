@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
@@ -7,12 +8,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
-	import {
-		absenceSentence,
-		absenceShort,
-		describeAbsence,
-		routeNameFallback,
-	} from '#lib/site/absence.ts';
+	import { absenceSentence, absenceShort, describeAbsence } from '#lib/site/absence.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { desktop } from '@yesid/ui/state';
 	import { mapSearchFor } from '#lib/filters/index.ts';
@@ -83,6 +79,8 @@
 	import SectionCrowdingByDay from './SectionCrowdingByDay.svelte';
 	import SectionByTimeOfDay from './SectionByTimeOfDay.svelte';
 	import SectionWeekday from './SectionWeekday.svelte';
+
+	const display = transitDisplay();
 
 	const localizeHref = getLocalizeHref();
 
@@ -194,11 +192,10 @@
 	);
 	const silentRows = $derived(
 		selectSilentByRoute(live.network?.non_responding_by_route, {
-			routeName: (rid) => routeNameFallback(rid, locale),
+			directory: display.directory,
 			rowLabel: t.nonResponding.rowLabel,
 			display: (rid, count) => `${fmtCount(count)} ${t.nonResponding.tripsUnit(count)}`,
 			href: (rid) => localizeHref(routeFor({ kind: 'line', id: rid }), locale),
-			viewDetail: (rid) => t.nonResponding.viewDetail(rid),
 		}),
 	);
 

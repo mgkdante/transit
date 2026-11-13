@@ -119,7 +119,6 @@ export const networkReliabilityCopy = defineCopy({
 			caption:
 				'Scheduled trips currently running with no live vehicle, by line. A silent trip has no vehicle to track, so this counts trips per line, not vehicles. {excluded}',
 			rowLabel: 'Line',
-			viewDetail: (route) => `View line ${route}`,
 			tripsUnit: (count) => (count === 1 ? 'trip' : 'trips'),
 		},
 		grain: { label: 'Trend grain', day: 'Day', week: 'Week', month: 'Month' },
@@ -274,7 +273,6 @@ export const networkReliabilityCopy = defineCopy({
 			caption:
 				'Trajets planifiés qui circulent actuellement sans véhicule en direct, par ligne. Un trajet silencieux n’a aucun véhicule à suivre : on compte donc les trajets par ligne, pas les véhicules. {excluded}',
 			rowLabel: 'Ligne',
-			viewDetail: (route: string) => `Voir la ligne ${route}`,
 			tripsUnit: (count: number) => (count <= 1 ? 'trajet' : 'trajets'),
 		},
 		grain: { label: 'Granularité de tendance', day: 'Jour', week: 'Semaine', month: 'Mois' },

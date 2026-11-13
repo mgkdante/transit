@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES, createLiveStore } from '#lib/v1/live/store.svelte.ts';
 	import { getHotspots } from '#lib/v1/repositories/historic.ts';
-	import { getRoutesIndex } from '#lib/v1/repositories/static.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import type { Manifest } from '#lib/v1/schemas/index.ts';
 	import { AbsentValue } from '#lib/components/edge/index.ts';
@@ -15,6 +15,8 @@
 	import { formatDateKey } from '#lib/utils/time.ts';
 	import { selectLivePulse, selectWorst, type PulseRank } from './homePulse';
 	import type { HomePulseCopy } from './homePulse.copy';
+
+	const display = transitDisplay();
 
 	interface Props {
 		readonly locale: Locale;
@@ -37,15 +39,10 @@
 	const hotspots = createResource((signal) => getHotspots({ signal }), {
 		key: () => 'home-hotspots',
 	});
-	const routes = createResource((signal) => getRoutesIndex({ signal }), {
-		key: () => 'home-routes-index',
-	});
 
 	const pulse = $derived(selectLivePulse(live.network));
 	const liveFailed = $derived(live.familyStates.network.health.state === 'failed-no-data');
-	const worst = $derived(
-		selectWorst(hotspots.data, routes.data?.routes ?? [], { limit: RANK_ROWS }),
-	);
+	const worst = $derived(selectWorst(hotspots.data, display.directory, { limit: RANK_ROWS }));
 	const presentation = $derived(
 		livePresentation({
 			familyStates: live.familyStates,
@@ -170,11 +167,10 @@
 							<a href={rankHref(rank)}>
 								<span class="pulse-rank-name">
 									{#if rank.kind === 'line'}
-										<span class="pulse-route">{rank.label}</span>
-										{#if rank.detail}<span
-												class="pulse-rank-text pulse-rank-detail"
-												title={rank.detail}>{rank.detail}</span
-											>{/if}
+										<span class="pulse-rank-text" title={rank.label} aria-hidden="true"
+											>{rank.label}</span
+										>
+										<span class="sr-only">{rank.spoken}</span>
 									{:else}
 										<span class="pulse-rank-text" title={rank.label}>{rank.label}</span>
 									{/if}
@@ -344,20 +340,11 @@
 		gap: 0.5rem;
 		min-width: 0;
 	}
-	.pulse-route {
-		flex: none;
-		font-family: var(--font-heading);
-		font-weight: 800;
-	}
 	.pulse-rank-text {
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-	}
-	.pulse-rank-detail {
-		color: var(--muted-foreground);
-		font-size: var(--text-small);
 	}
 	.pulse-rank-rate {
 		flex: none;

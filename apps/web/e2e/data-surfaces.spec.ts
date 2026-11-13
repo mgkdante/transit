@@ -215,5 +215,11 @@ test('rankings name lines by number in both languages', async ({ page }) => {
 		await expect(page.locator('[data-slot="offenders-hero"]').getByRole('link')).toHaveText(
 			'1 · Confederation',
 		);
+		await page.goto(localizeHref('/receipt', lang));
+		await expect(
+			page.locator('[data-slot="receipt-worst"]').getByRole('link', {
+				name: /^1 · Confederation/,
+			}),
+		).toContainText('1 · Confederation');
 	}
 });

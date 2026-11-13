@@ -1,11 +1,11 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import { describe, it, expect } from 'vitest';
 import { selectNotReportedLines, NOT_REPORTED_DOMAIN } from './notReportedLines';
 
 const labels = {
-	routeName: (id: string, name: string | null | undefined) => name ?? `Line ${id}`,
+	directory: createLineDirectory(null, { line: (id) => `Line ${id}` }),
 	rowLabel: 'Line',
 	href: (id: string) => `/lines/${id}`,
-	viewDetail: (id: string) => `View line ${id}`,
 	fmtScheduled: (v: number | null | undefined) => (v == null ? null : `${v} scheduled`),
 };
 
@@ -45,4 +45,16 @@ describe('selectNotReportedLines', () => {
 		expect(selectNotReportedLines(undefined, labels).hasData).toBe(false);
 		expect(selectNotReportedLines({ not_reported_routes: [] }, labels).hasData).toBe(false);
 	});
+});
+it('ladder rows lead with the line number', () => {
+	const directory = createLineDirectory(
+		[{ id: '1-373', short: '1', long: 'Confederation', type: 1 }],
+		{ line: (id) => `Line ${id}` },
+	);
+	const result = selectNotReportedLines(
+		{ not_reported_routes: [{ id: '1-373', name: 'Confederation' }] },
+		{ ...labels, directory },
+	);
+	expect(result.rows[0].title).toBe('1 · Confederation');
+	expect(result.rows[0].ariaLabel).toBeUndefined();
 });
