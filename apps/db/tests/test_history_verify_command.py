@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from datetime import date
 from types import SimpleNamespace as NS
+from unittest.mock import Mock
 
 import pytest
 from typer.testing import CliRunner
@@ -62,6 +63,20 @@ def test_sealed_copies_above_the_current_one_are_verified_in_order(command):
     assert command.verified == [2, 3]
     assert result.output == "".join(f"Verified {LABEL}: version {v}, current.\n" for v in (2, 3))
     assert command.closed == [True]
+
+
+@pytest.mark.parametrize("day", ["20260102", "2026-W01-5"])
+def test_noncanonical_dates_are_refused_before_io(monkeypatch, day):
+    untouched = Mock(side_effect=AssertionError("date validation must precede I/O"))
+    monkeypatch.setattr(cli, "get_settings", lambda: cli.Settings(_env_file=None))
+    monkeypatch.setattr(cli, "make_engine", untouched)
+    monkeypatch.setattr(ledger, "window_state", untouched)
+    monkeypatch.setattr(ledger, "find_copies", untouched)
+    monkeypatch.setattr(storage, "history_storage", untouched)
+    result = CliRunner().invoke(cli.app, [*ARGS[:-1], day])
+    assert result.exit_code == 2, result.output
+    assert "--date" in result.output
+    untouched.assert_not_called()
 
 
 def test_a_rejected_copy_makes_the_command_fail(command):

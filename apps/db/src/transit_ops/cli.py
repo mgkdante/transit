@@ -1890,11 +1890,13 @@ def history_verify_command(
     from transit_ops.history.storage import history_storage
 
     settings = get_settings()
-    engine = make_engine(settings)
     try:
         utc_date = date.fromisoformat(day)
+        if day != utc_date.isoformat():
+            raise ValueError("Expected YYYY-MM-DD")
     except ValueError:
         raise typer.BadParameter("Expected a UTC day, YYYY-MM-DD.", param_hint="--date") from None
+    engine = make_engine(settings)
     dataset_id = "capture." + feed
     label = f"{dataset_id} {day} for provider {provider}"
     with engine.begin() as connection:
