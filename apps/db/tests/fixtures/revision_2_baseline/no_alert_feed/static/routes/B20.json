@@ -6,7 +6,84 @@
  "id": "B20",
  "long": "Ligne 20",
  "type": 3,
- "directions": [],
+ "directions": [
+  {
+   "dir": 0,
+   "headsign": "Vers S4",
+   "shape": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.601,
+      45.501
+     ],
+     [
+      -73.583,
+      45.523
+     ],
+     [
+      -73.574,
+      45.534
+     ]
+    ]
+   },
+   "stops": [
+    {
+     "id": "S1",
+     "seq": 1,
+     "name": "Arret S1"
+    },
+    {
+     "id": "S3",
+     "seq": 2,
+     "name": "Arret S3"
+    },
+    {
+     "id": "S4",
+     "seq": 3,
+     "name": "Arret S4"
+    }
+   ]
+  },
+  {
+   "dir": 1,
+   "headsign": "Vers S1",
+   "shape": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.574,
+      45.534
+     ],
+     [
+      -73.592,
+      45.512
+     ],
+     [
+      -73.601,
+      45.501
+     ]
+    ]
+   },
+   "stops": [
+    {
+     "id": "S4",
+     "seq": 1,
+     "name": "Arret S4"
+    },
+    {
+     "id": "S2",
+     "seq": 2,
+     "name": "Arret S2"
+    },
+    {
+     "id": "S1",
+     "seq": 3,
+     "name": "Arret S1"
+    }
+   ]
+  }
+ ],
  "service_periods": [
   {
    "shift": "midday",

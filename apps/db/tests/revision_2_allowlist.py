@@ -5,7 +5,7 @@ import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import datetime, timedelta
 
 
 @dataclass(frozen=True)
@@ -41,49 +41,121 @@ FILE_RULES: tuple[FileRule, ...] = (
 )
 NEW_FILE_FAMILIES: Mapping[str, str] = {"status/capabilities.json": "capabilities-1"}
 
-# Values the database computes from its own now(); masked as "<clock>" in every lane.
-CLOCK_PATHS: Mapping[str, Mapping[str, str]] = {
-    "live/network.json": {"feed_freshness_s": "now() minus the newest capture (live.py:442)"},
-    "status/data_health.json": {
-        "lanes[*].age_s": "now() minus each lane's publication (live.py:667)",
-        "feeds[*].age_s": "now() minus each feed's capture (live.py:691)",
+
+@dataclass(frozen=True)
+class ClockValue:
+    """A value the database computes from its own now(): its type, bound and reason."""
+
+    kind: type
+    reason: str
+    below: int | None = None  # an age in seconds must lie in [0, below)
+
+
+_LIVE_AGE = 3600  # live captures are seconds old when they are published
+_FIXED_AGE = 36500 * 86400  # ages of the fixed 2025 stamps stay below the seeded retention
+# Masked as "<clock>" in every lane; null stays null. The test asserts the alert window's
+# width and end before the mask.
+CLOCK_PATHS: Mapping[str, Mapping[str, ClockValue]] = {
+    "live/network.json": {
+        "feed_freshness_s": ClockValue(
+            int, "now() minus the newest capture (live.py:442)", _LIVE_AGE
+        )
     },
-    "provenance.json": {"freshness[*].age_s": "now() minus each feed's run (0093 migration:928)"},
+    "status/data_health.json": {
+        "lanes[*].age_s": ClockValue(
+            int, "now() minus each lane's stamp (live.py:667)", _FIXED_AGE
+        ),
+        "feeds[*].age_s": ClockValue(
+            int, "now() minus each feed's capture (live.py:691)", _LIVE_AGE
+        ),
+    },
+    "provenance.json": {
+        "freshness[*].age_s": ClockValue(int, "now() minus each feed's run (0093:928)", _FIXED_AGE)
+    },
     "historic/alert_history.json": {
-        "window_start": "the database's local date minus the retention (small_surfaces.py:890)",
-        "window_end": "the database's local date (small_surfaces.py:890)",
+        "window_start": ClockValue(str, "window_end minus the retention (small_surfaces.py:890)"),
+        "window_end": ClockValue(str, "the database's local date (small_surfaces.py:890)"),
     },
 }
-# Live times are seeded within minutes of T0; fixed history stamps lie more than a year away.
-CLOCK_HORIZON = timedelta(days=30)
-_STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
-_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_ENVELOPE = {
+    "generated_utc": "the live stamp, utc_now() pinned to T0 (publish.py:425)",
+    "publish_generation_id": "provider@ the live stamp (envelope.py:19)",
+}
+_FEED = {"feed_captured_utc": "the serving capture time, seeded from T0 (live.py:80)"}
+# Live-lane times seeded from T0, written as exact offsets "T0+630s"; null stays null.
+LIVE_TIME_PATHS: Mapping[str, Mapping[str, str]] = {
+    "manifest.json": {
+        "publish_generation_id": _ENVELOPE["publish_generation_id"],
+        "files.live.generated_utc": _ENVELOPE["generated_utc"],
+        "files.live.generations.*": "generation ids of the live stamp (publish.py:245)",
+        **{
+            f"files.live.input_captures.{feed}": "each live feed's seeded capture (publish.py:244)"
+            for feed in ("trip_updates", "vehicle_positions", "i3_alerts")
+        },
+    },
+    "status/data_health.json": _ENVELOPE,
+    "live/network.json": _ENVELOPE,
+    "live/trips.json": _ENVELOPE | _FEED | {"trips.*.stops[*].eta_utc": "seeded arrival times"},
+    "live/stop_departures.json": _ENVELOPE | _FEED | {"stops.*[*].eta_utc": "seeded arrivals"},
+    "live/vehicles.json": _ENVELOPE
+    | {
+        "vehicles[*].updated_utc": "the seeded vehicle capture (live.py:174)",
+        "vehicles[*].reported_utc": "the seeded position timestamp (live.py:175)",
+    },
+    "live/alerts.json": _ENVELOPE
+    | _FEED
+    | {
+        f"alerts[*].{path}": "seeded alert capture and active periods"
+        for path in (
+            "message.captured_utc",
+            "start_utc",
+            "end_utc",
+            "active_periods[*].start_utc",
+            "active_periods[*].end_utc",
+        )
+    },
+}
+
+
+def _offset(value: str, t0: datetime) -> str:
+    head, at, stamp = value.rpartition("@")
+    delta = datetime.fromisoformat(stamp.replace("Z", "+00:00")) - t0
+    micros = delta // timedelta(microseconds=1)
+    seconds = f"{abs(micros) // 10**6}.{abs(micros) % 10**6:06d}".rstrip("0").rstrip(".")
+    return f"{head}{at}T0{'-' if micros < 0 else '+'}{seconds}s"
+
+
+def _hit(patterns: Mapping[str, object], path: tuple[str, ...]) -> object:
+    for pattern, rule in patterns.items():
+        parts = _parts(pattern)
+        if len(parts) == len(path) and all(p in ("*", q) for p, q in zip(parts, path, strict=True)):
+            return rule
+    return None
 
 
 def clock_rewrite(rel_key: str, payload: object, t0: datetime | None = None) -> object:
-    """Mask CLOCK_PATHS; with the live lane's T0, write nearby times as offsets from it."""
-    masked = {_parts(p) for p in CLOCK_PATHS.get(rel_key, {})}
-
-    def stamp(match: re.Match[str]) -> str:
-        assert t0 is not None
-        offset = datetime.fromisoformat(match.group().replace("Z", "+00:00")) - t0
-        return (
-            f"T0{round(offset.total_seconds()):+d}s" if abs(offset) <= CLOCK_HORIZON else match[0]
-        )
+    """Mask CLOCK_PATHS; with the live lane's T0, write LIVE_TIME_PATHS as offsets from it."""
+    masked = CLOCK_PATHS.get(rel_key, {})
+    timed = LIVE_TIME_PATHS.get(rel_key, {}) if t0 is not None else {}
 
     def visit(value, path=()):
-        if path in masked:
+        clock, time = _hit(masked, path), _hit(timed, path)
+        if value is None or not (clock or time):
+            pass
+        elif isinstance(clock, ClockValue):
+            ok = isinstance(value, clock.kind) and not isinstance(value, bool)
+            if ok and clock.below is not None:
+                ok = 0 <= value < clock.below
+            assert ok, f"{rel_key}: {'.'.join(path)} holds {value!r}"
             return "<clock>"
+        else:
+            assert isinstance(value, str) and t0, f"{rel_key}: {'.'.join(path)} holds {value!r}"
+            return _offset(value, t0)
         if isinstance(value, dict):
             return {key: visit(child, (*path, key)) for key, child in value.items()}
         if isinstance(value, list):
             return [visit(child, (*path, "*")) for child in value]
-        if t0 is None or not isinstance(value, str):
-            return value
-        if _DATE.fullmatch(value):
-            days = (date.fromisoformat(value) - t0.astimezone(UTC).date()).days
-            return f"D0{days:+d}" if abs(days) <= CLOCK_HORIZON.days else value
-        return _STAMP.sub(stamp, value)
+        return value
 
     return visit(payload)
 

@@ -14,12 +14,12 @@
   {
    "feed": "i3_alerts",
    "status": "succeeded",
-   "age_s": "<clock>"
+   "age_s": null
   },
   {
    "feed": "static_schedule",
    "status": "succeeded",
-   "age_s": "<clock>"
+   "age_s": null
   },
   {
    "feed": "trip_updates",

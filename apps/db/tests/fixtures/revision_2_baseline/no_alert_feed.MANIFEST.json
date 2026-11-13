@@ -62,15 +62,15 @@
  "live/trips.json": "ef37bef87cb5f7ddea56bbae06248a4c5264ff9bd63d36e078f506b4c65ddcf2",
  "live/vehicles.json": "cdfe7b3f0a14811b76683210b016d20c65e24846bc07c2fdaa2b306b5a370f4a",
  "manifest.json": "8ab56e121e9fef0cf03da81b96fe4072a8a7ef81c6920401559515a579a73799",
- "provenance.json": "285ad40de75f6462f81dfe1da689101400acc8b2f68c6d7f5f26a44c5c43b1b1",
- "static/routes/B10.json": "86660dfbbfa5380a93bfa3c1d02d6e7fa67208856a5befe656776b2b612ff3ed",
- "static/routes/B20.json": "644f75b2106c461a531459f37ff39637e3cd904d3c7abfd554d4a72e19bc27cf",
- "static/routes/M1.json": "627f85276bbbda4007eb3d69d0a807f3cc8f161c99171da23ea31a56d215276a",
+ "provenance.json": "c15401812fe5b9a952b00f07fbeda3592ff6209d2a7637cc34ea4f26eb293abf",
+ "static/routes/B10.json": "34dcf492173409d966a9c7e2224f07ce564084380969b1c114600a678edd2cd5",
+ "static/routes/B20.json": "0df79004155a526db5fab3ad4ebeb8e8ba58a8d099a82621d64bd074e2950658",
+ "static/routes/M1.json": "bf5003d7f91f5e184bd10c951ef0ab618097dc835afc5672265845f33f74a7c9",
  "static/routes_index.json": "3060ff82b33b77488a618e9c134bca35f4d4579b8e3c0d2e568fd3f6f234015c",
  "static/stops/S1.json": "960faf673a7f11103d35aa64376ef9ae0b01cedb842b1b3e48991759367c43f4",
  "static/stops/S2.json": "278d3159af7e6aa2d7c4eea0ab464de0a8b19480391713da428cb5d145f33749",
  "static/stops/S3.json": "dc17f1a4628cf2440c2097d587cd19299b6726bb56238efbdce2cc168c232750",
  "static/stops/S4.json": "133bb1e458e0c9b24ddc0d052cd0b8fdb258303b735c0100e0f67ee22d6a0722",
  "static/stops_index.json": "0d07ada4221f8fb9a8f7643940149b7bbb6399a24283e33b47b532485b2d5841",
- "status/data_health.json": "051bd3af6532a3a0ab5747d452c7b15afb1a15f33c38ff15ca286c01ce15670b"
+ "status/data_health.json": "f2461d68777ecf7e5197b345519382e733749ea0c873985b89f153ec05dddde3"
 }

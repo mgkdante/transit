@@ -6,7 +6,84 @@
  "id": "M1",
  "long": "Ligne 1",
  "type": 1,
- "directions": [],
+ "directions": [
+  {
+   "dir": 0,
+   "headsign": "Vers S3",
+   "shape": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.601,
+      45.501
+     ],
+     [
+      -73.592,
+      45.512
+     ],
+     [
+      -73.583,
+      45.523
+     ]
+    ]
+   },
+   "stops": [
+    {
+     "id": "S1",
+     "seq": 1,
+     "name": "Arret S1"
+    },
+    {
+     "id": "S2",
+     "seq": 2,
+     "name": "Arret S2"
+    },
+    {
+     "id": "S3",
+     "seq": 3,
+     "name": "Arret S3"
+    }
+   ]
+  },
+  {
+   "dir": 1,
+   "headsign": "Vers S1",
+   "shape": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -73.583,
+      45.523
+     ],
+     [
+      -73.592,
+      45.512
+     ],
+     [
+      -73.601,
+      45.501
+     ]
+    ]
+   },
+   "stops": [
+    {
+     "id": "S3",
+     "seq": 1,
+     "name": "Arret S3"
+    },
+    {
+     "id": "S2",
+     "seq": 2,
+     "name": "Arret S2"
+    },
+    {
+     "id": "S1",
+     "seq": 3,
+     "name": "Arret S1"
+    }
+   ]
+  }
+ ],
  "service_periods": [
   {
    "shift": "midday",

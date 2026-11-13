@@ -82,8 +82,11 @@ def _base(provider_id: str) -> int:
 
 
 def _anchor(service_date: date) -> datetime:
-    """GTFS times count from noon minus twelve hours on the service date."""
-    return datetime.combine(service_date, time(12), TZ) - timedelta(hours=12)
+    """GTFS times count from local noon minus twelve elapsed hours, in UTC.
+
+    Aware datetimes sharing one tzinfo add and subtract by wall clock, so convert first.
+    """
+    return datetime.combine(service_date, time(12), TZ).astimezone(UTC) - timedelta(hours=12)
 
 
 def _gtfs(seconds: int) -> str:
@@ -102,11 +105,20 @@ def _seed_static(conn, provider_id: str, service: str, prefix: str, days, first:
         conn.execute(
             text(
                 "INSERT INTO silver.trips (dataset_version_id, provider_id, trip_id, route_id,"
-                " service_id, trip_headsign, direction_id) VALUES (:v,:p,:t,:r,:s,:h,:d)"
+                " service_id, trip_headsign, direction_id, shape_id)"
+                " VALUES (:v,:p,:t,:r,:s,:h,:d,:t)"
             ),
             params | {"t": prefix + trip, "r": route, "h": f"Vers {stops[-1]}", "d": direction},
         )
-        for offset, stop in enumerate(stops):
+        for offset, stop in enumerate(stops):  # Each trip's shape runs through its stops.
+            conn.execute(
+                text(
+                    "INSERT INTO silver.shapes (dataset_version_id, provider_id, shape_id,"
+                    " shape_pt_sequence, shape_pt_lat, shape_pt_lon) VALUES (:v,:p,:t,:q,:a,:o)"
+                ),
+                params
+                | {"t": prefix + trip, "q": offset, "a": STOPS[stop][0], "o": STOPS[stop][1]},
+            )
             clock = _gtfs(first + GAP * offset)
             conn.execute(
                 text(
@@ -270,6 +282,8 @@ def _alerts(engine: Engine, provider_id: str, number: int, at: datetime, open_en
 
 
 def seed_history(engine: Engine, settings: Settings, root: Path) -> None:
+    with engine.connect() as conn:
+        build_start = conn.execute(text("SELECT clock_timestamp()")).scalar_one()
     for provider_id in PROVIDERS.values():
         alerts = provider_id == PROVIDERS["agency_alerts"]
         with engine.begin() as conn:
@@ -309,30 +323,54 @@ def seed_history(engine: Engine, settings: Settings, root: Path) -> None:
                 kinds=list(delay_days.DAILY_DELAY_TABLES),
             )
         rollups.build_warm_rollups(provider_id, engine=engine, settings=settings)
-    _freeze_build_stamps(engine)
+    _freeze_build_stamps(engine, build_start)
 
 
-def _freeze_build_stamps(engine: Engine) -> None:
-    """Published history carries the clock time its source rows were built; fix that time.
+_HISTORY_LEAF = "MAX(built_at_utc) is generated_utc of"
+# Build stamps that reach a published file, written from the build's clock: column, reason.
+FROZEN_STAMPS = {
+    "gold.route_delay_spine": ("built_at_utc", f"{_HISTORY_LEAF} line/network history, hotspots"),
+    "gold.stop_delay_spine": ("built_at_utc", f"{_HISTORY_LEAF} stop history, hotspots"),
+    "gold.stop_delay_shift_daily": ("built_at_utc", f"{_HISTORY_LEAF} hotspots days"),
+    "gold.repeat_offender_daily_spine": ("built_at_utc", f"{_HISTORY_LEAF} repeat offenders"),
+    "gold.route_cancellation_daily": ("built_at_utc", f"{_HISTORY_LEAF} line/network history"),
+    "gold.route_delay_percentile_daily": ("built_at_utc", f"{_HISTORY_LEAF} line history"),
+    "gold.stop_delay_percentile_daily": ("built_at_utc", f"{_HISTORY_LEAF} stop history"),
+    "gold.route_occupancy_band_daily": ("built_at_utc", f"{_HISTORY_LEAF} line/network history"),
+    "gold.stop_occupancy_band_daily": ("built_at_utc", f"{_HISTORY_LEAF} stop history"),
+    "gold.route_service_span_daily": ("built_at_utc", f"{_HISTORY_LEAF} line history"),
+    "gold.route_skipped_stop_daily": ("built_at_utc", f"{_HISTORY_LEAF} line history"),
+    "gold.alert_archive_entry": ("updated_at_utc", "MAX is generated_utc of alert archive pages"),
+}
 
-    Every seeded time lies inside the season, so a later one came from the build's clock.
-    """
+
+def _freeze_build_stamps(engine: Engine, build_start: datetime) -> None:
+    """Published history carries the time its source rows were built; fix that time."""
+    ids = list(PROVIDERS.values())
     with engine.begin() as conn:
-        columns = conn.execute(text(_TIMESTAMP_COLUMNS_SQL)).all()
-        for table, column in columns:
-            conn.execute(
+        for table, (column, _reason) in FROZEN_STAMPS.items():
+            outside = conn.execute(
                 text(
-                    f"UPDATE {table} SET {column} = :built WHERE provider_id = ANY(:ids)"
-                    f" AND {column} > :built AND {column} <= clock_timestamp()"
+                    f"SELECT count(*) FROM {table} WHERE provider_id = ANY(:ids)"
+                    f" AND NOT {column} BETWEEN :start AND clock_timestamp()"
                 ),
-                {"built": BUILD_CLOCK, "ids": list(PROVIDERS.values())},
+                {"ids": ids, "start": build_start},
+            ).scalar_one()
+            assert outside == 0, f"{table}.{column}: {outside} values not from the build's clock"
+            conn.execute(
+                text(f"UPDATE {table} SET {column} = :built WHERE provider_id = ANY(:ids)"),
+                {"built": BUILD_CLOCK, "ids": ids},
             )
 
 
-def seed_live(engine: Engine, settings: Settings, root: Path, t0: datetime) -> None:
-    """Live trips run on a service date whose GTFS clock puts T0 at least two hours in."""
+def live_schedule(t0: datetime) -> tuple[date, int]:
+    """A service date whose GTFS clock puts T0 at least two hours in; first stops T0-20min."""
     service_date = (t0 - timedelta(hours=2)).astimezone(TZ).date()
-    first = int((t0 - _anchor(service_date)).total_seconds()) - 1200
+    return service_date, int((t0 - _anchor(service_date)).total_seconds()) - 1200
+
+
+def seed_live(engine: Engine, settings: Settings, root: Path, t0: datetime) -> None:
+    service_date, first = live_schedule(t0)
     for provider_id in PROVIDERS.values():
         with engine.begin() as conn:
             _seed_static(conn, provider_id, "VIVANT", "L", (service_date,), first)
@@ -394,11 +432,4 @@ SELECT format('%I.%I', c.table_schema, c.table_name)
 FROM information_schema.columns c
 JOIN information_schema.tables t USING (table_schema, table_name)
 WHERE c.column_name = 'provider_id' AND t.table_type = 'BASE TABLE'
-"""
-_TIMESTAMP_COLUMNS_SQL = f"""
-SELECT format('%I.%I', c.table_schema, c.table_name), quote_ident(c.column_name)
-FROM information_schema.columns c
-WHERE c.data_type = 'timestamp with time zone'
-  AND format('%I.%I', c.table_schema, c.table_name) IN ({_TABLES_SQL})
-ORDER BY 1, 2
 """

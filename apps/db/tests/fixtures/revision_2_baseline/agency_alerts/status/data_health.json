@@ -44,7 +44,7 @@
   {
    "feed": "static_schedule",
    "status": "succeeded",
-   "age_s": "<clock>"
+   "age_s": null
   },
   {
    "feed": "trip_updates",

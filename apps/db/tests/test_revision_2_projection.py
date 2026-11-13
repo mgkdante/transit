@@ -1,11 +1,12 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import time
 from copy import deepcopy
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,20 @@ def test_every_file_rule_names_a_published_family():
     assert all(rule.pattern in known for rule in FILE_RULES)
 
 
+def test_clock_rewrite_keeps_absence_and_touches_only_listed_paths():
+    t0 = datetime(2026, 11, 13, 12, tzinfo=UTC)
+    payload = {"generated_utc": "2026-11-13T12:00:00.5Z", "feed_freshness_s": None}
+    payload["note"] = "2026-11-13T12:00:00Z"
+    assert clock_rewrite("live/network.json", payload, t0) == {
+        "generated_utc": "T0+0.5s",
+        "feed_freshness_s": None,
+        "note": "2026-11-13T12:00:00Z",
+    }
+    for wrong in ("5", 3600, -1, True):
+        with pytest.raises(AssertionError, match="feed_freshness_s"):
+            clock_rewrite("live/network.json", {"feed_freshness_s": wrong}, t0)
+
+
 # Real database: two seeded providers published at this commit (revision_2_seed).
 BASELINE = Path(__file__).parent / "fixtures" / "revision_2_baseline"
 WRITE_BASELINE = "TRANSIT_WRITE_REVISION_2_BASELINE"
@@ -163,6 +178,13 @@ class Published:
     results: dict[str, dict[str, publish.PublishResult]]
     files: dict[str, dict[str, bytes]]
     lane_of: dict[str, str]
+    history_dates: set[date] = field(default_factory=set)  # database's local date around it
+
+
+def _local_date(engine) -> date:
+    with engine.connect() as conn:
+        query = text("SELECT (now() AT TIME ZONE :tz)::date")
+        return conn.execute(query, {"tz": str(seed.TZ)}).scalar_one()
 
 
 def _publish(engine, settings, provider_id: str, tier: str):
@@ -206,6 +228,7 @@ def published(real_db_engine, tmp_path_factory):
         try:
             seed.seed_history(engine, settings, root)
             _pin(monkeypatch, seed.HISTORY_CLOCK)
+            run.history_dates.add(_local_date(engine))
             for tier in LANES:
                 if tier == "live":
                     with engine.connect() as conn:
@@ -218,6 +241,8 @@ def published(real_db_engine, tmp_path_factory):
                     assert not files.keys() & run.files.setdefault(label, {}).keys()
                     run.files[label] |= files
                     run.lane_of |= dict.fromkeys(files, tier)
+                if tier == "historic":
+                    run.history_dates.add(_local_date(engine))
             yield run
         finally:
             seed.delete_rows(engine)
@@ -281,6 +306,11 @@ def test_publish_succeeds_at_this_commit(published):
 
 
 def test_revision_2_projection_is_unchanged(published):
+    for label in seed.PROVIDERS:  # What the masked alert window must hold.
+        window = json.loads(published.files[label]["historic/alert_history.json"])
+        end, start = (date.fromisoformat(window[k]) for k in ("window_end", "window_start"))
+        assert end in published.history_dates
+        assert (end - start).days == published.settings.SILVER_I3_CLOSED_RETENTION_DAYS
     if os.environ.get(WRITE_BASELINE) == "1":
         for label in seed.PROVIDERS:
             _write_baseline(label, _projected(published, label))
@@ -301,7 +331,107 @@ def test_live_bytes_are_stable_across_two_runs(published):
     time.sleep(3)
     for label, provider_id in seed.PROVIDERS.items():
         _result, files = _publish(published.engine, published.settings, provider_id, "live")
-        first = {k: v for k, v in _projected(published, label).items() if k in files}
+        first = {
+            k: v for k, v in _projected(published, label).items() if published.lane_of[k] == "live"
+        }
         second = {key: _canonical(key, body, published.t0) for key, body in files.items()}
         assert first.keys() == second.keys()
         assert [key for key in first if first[key] != second[key]] == []
+
+
+# Published outputs this baseline holds empty by construction: family -> path -> cause.
+# A later packet that edits the builder behind an entry is not guarded by this baseline there.
+_DB_DATE = "looks back {} days from the database's date; the seed is in 2025"
+_BUILD_WINDOW = "rebuilt only GOLD_REPORTING_OPEN_WINDOW_DAYS back from the build's clock"
+_TREND = {
+    f"{grain}[*].{measure}": _DB_DATE.format(90 if grain == "series" else 371)
+    for grain in ("series", "weekly", "monthly")
+    for measure in ("otp_pct", "avg_delay_min", "observation_count", "wilson_lo", "wilson_hi")
+}
+_NETWORK_LEVEL = "a network-level collection names no entity"
+UNGUARDED: dict[str, dict[str, str]] = {
+    "historic/network_trend.json": _TREND
+    | {
+        f"{g}[*].{m}": _DB_DATE.format(371)
+        for g in ("weekly", "monthly")
+        for m in ("p90_min", "vehicles")
+    },
+    "historic/receipts/index.json": dict.fromkeys(("available", "dates"), _BUILD_WINDOW),
+    "historic/receipts/generations/{h}/index.json": dict.fromkeys(
+        ("available", "dates"), _BUILD_WINDOW
+    ),
+    "historic/route_reliability/{id}.json": {
+        **dict.fromkeys(
+            ("occupancy_mix", "occupancy_by_dow", "occupancy_by_grain", "occupancy_by_hour"),
+            _DB_DATE.format(30),
+        ),
+        "delay_by_crowding": _DB_DATE.format(30),
+        "headway": _BUILD_WINDOW,
+        "headway_by_grain": "needs two trips of a route direction at one stop and shift",
+        "weak_stops_by_grain": "needs enough observations per stop in its window",
+        "service_spans": "built a capture day late; no seeded capture day has a successor",
+    },
+    "historic/stop_reliability/{id}.json": {
+        "daily": _DB_DATE.format(90),
+        "occupancy_mix": _DB_DATE.format(30),
+        "habits": _BUILD_WINDOW,
+    },
+    "historic/history/network/generations/{h}/index.json": {"entity_id": _NETWORK_LEVEL},
+    "historic/history/hotspots/generations/{h}/index.json": {
+        "entity_id": _NETWORK_LEVEL,
+        "metrics": "point collections declare no metrics",
+    },
+    "historic/history/repeat_offenders/generations/{h}/index.json": {
+        "entity_id": _NETWORK_LEVEL,
+        "metrics": "point collections declare no metrics",
+    },
+    "historic/history/repeat_offenders/generations/{h}/{date}.json": {
+        "offenders": "needs severe delays on 3 days of its window; seeded days are 2 weeks apart"
+    },
+    "live/network.json": {"non_responding_by_route": "every running seeded trip has a trip update"},
+    "manifest.json": {"basemap": "the invented providers have no registry entry"},
+    "provenance.json": {"gaps": "the invented providers have no registry entry"},
+    "static/stops/{id}.json": {"code": "the seed sets no stop_code"},
+}
+_ENVELOPE_KEYS = {"schema_version", "methodology_version", "publish_generation_id", "generated_utc"}
+
+
+def _family(key: str) -> str:
+    key = re.sub(r"[0-9a-f]{64}", "{h}", key)
+    key = re.sub(r"\d{4}-\d{2}(-\d{2})?", "{date}", key)
+    return re.sub(r"(?<=/)[\w-]*\d[\w-]*(?=/|\.json$)", "{id}", key)
+
+
+def _real(value) -> bool:
+    if isinstance(value, dict | list):
+        return any(_real(child) for child in (value.values() if isinstance(value, dict) else value))
+    return value is not None
+
+
+def _at(value, parts):
+    if not parts:
+        yield value
+    elif parts[0] == "*" and isinstance(value, dict | list):
+        for child in value.values() if isinstance(value, dict) else value:
+            yield from _at(child, parts[1:])
+    elif isinstance(value, dict) and parts[0] in value:
+        yield from _at(value[parts[0]], parts[1:])
+
+
+def test_the_baseline_lists_every_output_it_does_not_guard():
+    families: dict[str, list] = {}
+    for label in seed.PROVIDERS:
+        for key, body in _read_baseline(label).items():
+            families.setdefault(_family(key), []).append(json.loads(body))
+    problems = [f"{name}: listed but not published" for name in UNGUARDED.keys() - families.keys()]
+    for name, payloads in sorted(families.items()):
+        listed = UNGUARDED.get(name, {})
+        sections = {key for payload in payloads for key in payload} - _ENVELOPE_KEYS
+        for section in sorted(sections - set(listed)):
+            if not any(_real(payload.get(section)) for payload in payloads):
+                problems.append(f"{name}: {section} is empty and not listed")
+        for path in listed:
+            parts = path.replace("[*]", ".*").split(".")
+            if any(_real(value) for payload in payloads for value in _at(payload, parts)):
+                problems.append(f"{name}: {path} is listed but holds a value")
+    assert problems == []
