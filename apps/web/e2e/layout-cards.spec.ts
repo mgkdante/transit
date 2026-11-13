@@ -151,6 +151,27 @@ for (const locale of ['en', 'fr'] as const)
 				page,
 			}) => {
 				const gate = await holdReliability(page, path);
+				await page.addInitScript(() => {
+					const state = window as typeof window & {
+						__transitReliabilityTestSettledFetches: string[];
+					};
+					state.__transitReliabilityTestSettledFetches = [];
+					const nativeFetch = window.fetch;
+					window.fetch = async (...args) => {
+						try {
+							return await nativeFetch(...args);
+						} finally {
+							const input = args[0];
+							state.__transitReliabilityTestSettledFetches.push(
+								typeof input === 'string'
+									? input
+									: input instanceof Request
+										? input.url
+										: String(input),
+							);
+						}
+					};
+				});
 				try {
 					await page.setViewportSize({ width, height: 900 });
 					let readyHeight: number | undefined;
@@ -160,9 +181,13 @@ for (const locale of ['en', 'fr'] as const)
 						const pending = new Promise<PlaywrightRequest>((resolve) => {
 							gate.entered = resolve;
 						});
-						await page.goto(localizeHref(path === '/stops' ? '/stops?route=24' : path, locale), {
-							waitUntil: 'domcontentloaded',
-						});
+						await page.goto(
+							localizeHref(
+								path === '/stops' ? '/stops?provider=stm&route=24' : '/lines?provider=stm',
+								locale,
+							),
+							{ waitUntil: 'domcontentloaded' },
+						);
 						const entityPath = localizeHref(
 							path === '/lines' ? '/lines/24' : '/stop/52095',
 							locale,
@@ -179,10 +204,16 @@ for (const locale of ['en', 'fr'] as const)
 						gate.holding = false;
 						for (const release of gate.releases.splice(0)) release();
 						const response = await delivered;
-						await response.finished();
+						if (state !== 'empty') await response.finished();
 						expect(response.status()).toBe(state === 'empty' ? 404 : 200);
 						if (state === 'empty') {
-							expect(await response.json()).toEqual({});
+							await page.waitForFunction(
+								(file) =>
+									(
+										window as typeof window & { __transitReliabilityTestSettledFetches: string[] }
+									).__transitReliabilityTestSettledFetches.some((url) => url.includes(file)),
+								path === '/lines' ? '/route_reliability/24.json' : '/stop_reliability/52095.json',
+							);
 							await expect(row.locator('[data-slot="entity-result-status"]')).toHaveCount(0);
 						} else
 							await expect(
