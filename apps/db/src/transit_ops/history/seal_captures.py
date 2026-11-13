@@ -7,8 +7,9 @@ import re
 import tempfile
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from typing import TypedDict
 
 from sqlalchemy import Connection, text
 
@@ -290,7 +291,15 @@ def _allocate(
     return manifest, data
 
 
-def _copy_identity(copy: ledger.ArchiveCopy) -> dict[str, str | int]:
+class _CopyIdentity(TypedDict):
+    dataset_id: str
+    provider_id: str
+    revision: int
+    window_key: str
+    content_version: int
+
+
+def _copy_identity(copy: ledger.ArchiveCopy) -> _CopyIdentity:
     return dict(
         dataset_id=copy.dataset_id,
         provider_id=copy.provider_id,
@@ -300,36 +309,80 @@ def _copy_identity(copy: ledger.ArchiveCopy) -> dict[str, str | int]:
     )
 
 
-def _mark_sealed(connection: Connection, copy: ledger.ArchiveCopy, actor: str | None) -> None:
+class _MarkedRejected(RuntimeError):
+    pass
+
+
+def _locked_copy(connection: Connection, copy: ledger.ArchiveCopy) -> ledger.ArchiveCopy | None:
+    ledger.acquire_window_lock(
+        connection,
+        dataset_id=copy.dataset_id,
+        provider_id=copy.provider_id,
+        window_key=copy.window_key,
+        revision=copy.revision,
+    )
+    day = date.fromisoformat(copy.window_key)
+    copies = ledger.find_copies(
+        connection,
+        dataset_id=copy.dataset_id,
+        provider_id=copy.provider_id,
+        start=day,
+        end=day,
+        revision=copy.revision,
+    )
+    return next((c for c in copies if c.content_version == copy.content_version), None)
+
+
+def _rejection_path(copy: ledger.ArchiveCopy) -> str:
+    day = date.fromisoformat(copy.window_key)
+    endpoint = copy.dataset_id.removeprefix("capture.")
+    return _prefix(copy.provider_id, endpoint, day) + f"{copy.content_version}.rejected.json.gz"
+
+
+def _read_rejection(
+    storage: BronzeStorageResolver, copy: ledger.ArchiveCopy
+) -> tuple[datetime, str] | None:
+    archive, key = storage(copy.storage_backend), _rejection_path(copy)
+    if not archive.exists(key):
+        return None
+    with archive.open_stream(key) as stream:
+        marker = json.loads(gzip.decompress(stream.read()))
+    if any(marker[k] != v for k, v in _copy_identity(copy).items()):
+        raise ValueError("rejection marker identity differs")
+    stamp, reason = datetime.fromisoformat(marker["rejected_at_utc"]), marker["reason"]
+    if stamp.utcoffset() is None or not isinstance(reason, str) or not reason:
+        raise ValueError("invalid rejection marker time or reason")
+    return stamp, reason
+
+
+def _mark_sealed(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    copy: ledger.ArchiveCopy,
+    actor: str | None,
+) -> None:
     identity = _copy_identity(copy)
     with connection.begin():
-        ledger.acquire_window_lock(
-            connection,
-            dataset_id=copy.dataset_id,
-            provider_id=copy.provider_id,
-            window_key=copy.window_key,
-        )
-        result = connection.execute(
-            text("""
+        current = _locked_copy(connection, copy)
+        marker = _read_rejection(storage, copy)
+        if marker is not None:
+            if current is not None and current.rejected_at_utc is None:
+                _reject_row(connection, copy, *marker, actor)
+        else:
+            result = connection.execute(
+                text("""
             UPDATE core.history_archive_copy SET sealed_at_utc=clock_timestamp()
             WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=:revision
               AND window_key=:window_key AND content_version=:content_version
               AND sealed_at_utc IS NULL AND rejected_at_utc IS NULL
         """),
-            identity,
-        )
-        if result.rowcount != 1:
-            raise RuntimeError(f"could not seal copy {identity}")
-        ledger.record_event(
-            connection,
-            kind="seal",
-            actor=actor,
-            dataset_id=copy.dataset_id,
-            provider_id=copy.provider_id,
-            window_key=copy.window_key,
-            revision=copy.revision,
-            content_version=copy.content_version,
-        )
+                identity,
+            )
+            if result.rowcount != 1:
+                raise RuntimeError(f"could not seal copy {identity}")
+            ledger.record_event(connection, kind="seal", actor=actor, **identity)
+    if marker is not None:
+        raise _MarkedRejected(f"could not seal copy {identity}: {marker[1]}")
 
 
 def _write_rejection_marker(
@@ -337,18 +390,11 @@ def _write_rejection_marker(
     copy: ledger.ArchiveCopy,
     data: bytes,
 ) -> None:
-    prefix = _prefix(
-        copy.provider_id,
-        copy.dataset_id.removeprefix("capture."),
-        date.fromisoformat(copy.window_key),
-    )
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "rejected.json.gz"
         path.write_bytes(data)
         try:
-            storage(copy.storage_backend).put_if_absent(
-                path, prefix + f"{copy.content_version}.rejected.json.gz"
-            )
+            storage(copy.storage_backend).put_if_absent(path, _rejection_path(copy))
         except ObjectAlreadyExists:
             pass
 
@@ -360,45 +406,45 @@ def reject_capture_copy(
     *,
     reason: str,
     actor: str | None = None,
+) -> bool:
+    with connection.begin():
+        current = _locked_copy(connection, copy)
+        fields = ("sealed_at_utc", "rejected_at_utc", "verified_at_utc")
+        if current is None or any(
+            (getattr(current, k) is None) != (getattr(copy, k) is None) for k in fields
+        ):
+            return False
+        rejected_at = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
+        data = canonical_json(
+            dict(_copy_identity(copy), reason=reason, rejected_at_utc=rejected_at)
+        )
+        _write_rejection_marker(storage, copy, gzip.compress(data, compresslevel=9, mtime=0))
+        marker = _read_rejection(storage, copy)
+        assert marker is not None
+        _reject_row(connection, copy, *marker, actor)
+    return True
+
+
+def _reject_row(
+    connection: Connection,
+    copy: ledger.ArchiveCopy,
+    rejected_at: datetime,
+    reason: str,
+    actor: str | None,
 ) -> None:
     identity = _copy_identity(copy)
-    with connection.begin():
-        rejected_at = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
-    data = gzip.compress(
-        canonical_json(dict(identity, reason=reason, rejected_at_utc=rejected_at)),
-        compresslevel=9,
-        mtime=0,
-    )
-    _write_rejection_marker(storage, copy, data)
-    with connection.begin():
-        ledger.acquire_window_lock(
-            connection,
-            dataset_id=copy.dataset_id,
-            provider_id=copy.provider_id,
-            window_key=copy.window_key,
-        )
-        result = connection.execute(
-            text("""
+    result = connection.execute(
+        text("""
             UPDATE core.history_archive_copy SET rejected_at_utc=:rejected_at, reject_reason=:reason
             WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=:revision
               AND window_key=:window_key AND content_version=:content_version
               AND rejected_at_utc IS NULL AND verified_at_utc IS NULL
         """),
-            dict(identity, rejected_at=rejected_at, reason=reason),
-        )
-        if result.rowcount != 1:
-            raise RuntimeError(f"could not reject copy {identity}")
-        ledger.record_event(
-            connection,
-            kind="reject",
-            reason=reason,
-            actor=actor,
-            dataset_id=copy.dataset_id,
-            provider_id=copy.provider_id,
-            window_key=copy.window_key,
-            revision=copy.revision,
-            content_version=copy.content_version,
-        )
+        dict(identity, rejected_at=rejected_at, reason=reason),
+    )
+    if result.rowcount != 1:
+        raise RuntimeError(f"could not reject copy {identity}")
+    ledger.record_event(connection, kind="reject", reason=reason, actor=actor, **identity)
 
 
 def _object_matches(
@@ -449,7 +495,10 @@ def _repair_allocated(
             or _object_matches(archive, copy.storage_path, copy.byte_size, copy.sha256)
         )
         if manifest_ok and pack_ok:
-            _mark_sealed(connection, copy, actor)
+            try:
+                _mark_sealed(connection, storage, copy, actor)
+            except _MarkedRejected:
+                pass
         else:
             reject_capture_copy(connection, storage, copy, reason="incomplete_write", actor=actor)
 
@@ -552,7 +601,7 @@ def seal_capture_day(
             if c.content_version == manifest.content_version
         )
         _write_objects(connection, storage, copy, local, directory, data, actor)
-        _mark_sealed(connection, copy, actor)
+        _mark_sealed(connection, storage, copy, actor)
     return next(
         c
         for c in _day_copies(connection, provider_id, endpoint_key, utc_date)

@@ -171,3 +171,96 @@ def test_final_key_is_never_overwritten(engine, tmp_path, own_object):
         result = run_seal(engine, local)
         assert (result.content_version, result.state) == (2, "sealed")
         assert events(engine) == [("reject", 1, "key_taken"), ("seal", 2, None)]
+
+
+def marker_gap(engine, tmp_path, *, writer_finishes):
+    local = LocalBronzeStorage("local", tmp_path)
+
+    def crash_marker(path, key):
+        local.put_if_absent(path, key)
+        raise RuntimeError("crash after marker")
+
+    def write(path, key):
+        if key.endswith(".manifest.json.gz"):
+            (allocated,) = copies(engine)
+            with engine.connect() as conn, pytest.raises(RuntimeError, match="crash after marker"):
+                seal_captures.reject_capture_copy(
+                    conn,
+                    lambda backend: SimpleNamespace(put_if_absent=crash_marker),
+                    allocated,
+                    reason="incomplete_write",
+                    actor="test",
+                )
+            assert copies(engine)[0].state == "allocated"
+            local.put_if_absent(path, key)
+            if not writer_finishes:
+                raise RuntimeError("writer died")
+            return key
+        return local.put_if_absent(path, key)
+
+    storage = SimpleNamespace(
+        put_if_absent=write,
+        list_keys=local.list_keys,
+        open_stream=local.open_stream,
+        exists=local.exists,
+    )
+    with pytest.raises(
+        RuntimeError, match="incomplete_write" if writer_finishes else "writer died"
+    ):
+        run_seal(engine, storage)
+    return local
+
+
+def test_marker_without_row_wins_over_a_late_writer(engine, tmp_path):
+    local = marker_gap(engine, tmp_path, writer_finishes=True)
+    (first,) = copies(engine)
+    assert (first.state, first.reject_reason) == ("rejected", "incomplete_write")
+    assert_marker(tmp_path, first, "incomplete_write")
+    assert events(engine) == [("reject", 1, "incomplete_write")]
+    assert (run_seal(engine, local).content_version, copies(engine)[-1].state) == (2, "sealed")
+
+
+def test_repair_reconciles_a_marker_before_sealing(engine, tmp_path):
+    local = marker_gap(engine, tmp_path, writer_finishes=False)
+    assert copies(engine)[0].state == "allocated"
+    result = run_seal(engine, local)
+    first, second = copies(engine)
+    assert (first.state, first.reject_reason, first.sealed_at_utc) == (
+        "rejected",
+        "incomplete_write",
+        None,
+    )
+    assert_marker(tmp_path, first, "incomplete_write")
+    assert (result.content_version, second.state) == (2, "sealed")
+    assert events(engine) == [("reject", 1, "incomplete_write"), ("seal", 2, None)]
+
+
+def test_rejection_skips_a_copy_sealed_meanwhile(engine, tmp_path, monkeypatch):
+    local = LocalBronzeStorage("local", tmp_path)
+    real_event = ledger.record_event
+
+    def crash(*args, **kwargs):
+        if kwargs["kind"] == "seal":
+            raise RuntimeError("writer died")
+        return real_event(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ledger, "record_event", crash)
+        with pytest.raises(RuntimeError, match="writer died"):
+            run_seal(engine, local)
+    (allocated,) = copies(engine)
+    sealed = run_seal(engine, local)
+    with engine.connect() as conn:
+        assert (
+            seal_captures.reject_capture_copy(
+                conn,
+                lambda backend: local,
+                allocated,
+                reason="incomplete_write",
+                actor="test",
+            )
+            is False
+        )
+    assert copies(engine) == [sealed]
+    assert not local.exists(PREFIX + "1.rejected.json.gz")
+    assert events(engine) == [("seal", 1, None)]

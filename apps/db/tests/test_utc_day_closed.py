@@ -21,7 +21,9 @@ def test_closed_at_exact_instant_only(offset):
     clock.scalar_one.return_value = utc_day_closes_at(date(2026, 1, 2)) + offset
     feed = Mock()
     feed.one_or_none.return_value = None
-    connection.execute.side_effect = [Mock(), clock, feed]
+    copies = Mock()
+    copies.mappings.return_value = []
+    connection.execute.side_effect = [copies, Mock(), clock, feed]
     error = LookupError if offset == timedelta() else WindowNotClosed
     with pytest.raises(error):
         seal_capture_day(
