@@ -63,13 +63,9 @@ for (const locale of ['en', 'fr'] as const)
 						locale,
 					},
 				});
-				const badge = screen.getByRole('img', {
-					name: `${hedge ?? fallback}, ${reliabilityBadgeCopy[locale].week}`,
-				});
-				expect(badge).toHaveAttribute(
-					'title',
-					`${hedge ?? fallback}, ${reliabilityBadgeCopy[locale].week}`,
-				);
+				const label = hedge ?? `${fallback}, ${reliabilityBadgeCopy[locale].week}`;
+				const badge = screen.getByRole('img', { name: label });
+				expect(badge).toHaveAttribute('title', label);
 				expect(badge).toHaveAttribute('data-slot', 'reliability-hedge');
 				expect(badge).toHaveAttribute('data-status', verdict);
 				expect(badge.textContent?.trim()).toBe(
@@ -115,4 +111,36 @@ it.each([
 	});
 	expect(view.getByRole('img')).toHaveTextContent(text);
 	expect(view.getByRole('img')).toHaveTextContent(locale === 'fr' ? '10 nov.' : 'Nov 10');
+});
+
+it.each(['en', 'fr'] as const)('states the hedge window once for both forms in %s', (locale) => {
+	const end = locale === 'fr' ? '10 nov.' : 'Nov 10';
+	const full =
+		locale === 'fr'
+			? 'Fiabilité incertaine du 4 nov. au 10 nov. (jours complets) : 82 % (IC 95 % : 78–86 %).'
+			: 'Reliability is uncertain from Nov 4 to Nov 10 (complete days): 82% (95% CI: 78–86%).';
+	for (const hedge of [full, undefined]) {
+		const view = render(ReliabilityBadge, {
+			props: {
+				locale,
+				snapshot: snap({
+					phase: 'ready',
+					otpPct: 82,
+					verdict: 'tentative',
+					hedge,
+					closedThrough: '2026-11-10',
+				}),
+			},
+		});
+		const image = view.getByRole('img');
+		const label = image.getAttribute('aria-label')!;
+		expect(label).toBe(
+			hedge ??
+				`${locale === 'fr' ? 'Données insuffisantes pour juger la fiabilité' : 'Not enough data to judge reliability'}, ${reliabilityBadgeCopy[locale].weekTo(end)}`,
+		);
+		expect(image).toHaveAttribute('title', label);
+		expect(label).not.toContain('.,');
+		expect(label.split(end)).toHaveLength(2);
+		view.unmount();
+	}
 });

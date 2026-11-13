@@ -184,7 +184,7 @@ for (const locale of ['en', 'fr'] as const)
 								),
 							).toBeVisible();
 						if (state === 'low-sample')
-							await expect(row.locator('[data-slot="reliability-hedge"]')).toHaveTextContent(
+							await expect(row.locator('[data-slot="reliability-hedge"]')).toContainText(
 								locale === 'fr' ? /Données insuffisantes/ : /Not enough data/,
 							);
 						const after = (await row.boundingBox())!.height;

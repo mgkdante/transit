@@ -18,14 +18,6 @@
 	const windowLabel = $derived(
 		snapshot.closedThrough ? copy.weekTo(formatDateKey(snapshot.closedThrough, locale)) : copy.week,
 	);
-	const hedges = {
-		en: 'Not enough data to judge reliability',
-		fr: 'Données insuffisantes pour juger la fiabilité',
-	} as const;
-	const compactHedges = {
-		en: { tentative: 'Uncertain', absent: 'Not enough data' },
-		fr: { tentative: 'Incertaine', absent: 'Données insuffisantes' },
-	} as const;
 	const pctText = $derived(
 		snapshot.otpPct == null
 			? null
@@ -41,7 +33,7 @@
 			? `${pctText} ${snapshot.kind === 'stop' ? copy.stopShare : copy.share}, ${windowLabel}`
 			: '',
 	);
-	const hedgeLabel = $derived(snapshot.hedge ?? hedges[locale]);
+	const hedgeLabel = $derived(snapshot.hedge ?? `${copy.hedgeFallback}, ${windowLabel}`);
 </script>
 
 <span class="reliability-slot" data-phase={snapshot.phase}>
@@ -51,11 +43,11 @@
 			data-status={snapshot.verdict}
 			class={['reliability-badge reliability-hedge', className].filter(Boolean).join(' ')}
 			role="img"
-			aria-label={`${hedgeLabel}, ${windowLabel}`}
-			title={`${hedgeLabel}, ${windowLabel}`}
+			aria-label={hedgeLabel}
+			title={hedgeLabel}
 		>
 			<span aria-hidden="true"
-				>{compactHedges[locale][
+				>{copy.compactHedges[
 					snapshot.verdict === 'tentative' && !lowSample ? 'tentative' : 'absent'
 				]}</span
 			>

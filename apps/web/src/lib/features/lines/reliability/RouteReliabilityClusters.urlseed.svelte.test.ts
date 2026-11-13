@@ -157,7 +157,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(checked?.textContent?.toLowerCase()).toContain('range');
 	});
 
-	it('bare ?from/?to fully OUTSIDE the window → reverts to the default closed week (no range prompt)', () => {
+	it('bare ?from/?to fully OUTSIDE the window → reverts to the latest complete day (no range prompt)', () => {
 		mockUrl = new URL('http://localhost/lines/51?from=2020-01-01&to=2020-01-05');
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: rangeData, locale: 'en' },
@@ -172,7 +172,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
 	});
 
-	it('bare ?from/?to with one out-of-window bound → reverts to the default closed week', () => {
+	it('bare ?from/?to with one out-of-window bound → reverts to the latest complete day', () => {
 		mockUrl = new URL('http://localhost/lines/51?from=2026-06-16&to=2030-12-31');
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: rangeData, locale: 'en' },

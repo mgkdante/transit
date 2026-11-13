@@ -1776,9 +1776,18 @@ function builtAssetPaths() {
 	);
 }
 
-async function installNetworkBoundary(context, pageOrigin, replay, cell) {
+function documentsForCell(cell) {
+	return [
+		cell.path,
+		...(cell.fixture === 'rich' && cell.surface === 'line'
+			? [(cell.locale === 'fr' ? '/fr' : '') + '/lines']
+			: []),
+	];
+}
+
+async function installNetworkBoundary(context, pageOrigin, replay, documentPaths) {
 	const assets = builtAssetPaths();
-	const document = new URL(cell.path, pageOrigin);
+	const documents = new Set(documentPaths.map((path) => new URL(path, pageOrigin).href));
 	await context.route('**/*', async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
@@ -1787,10 +1796,7 @@ async function installNetworkBoundary(context, pageOrigin, replay, cell) {
 			return;
 		}
 		if (url.origin === pageOrigin) {
-			const exactDocument =
-				request.isNavigationRequest() &&
-				url.pathname === document.pathname &&
-				url.search === document.search;
+			const exactDocument = request.isNavigationRequest() && documents.has(url.href);
 			if (exactDocument || assets.has(decodeURIComponent(url.pathname))) {
 				await route.continue();
 				return;
@@ -1955,7 +1961,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 				});
 				await context.addInitScript({ content: freezeClockScript(fixture.frozen_utc) });
 				await context.addInitScript({ content: svgGuardScript() });
-				await installNetworkBoundary(context, preview.origin, replay, cell);
+				await installNetworkBoundary(context, preview.origin, replay, documentsForCell(cell));
 				const page = await context.newPage();
 				const errors = [];
 				page.on('response', (response) => {
