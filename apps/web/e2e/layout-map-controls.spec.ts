@@ -35,14 +35,22 @@ for (const provider of ['stm', 'octranspo'])
 		});
 	}
 
-// The legend opens first; on a laptop it must leave the Markers group in view.
+// The legend opens first in every layout; on a laptop it must leave the Markers group in view.
 for (const locale of ['en', 'fr'])
-	test(`${locale} map legend stays compact at 1280x800 @layout`, async ({ page }) => {
-		test.skip(page.viewportSize()!.width !== 1280, 'measured at the laptop size only');
-		await page.setViewportSize({ width: 1280, height: 800 });
+	test(`${locale} map legend opens first and stays compact at 1280x800 @layout`, async ({
+		page,
+	}) => {
+		const width = page.viewportSize()!.width;
+		if (width === 1280) await page.setViewportSize({ width: 1280, height: 800 });
 		await page.goto(`${locale === 'fr' ? '/fr' : ''}/map`, { waitUntil: 'networkidle' });
-		const panel = page.locator('.map-filter-panel .map-filters');
-		await expect(panel.locator('[data-filter-group="legend"]').getByRole('list')).toBeVisible();
+		if (width < 1024) await page.getByTestId('map-filter-pill').click();
+		const panel = page.locator('.map-filters:visible');
+		const first = panel.locator('[data-filter-group]').first();
+		await expect(first).toHaveAttribute('data-filter-group', 'legend');
+		await expect(first.locator('.mf-group-trigger')).toHaveAttribute('aria-expanded', 'true');
+		await expect(first.getByRole('list')).toBeVisible();
+		// The height budget is measured at the laptop size; other widths check placement above.
+		if (width !== 1280) return;
 		const measured = await panel.evaluate((root) => {
 			const body = root.querySelector('.mf-body')!;
 			const legend = root.querySelector('[data-filter-group="legend"]')!;

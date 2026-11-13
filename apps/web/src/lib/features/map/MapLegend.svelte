@@ -60,7 +60,7 @@
 	.mf-legend {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.1875rem 0.5rem;
+		gap: 0.125rem 0.5rem;
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -114,7 +114,7 @@
 		min-width: 0;
 	}
 	.mf-legend-note {
-		margin: 0.25rem 0 0.25rem;
+		margin: 0.125rem 0 0;
 		font-family: var(--font-body);
 		font-size: var(--text-micro);
 		line-height: 1.3;

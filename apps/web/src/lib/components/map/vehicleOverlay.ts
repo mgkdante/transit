@@ -370,9 +370,10 @@ export function createVehicleOverlay(
 		}
 		for (const { feature, x, y, baseSize } of symbols) {
 			if (feature.properties.stale !== 1) continue;
-			const offset = feature.properties.mark
-				? VEHICLE_MARKER_GEOMETRY.silentBadge.pairedOffset
-				: VEHICLE_MARKER_GEOMETRY.silentBadge.offset;
+			const offset =
+				feature.properties.mark && zoom >= STATUS_BADGE_MIN_ZOOM
+					? VEHICLE_MARKER_GEOMETRY.silentBadge.pairedOffset
+					: VEHICLE_MARKER_GEOMETRY.silentBadge.offset;
 			drawSprite(
 				SILENT_ICON,
 				x + offset[0] * baseSize,

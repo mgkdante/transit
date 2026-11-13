@@ -6,7 +6,12 @@ import {
 	STATUS_BADGE_MIN_ZOOM,
 	VEHICLE_OVERLAY_RECEIPT,
 } from './vehicleOverlay';
-import { HEADING_ICON, SILENT_ICON, type VehicleSpriteReceipt } from './vehicleSprites';
+import {
+	HEADING_ICON,
+	SILENT_ICON,
+	VEHICLE_MARKER_GEOMETRY,
+	type VehicleSpriteReceipt,
+} from './vehicleSprites';
 
 type PaintCall = { kind: string; id?: string; values?: number[]; opacity?: number };
 
@@ -147,7 +152,7 @@ function feature(
 afterEach(() => vi.restoreAllMocks());
 
 describe('vehicle moving foreground', () => {
-	it('draws status badges from zoom 13 and leaves bodies and the not-reporting badge alone below it', () => {
+	it('draws status badges from zoom 13 and centres the not-reporting badge below it', () => {
 		const { overlay, calls, setCamera } = harness();
 		const scene: VehicleFC = {
 			type: 'FeatureCollection',
@@ -170,6 +175,15 @@ describe('vehicle moving foreground', () => {
 			'mark-a',
 			SILENT_ICON,
 		]);
+		// Bus 'a' sits at x 400 and has a status; its "!" moves aside only when the badge is drawn.
+		const silentCentreX = (zoom: number) => {
+			painted(zoom);
+			const [left, , size] = calls.find((call) => call.id === SILENT_ICON)!.values!;
+			return left + size / 2;
+		};
+		const { offset, pairedOffset } = VEHICLE_MARKER_GEOMETRY.silentBadge;
+		expect(silentCentreX(12.9)).toBeCloseTo(400 + offset[0], 3);
+		expect(silentCentreX(13)).toBeCloseTo(400 + pairedOffset[0] * 1.04, 3);
 		overlay.destroy();
 	});
 
