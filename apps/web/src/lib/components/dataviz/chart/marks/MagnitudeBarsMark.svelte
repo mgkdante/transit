@@ -125,12 +125,14 @@
 					<button
 						class="ranking-name dv-barmark-keyboard-row"
 						title={row.label}
-						aria-label={row.label}
+						aria-label={row.spoken ?? row.label}
 						aria-haspopup="dialog"
 						onclick={(event) => onRowButtonActivate(event, row)}>{row.label}</button
 					>
 				{:else if row.href}
-					<a class="ranking-name" title={row.label} href={row.href}>{row.label}</a>
+					<a class="ranking-name" title={row.label} href={row.href} aria-label={row.spoken}
+						>{row.label}</a
+					>
 				{:else}<span class="ranking-name" title={row.label}>{row.label}</span>{/if}
 				<div
 					class="ranking-track"
@@ -203,7 +205,7 @@
 									{#if row.tapPopover}
 										<g
 											role="button"
-											aria-label={row.label}
+											aria-label={row.spoken ?? row.label}
 											aria-haspopup="dialog"
 											aria-expanded="false"
 											tabindex="0"
@@ -214,7 +216,11 @@
 											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
 										</g>
 									{:else if row.href}
-										<a href={row.href} aria-label={row.label} class="dv-barmark-keyboard-row">
+										<a
+											href={row.href}
+											aria-label={row.spoken ?? row.label}
+											class="dv-barmark-keyboard-row"
+										>
 											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
 										</a>
 									{/if}
@@ -257,7 +263,8 @@
 			{#each spec.rows as r (r.key)}
 				<tr data-key={r.key}>
 					<th scope="row">
-						{#if r.href}<a href={r.href} tabindex="-1">{r.label}</a>{:else}{r.label}{/if}
+						{#if r.href}<a href={r.href} tabindex="-1" aria-label={r.spoken}>{r.label}</a
+							>{:else}{r.spoken ?? r.label}{/if}
 					</th>
 					<td>
 						{fmtWithUnit(

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
+	const display = transitDisplay();
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
@@ -160,7 +162,7 @@
 		href: string | null,
 		evidence: HotspotPopoverEvidence,
 	): ChartDatumPopoverModel {
-		const heading = entry.name ?? t.unnamed(entry.id);
+		const heading = nameFor(entry);
 		const rows: Array<{ label: string; value: string }> = [];
 		const severe = fmtPct(entry.severe_pct, { locale, suffix: t.units.pct });
 		if (severe != null) rows.push({ label: t.ladder.severeRateLabel, value: severe });
@@ -192,10 +194,10 @@
 		return {
 			key: `${entry.type}-${entry.id}`,
 			heading,
-			meta: t.tray.rowSubtitle(typeTag(entry.type) ?? entry.type, entry.id),
+			meta: typeTag(entry.type) ?? entry.type,
 			rows,
 			...(actionLabel && href
-				? { action: { href, label: actionLabel, ariaLabel: t.viewDetail(heading) } }
+				? { action: { href, label: actionLabel, ariaLabel: t.viewDetail(nameFor(entry, true)) } }
 				: {}),
 		};
 	}
@@ -212,24 +214,29 @@
 	}
 
 	const activeLadder = $derived(ladders.get(grainKey));
+	function nameFor(entry: HotspotEntry, spoken = false): string {
+		return navKindFor(entry.type) === 'line'
+			? display.lineName(entry.id, entry.name)[spoken ? 'spoken' : 'label']
+			: (entry.name ?? t.unnamed(entry.id));
+	}
 	const topHotspot = $derived<HotspotEntry | null>(activeLadder?.entries?.[0] ?? null);
-	const topHotspotName = $derived(
-		topHotspot ? (topHotspot.name ?? t.unnamed(topHotspot.id)) : null,
-	);
-	const verdictLine = $derived.by<string>(() => {
-		if (!topHotspot || topHotspotName == null) {
+	function verdictFor(spoken = false): string {
+		if (!topHotspot) {
 			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
 		}
+		const topHotspotName = nameFor(topHotspot, spoken);
 		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
 		return severe == null
 			? t.verdict.topNoRate(topHotspotName)
 			: t.verdict.topWithRate(topHotspotName, severe);
-	});
+	}
+	const verdictLine = $derived(verdictFor());
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
 
 	function ladderFor(kind: 'route' | 'stop', total: number | null | undefined) {
 		const entries = (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
 		const result = selectHotspotLadder(entries, cap, locale, {
+			directory: display.directory,
 			title: t.ladder.heading,
 			rowLabel: kind === 'route' ? t.type.route : t.type.stop,
 			xLabel: t.ladder.severeRateLabel,
@@ -258,7 +265,7 @@
 		return (activeLadder?.tray ?? [])
 			.filter((entry) => entry.type === kind)
 			.map((entry) => {
-				const title = entry.name ?? t.unnamed(entry.id);
+				const title = nameFor(entry);
 				return {
 					key: `${entry.type}-${entry.id}`,
 					title,
@@ -266,7 +273,7 @@
 					id: entry.id,
 					observationCount: entry.observation_count ?? null,
 					href: hrefFor(entry),
-					ariaLabel: t.viewDetail(title),
+					ariaLabel: t.viewDetail(nameFor(entry, true)),
 				};
 			});
 	}
@@ -466,7 +473,11 @@
 										aria-label={t.verdict.label}
 									>
 										{#if topHotspotHref}
-											<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
+											<a
+												class="hotspots-verdict-line"
+												href={topHotspotHref}
+												aria-label={verdictFor(true)}>{verdictLine}</a
+											>
 										{:else}
 											<p class="hotspots-verdict-line">{verdictLine}</p>
 										{/if}

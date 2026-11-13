@@ -12,6 +12,8 @@ const files = Object.fromEntries(
 		['/v1/stm/static/stops/S1.json', 'stop.json'],
 		['/v1/stm/static/stops_index.json', 'stops-index.json'],
 		['/v1/stm/static/routes_index.json', 'routes-index.json'],
+		['/v1/stm/historic/hotspots.json', 'hotspots.json'],
+		['/v1/stm/historic/repeat_offenders.json', 'repeat-offenders.json'],
 		['/v1/stm/live/stop_departures.json', 'departures.json'],
 		['/v1/stm/live/alerts.json', 'alerts.json'],
 		['/v1/stm/live/trips.json', 'trips.json'],

@@ -430,7 +430,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(capturedRow('trip-T1-11').tapPopover).toEqual({
 			key: 'trip-T1-11',
 			heading: 'Montagne / Sommet',
-			meta: 'Trip · T1',
+			meta: 'Trip T1',
 			rows: [
 				{ label: 'Severe-delay rate', value: '62%' },
 				{ label: '95% CI', value: '56%–70%' },
@@ -472,7 +472,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 		expect(capturedRow('trip-T0-').tapPopover).toEqual({
 			key: 'trip-T0-',
 			heading: 'Item T0',
-			meta: 'Trip · T0',
+			meta: 'Trip T0',
 			rows: [
 				{ label: 'Recurrence', value: 'recurrence not recorded' },
 				{ label: 'Readings', value: '0' },

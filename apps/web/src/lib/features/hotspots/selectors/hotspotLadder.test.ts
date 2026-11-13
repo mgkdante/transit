@@ -1,3 +1,4 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import { describe, it, expect } from 'vitest';
 import { selectHotspotLadder, type HotspotLadderLabels } from './hotspotLadder';
 import { SEVERE_DOMAIN } from '#lib/features/reliability/domains.ts';
@@ -163,4 +164,19 @@ describe('selectHotspotLadder', () => {
 		expect(spec.rows[0].href).toBeUndefined();
 		expect(spec.rows[0].tapPopover?.action).toBeUndefined();
 	});
+});
+it('ladder rows lead with the line number', () => {
+	const directory = createLineDirectory(
+		[{ id: '1-373', short: '1', long: 'Confederation', type: 1 }],
+		{ line: (id) => `Line ${id}` },
+	);
+	const result = selectHotspotLadder(
+		[{ type: 'route', id: '1-373', name: 'Confederation' }],
+		10,
+		'en',
+		{ ...labels, directory },
+	);
+	if (result.spec.kind !== 'magnitude-bars') throw new Error('expected rows');
+	expect(result.spec.rows[0].label).toBe('1 · Confederation');
+	expect(result.spec.rows[0].spoken).toBe('Line 1, Confederation');
 });

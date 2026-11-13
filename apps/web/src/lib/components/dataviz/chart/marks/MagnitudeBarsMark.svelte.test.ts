@@ -128,6 +128,22 @@ describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)',
 });
 
 describe('MagnitudeBarsMark — localized semantic AT table', () => {
+	it.each([undefined, 'Line 1, Confederation', 'Ligne 1, Confederation'])(
+		'uses the optional spoken name, falling back to the visible label (%s)',
+		(spoken) => {
+			const spec = baseSpec();
+			render(MagnitudeBarsMark, {
+				props: {
+					spec: { ...spec, rows: [{ ...spec.rows[0], label: '1 · Confederation', spoken }] },
+				},
+			});
+			expect(
+				within(screen.getByRole('table')).getByRole('link', {
+					name: spoken ?? '1 · Confederation',
+				}),
+			).toHaveTextContent('1 · Confederation');
+		},
+	);
 	it('keeps a visible chart entry available while its plot waits to mount', () => {
 		const { container } = render(MagnitudeBarsMark, { props: { spec: baseSpec('95% CI') } });
 		const figure = container.querySelector('figure') as HTMLElement;

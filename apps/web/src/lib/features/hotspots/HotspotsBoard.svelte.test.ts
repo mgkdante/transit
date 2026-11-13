@@ -352,8 +352,8 @@ describe('HotspotsBoard article', () => {
 				}),
 			);
 
-			const dialog = await screen.findByRole('dialog', { name: 'Item 51' });
-			expect(within(dialog).getByRole('link', { name: 'View detail for Item 51' })).toHaveAttribute(
+			const dialog = await screen.findByRole('dialog', { name: 'Line 51' });
+			expect(within(dialog).getByRole('link', { name: 'View detail for Line 51' })).toHaveAttribute(
 				'href',
 				'/lines/51',
 			);
@@ -389,7 +389,7 @@ describe('HotspotsBoard article', () => {
 		expect(capturedRow('stop-S1').tapPopover).toEqual({
 			key: 'stop-S1',
 			heading: 'Berri-UQAM',
-			meta: 'Stop · S1',
+			meta: 'Stop',
 			rows: [
 				{ label: 'Severe-delay rate', value: '70%' },
 				{ label: '95% CI', value: '69.9%–83.2%' },
@@ -404,8 +404,8 @@ describe('HotspotsBoard article', () => {
 		});
 		expect(capturedRow('route-51').tapPopover).toEqual({
 			key: 'route-51',
-			heading: 'Item 51',
-			meta: 'Line · 51',
+			heading: 'Line 51',
+			meta: 'Line',
 			rows: [
 				{ label: 'Severe-delay rate', value: '40%' },
 				{ label: 'Readings', value: '100' },
@@ -413,7 +413,7 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/lines/51',
 				label: 'View line',
-				ariaLabel: 'View detail for Item 51',
+				ariaLabel: 'View detail for Line 51',
 			},
 		});
 	});
@@ -425,7 +425,7 @@ describe('HotspotsBoard article', () => {
 		expect(capturedRow('stop-S1').tapPopover).toEqual({
 			key: 'stop-S1',
 			heading: 'Berri-UQAM',
-			meta: 'Arrêt · S1',
+			meta: 'Arrêt',
 			rows: [
 				{ label: 'Taux de retards graves', value: '70%' },
 				{ label: 'IC à 95 %', value: '69,9%–83,2%' },
@@ -441,7 +441,7 @@ describe('HotspotsBoard article', () => {
 		expect(capturedRow('route-51').tapPopover?.action).toEqual({
 			href: '/fr/lines/51',
 			label: 'Voir la ligne',
-			ariaLabel: 'Voir le détail de Élément 51',
+			ariaLabel: 'Voir le détail de Ligne 51',
 		});
 	});
 
@@ -568,7 +568,7 @@ describe('HotspotsBoard article', () => {
 		const detail = within(stopTable).getByRole('link', { name: /View detail for Quiet Ave/ });
 		expect(detail).toHaveAttribute('href', '/stop/S2');
 		const servedRow = detail.closest('tr') as HTMLTableRowElement;
-		expect(servedRow).toHaveTextContent('Stop · S2');
+		expect(servedRow).toHaveTextContent('Stop');
 		expect(servedRow).toHaveTextContent('12');
 		expect(servedRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 		const reason = stopTray.querySelector('[data-slot="hotspot-tray-reason"]') as HTMLElement;
@@ -582,12 +582,12 @@ describe('HotspotsBoard article', () => {
 		expect(lineTable).not.toBeNull();
 		const nullTitle = within(lineTable).getByText('Sparse Route');
 		const nullRow = nullTitle.closest('tr') as HTMLTableRowElement;
-		expect(nullRow).toHaveTextContent('Line · R2');
+		expect(nullRow).toHaveTextContent('Line');
 		expect(nullRow.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(1);
 		expect(nullRow).not.toHaveTextContent(/\b0\b/);
 		const zeroTitle = within(lineTable).getByText('Zero Route');
 		const zeroRow = zeroTitle.closest('tr') as HTMLTableRowElement;
-		expect(zeroRow).toHaveTextContent('Line · R3');
+		expect(zeroRow).toHaveTextContent('Line');
 		expect(
 			within(zeroRow.querySelector('[data-column="readings"]') as HTMLElement).getByText('0'),
 		).toBeInTheDocument();

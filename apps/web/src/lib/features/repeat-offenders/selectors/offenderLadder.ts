@@ -1,3 +1,4 @@
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 import type { Locale } from '#lib/i18n/index.ts';
 import {
 	encodeSevereLadder,
@@ -10,6 +11,7 @@ import type { RepeatOffenderEntry } from '#lib/v1/schemas/index.ts';
 export type { OffenderPopoverEvidence, OffenderLadderResult };
 
 export interface OffenderLadderLabels extends SevereLadderLabels<RepeatOffenderEntry> {
+	readonly directory?: LineDirectory;
 	unnamed: (e: RepeatOffenderEntry) => string;
 }
 
@@ -19,8 +21,24 @@ export function selectOffenderLadder(
 	locale: Locale,
 	labels: OffenderLadderLabels,
 ): OffenderLadderResult {
-	return encodeSevereLadder(entries, cap, locale, labels, {
+	const directory = labels.directory;
+	const result = encodeSevereLadder(entries, cap, locale, labels, {
 		key: (entry) => `${entry.type}-${entry.id}-${entry.route ?? ''}`,
-		label: (entry) => entry.route_name ?? labels.unnamed(entry),
+		label: (entry) =>
+			directory && entry.route
+				? directory.name(entry.route, entry.route_name).label
+				: (entry.route_name ?? labels.unnamed(entry)),
 	});
+	if (directory && result.spec.kind === 'magnitude-bars') {
+		result.spec = {
+			...result.spec,
+			rows: result.spec.rows.map((row, i) => ({
+				...row,
+				spoken: entries[i].route
+					? directory.name(entries[i].route!, entries[i].route_name).spoken
+					: row.label,
+			})),
+		};
+	}
+	return result;
 }

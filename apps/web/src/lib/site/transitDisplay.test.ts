@@ -17,11 +17,10 @@ describe('OC stop display names', () => {
 	])('%s → %s', (raw, display) => expect(stopDisplayName(raw)).toBe(display));
 });
 
-it('resolves display labels without modifying route ids', () => {
-	expect(lineLabel('1-373', [{ id: '1-373', short: '1' }], 'octranspo')).toBe('1');
-	expect(lineLabel('1-373', [], 'octranspo')).toBe('1');
-	expect(lineLabel('1-373', [], 'stm')).toBe('1-373');
-	expect(lineLabel('1-373', [], 'unknown')).toBe('1-373');
+it('does not rewrite an id that is missing from the index', () => {
+	expect(lineLabel('1-373', [{ id: '1-373', short: '1' }])).toBe('1');
+	expect(lineLabel('1-373', [])).toBe('1-373');
+	expect(lineLabel('fictional-city:opaque', [])).toBe('fictional-city:opaque');
 });
 
 it('derives occupancy availability from provider vehicles and preserves STM', () => {

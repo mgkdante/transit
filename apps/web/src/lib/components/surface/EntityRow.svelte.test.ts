@@ -115,10 +115,17 @@ describe.each(['stm', 'octranspo'])('EntityRow route display for %s', (provider)
 				title: 'Rideau',
 				routes: ['1-373'],
 			},
-			context: new Map([[Symbol.for('transit.v1.context'), () => ({ manifest: { provider } })]]),
+			context: new Map<symbol, unknown>([
+				[Symbol.for('transit.v1.context'), () => ({ manifest: { provider } })],
+				[
+					Symbol.for('transit.line-directory'),
+					() => createLineDirectory([{ id: '1-373', short: '1', type: 1 }], { line: (id) => id }),
+				],
+			]),
 		});
 		const link = screen.getByRole('link');
 		expect(link).toHaveAttribute('href', '/stop/stop-1');
-		expect(link).toHaveTextContent(provider === 'octranspo' ? /^Rideau 1$/ : /^Rideau 1-373$/);
+		expect(link).toHaveTextContent(/^Rideau 1$/);
 	});
 });
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';

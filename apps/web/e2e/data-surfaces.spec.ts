@@ -190,3 +190,17 @@ test('the status page stacks its coverage table on phones and says when data is 
 	expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 	await expect(page.getByRole('main').getByRole('status').first()).toBeVisible();
 });
+test('rankings name lines by number in both languages', async ({ page }) => {
+	for (const lang of PUBLISHED_LOCALES) {
+		await page.goto(localizeHref('/hotspots', lang));
+		const headline = page.locator('[data-slot="hotspots-verdict"]').getByRole('link');
+		await expect(headline).toContainText('1 · Confederation');
+		await expect(
+			page.getByRole('button', { name: 'Lansdowne', exact: true }).first(),
+		).toBeVisible();
+		await page.goto(localizeHref('/repeat-offenders', lang));
+		await expect(page.locator('[data-slot="offenders-hero"]').getByRole('link')).toHaveText(
+			'1 · Confederation',
+		);
+	}
+});
