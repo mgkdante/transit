@@ -3,12 +3,17 @@
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from types import MappingProxyType
 from typing import Literal
 
 ArchiveGrain = Literal["utc_day", "service_day", "month", "edition"]
 IndexFamily = Literal["realtime_snapshot", "alert_snapshot"]
+UTC_DAY_CLOSE_DELAY = timedelta(hours=6)
+
+
+def utc_day_closes_at(utc_date: date) -> datetime:
+    return datetime.combine(utc_date, time(), UTC) + timedelta(days=1) + UTC_DAY_CLOSE_DELAY
 
 
 @dataclass(frozen=True)
