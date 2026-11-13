@@ -35,10 +35,12 @@ export function trailingRouteWindow(file: RouteWindows, grain: 'week' | 'month')
 	const to = routeClosedThrough(file);
 	const row = file.periods_by_grain?.find((row) => row.grain === grain);
 	const rows = row?.by_daytype;
+	const days = to && row?.date ? (Date.parse(to) - Date.parse(row.date)) / 86400000 + 1 : null;
 	if (
 		!to ||
 		!row?.date ||
 		row.date > to ||
+		days !== (grain === 'week' ? 7 : 30) ||
 		!rows?.length ||
 		rows.some((r) => r.observation_count == null || r.on_time == null)
 	)
@@ -49,7 +51,7 @@ export function trailingRouteWindow(file: RouteWindows, grain: 'week' | 'month')
 			? rows.reduce((sum, r) => sum + (r[key] ?? 0) * r.observation_count!, 0) / observationCount
 			: null;
 	return {
-		window: { from: row.date, to, days: grain === 'week' ? 7 : 30 } satisfies ClosedWindow,
+		window: { from: row.date, to, days } satisfies ClosedWindow,
 		observationCount,
 		onTime: rows.reduce((n, r) => n + r.on_time!, 0),
 		avgDelayMin: weighted('avg_delay_min'),

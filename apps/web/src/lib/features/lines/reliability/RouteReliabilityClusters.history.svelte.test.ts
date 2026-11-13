@@ -1,3 +1,4 @@
+import { historyWeek } from './__fixtures__/closedWeek';
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { historyViewContract } from '#lib/features/reliability/__fixtures__/historyViewContract.ts';
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
@@ -192,7 +193,7 @@ const noDelayPartitions = [
 ] as LineHistoryPartition[];
 
 const current: RouteReliability = {
-	periods_by_grain: [{ grain: 'day', date: '2026-07-12' }],
+	periods_by_grain: historyWeek.periods_by_grain,
 	id: entityId,
 	generated_utc: generatedUtc,
 	periods: [

@@ -139,7 +139,8 @@ export function reliabilityVerdict(
 	];
 	const route =
 		window.kind === 'route' ||
-		(file != null &&
+		(window.kind === undefined &&
+			file != null &&
 			('periods_by_grain' in file ||
 				(file.id != null && file.periods?.some((p) => p.date != null || p.on_time != null))));
 	const trailingGrain = window.grain === 'month' ? 'month' : 'week';

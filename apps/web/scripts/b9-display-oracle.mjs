@@ -625,6 +625,8 @@ function sumField(rows, group, field) {
 
 function lineOracle(fixture, locale, view) {
 	const raw = routeFile(fixture);
+	const closedDate = raw.periods_by_grain?.find((row) => row.grain === 'day')?.date;
+	const closedDay = (raw.periods ?? []).find((p) => p.grain === 'day' && p.date === closedDate);
 	const retained = retainedLineDays(fixture, view);
 	const observationN = sumField(retained, 'delay', 'observation_count');
 	const delayN = sumField(retained, 'delay', 'in_clamp_observation_count');
@@ -647,11 +649,7 @@ function lineOracle(fixture, locale, view) {
 				severe_pct: pct(sumField(retained, 'delay', 'severe_count'), delayN),
 				observation_count: sumField(retained, 'delay', 'observation_count'),
 			}
-		: (raw.periods ?? []).find(
-				(row) =>
-					row.grain === 'day' &&
-					row.date === raw.periods_by_grain?.find((row) => row.grain === 'day')?.date,
-			);
+		: closedDay;
 	const cancellation = retained.length
 		? Object.fromEntries(
 				[
@@ -920,6 +918,7 @@ function lineOracle(fixture, locale, view) {
 		finite((raw.delay_by_crowding ?? []).find((row) => row.band === band)?.avg_delay_min),
 	]);
 	const c = TABLE_COPY[locale];
+	const histogram = histogramTable(closedDay?.delay_histogram ?? [], locale, true, c.observations);
 	return [
 		observation('line.day.otp_pct', finite(day?.otp_pct)),
 		observation('line.day.avg_delay_min', finite(day?.avg_delay_min)),
@@ -1023,7 +1022,7 @@ function lineOracle(fixture, locale, view) {
 				? table([c.crowdingBand, c.avg], delayByCrowdingRows, [' min'])
 				: table([], []),
 		),
-		observation('line.week.histogram', null),
+		observation('line.week.histogram', histogram),
 	];
 }
 
@@ -1777,8 +1776,8 @@ export function runOracleSelfCheck() {
 		expectedDomainObservations('rich', 'network').find(
 			(row) => row.id === 'network.verdict.delta_pct',
 		)?.value,
-		null,
-		'open network point has no published delta',
+		7,
+		'hand network delta 79-72',
 	);
 	expectLiteral(
 		expectedDomainObservations('rich', 'stop').find((row) => row.id === 'stop.range.severe_pct')
@@ -1810,7 +1809,8 @@ export function runOracleSelfCheck() {
 	const weekHistogram = expectedDomainObservations('rich', 'line').find(
 		(row) => row.id === 'line.week.histogram',
 	)?.value;
-	expectLiteral(weekHistogram, null, 'closed week has no published histogram');
+	const onTimeBin = weekHistogram.rows.find((bin) => bin.lo === 0 && bin.hi === 120);
+	expectLiteral(onTimeBin.count / (onTimeBin.hi - onTimeBin.lo), 2 / 3, 'hand closed-day density');
 	expectLiteral(
 		expectedScheduleTruth(FIXTURES.rich),
 		{ date: '2026-08-29', hasData: true, hasSchedule: true },

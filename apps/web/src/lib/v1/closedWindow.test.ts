@@ -41,3 +41,40 @@ it('treats every day as open when no anchor exists', () => {
 	expect(closedTrendPoints([{ date: '2026-11-10' }], 'day', null)).toEqual([]);
 	expect(recordClosedThrough(null)).toBeNull();
 });
+
+it.each([
+	['week', '2026-11-03'],
+	['month', '2026-10-11'],
+] as const)('rejects a stale %s window under a fresh anchor', (grain, date) => {
+	expect(
+		trailingRouteWindow(
+			{
+				...closedWeek,
+				periods_by_grain: [
+					{ grain: 'day', date: '2026-11-10' },
+					{ grain, date, by_daytype: [{ grain: 'weekday', observation_count: 100, on_time: 90 }] },
+				],
+			},
+			grain,
+		),
+	).toBeNull();
+});
+
+it('keeps cancellation and skipped-stop windows closed', async () => {
+	const { toReliabilityClusters } = await import('#lib/features/lines/reliability/clusters.ts');
+	const data = {
+		...closedWeek,
+		cancellations: [
+			{ grain: 'day', date: '2026-11-10', total_trip_days: 100, canceled_trip_days: 2 },
+			{ grain: 'day', date: '2026-11-11', total_trip_days: 100, canceled_trip_days: 90 },
+		],
+		skipped_stops: [
+			{ date: '2026-11-10', stop_time_update_count: 100, skipped_stop_count: 3 },
+			{ date: '2026-11-11', stop_time_update_count: 100, skipped_stop_count: 90 },
+		],
+	};
+	expect(toReliabilityClusters(data, { grain: 'week' }).strip).toMatchObject({
+		cancellationRatePct: 2,
+		skippedStopRatePct: 3,
+	});
+});

@@ -1,11 +1,6 @@
-import { reliabilityBadgeCopy } from '#lib/v1/verdict.copy.ts';
 import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 import { historyCopy } from '#lib/components/surface/historyCopy.ts';
 import type { VerdictCopy, VerdictSentenceArgs } from '#lib/v1/verdict.ts';
-export const stopBadgeCopy = {
-	en: { ...reliabilityBadgeCopy.en, share: 'not severely late' },
-	fr: { ...reliabilityBadgeCopy.fr, share: 'sans retard grave' },
-};
 
 const predictionShare = {
 	fr: ({ window, onTen, lateTen, hedge }: VerdictSentenceArgs) =>

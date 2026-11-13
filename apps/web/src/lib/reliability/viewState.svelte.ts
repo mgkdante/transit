@@ -100,7 +100,9 @@ export function createReliabilityViewState<
 	const seededGrain =
 		options.grains.keys.some((key) => key === 'shift') && params.get('grain') === 'shift'
 			? 'shift'
-			: seed.grain;
+			: params.has('grain')
+				? seed.grain
+				: firstGrain;
 	const explicitRangeToken = rangeChoice != null && params.get('grain') === rangeChoice;
 	const initialRequest =
 		rangeChoice == null ? emptyRequest() : historyRangeRequestFromSearchParams(params);

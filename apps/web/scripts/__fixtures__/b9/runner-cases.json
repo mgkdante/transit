@@ -1,0 +1,89 @@
+{
+	"line": [
+		["Reliability is uncertain: 80% of 100 delay observations in the on-time band.", 100],
+		["Fiabilité incertaine : 80 % de 100 relevés de retard dans la plage de ponctualité.", 100],
+		["Reliability is uncertain: 1000 delay observations, but no usable uncertainty range.", 1000],
+		[
+			"Fiabilité incertaine : 1000 relevés de retard, mais aucune plage d’incertitude exploitable.",
+			1000
+		],
+		["Not enough delay observations (12) to judge reliability.", 12],
+		[
+			"Ran reliably, about 9 in 10 delay observations in the on-time band (87%, 95% CI: 80–92%).",
+			null
+		],
+		[
+			"Service fiable, environ 9 relevés de retard sur 10 dans la plage de ponctualité (87 %, IC 95 % : 80–92 %).",
+			null
+		]
+	],
+	"stop": [
+		["In this daily summary, 85% of 120 known predictions are not severely late.", 120],
+		["Dans ce résumé quotidien, 85 % de 120 prévisions connues sont sans retard grave.", 120],
+		["This daily summary contains only 29 eligible known predictions.", 29],
+		["Ce résumé quotidien contient seulement 29 prévisions connues admissibles.", 29],
+		["This daily summary contains 1000 known predictions, but no usable uncertainty range.", 1000],
+		[
+			"Ce résumé quotidien contient 1000 prévisions connues, mais aucune plage d’incertitude exploitable.",
+			1000
+		],
+		["In this daily summary, about 9 in 10 known predictions are not severely late.", null],
+		["Dans ce résumé quotidien, environ 9 prévisions connues sur 10 sont sans retard grave.", null]
+	],
+	"cells": [
+		{
+			"fixture": "rich",
+			"locale": "en",
+			"surface": "line",
+			"path": "/lines/24?tab=reliability&from=2026-08-27&to=2026-08-29"
+		},
+		{
+			"fixture": "rich",
+			"locale": "fr",
+			"surface": "line",
+			"path": "/fr/lines/24?tab=reliability&grain=day"
+		},
+		{
+			"fixture": "rich",
+			"locale": "en",
+			"surface": "stop",
+			"path": "/stop/52095?tab=reliability"
+		},
+		{
+			"fixture": "rich",
+			"locale": "fr",
+			"surface": "stop",
+			"path": "/fr/stop/52095?tab=reliability"
+		},
+		{
+			"fixture": "rich",
+			"locale": "en",
+			"surface": "network",
+			"path": "/network?from=2026-08-27&to=2026-08-29"
+		},
+		{
+			"fixture": "rich",
+			"locale": "fr",
+			"surface": "network",
+			"path": "/fr/network"
+		},
+		{
+			"fixture": "sparse",
+			"locale": "en",
+			"surface": "line",
+			"path": "/lines/24?tab=reliability&grain=day"
+		},
+		{
+			"fixture": "sparse",
+			"locale": "en",
+			"surface": "stop",
+			"path": "/stop/52095?tab=reliability"
+		},
+		{
+			"fixture": "sparse",
+			"locale": "en",
+			"surface": "network",
+			"path": "/network"
+		}
+	]
+}

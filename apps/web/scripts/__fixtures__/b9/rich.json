@@ -50,7 +50,8 @@
 					"generated_utc": "2026-08-29T04:00:00Z",
 					"routes_prefix": "static/routes/",
 					"stops_prefix": "static/stops/",
-					"ttl_s": 86400
+					"ttl_s": 86400,
+					"routes_index": "static/routes_index.json"
 				},
 				"historic": {
 					"generated_utc": "2026-08-30T06:00:00Z",
@@ -298,11 +299,6 @@
 						"standing": 0.2,
 						"full": 0.1
 					}
-				},
-				{
-					"date": "2026-08-30",
-					"vehicles": 5,
-					"otp_pct": null
 				}
 			],
 			"weekly": [
@@ -894,7 +890,44 @@
 					"observation_count": 100,
 					"wilson_lo": 71,
 					"wilson_hi": 87,
-					"on_time": 80
+					"on_time": 80,
+					"delay_histogram": [
+						{
+							"lo_sec": null,
+							"hi_sec": -300,
+							"count": 2
+						},
+						{
+							"lo_sec": -300,
+							"hi_sec": -120,
+							"count": 5
+						},
+						{
+							"lo_sec": -120,
+							"hi_sec": 0,
+							"count": 20
+						},
+						{
+							"lo_sec": 0,
+							"hi_sec": 120,
+							"count": 80
+						},
+						{
+							"lo_sec": 120,
+							"hi_sec": 300,
+							"count": 50
+						},
+						{
+							"lo_sec": 300,
+							"hi_sec": 600,
+							"count": 20
+						},
+						{
+							"lo_sec": 600,
+							"hi_sec": null,
+							"count": 7
+						}
+					]
 				},
 				{
 					"grain": "week",
@@ -2063,6 +2096,22 @@
 			],
 			"schema_version": 1,
 			"methodology_version": "b9"
+		},
+		"static/routes_index.json": {
+			"generated_utc": "2026-08-29T04:00:00Z",
+			"routes": [
+				{
+					"id": "24",
+					"short": "24",
+					"long": "Sherbrooke",
+					"type": 3,
+					"reliability": true
+				}
+			]
+		},
+		"historic/route_reliability/index.json": {
+			"generated_utc": "2026-08-30T06:00:00Z",
+			"route_ids": ["24"]
 		}
 	},
 	"not_found": []

@@ -1,5 +1,6 @@
+import closedWindows from '../scripts/__fixtures__/b9/layout-windows.json' with { type: 'json' };
 import { test } from './layout-test';
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { localizeHref } from '../src/lib/i18n/routing';
 
 for (const provider of ['stm', 'octranspo'])
@@ -25,6 +26,7 @@ for (const provider of ['stm', 'octranspo'])
 								wilson_lo: 92,
 								wilson_hi: 98,
 							});
+						Object.assign(body, closedWindows.ready.line);
 						await route.fulfill({ response, json: body });
 					} else if (url.pathname.endsWith('routes_index.json')) {
 						const body = await response.json();
@@ -77,5 +79,103 @@ for (const provider of ['stm', 'octranspo'])
 							return badge!.y >= main!.y + main!.height;
 						})
 						.toBe(stacked);
+				}
+			});
+
+function brokenStatusWords(element: Element) {
+	const status = element.querySelector('[data-slot="entity-result-status"]')!;
+	const words: string[] = [];
+	const bounds = element.getBoundingClientRect();
+	const walker = document.createTreeWalker(status, NodeFilter.SHOW_TEXT);
+	while (walker.nextNode()) {
+		const node = walker.currentNode;
+		for (const match of node.textContent!.matchAll(/\S+/g)) {
+			const range = document.createRange();
+			range.setStart(node, match.index!);
+			range.setEnd(node, match.index! + match[0].length);
+			if (
+				new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size > 1 ||
+				[...range.getClientRects()].some((r) => r.left < bounds.left || r.right > bounds.right + 1)
+			)
+				words.push(match[0]);
+		}
+	}
+	return words;
+}
+async function holdReliability(page: Page, path: string) {
+	const gate = {
+		holding: true,
+		state: 'ready',
+		entered: () => {},
+		releases: [] as Array<() => void>,
+	};
+	await page.route('**/v1/**', async (route) => {
+		const url = new URL(route.request().url());
+		url.pathname = '/__layout/fresh' + url.pathname;
+		const response = await route.fetch({ url: url.href });
+		if (/historic\/(?:route|stop)_reliability\/(?!index)[^/]+\.json$/.test(url.pathname)) {
+			gate.entered();
+			if (gate.holding)
+				await new Promise<void>((resolve) => {
+					gate.releases.push(resolve);
+				});
+			if (gate.state === 'empty') {
+				await route.fulfill({ status: 404, body: '' });
+				return;
+			}
+			const body = await response.json();
+			Object.assign(
+				body,
+				closedWindows[gate.state === 'hedge' ? 'hedge' : 'ready'][
+					path === '/lines' ? 'line' : 'stop'
+				],
+			);
+			await route.fulfill({ response, json: body });
+		} else await route.fulfill({ response });
+	});
+	return gate;
+}
+for (const locale of ['en', 'fr'] as const)
+	for (const path of ['/lines', '/stops'])
+		for (const width of [320, 360, 390])
+			test(`${locale} ${path} ${width} reliability arrival keeps row height and whole words`, async ({
+				page,
+			}) => {
+				const gate = await holdReliability(page, path);
+				try {
+					await page.setViewportSize({ width, height: 900 });
+					let readyHeight: number | undefined;
+					for (const state of ['ready', 'hedge', 'empty']) {
+						gate.state = state;
+						gate.holding = true;
+						const pending = new Promise<void>((resolve) => {
+							gate.entered = resolve;
+						});
+						await page.goto(localizeHref(path, locale), { waitUntil: 'domcontentloaded' });
+						const row = page.locator('[data-slot="entity-result-row"]').first();
+						await row.scrollIntoViewIfNeeded();
+						await pending;
+						await page.evaluate(() => document.fonts.ready);
+						const before = (await row.boundingBox())!.height;
+						gate.holding = false;
+						for (const release of gate.releases.splice(0)) release();
+						if (state === 'empty') await expect(row.locator('[data-phase="empty"]')).toBeAttached();
+						else
+							await expect(
+								row.locator(
+									state === 'hedge'
+										? '[data-slot="reliability-hedge"]'
+										: '[data-slot="reliability-badge"]',
+								),
+							).toBeVisible();
+						const after = (await row.boundingBox())!.height;
+						expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+						if (state === 'ready') readyHeight = after;
+						expect(after).toBeLessThanOrEqual(readyHeight! + 1);
+						expect(await row.evaluate(brokenStatusWords)).toEqual([]);
+					}
+				} finally {
+					gate.holding = false;
+					for (const release of gate.releases.splice(0)) release();
 				}
 			});

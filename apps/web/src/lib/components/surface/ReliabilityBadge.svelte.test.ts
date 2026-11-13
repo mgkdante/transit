@@ -38,7 +38,10 @@ describe('ReliabilityBadge', () => {
 			props: { snapshot: snap({ phase }), locale: 'en' },
 		});
 		expect(screen.queryByRole('img')).toBeNull();
-		expect(container.textContent).toBe('');
+		expect(container.querySelector('[data-slot="reliability-placeholder"]')).toHaveAttribute(
+			'aria-hidden',
+			'true',
+		);
 	});
 });
 

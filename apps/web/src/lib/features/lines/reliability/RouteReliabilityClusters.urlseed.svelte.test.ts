@@ -50,12 +50,12 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		replaceState.mockClear();
 	});
 
-	it('seeds the rail from ?grain=week (a different window than the day default)', () => {
+	it('seeds the rail from ?grain=week (a different window than explicit day)', () => {
 		mockUrl = new URL('http://localhost/lines/51?grain=week');
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
 		const weekCaption = caption(container);
 
-		mockUrl = new URL('http://localhost/lines/51');
+		mockUrl = new URL('http://localhost/lines/51?grain=day');
 		const { container: dflt } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
 		expect(weekCaption).not.toBe(caption(dflt));
 		expect(weekCaption.length).toBeGreaterThan(0);
@@ -72,7 +72,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(mockUrl.searchParams.get('grain')).toBe('month');
 	});
 
-	it('falls back to day for an unknown ?grain value (readGrain enum-validates the hint)', () => {
+	it('falls back to the closed week for an unknown ?grain value (readGrain enum-validates the hint)', () => {
 		mockUrl = new URL('http://localhost/lines/51?grain=bogus');
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
 		mockUrl = new URL('http://localhost/lines/51');
@@ -80,7 +80,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(caption(container)).toBe(caption(dflt));
 		const checked = container.querySelectorAll('[role="radio"][aria-checked="true"]');
 		expect(checked.length).toBe(1);
-		expect(checked[0].textContent?.toLowerCase()).toContain('latest complete day');
+		expect(checked[0].textContent?.toLowerCase()).toContain('last 7 days');
 	});
 
 	it('mirrors explicit grain choices including day', async () => {
@@ -92,7 +92,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		await fireEvent.click(week!);
 		expect(mockUrl.searchParams.get('grain')).toBe('week');
 
-		const day = radioByText(container, 'today') ?? radioByText(container, 'day');
+		const day = radioByText(container, 'latest complete day');
 		expect(day).toBeDefined();
 		await fireEvent.click(day!);
 		expect(mockUrl.searchParams.get('grain')).toBe('day');
@@ -148,7 +148,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(checked?.textContent?.toLowerCase()).toContain('range');
 	});
 
-	it('bare ?from/?to fully OUTSIDE the window → reverts to the day view (no range prompt)', () => {
+	it('bare ?from/?to fully OUTSIDE the window → reverts to the default closed week (no range prompt)', () => {
 		mockUrl = new URL('http://localhost/lines/51?from=2020-01-01&to=2020-01-05');
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: rangeData, locale: 'en' },
@@ -160,16 +160,16 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(caption(container)).toBe(caption(dflt));
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
+		expect(checked?.textContent?.toLowerCase()).toContain('last 7 days');
 	});
 
-	it('bare ?from/?to with one out-of-window bound → reverts to the day view', () => {
+	it('bare ?from/?to with one out-of-window bound → reverts to the default closed week', () => {
 		mockUrl = new URL('http://localhost/lines/51?from=2026-06-16&to=2030-12-31');
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: rangeData, locale: 'en' },
 		});
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
+		expect(checked?.textContent?.toLowerCase()).toContain('last 7 days');
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 	});
 
@@ -178,7 +178,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: rangeData, locale: 'en' },
 		});
-		const day = radioByText(container, 'today') ?? radioByText(container, 'day');
+		const day = radioByText(container, 'latest complete day');
 		await fireEvent.click(day!);
 		expect(mockUrl.searchParams.get('from')).toBeNull();
 		expect(mockUrl.searchParams.get('to')).toBeNull();

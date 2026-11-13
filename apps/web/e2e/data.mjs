@@ -92,6 +92,14 @@ hedgedReliability.periods = [
 		wilson_hi: 86,
 	},
 ];
+hedgedReliability.periods_by_grain = [
+	{ grain: 'day', date: '2026-06-15' },
+	{
+		grain: 'week',
+		date: '2026-06-09',
+		by_daytype: [{ grain: 'weekday', observation_count: 368, on_time: 302 }],
+	},
+];
 files['/__layout/hedged/v1/stm/historic/route_reliability/24.json'] =
 	JSON.stringify(hedgedReliability);
 const hedgedRoutes = JSON.parse(files['/v1/stm/static/routes_index.json']);

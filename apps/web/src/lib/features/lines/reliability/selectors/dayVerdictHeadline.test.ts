@@ -2,19 +2,29 @@ import { verdictForWindow } from '#lib/v1/verdict.ts';
 import { describe, expect, it } from 'vitest';
 import type { IsoUtc, ReliabilityPeriod, RouteReliability } from '#lib/v1/index.ts';
 import { toReliabilityClusters } from '../clusters';
+import { closedWeek } from '../__fixtures__/closedWeek';
 import { selectDayVerdictHeadline } from './dayVerdictHeadline';
 
 const route = (periods?: readonly ReliabilityPeriod[]): RouteReliability => ({
 	id: '24',
+	periods_by_grain: [{ grain: 'day', date: '2026-08-14' }],
 	generated_utc: '2026-08-15T00:00:00Z' as IsoUtc,
 	periods: periods == null ? undefined : [...periods],
 });
 
-const fullHeadline = (data: RouteReliability) => {
-	const { otpPct, observationCount, onTime } = toReliabilityClusters(data, {
-		grain: 'day',
-	}).punctuality.headline;
-	return { otpPct, observationCount, onTime };
+const fullHeadline = (data: RouteReliability) =>
+	verdictForWindow(data, { kind: 'route', grain: 'day' });
+const present: Record<string, { otpPct: number; observationCount: number; onTime: number }> = {
+	'most-recent dated day rather than array order': {
+		otpPct: 82,
+		observationCount: 100,
+		onTime: 82,
+	},
+	'last duplicate-date day wins and preserves real zeroes': {
+		otpPct: 0,
+		observationCount: 30,
+		onTime: 0,
+	},
 };
 
 describe('selectDayVerdictHeadline', () => {
@@ -39,14 +49,14 @@ describe('selectDayVerdictHeadline', () => {
 			]),
 		],
 		[
-			'last dateless day wins',
+			'dateless days stay absent',
 			route([
 				{ grain: 'day', otp_pct: 60, observation_count: 40, on_time: 24 },
 				{ grain: 'day', otp_pct: 65, observation_count: 40, on_time: 26 },
 			]),
 		],
 		[
-			'no-day fallback uses first grouped week before month',
+			'no day does not borrow a week or month',
 			route([
 				{ grain: 'month', date: '2026-08-01', otp_pct: 68, observation_count: 300, on_time: 204 },
 				{ grain: 'week', date: '2026-08-11', otp_pct: 71, observation_count: 70, on_time: 50 },
@@ -61,14 +71,20 @@ describe('selectDayVerdictHeadline', () => {
 			route([{ grain: 'day', date: '2026-08-14', otp_pct: null }]),
 		],
 	] as const)('matches the full day-grain mapper for %s', (_label, data) => {
-		expect(selectDayVerdictHeadline(data)).toMatchObject(fullHeadline(data));
+		expect(fullHeadline(data)).toMatchObject(
+			present[_label] ?? { otpPct: null, observationCount: null, onTime: null },
+		);
 	});
 });
 
 it.each(['en', 'fr'] as const)(
 	'returns the shared finished Verdict in %s for the route header',
 	(locale) => {
-		const data = route([{ grain: 'week', otp_pct: 85, observation_count: 4000, on_time: 3400 }]);
+		const data = closedWeek;
+		expect(selectDayVerdictHeadline(data, locale)).toMatchObject({
+			otpPct: 84,
+			observationCount: 227378,
+		});
 		expect(selectDayVerdictHeadline(data, locale)).toEqual(
 			verdictForWindow(data, { kind: 'route' }, locale),
 		);

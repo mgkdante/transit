@@ -1,3 +1,6 @@
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost/lines/141?grain=day'), state: {} },
+}));
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';

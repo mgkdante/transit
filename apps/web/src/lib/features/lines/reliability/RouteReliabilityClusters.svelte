@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '#lib/utils/index.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import { selectDailyPercentiles } from '#lib/site/dailyPercentiles.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { selectVerdictWindow } from '#lib/v1/verdict.ts';
@@ -51,14 +52,13 @@
 
 	const copy = $derived(reliabilityCopy[locale]);
 	const windowLabels = $derived.by(() => {
-		const format = (date: string) =>
-			new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-				new Date(`${date}T00:00:00Z`),
-			);
+		const format = (date: string) => formatDateKey(date, locale);
 		const through = routeClosedThrough(data);
 		const label = (grain: 'week' | 'month', text: string) => {
 			const window = trailingRouteWindow(data, grain)?.window;
-			return window ? `${text} · ${format(window.from)}–${format(window.to)}` : text;
+			return window
+				? `${text} · ${copy.controls.closedSpan(format(window.from), format(window.to))}`
+				: text;
 		};
 		return {
 			day: through ? `${copy.controls.latestDay} · ${format(through)}` : copy.controls.latestDay,
@@ -75,7 +75,7 @@
 			copy: () => ({ ...copy.history, noData: absenceSentence('no-retained-data', locale) }),
 		},
 		grains: {
-			keys: ['day', 'week', 'month', 'range'] as const,
+			keys: ['week', 'day', 'month', 'range'] as const,
 			labels: () => windowLabels,
 		},
 		apply: (current, retained) =>
@@ -104,7 +104,7 @@
 					dateRange: normalizedRange,
 					...(retainedReady && view.history.value != null ? { retained: view.history.value } : {}),
 				}
-			: { grain: mode, automaticHeadline: view.verdictWindow.grain == null },
+			: { grain: mode },
 	);
 
 	const clusters = $derived(

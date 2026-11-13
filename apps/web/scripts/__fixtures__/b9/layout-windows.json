@@ -1,0 +1,66 @@
+{
+	"ready": {
+		"line": {
+			"periods_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29"
+				},
+				{
+					"grain": "week",
+					"date": "2026-08-23",
+					"by_daytype": [
+						{
+							"grain": "weekday",
+							"observation_count": 1000,
+							"on_time": 950
+						}
+					]
+				}
+			]
+		},
+		"stop": {
+			"periods": [
+				{
+					"grain": "week",
+					"otp_pct": 95,
+					"observation_count": 1000,
+					"wilson_lo": 92,
+					"wilson_hi": 98
+				}
+			]
+		}
+	},
+	"hedge": {
+		"line": {
+			"periods_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29"
+				},
+				{
+					"grain": "week",
+					"date": "2026-08-23",
+					"by_daytype": [
+						{
+							"grain": "weekday",
+							"observation_count": 368,
+							"on_time": 302
+						}
+					]
+				}
+			]
+		},
+		"stop": {
+			"periods": [
+				{
+					"grain": "week",
+					"otp_pct": 82,
+					"observation_count": 368,
+					"wilson_lo": 78,
+					"wilson_hi": 86
+				}
+			]
+		}
+	}
+}

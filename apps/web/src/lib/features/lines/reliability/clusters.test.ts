@@ -1,5 +1,5 @@
-import { closedWeek, withClosedPeriods } from './__fixtures__/closedWeek';
-import { verdictForWindow } from '#lib/v1/verdict.ts';
+import { closedWeek, juneClosedDays, withClosedPeriods } from './__fixtures__/closedWeek';
+import { verdictForWindow, selectHeadlinePeriod } from '#lib/v1/verdict.ts';
 import { selectDayVerdictHeadline } from './selectors/dayVerdictHeadline';
 import { describe, expect, it } from 'vitest';
 import type { RouteReliability, IsoUtc, LineHistoryRange } from '#lib/v1/index.ts';
@@ -51,7 +51,7 @@ const populated: RouteReliability = withClosedPeriods({
 	id: '161',
 	periods: [
 		{ grain: 'week', otp_pct: 71, avg_delay_min: 3.2, p50_min: 1.0, p90_min: 8.4, severe_pct: 4 },
-		{ grain: 'day', otp_pct: 82, avg_delay_min: 2.1, p50_min: 0.5, p90_min: 6.0, severe_pct: 3 },
+		...juneClosedDays,
 		{ grain: 'month', otp_pct: 68, avg_delay_min: 3.9, p50_min: 1.2, p90_min: 9.1, severe_pct: 5 },
 	],
 	headway: [
@@ -114,9 +114,14 @@ describe('toReliabilityClusters — populated fixture', () => {
 		expect(c.strip.p90Min).toBeNull();
 	});
 
+	it.each([
+		['week', 76],
+		['month', 74],
+	] as const)('picks the MOST-RECENT %s (F1)', (grain, otp_pct) => {
+		expect(selectHeadlinePeriod(granular.periods ?? [], grain)).toMatchObject({ grain, otp_pct });
+	});
 	it('falls back to the first CALENDAR period when the grain is absent', () => {
-		const c = toReliabilityClusters(populated, { grain: 'year' });
-		expect(c.strip.otpPct).toBe(82);
+		expect(toReliabilityClusters(populated, { grain: 'year' }).strip.otpPct).toBe(82);
 	});
 
 	it('carries p50 onto the strip (daily grain)', () => {
@@ -988,7 +993,7 @@ describe('shared confidence for service metric tones', () => {
 						},
 					],
 				},
-				{ grain: 'day', automaticHeadline: false },
+				{ grain: 'day' },
 			);
 			expect(result.serviceDelivered.serviceCompletenessPct).toBe(100);
 			expect(result.serviceDelivered.verdictStatus).toBe('tentative');

@@ -747,3 +747,16 @@ it('ignores a day period after closed-through', async () => {
 		'absent',
 	);
 });
+
+it('honours an explicit stop kind over route-shaped fields', () => {
+	expect(
+		verdictForWindow(
+			{
+				id: 'test',
+				periods_by_grain: [],
+				periods: [{ grain: 'week', otp_pct: 85, observation_count: 100, on_time: 85 }],
+			},
+			{ kind: 'stop' },
+		),
+	).toMatchObject({ otpPct: 85, observationCount: 100 });
+});

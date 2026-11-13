@@ -145,7 +145,6 @@ export interface ToReliabilityClustersOpts {
 	readonly verdict?: ReliabilityVerdict;
 	readonly locale?: Locale;
 	readonly grain?: string;
-	readonly automaticHeadline?: boolean;
 	readonly selectedDate?: string;
 	readonly dateRange?: { readonly start: string; readonly end: string };
 	readonly retained?: Pick<RetainedLineHistory, 'aggregate' | 'retainedDayCount'>;
@@ -264,21 +263,23 @@ function windowByGrain<T extends { date?: string | null }>(
 	grain: string,
 	selectedDate: string | undefined,
 	dateRange: { readonly start: string; readonly end: string } | undefined,
+	closedThrough?: string | null,
 ): readonly T[] {
 	const dated = rows.filter((r): r is T & { date: string } => r.date != null);
-	if (dated.length === 0) return rows;
+	if (dated.length === 0) return closedThrough === undefined ? rows : [];
 	if (dateRange) {
 		const lo = dateRange.start <= dateRange.end ? dateRange.start : dateRange.end;
 		const hi = dateRange.start <= dateRange.end ? dateRange.end : dateRange.start;
 		return dated.filter((r) => r.date >= lo && r.date <= hi);
 	}
-	const latest = dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
+	if (closedThrough === null) return [];
+	const latest = closedThrough ?? dated.reduce((m, r) => (r.date > m ? r.date : m), dated[0].date);
 	if (grain === 'day') {
 		const target = selectedDate ?? latest;
 		return dated.filter((r) => r.date === target);
 	}
 	const cutoff = isoMinusDays(latest, (grain === 'week' ? 7 : 30) - 1);
-	return dated.filter((r) => r.date >= cutoff);
+	return dated.filter((r) => r.date >= cutoff && r.date <= latest);
 }
 
 function lastNDays<T extends { date?: string | null }>(
@@ -464,23 +465,37 @@ export function toReliabilityClusters(
 
 	const exactCancellation = retained?.aggregate.cancellation.value ?? null;
 	const exactSkippedStops = retained?.aggregate.skippedStops.value ?? null;
+	const closedRates = !dateRange && (grain === 'week' || grain === 'month');
 	const cancellationRatePct =
 		exactCancellation?.cancellationRatePct == null
 			? (pooledRate(
-					windowByGrain(allCancellations, grain, selectedDate, dateRange),
+					windowByGrain(
+						allCancellations,
+						grain,
+						selectedDate,
+						dateRange,
+						closedRates ? closedThrough : undefined,
+					),
 					(c) => c.canceled_trip_days,
 					(c) => c.total_trip_days,
 					1,
-				) ?? mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct))
+				) ??
+				(closedRates ? null : mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct)))
 			: roundHalfAwayFromZero(exactCancellation.cancellationRatePct, 1);
 	const skippedStopRatePct =
 		exactSkippedStops == null
 			? (pooledRate(
-					windowByGrain(allSkipped, grain, selectedDate, dateRange),
+					windowByGrain(
+						allSkipped,
+						grain,
+						selectedDate,
+						dateRange,
+						closedRates ? closedThrough : undefined,
+					),
 					(s) => s.skipped_stop_count,
 					(s) => s.stop_time_update_count,
 					1,
-				) ?? mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct))
+				) ?? (closedRates ? null : mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct)))
 			: roundHalfAwayFromZero(exactSkippedStops.skippedStopRatePct, 1);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 

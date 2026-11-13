@@ -1,16 +1,24 @@
+import { formatDateKey } from '#lib/utils/time.ts';
 import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 import type { VerdictCopy, VerdictSentenceArgs } from './verdict';
-export const reliabilityBadgeCopy = {
-	en: { share: 'on time', weekTo: (date: string) => `week to ${date}`, week: 'last 7 days' },
+export const reliabilityBadgeCopy = defineCopy({
+	en: {
+		share: 'on time',
+		stopShare: 'not severely late',
+		weekTo: (date: string) => `week to ${date}`,
+		week: 'last 7 days',
+	},
 	fr: {
 		share: 'à l’heure',
+		stopShare: 'sans retard grave',
 		weekTo: (date: string) => `semaine au ${date}`,
 		week: '7 derniers jours',
 	},
-};
+});
 export const verdictCopy = defineCopy({
 	fr: {
-		closedWindow: ({ from, to }) => `du ${from} au ${to} (jours complets)`,
+		closedWindow: ({ from, to }) =>
+			`du ${formatDateKey(from, 'fr')} au ${formatDateKey(to, 'fr')} (jours complets)`,
 		windowPhrase: {
 			day: 'selon le dernier bilan',
 			week: 'cette semaine',
@@ -35,7 +43,8 @@ export const verdictCopy = defineCopy({
 		hedgeCI: (otp: number, lo: number, hi: number) => ` (${otp} %, IC 95 % : ${lo}–${hi} %)`,
 	},
 	en: {
-		closedWindow: ({ from, to }) => `from ${from} to ${to} (complete days)`,
+		closedWindow: ({ from, to }) =>
+			`from ${formatDateKey(from, 'en')} to ${formatDateKey(to, 'en')} (complete days)`,
 		windowPhrase: {
 			day: 'in the latest summary',
 			week: 'this week',

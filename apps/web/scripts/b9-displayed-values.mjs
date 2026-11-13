@@ -1,3 +1,4 @@
+import runnerCases from './__fixtures__/b9/runner-cases.json' with { type: 'json' };
 import { spawn } from 'node:child_process';
 import {
 	existsSync,
@@ -34,27 +35,7 @@ const WRANGLER = join(WEB_ROOT, '../../node_modules/wrangler/bin/wrangler.js');
 const EXPECTED_WRANGLER = JSON.parse(readFileSync(join(WEB_ROOT, '../../package.json'), 'utf8'))
 	.devDependencies?.wrangler;
 const REPLAY_PREFIX = '/v1/stm/';
-const CELLS = Object.freeze([
-	{
-		fixture: 'rich',
-		locale: 'en',
-		surface: 'line',
-		path: '/lines/24?tab=reliability&from=2026-08-27&to=2026-08-29',
-	},
-	{ fixture: 'rich', locale: 'fr', surface: 'line', path: '/fr/lines/24?tab=reliability' },
-	{ fixture: 'rich', locale: 'en', surface: 'stop', path: '/stop/52095?tab=reliability' },
-	{ fixture: 'rich', locale: 'fr', surface: 'stop', path: '/fr/stop/52095?tab=reliability' },
-	{
-		fixture: 'rich',
-		locale: 'en',
-		surface: 'network',
-		path: '/network?from=2026-08-27&to=2026-08-29',
-	},
-	{ fixture: 'rich', locale: 'fr', surface: 'network', path: '/fr/network' },
-	{ fixture: 'sparse', locale: 'en', surface: 'line', path: '/lines/24?tab=reliability' },
-	{ fixture: 'sparse', locale: 'en', surface: 'stop', path: '/stop/52095?tab=reliability' },
-	{ fixture: 'sparse', locale: 'en', surface: 'network', path: '/network' },
-]);
+const CELLS = Object.freeze(runnerCases.cells);
 
 function invariant(condition, message) {
 	if (!condition) throw new Error(`B9 runner invariant: ${message}`);
@@ -359,7 +340,7 @@ async function collectLine(page, cell) {
 	const severe = parseNumber(severeText);
 	const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
 	const week = grain.getByRole('radio', {
-		name: cell.locale === 'fr' ? 'Cette semaine' : 'This week',
+		name: cell.locale === 'fr' ? /Dernier jour complet/ : /Latest complete day/,
 	});
 	let histogram = null;
 	if ((await week.count()) > 0 && (await week.isEnabled())) {
@@ -372,8 +353,8 @@ async function collectLine(page, cell) {
 						? 'Plage de dates'
 						: 'Date range'
 					: cell.locale === 'fr'
-						? 'Dernier jour'
-						: 'Latest day',
+						? /Dernier jour complet/
+						: /Latest complete day/,
 			})
 			.click();
 	}
@@ -1172,7 +1153,7 @@ function latestDatedRow(rows) {
 
 function expectedSurfaceState(cell, fixture) {
 	const rows = {
-		line: fixture.files['historic/route_reliability/24.json']?.periods?.filter(
+		line: fixture.files['historic/route_reliability/24.json']?.periods_by_grain?.filter(
 			(row) => row.grain === 'day',
 		),
 		stop: fixture.files['historic/stop_reliability/52095.json']?.daily,
@@ -1232,7 +1213,9 @@ async function verifyControls(page, cell) {
 		const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
 		await page.evaluate(() => (window.__b9Phase = 'week'));
 		await grain
-			.getByRole('radio', { name: cell.locale === 'fr' ? 'Cette semaine' : 'This week' })
+			.getByRole('radio', {
+				name: cell.locale === 'fr' ? /Dernier jour complet/ : /Latest complete day/,
+			})
 			.click();
 		await page.locator('[data-slot="histogram-mark"]').waitFor({ state: 'attached' });
 		await page.evaluate(() => (window.__b9Phase = 'range'));
@@ -1274,7 +1257,9 @@ async function verifyControls(page, cell) {
 			`${cell.path} multi-day percentiles did not stand down`,
 		);
 		await grain
-			.getByRole('radio', { name: cell.locale === 'fr' ? 'Dernier jour' : 'Latest day' })
+			.getByRole('radio', {
+				name: cell.locale === 'fr' ? /Dernier jour complet/ : /Latest complete day/,
+			})
 			.click();
 	} else if (cell.surface === 'stop') {
 		const grain = page.locator('[data-slot="surface-rail"] [data-slot="grain-picker"]').first();
@@ -1884,6 +1869,38 @@ async function settleSurface(page, cell, fixture) {
 	);
 }
 
+async function verifyClosedWeek(page, cell, fixture) {
+	if (cell.surface !== 'line' || cell.fixture !== 'rich') return;
+	const week = expectedDefaultLineHeadline(fixture);
+	invariant(
+		parseNumber(await page.locator('[data-slot="verdict"]').first().innerText()) === week.otp_pct,
+		'banner closed-week percentage mismatch',
+	);
+	const through = fixture.files['historic/route_reliability/24.json'].periods_by_grain.find(
+		(row) => row.grain === 'day',
+	).date;
+	const date = new Intl.DateTimeFormat(cell.locale, {
+		month: 'short',
+		day: 'numeric',
+		timeZone: 'UTC',
+	}).format(new Date(through + 'T00:00:00Z'));
+	invariant(
+		(await page.locator('[data-slot="verdict"]').first().innerText()).includes(date),
+		'banner closed-week date mismatch',
+	);
+	await page.goto(new URL((cell.locale === 'fr' ? '/fr' : '') + '/lines', page.url()).href);
+	await page.getByTestId('lines-sort-worst').click();
+	const badge = page
+		.locator('[data-slot="reliability-badge"], [data-slot="reliability-hedge"]')
+		.first();
+	await badge.waitFor({ state: 'visible' });
+	const label = await badge.getAttribute('aria-label');
+	invariant(
+		Number(label?.match(/(\d+)\s*%/u)?.[1]) === week.otp_pct && label.includes(date),
+		'list closed-week percentage or date mismatch',
+	);
+}
+
 async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic = true } = {}) {
 	const selfCheck = runRunnerSelfCheck();
 	const built = await ensureBuild();
@@ -2097,6 +2114,12 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 						.map((entry) => `${entry.lane}|${entry.path}|${entry.status}`)
 						.sort(),
 				});
+				await verifyClosedWeek(page, cell, fixture);
+				invariant(
+					replay.state.outbound.length === 0 &&
+						replay.state.ledger.every((entry) => entry.status !== 599),
+					'closed-week list replay escaped its fixture',
+				);
 				await context.close();
 			}
 			transcripts.push(transcript);
@@ -2144,42 +2167,13 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 }
 
 function runRunnerSelfCheck() {
-	for (const [text, expected] of [
-		['Reliability is uncertain: 80% of 100 delay observations in the on-time band.', 100],
-		['Fiabilité incertaine : 80 % de 100 relevés de retard dans la plage de ponctualité.', 100],
-		['Reliability is uncertain: 1000 delay observations, but no usable uncertainty range.', 1000],
-		[
-			'Fiabilité incertaine : 1000 relevés de retard, mais aucune plage d’incertitude exploitable.',
-			1000,
-		],
-		['Not enough delay observations (12) to judge reliability.', 12],
-		[
-			'Ran reliably, about 9 in 10 delay observations in the on-time band (87%, 95% CI: 80–92%).',
-			null,
-		],
-		[
-			'Service fiable, environ 9 relevés de retard sur 10 dans la plage de ponctualité (87 %, IC 95 % : 80–92 %).',
-			null,
-		],
-	]) {
+	for (const [text, expected] of runnerCases.line) {
 		invariant(
 			lineVerdictObservationCount(text) === expected,
 			`line verdict observation count: ${text}`,
 		);
 	}
-	for (const [text, expected] of [
-		['In this daily summary, 85% of 120 known predictions are not severely late.', 120],
-		['Dans ce résumé quotidien, 85 % de 120 prévisions connues sont sans retard grave.', 120],
-		['This daily summary contains only 29 eligible known predictions.', 29],
-		['Ce résumé quotidien contient seulement 29 prévisions connues admissibles.', 29],
-		['This daily summary contains 1000 known predictions, but no usable uncertainty range.', 1000],
-		[
-			'Ce résumé quotidien contient 1000 prévisions connues, mais aucune plage d’incertitude exploitable.',
-			1000,
-		],
-		['In this daily summary, about 9 in 10 known predictions are not severely late.', null],
-		['Dans ce résumé quotidien, environ 9 prévisions connues sur 10 sont sans retard grave.', null],
-	]) {
+	for (const [text, expected] of runnerCases.stop) {
 		invariant(
 			stopVerdictObservationCount(text) === expected,
 			`stop verdict observation count: ${text}`,

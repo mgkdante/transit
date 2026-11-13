@@ -3,7 +3,6 @@
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 	import { reliabilityBadgeCopy } from '#lib/v1/verdict.copy.ts';
-	import { stopBadgeCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 
 	export interface ReliabilityBadgeProps {
 		snapshot: ReliabilitySnapshot;
@@ -13,7 +12,7 @@
 
 	let { snapshot, locale, class: className }: ReliabilityBadgeProps = $props();
 
-	const copy = $derived((snapshot.kind === 'stop' ? stopBadgeCopy : reliabilityBadgeCopy)[locale]);
+	const copy = $derived(reliabilityBadgeCopy[locale]);
 	const windowLabel = $derived(
 		snapshot.closedThrough
 			? copy.weekTo(
@@ -40,11 +39,15 @@
 	);
 	const show = $derived(snapshot.phase === 'ready' && pctText != null);
 	const hedged = $derived(snapshot.verdict === 'absent' || snapshot.verdict === 'tentative');
-	const label = $derived(pctText ? `${pctText} ${copy.share}, ${windowLabel}` : '');
+	const label = $derived(
+		pctText
+			? `${pctText} ${snapshot.kind === 'stop' ? copy.stopShare : copy.share}, ${windowLabel}`
+			: '',
+	);
 	const hedgeLabel = $derived(snapshot.hedge ?? hedges[locale]);
 </script>
 
-<span class="reliability-slot">
+<span class="reliability-slot" data-phase={snapshot.phase}>
 	{#if show && hedged}
 		<span
 			data-slot="reliability-hedge"
@@ -71,24 +74,33 @@
 			<span class="reliability-badge-pct" aria-hidden="true">{pctText}</span>
 			<span aria-hidden="true">{windowLabel}</span>
 		</span>
+	{:else}
+		<span
+			class="reliability-badge reliability-placeholder"
+			data-slot="reliability-placeholder"
+			aria-hidden="true"><span>—</span><span>{copy.week}</span></span
+		>
 	{/if}
 </span>
 
 <style>
 	.reliability-slot {
 		display: block;
-		min-block-size: 3lh;
 		max-inline-size: 100%;
 	}
 	.reliability-badge {
 		display: flex;
 		flex-direction: column;
-		overflow-wrap: anywhere;
+		overflow-wrap: normal;
+		word-break: normal;
 		font-family: var(--font-mono);
 		font-size: var(--text-small);
 		color: var(--foreground);
 		font-variant-numeric: tabular-nums;
 		white-space: normal;
+	}
+	.reliability-placeholder {
+		visibility: hidden;
 	}
 	.reliability-badge-pct {
 		font-weight: 600;
