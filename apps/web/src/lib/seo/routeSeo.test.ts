@@ -256,3 +256,15 @@ describe('resolveDatasetSeo', () => {
 		expect(resolveDatasetSeo('en').name).not.toBe(resolveDatasetSeo('fr').name);
 	});
 });
+
+it('the last crumb takes the page’s own name when one is given', () => {
+	for (const path of ['/lines/1-373', '/stop/S1']) {
+		expect(resolveBreadcrumbTrail(path, 'en', 'Published name').at(-1)?.name).toBe(
+			'Published name',
+		);
+		expect(
+			breadcrumbItemsForHead(path, 'en', ORIGIN, undefined, 'Published name').at(-1)?.name,
+		).toBe('Published name');
+		expect(resolveBreadcrumbTrail(path, 'en').at(-1)?.name).toBe(path.split('/').at(-1));
+	}
+});

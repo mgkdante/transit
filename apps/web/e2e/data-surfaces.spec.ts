@@ -4,6 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { copy as healthCopy } from '../src/lib/features/health/health.copy';
 import { stopReliabilityCopy } from '../src/lib/features/stops/reliability/stops-reliability.copy';
 import { detailCopy } from '../src/lib/features/stops/stops.copy';
+import { createLineDirectory } from '../src/lib/site/lineDirectory';
+import { routeNameFallback } from '../src/lib/site/absence';
 import { tripCopy } from '../src/lib/features/trips/trips.copy';
 import { DEFAULT_LOCALE as locale, PUBLISHED_LOCALES } from '../src/lib/i18n/config';
 import { localizeHref } from '../src/lib/i18n/routing';
@@ -13,7 +15,7 @@ const fixture = (name: string) =>
 	JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'));
 const departures = fixture('departures.json');
 const stop = Object.keys(departures.stops)[0]!;
-const trip = Object.keys(fixture('trips.json').trips)[0]!;
+const trips = fixture('trips.json').trips;
 const grains = fixture('stop-reliability.json').periods.map(
 	(period: { grain: string }) => period.grain,
 );
@@ -53,11 +55,22 @@ async function openRail(page: Page) {
 }
 
 test('a trip page shows one heading without breadcrumbs', async ({ page }) => {
-	await page.goto(`/trip/${trip}`);
-	await expect(page.getByRole('navigation', { name: /Breadcrumb|Fil d/ })).toHaveCount(0);
-	await expect(
-		page.getByRole('heading', { name: tripCopy[locale].heading(trip), exact: true }),
-	).toHaveCount(1);
+	for (const lang of PUBLISHED_LOCALES) {
+		const directory = createLineDirectory(fixture('routes-index.json').routes, {
+			line: (id) => routeNameFallback(id, lang),
+		});
+		for (const id of [Object.keys(trips)[0], 'TLine']) {
+			const route = trips[id].route;
+			const heading = directory.spoken(directory.number(route));
+			await page.goto(localizeHref('/trip/' + id, lang));
+			await expect(page.getByRole('navigation', { name: /Breadcrumb|Fil d/ })).toHaveCount(0);
+			await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
+			await expect(
+				page.getByRole('link', { name: tripCopy[lang].backLine(heading), exact: true }),
+			).toHaveAttribute('href', localizeHref('/lines/' + route, lang));
+			await expect(page).toHaveTitle(heading + ' · Transit');
+		}
+	}
 });
 
 test('status chips filter the departures and report their pressed state', async ({ page }) => {

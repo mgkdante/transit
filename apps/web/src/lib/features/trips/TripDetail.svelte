@@ -3,14 +3,18 @@
 	import '#lib/components/surface/compact-row.css';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
-	const { line } = transitDisplay();
+	const { line, directory } = transitDisplay();
 	import { liveAbsenceReason } from '#lib/site/absence.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { mapHrefFor, routeFor } from '#lib/nav/index.ts';
 	import { createLiveResource } from '#lib/v1/live/resource.ts';
-	import { getStopsIndex } from '#lib/v1/repositories/static.ts';
+	import { untrack } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
+	import { usePageTitle } from '#lib/seo/pageTitle.ts';
+	import { tripDirection } from './tripDirection';
+	import { getRoute, getStopsIndex } from '#lib/v1/repositories/static.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import type { Trip, StopsIndex } from '#lib/v1/index.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
@@ -51,6 +55,44 @@
 		}),
 	);
 	const trip = $derived<Trip | null>(trips.data?.trips?.[id] ?? null);
+	const titles = new SvelteMap<string, Promise<string>>();
+	let resolved = $state<{ id: string; title: string } | null>(null);
+	$effect(() => {
+		const current = trip;
+		const tripId = id;
+		if (!current) return;
+		let active = true;
+		let pending = untrack(() => titles.get(tripId));
+		if (!pending) {
+			const lineTitle = untrack(() =>
+				current.route ? directory.spoken(directory.number(current.route)) : t.heading(tripId),
+			);
+			pending = (current.route ? getRoute(current.route) : Promise.resolve(null))
+				.catch(() => null)
+				.then((route) => {
+					const headsign = tripDirection(
+						(current.stops ?? []).map((stop) => stop.stop),
+						route?.directions ?? [],
+					);
+					return headsign ? lineTitle + ' · ' + headsign : lineTitle;
+				});
+			titles.set(tripId, pending);
+		}
+		void pending.then((title) => {
+			if (active) resolved = { id: tripId, title };
+		});
+		return () => {
+			active = false;
+		};
+	});
+	const heading = $derived(trip && resolved?.id === id ? resolved.title : null);
+	usePageTitle(() => heading);
+	const pageResource = $derived({
+		...trips,
+		data: trip && heading === null ? null : trips.data,
+		loading: trips.loading || (trip != null && heading === null),
+		settled: trips.settled && !(trip && heading === null),
+	});
 	const unknownStatusAndDelay = $derived(trip?.status === 'unknown' && trip.delay_min == null);
 	const stopsIndex = createResource<StopsIndex | null>(() => getStopsIndex());
 	const stopNameById = $derived.by<Record<string, string>>(() => {
@@ -93,17 +135,17 @@
 	/>
 {/snippet}
 
-<ResourceBoundary resource={trips} lang={locale}>
+<ResourceBoundary resource={pageResource} lang={locale}>
 	{#snippet children(_file)}
 		<DetailFrame data-slot="trip-detail" measure="46rem">
 			{#snippet header()}
 				<ArticleHeader
 					category={t.kicker}
-					title={trip ? t.heading(id) : t.standDownHeading}
+					title={heading ?? t.standDownHeading}
 					subtitle={t.subheading}
-					backHref={localizeHref('/', locale)}
-					backLabel={t.back}
-					meta={[shortName]}
+					backHref={trip?.route ? routeHref(trip.route) : localizeHref('/', locale)}
+					backLabel={trip?.route ? t.backLine(directory.spoken(line(trip.route))) : t.back}
+					meta={trip ? [t.heading(id), shortName] : [shortName]}
 					titleId="trip-title"
 				>
 					{#snippet actions()}
@@ -189,7 +231,7 @@
 									<a
 										class="trip-route-link"
 										href={routeHref(trip.route!)}
-										aria-label={t.viewRoute(line(trip.route!))}
+										aria-label={directory.spoken(line(trip.route!))}
 									>
 										<span class="trip-route-code">{line(trip.route ?? '')}</span>
 										<ChevronRightIcon size={14} strokeWidth={2.4} aria-hidden="true" />
