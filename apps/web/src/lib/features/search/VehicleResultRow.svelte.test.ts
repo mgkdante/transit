@@ -65,7 +65,7 @@ describe('VehicleResultRow', () => {
 		).toHaveAttribute('href', '/map?vehicle=40061');
 		expect(screen.getByText('Late')).toBeInTheDocument();
 		expect(screen.getByText('+4 min')).toBeInTheDocument();
-		expect(screen.getByText('Route 161')).toBeInTheDocument();
+		expect(screen.getByText('Line 161')).toBeInTheDocument();
 		expect(screen.getByText('Next: Van Horne / Rockland')).toBeInTheDocument();
 		const arrow = container.querySelector('.vehicle-row-arrow') as HTMLElement | null;
 		expect(arrow?.getAttribute('style')).toContain('rotate(90deg)');

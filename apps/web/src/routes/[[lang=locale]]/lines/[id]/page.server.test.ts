@@ -38,7 +38,11 @@ function event(id = '24'): Parameters<typeof load>[0] {
 		fetch: vi.fn(),
 		locals: { v1Cache: new Map() },
 		platform: undefined,
-		parent: async () => ({ v1: { manifest: harness.ctx.manifest } }),
+		parent: async () => ({
+			v1: { manifest: harness.ctx.manifest },
+			lang: 'en',
+			routesIndex: { routes: [{ id: '24', short: '24', long: 'Sherbrooke' }] },
+		}),
 		request: new Request(`https://transit.yesid.dev/lines/${id}`),
 	} as unknown as Parameters<typeof load>[0];
 }
@@ -209,7 +213,7 @@ describe('/lines/[id] server identity seed', () => {
 		'resolves the universal constructor only for the initial %s tab',
 		async (tab) => {
 			const data = {
-				seed: { id: '24', name: '24 Sherbrooke' },
+				seed: { id: '24', name: '24 · Sherbrooke' },
 				routeSeed: null,
 				reliabilitySeed: null,
 				lineHistorySeed: null,
@@ -262,7 +266,8 @@ describe('/lines/[id] server identity seed', () => {
 		const result = await load(event());
 
 		expect(result).toEqual({
-			seed: { id: '24', name: '24 Sherbrooke' },
+			seed: { id: '24', name: '24 · Sherbrooke' },
+			seoTitle: 'Line 24 · Sherbrooke',
 			routeSeed: { key: '24', data: route },
 			reliabilitySeed: { key: '24', data: reliability },
 			lineHistorySeed: null,
@@ -270,6 +275,7 @@ describe('/lines/[id] server identity seed', () => {
 		if (!result) throw new Error('expected a route identity seed');
 		expect(Object.keys(result)).toEqual([
 			'seed',
+			'seoTitle',
 			'routeSeed',
 			'reliabilitySeed',
 			'lineHistorySeed',
@@ -284,7 +290,8 @@ describe('/lines/[id] server identity seed', () => {
 		harness.getRoute.mockResolvedValue({ id: '24', long: '   ' });
 
 		await expect(load(event())).resolves.toEqual({
-			seed: { id: '24', name: '24' },
+			seed: { id: '24', name: '24 · Sherbrooke' },
+			seoTitle: 'Line 24 · Sherbrooke',
 			routeSeed: { key: '24', data: { id: '24', long: '   ' } },
 			reliabilitySeed: { key: '24', data: null },
 			lineHistorySeed: null,
@@ -295,7 +302,8 @@ describe('/lines/[id] server identity seed', () => {
 		harness.getRoute.mockResolvedValue(null);
 
 		await expect(load(event('999'))).resolves.toEqual({
-			seed: { id: '999', name: '999' },
+			seed: { id: '999', name: 'Line 999' },
+			seoTitle: 'Line 999',
 			routeSeed: { key: '999', data: null },
 			reliabilitySeed: { key: '999', data: null },
 			lineHistorySeed: null,
@@ -308,7 +316,8 @@ describe('/lines/[id] server identity seed', () => {
 		harness.getRouteReliability.mockResolvedValue(reliability);
 
 		await expect(load(event('747'))).resolves.toEqual({
-			seed: { id: '747', name: '747' },
+			seed: { id: '747', name: 'Line 747' },
+			seoTitle: 'Line 747',
 			routeSeed: null,
 			reliabilitySeed: { key: '747', data: reliability },
 			lineHistorySeed: null,
@@ -321,10 +330,35 @@ describe('/lines/[id] server identity seed', () => {
 		harness.getRouteReliability.mockRejectedValue(new Error('historic tier unavailable'));
 
 		await expect(load(event())).resolves.toEqual({
-			seed: { id: '24', name: '24 Sherbrooke' },
+			seed: { id: '24', name: '24 · Sherbrooke' },
+			seoTitle: 'Line 24 · Sherbrooke',
 			routeSeed: { key: '24', data: route },
 			reliabilitySeed: null,
 			lineHistorySeed: null,
 		});
 	});
+});
+
+it.each(['en', 'fr'] as const)(
+	'titles from the parent directory in %s even without a route file',
+	async (lang) => {
+		const request = event('1-373');
+		Object.assign(request, {
+			parent: async () => ({
+				lang,
+				v1: { manifest: harness.ctx.manifest },
+				routesIndex: { routes: [{ id: '1-373', short: '1', long: 'Confederation' }] },
+			}),
+		});
+		harness.getRoute.mockResolvedValue(null);
+		expect(await load(request)).toMatchObject({
+			seed: { id: '1-373', name: '1 · Confederation' },
+			seoTitle: (lang === 'en' ? 'Line' : 'Ligne') + ' 1 · Confederation',
+		});
+	},
+);
+it('omits seoTitle without v1', async () => {
+	const request = event();
+	Object.assign(request, { parent: async () => ({ v1: null }) });
+	expect(await load(request)).not.toHaveProperty('seoTitle');
 });

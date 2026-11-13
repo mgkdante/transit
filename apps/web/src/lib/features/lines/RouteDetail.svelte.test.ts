@@ -1,3 +1,4 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import {
 	headerWeek as CURRENT_RELIABILITY,
 	thinHeaderWeek as SMALL_SAMPLE_RELIABILITY,
@@ -447,19 +448,43 @@ describe('RouteDetail article cover and focus scope', () => {
 	});
 
 	it('uses the server identity seed for the first-render title and renders no classic duplicate head', () => {
-		const view = renderRoute('161', '161 Van Horne');
+		const view = renderSvelte(RouteDetail, {
+			props: { id: '161', seed: routeSeed() },
+			context: new Map([
+				[
+					Symbol.for('transit.line-directory'),
+					() =>
+						createLineDirectory([{ id: '161', short: '161', long: 'Van Horne' }], {
+							line: (id) => 'Line ' + id,
+						}),
+				],
+			]),
+		});
 
-		expect(screen.getByRole('heading', { level: 1, name: '161 Van Horne' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { level: 1, name: '161 · Van Horne' })).toBeInTheDocument();
 		expect(view.container.querySelectorAll('[data-slot="article-header"]')).toHaveLength(1);
 		expect(view.container.querySelectorAll('h1')).toHaveLength(1);
 		expect(view.container.querySelector('.surface-head')).toBeNull();
 		expect(screen.getAllByRole('link', { name: '← Back to lines' })).toHaveLength(1);
 	});
 
-	it('recovers the real client route name when the server seed had to fall back to the id', () => {
-		renderRoute('161', '161');
-
-		expect(screen.getByRole('heading', { level: 1, name: '161 Van Horne' })).toBeInTheDocument();
+	it('uses the published number for an opaque line id and highlights it', () => {
+		routeFileData = { ...ROUTE_FILE, id: '1-373', long: 'Confederation' };
+		renderSvelte(RouteDetail, {
+			props: { id: '1-373', seed: routeSeed('1-373') },
+			context: new Map([
+				[
+					Symbol.for('transit.line-directory'),
+					() =>
+						createLineDirectory([{ id: '1-373', short: '1', long: 'Confederation' }], {
+							line: (id) => 'Line ' + id,
+						}),
+				],
+			]),
+		});
+		const heading = screen.getByRole('heading', { level: 1, name: '1 · Confederation' });
+		expect(within(heading).getByText('1', { exact: true })).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /View line 1 on map/ })).toBeInTheDocument();
 	});
 
 	it('keeps exactly the Detail, Schedule, and Reliability tabs', () => {
@@ -975,7 +1000,7 @@ describe('RouteDetail map drilldown', () => {
 	it('links directly to the live map filtered to this route', () => {
 		renderRoute();
 
-		expect(screen.getByRole('link', { name: /View route 161 on map/ })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /View line Van Horne on map/ })).toHaveAttribute(
 			'href',
 			'/map?route=161&focus=route%3A161',
 		);

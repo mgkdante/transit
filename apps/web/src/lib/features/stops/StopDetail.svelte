@@ -146,7 +146,6 @@
 				: seed.name,
 		),
 	);
-
 	const stopAlerts = $derived(
 		alertsForStop(alertLive.alerts?.alerts, id, stop.data?.code, stop.data?.routes_served),
 	);
@@ -159,13 +158,13 @@
 			? (reliability.data?.generated_utc ?? null)
 			: (stop.data?.generated_utc ?? null),
 	);
-	const articleEdgeLeft = $derived(`${t.kicker} ${id}`);
+	const articleEdgeLeft = $derived([t.kicker, stop.data?.code].filter(Boolean).join(' '));
 	const articleEdgeRight = $derived(
 		articleGeneratedUtc ? formatUtc(articleGeneratedUtc, locale) : shortName,
 	);
 	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {
 		const values: ArticleMetaEntry[] = [
-			{ label: t.article.stopId, text: id },
+			...(stop.data?.code ? [{ label: t.info.code, text: stop.data.code }] : []),
 			{ label: t.article.provider, text: shortName },
 		];
 		if (articleGeneratedUtc)
@@ -379,6 +378,7 @@
 						{@render staticStatus()}
 						<div class="stop-info-facts">
 							<div class="stop-info-metrics">
+								<MetricDisplay value={id} label={t.info.feedId} size="sm" />
 								<MetricDisplay
 									value={`${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`}
 									label={t.info.position}
@@ -509,7 +509,7 @@
 			{#snippet actions()}
 				<MapDrilldownLink
 					href={localizeHref(mapHrefFor({ stop: id }, locale), locale)}
-					context={t.viewStopOnMap(id)}
+					context={t.viewStopOnMap(stop.data?.code || articleTitle)}
 					label={t.viewOnMap}
 				/>
 			{/snippet}

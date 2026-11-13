@@ -130,7 +130,7 @@ export const copy = defineCopy({
 				periods: 'Periods',
 				weekday: 'Weekday',
 				time_of_day: 'Time of day',
-				by_route: 'By route',
+				by_route: 'By line',
 			},
 		},
 		conformance: {

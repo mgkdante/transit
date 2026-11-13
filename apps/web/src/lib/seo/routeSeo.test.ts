@@ -268,3 +268,29 @@ it('the last crumb takes the page’s own name when one is given', () => {
 		expect(resolveBreadcrumbTrail(path, 'en').at(-1)?.name).toBe(path.split('/').at(-1));
 	}
 });
+
+describe('rider page titles', () => {
+	it.each(['en', 'fr'] as const)(
+		'a line page and a stop page name themselves in the title (%s)',
+		async (locale) => {
+			const { linePageTitle, stopPageTitle } = await import('./riderPageTitle');
+			const { createLineDirectory } = await import('../site/lineDirectory');
+			const { routeNameFallback } = await import('../site/nameFallback');
+			const directory = createLineDirectory(
+				[
+					{ id: '49', short: '49', long: 'Maurice-Duplessis' },
+					{ id: '1-373', short: '1', long: 'Confederation' },
+				],
+				{ line: (id) => routeNameFallback(id, locale) },
+			);
+			const word = locale === 'en' ? 'Line' : 'Ligne';
+			expect(linePageTitle(directory.name('49'))).toBe(word + ' 49 · Maurice-Duplessis');
+			expect(linePageTitle(directory.name('1-373'))).toBe(word + ' 1 · Confederation');
+			expect(linePageTitle(directory.name('104E'))).toBe(word + ' 104E');
+			expect(stopPageTitle('Van Horne / Rockland', '1658', locale)).toBe(
+				'Van Horne / Rockland (' + (locale === 'en' ? 'stop' : 'arrêt') + ' 1658)',
+			);
+			expect(stopPageTitle('Fixture stop', null, locale)).toBe('Fixture stop');
+		},
+	);
+});

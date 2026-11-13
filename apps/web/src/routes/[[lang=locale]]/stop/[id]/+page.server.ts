@@ -1,3 +1,5 @@
+import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+import { stopPageTitle } from '#lib/seo/riderPageTitle.ts';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { canonicalDetailTabLocation } from '#lib/site/detailTabs.ts';
@@ -10,7 +12,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const id = event.params.id.trim() || event.params.id;
 	const fallback: IdentitySeed = { id, name: id };
-	const { v1 } = await event.parent();
+	const { v1, lang } = await event.parent();
 	if (!v1) return { seed: fallback, stopSeed: null };
 
 	try {
@@ -23,6 +25,7 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			seed: name ? { id, name } : fallback,
 			stopSeed: { key: id, data: stop },
+			...(name ? { seoTitle: stopPageTitle(stopDisplayName(name), stop?.code, lang) } : {}),
 		};
 	} catch {
 		return { seed: fallback, stopSeed: null };

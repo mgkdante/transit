@@ -30,7 +30,7 @@ export const copy = defineCopy({
 		resultCount: (n) => (n === 1 ? '1 result' : `${n} results`),
 		vehicle: {
 			busAria: (id) => `Live bus ${id}`,
-			routeTag: (route) => `Route ${route}`,
+			routeTag: (route) => `Line ${route}`,
 			next: (stop) => `Next: ${stop}`,
 			noNextStop: 'No next stop',
 			heading: 'Heading',

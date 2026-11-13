@@ -44,7 +44,7 @@ export const indexCopy = defineCopy({
 		filterPlaceholder: 'Line number or name…',
 		controlsLabel: 'Filters',
 		mapAction: 'Map',
-		viewRouteOnMap: (route) => `View route ${route} on map`,
+		viewRouteOnMap: (route) => `View line ${route} on map`,
 		more: (n) => `+${n} more`,
 		sortLabel: 'Sort',
 		sortAlpha: 'Alphabetical',
@@ -204,7 +204,7 @@ export const detailCopy = defineCopy({
 			summary: 'Which vehicles are running, and are there service alerts?',
 		},
 		viewOnMap: 'View on map',
-		viewRouteOnMap: (route) => `View route ${route} on map`,
+		viewRouteOnMap: (route) => `View line ${route} on map`,
 		alerts: {
 			heading: 'Service alerts',
 			listLabel: 'Service alerts affecting this line',
