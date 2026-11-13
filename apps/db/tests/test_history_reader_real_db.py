@@ -224,13 +224,6 @@ def test_rows_after_empty_seal_are_available(conn):
     assert plan(conn).days[0].form == "objects"
 
 
-@pytest.mark.parametrize("method,packet", [("captures", "H06b"), ("processing", "H06b")])
-def test_iteration_is_refused_until_implemented(conn, method, packet):
-    result = plan(conn)
-    with pytest.raises(NotImplementedError, match=packet):
-        list(getattr(result, method)())
-
-
 def test_window_arguments_are_checked():
     for provider, feeds, start, end, error in [
         ("", ["trip_updates"], START, START + timedelta(days=1), ValueError),

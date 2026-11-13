@@ -3,7 +3,8 @@
 import hashlib
 import heapq
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, fields
+from contextlib import ExitStack, closing
+from dataclasses import dataclass, fields, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
@@ -12,7 +13,8 @@ from sqlalchemy import Connection, text
 from transit_ops.history import ledger
 from transit_ops.history.datasets import CaptureSource, IndexFamily, get_dataset, utc_day_closes_at
 from transit_ops.history.manifest import Manifest, read_copy_manifest
-from transit_ops.history.poll_record import PollEntry, PollRecord, poll_record_sha256
+from transit_ops.history.poll_record import CaptureEntry, PollEntry, PollRecord, poll_record_sha256
+from transit_ops.history.reader_bytes import archive_payloads, object_payload
 from transit_ops.history.working_captures import (
     _INDEX,
     poll_entry,
@@ -170,7 +172,15 @@ class CaptureWindow:
         key = day.endpoint_key, day.utc_date
         if day.form == "objects":
             return self._records[key]
-        return read_copy_manifest(self._storage, self._copies[key])
+        copy = self._copies[key]
+        try:
+            return read_copy_manifest(self._storage, copy)
+        except Exception as exc:
+            exc.add_note(
+                f"archive {self.provider_id}/{day.endpoint_key}/{day.utc_date}"
+                f"/v{copy.content_version}"
+            )
+            raise
 
     def _day_polls(self, day: FeedDay) -> Iterator[Poll]:
         for entry in self._day_record(day).polls:
@@ -178,33 +188,117 @@ class CaptureWindow:
                 yield _reader_poll(entry, self.provider_id, day.endpoint_key)
 
     def captures(self, *, with_bytes: bool = True) -> Iterator[Capture]:
-        if with_bytes:
-            raise NotImplementedError("H06b implements capture payload reads")
-        yield from heapq.merge(
-            *(self._day_captures(day) for day in self.days if day.state == "available"),
-            key=lambda c: (c.captured_at_utc, c.endpoint_key, c.capture_row_id),
-        )
+        """Read checked bytes, retaining one payload per active overlapping feed-day.
 
-    def _day_captures(self, day: FeedDay) -> Iterator[Capture]:
-        for entry in self._day_record(day).captures:
+        Decoder buffers are additional. Exhaustion checks selected stream footers;
+        callers stopping early must close the iterator to release open streams.
+        """
+        if with_bytes:
+            self.unreadable.clear()
+        entries = heapq.merge(
+            *(self._day_entries(day) for day in self.days if day.state == "available"),
+            key=lambda item: (
+                item[1].captured_at_utc,
+                item[0].endpoint_key,
+                item[1].capture_row_id,
+            ),
+        )
+        active: dict[tuple[str, date], tuple[Iterator[bytes], int]] = {}
+        with ExitStack() as stack:
+            for day, entry, record in entries:
+                payload = None
+                if with_bytes:
+                    payload = self._payload(day, entry, record, active, stack)
+                    if payload is None:
+                        continue
+                yield self._capture(day, entry, payload)
+                key = day.endpoint_key, day.utc_date
+                if key in active and entry.capture_row_id == active[key][1]:
+                    iterator, _ = active.pop(key)
+                    # Finish the selected stream before moving to another day.
+                    for _ in iterator:
+                        raise ValueError("archive yielded an unexpected capture")
+
+    def _payload(
+        self,
+        day: FeedDay,
+        entry: CaptureEntry,
+        record: PollRecord | Manifest,
+        active: dict[tuple[str, date], tuple[Iterator[bytes], int]],
+        stack: ExitStack,
+    ) -> bytes | None:
+        if day.form == "objects":
+            payload, reason = object_payload(self._storage, entry)
+            if reason is not None:
+                poll = next(
+                    p for p in record.polls if p.ingestion_run_id == entry.ingestion_run_id
+                )
+                self.unreadable.append(
+                    replace(_reader_poll(poll, self.provider_id, day.endpoint_key),
+                            status="capture_missing", missing_reason=reason)
+                )
+            return payload
+        key = day.endpoint_key, day.utc_date
+        if key not in active:
+            assert isinstance(record, Manifest)
+            iterator = stack.enter_context(
+                closing(archive_payloads(
+                    self._storage, self._copies[key], record, self.start_utc, self.end_utc
+                ))
+            )
+            last = next(
+                c for c in reversed(record.captures)
+                if c.packed and self.start_utc <= c.captured_at_utc < self.end_utc
+            )
+            active[key] = iterator, last.capture_row_id
+        return next(active[key][0])
+
+    def _day_entries(
+        self, day: FeedDay
+    ) -> Iterator[tuple[FeedDay, CaptureEntry, PollRecord | Manifest]]:
+        record = self._day_record(day)
+        for entry in record.captures:
             if day.form == "archive_copy" and not entry.packed:
                 continue
             if self.start_utc <= entry.captured_at_utc < self.end_utc:
-                values = {
-                    f.name: getattr(entry, f.name)
-                    for f in fields(Capture)
-                    if f.name not in ("provider_id", "endpoint_key", "payload", "checksum_sha256")
-                }
-                yield Capture(
-                    provider_id=self.provider_id,
-                    endpoint_key=day.endpoint_key,
-                    checksum_sha256=entry.sha256,
-                    payload=None,
-                    **values,
-                )
+                yield day, entry, record
+
+    def _capture(self, day: FeedDay, entry: CaptureEntry, payload: bytes | None) -> Capture:
+        values = {
+            f.name: getattr(entry, f.name)
+            for f in fields(Capture)
+            if f.name not in ("provider_id", "endpoint_key", "payload", "checksum_sha256")
+        }
+        return Capture(
+            provider_id=self.provider_id,
+            endpoint_key=day.endpoint_key,
+            checksum_sha256=entry.sha256,
+            payload=payload,
+            **values,
+        )
 
     def processing(self) -> Iterator[ProcessingRecord]:
-        raise NotImplementedError("H06b implements processing")
+        for day in self.days:
+            if day.state != "available":
+                continue
+            record = self._day_record(day)
+            captures = {
+                (c.index_family, c.capture_row_id): c.captured_at_utc for c in record.captures
+            }
+            for entry in record.processing:
+                at = (
+                    captures.get((entry.index_family, entry.capture_row_id))
+                    if entry.capture_row_id is not None
+                    else entry.started_at_utc
+                )
+                if at is not None and self.start_utc <= at < self.end_utc:
+                    values = {
+                        f.name: getattr(entry, f.name) for f in fields(ProcessingRecord)
+                        if f.name not in ("provider_id", "endpoint_key")
+                    }
+                    yield ProcessingRecord(
+                        provider_id=self.provider_id, endpoint_key=day.endpoint_key, **values
+                    )
 
 
 def _reader_poll(entry: PollEntry, provider: str, feed: str) -> Poll:
