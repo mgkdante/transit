@@ -10,6 +10,7 @@ from history_fixtures import delete_provider_rows, seed_stored_capture, seed_wor
 from sqlalchemy import text
 
 from transit_ops.history import ledger, store
+from transit_ops.history.manifest import read_copy_manifest
 from transit_ops.history.seal_captures import CopyContentMissing
 from transit_ops.history.verify import Verification
 from transit_ops.ingestion.storage import LocalBronzeStorage
@@ -262,7 +263,10 @@ def test_current_moves_only_when_the_new_copy_is_verified(engine, tmp_path):
     assert snapshot(engine, second)[2] == events
 
 
-def test_copy_that_lacks_a_capture_of_the_current_one_cannot_replace_it(engine, tmp_path):
+@pytest.mark.parametrize("remove_poll", [False, True], ids=["capture", "poll"])
+def test_copy_that_lacks_content_of_the_current_one_cannot_replace_it(
+    engine, tmp_path, remove_poll
+):
     seed(engine, tmp_path)
     first = seal(engine, tmp_path)
     with engine.begin() as conn:
@@ -271,15 +275,69 @@ def test_copy_that_lacks_a_capture_of_the_current_one_cannot_replace_it(engine, 
             ("raw.ingestion_objects", "ingestion_object_id"),
             ("raw.ingestion_runs", "ingestion_run_id"),
         ):
+            if table == "raw.ingestion_runs" and not remove_poll:
+                continue
             conn.execute(text(f"DELETE FROM {table} WHERE {key}=773003"))
     second = seal(engine, tmp_path)
     by_hand(engine, first)
-    with pytest.raises(CopyContentMissing, match="773003"):
+    message = "missing poll 773003" if remove_poll else "missing capture .*773003"
+    with pytest.raises(CopyContentMissing, match=message):
         verify(engine, tmp_path, second)
     row, window, events = snapshot(engine, second)
     assert row.state == "sealed" and window.current_version == 1
     assert [e.kind for e in events if e.content_version == 2] == ["seal"]
     assert not marker(tmp_path, second).exists()
+
+
+def test_verify_refuses_a_copy_that_loses_packed_bytes_of_the_current_one(engine, tmp_path):
+    seed(engine, tmp_path, [773001])
+    seed(engine, tmp_path, [773004], failed=True)
+    first = seal(engine, tmp_path)
+    verify(engine, tmp_path, first)
+
+    def resolver(backend):
+        return LocalBronzeStorage("local", tmp_path)
+
+    current = read_copy_manifest(resolver, first)
+    assert current.captures[0].packed
+    (tmp_path / "capture/773001").unlink()
+    change(engine)
+    second = seal(engine, tmp_path)
+    candidate = read_copy_manifest(resolver, second)
+    assert not candidate.captures[0].packed
+    assert candidate.polls[0].missing_reason == "object_absent"
+    before = snapshot(engine, second)
+    with pytest.raises(CopyContentMissing, match="packed capture .*773001") as error:
+        verify(engine, tmp_path, second)
+    assert f"{PROVIDER}/trip_updates/{DAY}" in str(error.value)
+    assert snapshot(engine, second) == before
+    assert before[0].state == "sealed" and before[1].current_version == 1
+    assert not marker(tmp_path, second).exists()
+    assert verify_module.read_back_capture_copy(resolver, first) == current
+
+
+def test_verify_rejects_a_changed_day_as_stale(engine, tmp_path):
+    seed(engine, tmp_path, [773001])
+    seed(engine, tmp_path, [773004], failed=True)
+    first = seal(engine, tmp_path)
+    verify(engine, tmp_path, first)
+    change(engine)
+    second = seal(engine, tmp_path)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE raw.ingestion_runs SET error_message='changed again' "
+                "WHERE ingestion_run_id=773004"
+            )
+        )
+    result = verify(engine, tmp_path, second)
+    assert (result.outcome, result.reason, result.became_current) == ("rejected", "stale", False)
+    assert result.difference == "poll 773004 differs"
+    assert json.loads(gzip.decompress(marker(tmp_path, second).read_bytes()))["reason"] == "stale"
+    row, window, events = snapshot(engine, second)
+    assert row.state == "rejected" and row.reject_reason == "stale"
+    assert window.current_version == 1
+    assert [e.kind for e in events if e.content_version == 2] == ["seal", "reject"]
 
 
 def test_rejection_writes_its_marker_first(engine, tmp_path, monkeypatch):

@@ -23,7 +23,7 @@ from transit_ops.history.poll_record import (
 from transit_ops.history.seal_captures import (
     OBJECT_ABSENT,
     OBJECT_MISMATCH,
-    _require_content,
+    CopyContentMissing,
     reconcile_rejection_marker,
     reject_capture_copy,
 )
@@ -173,9 +173,29 @@ def _verify_locked(
         if window.current_version is not None:
             if current is None:
                 raise LookupError(f"current copy not found: {identity}")
-            _require_content(read_copy_manifest(storage, current), record)
+            _require_superseding_content(read_copy_manifest(storage, current), manifest)
         _make_current(connection, row, verified_at, window.current_version, actor)
     return None, None
+
+
+def _require_superseding_content(current: Manifest, candidate: Manifest) -> None:
+    label = f"{candidate.provider_id}/{candidate.endpoint_key}/{candidate.utc_date}"
+    polls = {p.ingestion_run_id for p in candidate.polls}
+    for poll in current.polls:
+        if poll.ingestion_run_id not in polls:
+            raise CopyContentMissing(f"{label}: missing poll {poll.ingestion_run_id}")
+    captures = {(c.index_family, c.capture_row_id): c for c in candidate.captures}
+    for capture in current.captures:
+        key = (capture.index_family, capture.capture_row_id)
+        replacement = captures.get(key)
+        if replacement is None:
+            raise CopyContentMissing(f"{label}: missing capture {key}")
+        if capture.packed and (
+            not replacement.packed
+            or replacement.sha256 != capture.sha256
+            or replacement.byte_size != capture.byte_size
+        ):
+            raise CopyContentMissing(f"{label}: packed capture {key} loses or changes bytes")
 
 
 def _make_current(
