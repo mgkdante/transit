@@ -55,6 +55,7 @@ async function openRail(page: Page) {
 }
 
 test('a trip page shows one heading without breadcrumbs', async ({ page }) => {
+	const provider = fixture('manifest.json').provider;
 	for (const lang of PUBLISHED_LOCALES) {
 		const directory = createLineDirectory(fixture('routes-index.json').routes, {
 			line: (id) => routeNameFallback(id, lang),
@@ -62,12 +63,12 @@ test('a trip page shows one heading without breadcrumbs', async ({ page }) => {
 		for (const id of [Object.keys(trips)[0], 'TLine']) {
 			const route = trips[id].route;
 			const heading = directory.spoken(directory.number(route));
-			await page.goto(localizeHref('/trip/' + id, lang));
+			await page.goto(localizeHref('/trip/' + id, lang, provider));
 			await expect(page.getByRole('navigation', { name: /Breadcrumb|Fil d/ })).toHaveCount(0);
 			await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
 			await expect(
 				page.getByRole('link', { name: tripCopy[lang].backLine(heading), exact: true }),
-			).toHaveAttribute('href', localizeHref('/lines/' + route, lang));
+			).toHaveAttribute('href', localizeHref('/lines/' + route, lang, provider));
 			await expect(page).toHaveTitle(heading + ' · Transit');
 		}
 	}
