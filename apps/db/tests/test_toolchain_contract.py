@@ -36,8 +36,8 @@ PYTHON_IMAGE = (
     "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"
 )
 POSTGRES_IMAGE = (
-    "postgres:16.15-bookworm@"
-    "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825"
+    "postgres:16.16-bookworm@"
+    "sha256:a49f7438ba03589f9b1ca062f2da82e899b48ea1dc50d2449fa09a70be83ebca"
 )
 CADDY_IMAGE = (
     "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"

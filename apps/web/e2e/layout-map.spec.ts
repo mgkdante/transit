@@ -17,7 +17,7 @@ async function framing(page: Page, bounds: number[]) {
 		const map = document.querySelector('[data-slot="map-stage"]')!.getBoundingClientRect();
 		const blockers = [
 			...document.querySelectorAll(
-				'header,.map-head,.map-filter-panel,.map-near,.map-filter-pill-container,[data-slot="map-detail-overlay"],[data-slot="right-panel"],.maplibregl-ctrl',
+				'header,.map-head,.map-filter-panel,.map-near,[data-slot="map-north"],.map-filter-pill-container,[data-slot="map-detail-overlay"],[data-slot="right-panel"],.maplibregl-ctrl',
 			),
 		]
 			.filter((el) => el.checkVisibility())
