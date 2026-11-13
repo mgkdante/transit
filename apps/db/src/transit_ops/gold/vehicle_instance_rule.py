@@ -79,6 +79,7 @@ def resolve_vehicle_capture(
     derive each instance's start, end and first departure seconds from that service
     date's own list and anchor, and remove trips the list does not hold and
     frequency-based trips.
+    Any aware datetime is accepted and judged as its instant.
     """
     captured_at_utc, normalized = _validate(captured_at_utc, instances)
     holding = [

@@ -100,10 +100,12 @@ def test_descriptor_that_names_no_holding_instance_is_ambiguous(descriptor):
     }
 
 
-def test_crossed_descriptor_does_not_combine_two_instances():
-    resolved = resolve_vehicle_capture(
-        CAPTURE, [A, B], VehicleDescriptor(A.service_date, "00:10:00")
-    )
+@pytest.mark.parametrize(
+    "descriptor",
+    [VehicleDescriptor(A.service_date, "00:10:00"), VehicleDescriptor(B.service_date, "23:50:00")],
+)
+def test_crossed_descriptor_does_not_combine_two_instances(descriptor):
+    resolved = resolve_vehicle_capture(CAPTURE, [A, B], descriptor)
     assert resolved == {A: "ambiguous_instance", B: "ambiguous_instance"}
     assert accepted_instance(resolved) is None
 
@@ -128,23 +130,29 @@ def test_three_holding_instances_resolve_in_every_order(chosen):
 
 
 @pytest.mark.parametrize(
-    "day,hour,minute,held",
+    "day,hour,minute,second,held",
     [
-        (date(2026, 11, 1), 9, 0, False),
-        (date(2026, 11, 1), 8, 30, True),
-        (date(2026, 3, 8), 9, 0, True),
+        (date(2026, 11, 1), 9, 0, 0, False),
+        (date(2026, 11, 1), 8, 30, 0, True),
+        (date(2026, 11, 1), 8, 30, 1, False),
+        (date(2026, 3, 8), 9, 0, 0, True),
+        (date(2026, 3, 8), 9, 30, 0, True),
+        (date(2026, 3, 8), 9, 30, 1, False),
     ],
 )
-def test_dst_windows_use_elapsed_seconds_and_preserve_original_instances(day, hour, minute, held):
+def test_dst_windows_use_elapsed_seconds_and_preserve_original_instances(
+    day, hour, minute, second, held
+):
     zone = ZoneInfo("America/Toronto")
     endpoint = datetime(day.year, day.month, day.day, 1, 30, tzinfo=zone, fold=0)
     run = TripInstance("trip", day, endpoint, endpoint, 1800)
-    capture = datetime(day.year, day.month, day.day, hour, minute, tzinfo=UTC)
+    capture = datetime(day.year, day.month, day.day, hour, minute, second, tzinfo=UTC)
     utc_run = run._replace(start_utc=endpoint.astimezone(UTC), end_utc=endpoint.astimezone(UTC))
     local_result = resolve_vehicle_capture(capture.astimezone(zone), [run])
     utc_result = resolve_vehicle_capture(capture, [utc_run])
     assert local_result == ({run: "single_window"} if held else {})
     assert utc_result == ({utc_run: "single_window"} if held else {})
+    assert list(local_result.values()) == list(utc_result.values())
     local_accepted = accepted_instance(local_result)
     assert local_accepted is (run if held else None)
     if local_accepted is not None:
