@@ -3,6 +3,8 @@
 	import type { Locale } from '#lib/i18n/index.ts';
 	import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
 	import { reliabilityBadgeCopy } from '#lib/v1/verdict.copy.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
+	import { VERDICT_MIN_N } from '#lib/v1/verdict.ts';
 
 	export interface ReliabilityBadgeProps {
 		snapshot: ReliabilitySnapshot;
@@ -14,15 +16,7 @@
 
 	const copy = $derived(reliabilityBadgeCopy[locale]);
 	const windowLabel = $derived(
-		snapshot.closedThrough
-			? copy.weekTo(
-					new Intl.DateTimeFormat(locale, {
-						month: 'short',
-						day: 'numeric',
-						timeZone: 'UTC',
-					}).format(new Date(`${snapshot.closedThrough}T00:00:00Z`)),
-				)
-			: copy.week,
+		snapshot.closedThrough ? copy.weekTo(formatDateKey(snapshot.closedThrough, locale)) : copy.week,
 	);
 	const hedges = {
 		en: 'Not enough data to judge reliability',
@@ -39,6 +33,9 @@
 	);
 	const show = $derived(snapshot.phase === 'ready' && pctText != null);
 	const hedged = $derived(snapshot.verdict === 'absent' || snapshot.verdict === 'tentative');
+	const lowSample = $derived(
+		snapshot.observationCount != null && snapshot.observationCount < VERDICT_MIN_N,
+	);
 	const label = $derived(
 		pctText
 			? `${pctText} ${snapshot.kind === 'stop' ? copy.stopShare : copy.share}, ${windowLabel}`
@@ -58,7 +55,9 @@
 			title={`${hedgeLabel}, ${windowLabel}`}
 		>
 			<span aria-hidden="true"
-				>{compactHedges[locale][snapshot.verdict === 'tentative' ? 'tentative' : 'absent']}</span
+				>{compactHedges[locale][
+					snapshot.verdict === 'tentative' && !lowSample ? 'tentative' : 'absent'
+				]}</span
 			>
 			<span aria-hidden="true">{windowLabel}</span>
 		</span>
@@ -94,7 +93,7 @@
 		overflow-wrap: normal;
 		word-break: normal;
 		font-family: var(--font-mono);
-		font-size: var(--text-small);
+		font-size: var(--text-caption);
 		color: var(--foreground);
 		font-variant-numeric: tabular-nums;
 		white-space: normal;

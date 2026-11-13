@@ -77,6 +77,14 @@
 		grains: {
 			keys: ['week', 'day', 'month', 'range'] as const,
 			labels: () => windowLabels,
+			present: () =>
+				new Set(
+					(['day', 'week', 'month'] as const).filter((grain) =>
+						grain === 'day'
+							? routeClosedThrough(data) != null
+							: trailingRouteWindow(data, grain) != null,
+					),
+				),
 		},
 		apply: (current, retained) =>
 			retained ? applyRetainedLineHistory(current, retained) : clearRetainedLineHistory(current),
@@ -129,7 +137,9 @@
 		}
 		if (mode === 'week' || mode === 'month') {
 			const window = trailingRouteWindow(selectedData, mode)?.window;
-			return window ? aw.rangeSelection(window.from, window.to) : aw.unavailable;
+			return window
+				? aw.rangeSelection(formatDateKey(window.from, locale), formatDateKey(window.to, locale))
+				: aw.unavailable;
 		}
 		const latest = selectVerdictWindow(
 			selectedData.periods ?? [],

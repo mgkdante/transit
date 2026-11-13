@@ -222,7 +222,7 @@ describe('reliability view-state public contract', () => {
 	});
 	it.each([
 		['grain=bogus&grain=week', 'day'],
-		['grain=week', 'week'],
+		['grain=week', 'day'],
 	] as const)('line preserves its unavailable-grain policy for %s', (query, expected) => {
 		harness.page.url.search = query;
 		const resource = history();

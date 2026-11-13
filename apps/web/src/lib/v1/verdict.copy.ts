@@ -1,4 +1,3 @@
-import { formatDateKey } from '#lib/utils/time.ts';
 import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 import type { VerdictCopy, VerdictSentenceArgs } from './verdict';
 export const reliabilityBadgeCopy = defineCopy({
@@ -17,8 +16,8 @@ export const reliabilityBadgeCopy = defineCopy({
 });
 export const verdictCopy = defineCopy({
 	fr: {
-		closedWindow: ({ from, to }) =>
-			`du ${formatDateKey(from, 'fr')} au ${formatDateKey(to, 'fr')} (jours complets)`,
+		locale: 'fr' satisfies Locale,
+		closedWindow: (from: string, to: string) => `du ${from} au ${to} (jours complets)`,
 		windowPhrase: {
 			day: 'selon le dernier bilan',
 			week: 'cette semaine',
@@ -43,8 +42,8 @@ export const verdictCopy = defineCopy({
 		hedgeCI: (otp: number, lo: number, hi: number) => ` (${otp} %, IC 95 % : ${lo}–${hi} %)`,
 	},
 	en: {
-		closedWindow: ({ from, to }) =>
-			`from ${formatDateKey(from, 'en')} to ${formatDateKey(to, 'en')} (complete days)`,
+		locale: 'en' satisfies Locale,
+		closedWindow: (from, to) => `from ${from} to ${to} (complete days)`,
 		windowPhrase: {
 			day: 'in the latest summary',
 			week: 'this week',

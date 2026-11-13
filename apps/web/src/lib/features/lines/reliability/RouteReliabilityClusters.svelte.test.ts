@@ -306,7 +306,7 @@ describe('RouteReliabilityClusters', () => {
 		await fireEvent.click(screen.getByRole('radio', { name: new RegExp(copy.controls.thisWeek) }));
 		await tick();
 		expect(activeWindowText(container)).toBe(
-			copy.controls.activeWindow.rangeSelection('2026-06-13', '2026-06-19'),
+			copy.controls.activeWindow.rangeSelection('Jun 13', 'Jun 19'),
 		);
 	});
 
@@ -529,6 +529,7 @@ describe('RouteReliabilityClusters — merged mobile rail sheet (P5.4)', () => {
 		const withoutMonth: RouteReliability = {
 			...populated,
 			periods: populated.periods?.filter((period) => period.grain !== 'month'),
+			periods_by_grain: populated.periods_by_grain?.filter((period) => period.grain !== 'month'),
 		};
 		const { container } = render(RouteReliabilityClusters, {
 			props: { data: withoutMonth, locale: 'en' },

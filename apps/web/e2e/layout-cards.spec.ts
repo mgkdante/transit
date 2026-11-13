@@ -1,6 +1,6 @@
 import closedWindows from '../scripts/__fixtures__/b9/layout-windows.json' with { type: 'json' };
 import { test } from './layout-test';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Request as PlaywrightRequest } from '@playwright/test';
 import { localizeHref } from '../src/lib/i18n/routing';
 
 for (const provider of ['stm', 'octranspo'])
@@ -83,7 +83,8 @@ for (const provider of ['stm', 'octranspo'])
 			});
 
 function brokenStatusWords(element: Element) {
-	const status = element.querySelector('[data-slot="entity-result-status"]')!;
+	const status = element.querySelector('[data-slot="entity-result-status"]');
+	if (!status) return [];
 	const words: string[] = [];
 	const bounds = element.getBoundingClientRect();
 	const walker = document.createTreeWalker(status, NodeFilter.SHOW_TEXT);
@@ -106,29 +107,36 @@ async function holdReliability(page: Page, path: string) {
 	const gate = {
 		holding: true,
 		state: 'ready',
-		entered: () => {},
+		entered: (_request: PlaywrightRequest) => {},
 		releases: [] as Array<() => void>,
 	};
 	await page.route('**/v1/**', async (route) => {
+		const entered = gate.entered;
+		const state = gate.state;
 		const url = new URL(route.request().url());
 		url.pathname = '/__layout/fresh' + url.pathname;
 		const response = await route.fetch({ url: url.href });
 		if (/historic\/(?:route|stop)_reliability\/(?!index)[^/]+\.json$/.test(url.pathname)) {
-			gate.entered();
+			entered(route.request());
 			if (gate.holding)
 				await new Promise<void>((resolve) => {
 					gate.releases.push(resolve);
 				});
-			if (gate.state === 'empty') {
-				await route.fulfill({ status: 404, body: '' });
+			if (state === 'empty') {
+				await route.fulfill({
+					response,
+					status: 404,
+					body: '',
+					headers: { ...response.headers(), 'cache-control': 'no-store' },
+				});
 				return;
 			}
 			const body = await response.json();
 			Object.assign(
 				body,
-				closedWindows[gate.state === 'hedge' ? 'hedge' : 'ready'][
-					path === '/lines' ? 'line' : 'stop'
-				],
+				closedWindows[
+					state === 'low-sample' ? 'low-sample' : state === 'hedge' ? 'hedge' : 'ready'
+				][path === '/lines' ? 'line' : 'stop'],
 			);
 			await route.fulfill({ response, json: body });
 		} else await route.fulfill({ response });
@@ -145,29 +153,40 @@ for (const locale of ['en', 'fr'] as const)
 				try {
 					await page.setViewportSize({ width, height: 900 });
 					let readyHeight: number | undefined;
-					for (const state of ['ready', 'hedge', 'empty']) {
+					for (const state of ['ready', 'hedge', 'low-sample', 'empty']) {
 						gate.state = state;
 						gate.holding = true;
-						const pending = new Promise<void>((resolve) => {
+						const pending = new Promise<PlaywrightRequest>((resolve) => {
 							gate.entered = resolve;
 						});
-						await page.goto(localizeHref(path, locale), { waitUntil: 'domcontentloaded' });
+						await page.goto(localizeHref(path === '/stops' ? '/stops?route=24' : path, locale), {
+							waitUntil: 'domcontentloaded',
+						});
 						const row = page.locator('[data-slot="entity-result-row"]').first();
 						await row.scrollIntoViewIfNeeded();
-						await pending;
+						const request = await pending;
+						const delivered = page.waitForResponse((response) => response.request() === request);
 						await page.evaluate(() => document.fonts.ready);
 						const before = (await row.boundingBox())!.height;
 						gate.holding = false;
 						for (const release of gate.releases.splice(0)) release();
-						if (state === 'empty') await expect(row.locator('[data-phase="empty"]')).toBeAttached();
+						const response = await delivered;
+						await response.finished();
+						expect(response.status()).toBe(state === 'empty' ? 404 : 200);
+						if (state === 'empty')
+							await expect(row.locator('[data-slot="entity-result-status"]')).toHaveCount(0);
 						else
 							await expect(
 								row.locator(
-									state === 'hedge'
+									state === 'hedge' || state === 'low-sample'
 										? '[data-slot="reliability-hedge"]'
 										: '[data-slot="reliability-badge"]',
 								),
 							).toBeVisible();
+						if (state === 'low-sample')
+							await expect(row.locator('[data-slot="reliability-hedge"]')).toHaveTextContent(
+								locale === 'fr' ? /Données insuffisantes/ : /Not enough data/,
+							);
 						const after = (await row.boundingBox())!.height;
 						expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
 						if (state === 'ready') readyHeight = after;

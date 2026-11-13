@@ -437,7 +437,11 @@ export function toReliabilityClusters(
 	const allDayOfWeek = data.day_of_week ?? [];
 	const allWeakStops = data.weak_stops ?? [];
 
-	const periodsGrain = (data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null;
+	const closedCuts = grain === 'week' || grain === 'month';
+	const periodsGrain =
+		closedCuts && !trailing
+			? null
+			: ((data.periods_by_grain ?? []).find((g) => g.grain === grain) ?? null);
 	const headwayGrain = (data.headway_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 	const weakStopsGrain = (data.weak_stops_by_grain ?? []).find((g) => g.grain === grain) ?? null;
 
@@ -465,37 +469,41 @@ export function toReliabilityClusters(
 
 	const exactCancellation = retained?.aggregate.cancellation.value ?? null;
 	const exactSkippedStops = retained?.aggregate.skippedStops.value ?? null;
-	const closedRates = !dateRange && (grain === 'week' || grain === 'month');
+	const closedRates = !dateRange && ['day', 'week', 'month'].includes(grain);
+	const rateThrough = grain === 'day' ? (selectedDate ?? closedThrough) : closedThrough;
+	const cancellationRows = windowByGrain(
+		allCancellations,
+		grain,
+		selectedDate,
+		dateRange,
+		closedRates ? rateThrough : undefined,
+	);
+	const skippedRows = windowByGrain(
+		allSkipped,
+		grain,
+		selectedDate,
+		dateRange,
+		closedRates ? rateThrough : undefined,
+	);
+	const cancelFallback = closedRates ? (grain === 'day' ? cancellationRows : []) : allCancellations;
+	const skipFallback = closedRates ? (grain === 'day' ? skippedRows : []) : allSkipped;
 	const cancellationRatePct =
 		exactCancellation?.cancellationRatePct == null
 			? (pooledRate(
-					windowByGrain(
-						allCancellations,
-						grain,
-						selectedDate,
-						dateRange,
-						closedRates ? closedThrough : undefined,
-					),
+					cancellationRows,
 					(c) => c.canceled_trip_days,
 					(c) => c.total_trip_days,
 					1,
-				) ??
-				(closedRates ? null : mostRecentRate(allCancellations, (c) => c.cancellation_rate_pct)))
+				) ?? mostRecentRate(cancelFallback, (c) => c.cancellation_rate_pct))
 			: roundHalfAwayFromZero(exactCancellation.cancellationRatePct, 1);
 	const skippedStopRatePct =
 		exactSkippedStops == null
 			? (pooledRate(
-					windowByGrain(
-						allSkipped,
-						grain,
-						selectedDate,
-						dateRange,
-						closedRates ? closedThrough : undefined,
-					),
+					skippedRows,
 					(s) => s.skipped_stop_count,
 					(s) => s.stop_time_update_count,
 					1,
-				) ?? (closedRates ? null : mostRecentRate(allSkipped, (s) => s.skipped_stop_rate_pct)))
+				) ?? mostRecentRate(skipFallback, (s) => s.skipped_stop_rate_pct))
 			: roundHalfAwayFromZero(exactSkippedStops.skippedStopRatePct, 1);
 	const headwayRegularityCov = selectHeadwayCov(allHeadway);
 
@@ -609,17 +617,17 @@ export function toReliabilityClusters(
 	};
 
 	const trend = hasRange ? rangeDays : grainTrendAsc;
-	const dayOfWeek = (periodsGrain?.day_of_week ?? allDayOfWeek)
+	const dayOfWeek = (periodsGrain?.day_of_week ?? (closedCuts ? [] : allDayOfWeek))
 		.filter(dayOfWeekHasSignal)
 		.slice()
 		.sort((a, b) => a.day_of_week_iso - b.day_of_week_iso);
 	const weakStops = weakStopsGrain
 		? (weakStopsGrain.stops ?? []).filter((w) => w.observation_count != null)
 		: allWeakStops.filter((w) => w.avg_delay_min != null);
-	const byShift = (periodsGrain?.by_shift ?? partition.byShift)
+	const byShift = (periodsGrain?.by_shift ?? (closedCuts ? [] : partition.byShift))
 		.filter(periodHasSignal)
 		.map(toComparisonRow);
-	const byDayType = (periodsGrain?.by_daytype ?? partition.byDayType)
+	const byDayType = (periodsGrain?.by_daytype ?? (closedCuts ? [] : partition.byDayType))
 		.filter(periodHasSignal)
 		.map(toComparisonRow);
 	const peakOffPeak: PeakOffPeakVM = {
@@ -627,9 +635,11 @@ export function toReliabilityClusters(
 		byDayType,
 		isEmpty: byShift.length === 0 && byDayType.length === 0,
 	};
-	const byShiftDaytype = (periodsGrain?.by_shift_daytype ?? data.by_shift_daytype ?? []).filter(
-		crosstabHasSignal,
-	);
+	const byShiftDaytype = (
+		periodsGrain?.by_shift_daytype ??
+		(closedCuts ? [] : data.by_shift_daytype) ??
+		[]
+	).filter(crosstabHasSignal);
 	const punctuality: PunctualityVM = {
 		headline: {
 			...verdict,

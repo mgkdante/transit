@@ -311,3 +311,21 @@ it('list uses the same closed week on arrival', async () => {
 		),
 	);
 });
+
+it.each([true, false])('opens an enabled closed choice when a week exists: %s', async (hasWeek) => {
+	const { closedWeek } = await import('../lines/reliability/__fixtures__/closedWeek');
+	const data = hasWeek
+		? closedWeek
+		: {
+				...closedWeek,
+				periods_by_grain: closedWeek.periods_by_grain!.filter((p) => p.grain === 'day'),
+			};
+	harness.page.url = new URL('http://localhost/lines/24');
+	const view = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
+	const choice = view.getByRole('radio', { checked: true });
+	expect(choice).toBeEnabled();
+	expect(choice).toHaveAccessibleName(hasWeek ? /Last 7 days/ : /Latest complete day/);
+	expect(view.container.querySelector('[data-slot="verdict"]')).toHaveTextContent(
+		hasWeek ? '84%' : '85%',
+	);
+});

@@ -12,10 +12,66 @@
 					"by_daytype": [
 						{
 							"grain": "weekday",
-							"observation_count": 1000,
-							"on_time": 950
+							"observation_count": 700,
+							"on_time": 665
+						},
+						{
+							"grain": "weekend",
+							"observation_count": 300,
+							"on_time": 285
 						}
 					]
+				}
+			],
+			"periods": [
+				{
+					"grain": "day",
+					"date": "2026-08-23",
+					"observation_count": 140,
+					"on_time": 133,
+					"otp_pct": 95
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-24",
+					"observation_count": 140,
+					"on_time": 133,
+					"otp_pct": 95
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-25",
+					"observation_count": 140,
+					"on_time": 133,
+					"otp_pct": 95
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-26",
+					"observation_count": 140,
+					"on_time": 133,
+					"otp_pct": 95
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-27",
+					"observation_count": 140,
+					"on_time": 133,
+					"otp_pct": 95
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-28",
+					"observation_count": 140,
+					"on_time": 133,
+					"otp_pct": 95
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"observation_count": 160,
+					"on_time": 152,
+					"otp_pct": 95
 				}
 			]
 		},
@@ -27,6 +83,43 @@
 					"observation_count": 1000,
 					"wilson_lo": 92,
 					"wilson_hi": 98
+				}
+			],
+			"daily": [
+				{
+					"date": "2026-08-23",
+					"observation_count": 140,
+					"severe_count": 7
+				},
+				{
+					"date": "2026-08-24",
+					"observation_count": 140,
+					"severe_count": 7
+				},
+				{
+					"date": "2026-08-25",
+					"observation_count": 140,
+					"severe_count": 7
+				},
+				{
+					"date": "2026-08-26",
+					"observation_count": 140,
+					"severe_count": 7
+				},
+				{
+					"date": "2026-08-27",
+					"observation_count": 140,
+					"severe_count": 7
+				},
+				{
+					"date": "2026-08-28",
+					"observation_count": 140,
+					"severe_count": 7
+				},
+				{
+					"date": "2026-08-29",
+					"observation_count": 160,
+					"severe_count": 8
 				}
 			]
 		}
@@ -44,10 +137,66 @@
 					"by_daytype": [
 						{
 							"grain": "weekday",
-							"observation_count": 368,
-							"on_time": 302
+							"observation_count": 250,
+							"on_time": 200
+						},
+						{
+							"grain": "weekend",
+							"observation_count": 118,
+							"on_time": 102
 						}
 					]
+				}
+			],
+			"periods": [
+				{
+					"grain": "day",
+					"date": "2026-08-23",
+					"observation_count": 50,
+					"on_time": 40,
+					"otp_pct": 80
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-24",
+					"observation_count": 50,
+					"on_time": 40,
+					"otp_pct": 80
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-25",
+					"observation_count": 50,
+					"on_time": 40,
+					"otp_pct": 80
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-26",
+					"observation_count": 50,
+					"on_time": 40,
+					"otp_pct": 80
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-27",
+					"observation_count": 50,
+					"on_time": 40,
+					"otp_pct": 80
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-28",
+					"observation_count": 50,
+					"on_time": 40,
+					"otp_pct": 80
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"observation_count": 68,
+					"on_time": 62,
+					"otp_pct": 91
 				}
 			]
 		},
@@ -59,6 +208,166 @@
 					"observation_count": 368,
 					"wilson_lo": 78,
 					"wilson_hi": 86
+				}
+			],
+			"daily": [
+				{
+					"date": "2026-08-23",
+					"observation_count": 50,
+					"severe_count": 10
+				},
+				{
+					"date": "2026-08-24",
+					"observation_count": 50,
+					"severe_count": 10
+				},
+				{
+					"date": "2026-08-25",
+					"observation_count": 50,
+					"severe_count": 10
+				},
+				{
+					"date": "2026-08-26",
+					"observation_count": 50,
+					"severe_count": 10
+				},
+				{
+					"date": "2026-08-27",
+					"observation_count": 50,
+					"severe_count": 10
+				},
+				{
+					"date": "2026-08-28",
+					"observation_count": 50,
+					"severe_count": 10
+				},
+				{
+					"date": "2026-08-29",
+					"observation_count": 68,
+					"severe_count": 6
+				}
+			]
+		}
+	},
+	"low-sample": {
+		"line": {
+			"periods_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29"
+				},
+				{
+					"grain": "week",
+					"date": "2026-08-23",
+					"by_daytype": [
+						{
+							"grain": "weekday",
+							"observation_count": 5,
+							"on_time": 5
+						},
+						{
+							"grain": "weekend",
+							"observation_count": 5,
+							"on_time": 3
+						}
+					]
+				}
+			],
+			"periods": [
+				{
+					"grain": "day",
+					"date": "2026-08-23",
+					"observation_count": 1,
+					"on_time": 1,
+					"otp_pct": 100
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-24",
+					"observation_count": 1,
+					"on_time": 1,
+					"otp_pct": 100
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-25",
+					"observation_count": 1,
+					"on_time": 1,
+					"otp_pct": 100
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-26",
+					"observation_count": 1,
+					"on_time": 1,
+					"otp_pct": 100
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-27",
+					"observation_count": 1,
+					"on_time": 1,
+					"otp_pct": 100
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-28",
+					"observation_count": 1,
+					"on_time": 1,
+					"otp_pct": 100
+				},
+				{
+					"grain": "day",
+					"date": "2026-08-29",
+					"observation_count": 4,
+					"on_time": 2,
+					"otp_pct": 50
+				}
+			]
+		},
+		"stop": {
+			"periods": [
+				{
+					"grain": "week",
+					"otp_pct": 80,
+					"observation_count": 10
+				}
+			],
+			"daily": [
+				{
+					"date": "2026-08-23",
+					"observation_count": 1,
+					"severe_count": 0
+				},
+				{
+					"date": "2026-08-24",
+					"observation_count": 1,
+					"severe_count": 0
+				},
+				{
+					"date": "2026-08-25",
+					"observation_count": 1,
+					"severe_count": 0
+				},
+				{
+					"date": "2026-08-26",
+					"observation_count": 1,
+					"severe_count": 0
+				},
+				{
+					"date": "2026-08-27",
+					"observation_count": 1,
+					"severe_count": 0
+				},
+				{
+					"date": "2026-08-28",
+					"observation_count": 1,
+					"severe_count": 0
+				},
+				{
+					"date": "2026-08-29",
+					"observation_count": 4,
+					"severe_count": 2
 				}
 			]
 		}

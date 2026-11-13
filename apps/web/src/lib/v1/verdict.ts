@@ -1,12 +1,9 @@
 import { verdictCopy } from './verdict.copy';
 import type { Locale } from '#lib/i18n/index.ts';
 import { wilsonBoundsProportion } from '#lib/v1/stats.ts';
-import {
-	isClosedDay,
-	routeClosedThrough,
-	trailingRouteWindow,
-	type ClosedWindow,
-} from './closedWindow';
+import { formatDateKey } from '#lib/utils/time.ts';
+import { DEFAULT_LOCALE, PUBLISHED_LOCALES } from '#lib/i18n/config.ts';
+import { isClosedDay, routeClosedThrough, trailingRouteWindow } from './closedWindow';
 import type { RouteReliability } from './index';
 
 export type VerdictStatus = 'reliable' | 'patchy' | 'unreliable' | 'tentative' | 'absent';
@@ -226,13 +223,17 @@ export function reliabilityVerdict(
 		otpPct: headline.otpPct == null ? null : Math.round(headline.otpPct),
 	};
 	const mode = window.from && window.to ? 'range' : grain;
+	const dateLocale = PUBLISHED_LOCALES.find((locale) => locale === copy.locale) ?? DEFAULT_LOCALE;
 	const presentation =
 		trailing && !window.from && copy.closedWindow
 			? {
 					...copy,
 					windowPhrase: {
 						...copy.windowPhrase,
-						[trailingGrain]: copy.closedWindow(trailing.window),
+						[trailingGrain]: copy.closedWindow(
+							formatDateKey(trailing.window.from, dateLocale),
+							formatDateKey(trailing.window.to, dateLocale),
+						),
 					},
 				}
 			: copy;
@@ -271,7 +272,8 @@ export interface VerdictSentenceArgs {
 }
 
 export interface VerdictCopy {
-	readonly closedWindow?: (window: ClosedWindow) => string;
+	readonly locale?: string;
+	readonly closedWindow?: (from: string, to: string) => string;
 	readonly windowPhrase: {
 		readonly day: string;
 		readonly week: string;

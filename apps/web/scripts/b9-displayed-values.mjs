@@ -1327,6 +1327,11 @@ const MARK_SIGNATURES = Object.freeze({
 		// -1 and 1 min are thinned next to the pinned zero at this width.
 		axis: ['Delay (min)', '-5', '0', '5', '10', '30'],
 	},
+	lineHistogram: {
+		domain: [-300, 1800],
+		unit: 's',
+		axis: ['Delay, early to late (min)', '-5', '0', '5', '10', '30'],
+	},
 	'dot-strip': {
 		domain: [0, 100],
 		unit: '%',
@@ -1419,9 +1424,14 @@ const MARK_SIGNATURES = Object.freeze({
 	},
 });
 
-async function verifyGeometry(page, seen) {
+async function verifyGeometry(page, seen, cell) {
 	for (const [kind, [rootSelector, markSelector]] of Object.entries(MARK_SELECTORS)) {
-		if (seen.has(kind) || (await page.locator(rootSelector).count()) === 0) continue;
+		if (
+			(seen.has(kind) &&
+				(kind !== 'histogram' || seen.get(kind).surfaces.includes(cell.surface))) ||
+			(await page.locator(rootSelector).count()) === 0
+		)
+			continue;
 		const root = page.locator(rootSelector).first();
 		await root.scrollIntoViewIfNeeded();
 		const frame = root.locator('[data-slot="chart-frame"]').first();
@@ -1434,7 +1444,10 @@ async function verifyGeometry(page, seen) {
 			box && box.width > 0 && box.height > 0,
 			`${kind} representative mark has zero geometry`,
 		);
-		const signature = MARK_SIGNATURES[kind];
+		const signature =
+			kind === 'histogram' && cell.surface === 'line'
+				? MARK_SIGNATURES.lineHistogram
+				: MARK_SIGNATURES[kind];
 		const axis = (await root.locator('svg text').allTextContents())
 			.map((value) => value.trim())
 			.filter((value) => kind !== 'trend' || !/^[A-Z][a-z]{2} \d{1,2}$/u.test(value));
@@ -1468,7 +1481,11 @@ async function verifyGeometry(page, seen) {
 				'sparkline no longer uses its [4,8] representative domain',
 			);
 		}
-		seen.set(kind, { domain: signature.domain, unit: signature.unit });
+		seen.set(kind, {
+			domain: signature.domain,
+			unit: signature.unit,
+			surfaces: [...(seen.get(kind)?.surfaces ?? []), cell.surface],
+		});
 	}
 	if ((await page.locator('[data-slot="histogram-mark"]').count()) > 0) {
 		const figure = page.locator('[data-slot="histogram-mark"]').first();
@@ -2066,7 +2083,7 @@ async function runGate({ fixtures = FIXTURES, cells = CELLS, runs = 2, synthetic
 					}
 				}
 				if (run === 0 && cell.fixture === 'rich' && cell.locale === 'en') {
-					await verifyGeometry(page, geometrySeen);
+					await verifyGeometry(page, geometrySeen, cell);
 				}
 				await verifyControls(page, cell);
 				await verifyResponsiveRailFocus(page, cell);

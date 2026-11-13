@@ -73,8 +73,32 @@ it('keeps cancellation and skipped-stop windows closed', async () => {
 			{ date: '2026-11-11', stop_time_update_count: 100, skipped_stop_count: 90 },
 		],
 	};
+	expect(toReliabilityClusters(data, { grain: 'day' }).strip).toMatchObject({
+		cancellationRatePct: 2,
+		skippedStopRatePct: 3,
+	});
 	expect(toReliabilityClusters(data, { grain: 'week' }).strip).toMatchObject({
 		cancellationRatePct: 2,
 		skippedStopRatePct: 3,
 	});
+});
+it('does not show stale weekly cuts under the closed-week label', async () => {
+	const { toReliabilityClusters } = await import('#lib/features/lines/reliability/clusters.ts');
+	const stale = {
+		...closedWeek,
+		periods_by_grain: [
+			{ grain: 'day', date: '2026-11-10' },
+			{
+				grain: 'week',
+				date: '2026-11-03',
+				by_shift: [{ grain: 'am_peak', otp_pct: 90 }],
+				by_daytype: [{ grain: 'weekday', observation_count: 100, on_time: 90 }],
+				day_of_week: [{ day_of_week_iso: 1, avg_delay_min: 3 }],
+			},
+		],
+	};
+	const pane = toReliabilityClusters(stale, { grain: 'week' }).punctuality;
+	expect(pane.peakOffPeak.byShift).toEqual([]);
+	expect(pane.peakOffPeak.byDayType).toEqual([]);
+	expect(pane.dayOfWeek).toEqual([]);
 });

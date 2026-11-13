@@ -97,3 +97,22 @@ it('renders nothing for an absent verdict without a percentage', () => {
 	expect(container.querySelector('[data-slot="reliability-hedge"]')).toBeNull();
 	expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
 });
+it.each([
+	['en', 'Not enough data'],
+	['fr', 'Données insuffisantes'],
+] as const)('names a low-sample figure in %s', (locale, text) => {
+	const view = render(ReliabilityBadge, {
+		props: {
+			locale,
+			snapshot: snap({
+				phase: 'ready',
+				otpPct: 80,
+				verdict: 'tentative',
+				observationCount: 10,
+				closedThrough: '2026-11-10',
+			}),
+		},
+	});
+	expect(view.getByRole('img')).toHaveTextContent(text);
+	expect(view.getByRole('img')).toHaveTextContent(locale === 'fr' ? '10 nov.' : 'Nov 10');
+});

@@ -1,36 +1,10 @@
+import measuredClosedWeek from './closed-week.json' with { type: 'json' };
 import type { RouteReliability } from '#lib/v1/index.ts';
 import { isoUtc } from '#lib/v1/schemas/types.ts';
 
 export const closedWeek: RouteReliability = {
-	id: 'invented-line',
-	generated_utc: isoUtc().parse('2026-11-11T00:00:00Z'),
-	periods: [
-		{ grain: 'day', date: '2026-11-10', otp_pct: 85, observation_count: 43815, on_time: 37243 },
-		{ grain: 'day', date: '2026-11-11', otp_pct: 75, observation_count: 1191, on_time: 893 },
-	],
-	periods_by_grain: [
-		{ grain: 'day', date: '2026-11-10' },
-		{
-			grain: 'week',
-			date: '2026-11-04',
-			by_daytype: [
-				{
-					grain: 'weekday',
-					observation_count: 200000,
-					on_time: 170000,
-					avg_delay_min: 2,
-					severe_pct: 10,
-				},
-				{
-					grain: 'weekend',
-					observation_count: 27378,
-					on_time: 20827,
-					avg_delay_min: 4,
-					severe_pct: 20,
-				},
-			],
-		},
-	],
+	...measuredClosedWeek,
+	generated_utc: isoUtc().parse(measuredClosedWeek.generated_utc),
 };
 
 /** Publish only complete spans backed by explicit dated counts in the fixture. */

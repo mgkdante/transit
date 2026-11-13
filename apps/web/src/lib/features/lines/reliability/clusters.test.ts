@@ -787,8 +787,10 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 		],
 		habits: { scale: 'repeat_problem_relative', matrix: [[0.9]] },
 		periods_by_grain: [
+			populated.periods_by_grain![0],
 			{
 				grain: 'week',
+				date: '2026-06-12',
 				by_shift: [
 					{
 						grain: 'am_peak',
@@ -886,7 +888,7 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 	});
 
 	it('falls back to scalar + flags windowed=false when the grain has no windowed entry', () => {
-		const c = toReliabilityClusters(windowed, { grain: 'day' });
+		const c = toReliabilityClusters({ ...windowed, periods_by_grain: [] }, { grain: 'day' });
 		expect(c.punctuality.windowed).toBe(false);
 		expect(c.punctuality.weakStopsWindowed).toBe(false);
 		expect(c.waitRegularity.windowed).toBe(false);
@@ -928,9 +930,7 @@ describe('toReliabilityClusters — *_by_grain windowable §1/§2/§4 (S7-B)', (
 			{
 				generated_utc: utc('2026-06-19T02:00:00Z'),
 				id: '51',
-				periods_by_grain: [
-					{ grain: 'week', by_shift: [{ grain: 'am_peak', otp_pct: 80, observation_count: 200 }] },
-				],
+				periods_by_grain: windowed.periods_by_grain,
 			},
 			{ grain: 'week' },
 		);

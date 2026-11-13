@@ -29,7 +29,14 @@ const utc = (v: string): IsoUtc => v as IsoUtc;
 const data: RouteReliability = {
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	id: '51',
-	periods_by_grain: [{ grain: 'day', date: '2026-06-18' }],
+	periods_by_grain: [
+		{ grain: 'day', date: '2026-06-18' },
+		{
+			grain: 'week',
+			date: '2026-06-12',
+			by_daytype: [{ grain: 'weekday', observation_count: 5400, on_time: 3834 }],
+		},
+	],
 	periods: [
 		{ grain: 'day', date: '2026-06-18', otp_pct: 82, observation_count: 900, on_time: 738 },
 		{ grain: 'week', otp_pct: 71, observation_count: 5400, on_time: 3834 },
@@ -61,15 +68,17 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(weekCaption.length).toBeGreaterThan(0);
 	});
 
-	it('keeps an unavailable explicitly selected month absent', () => {
+	it('opens the closed day when the selected month is unavailable', () => {
 		mockUrl = new URL('http://localhost/lines/51?grain=month');
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
-		expect(caption(container)).toMatch(/not published/i);
+		expect(container.querySelector('[role="radio"][aria-checked="true"]')).toHaveAccessibleName(
+			/Latest complete day/,
+		);
 		expect(container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
 			'data-status',
-			'absent',
+			'tentative',
 		);
-		expect(mockUrl.searchParams.get('grain')).toBe('month');
+		expect(mockUrl.searchParams.get('grain')).toBe('day');
 	});
 
 	it('falls back to the closed week for an unknown ?grain value (readGrain enum-validates the hint)', () => {
@@ -160,7 +169,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(caption(container)).toBe(caption(dflt));
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('last 7 days');
+		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
 	});
 
 	it('bare ?from/?to with one out-of-window bound → reverts to the default closed week', () => {
@@ -169,7 +178,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 			props: { data: rangeData, locale: 'en' },
 		});
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('last 7 days');
+		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 	});
 
