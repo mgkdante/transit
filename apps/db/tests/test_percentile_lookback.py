@@ -9,8 +9,10 @@ from transit_ops.settings import Settings
 NOW = datetime(2026, 3, 26, 12, tzinfo=UTC)
 
 
-@pytest.mark.parametrize("retention", [14, 30])
-def test_percentile_calendar_stays_fixed_when_retention_grows(monkeypatch, retention):
+@pytest.mark.parametrize("retention,period_floor", [(14, (3, 13)), (30, (2, 25))])
+def test_percentile_window_stays_fixed_while_period_coverage_grows(
+    monkeypatch, retention, period_floor
+):
     monkeypatch.setattr(rollups, "utc_now", lambda: NOW)
     monkeypatch.setattr(delay_periods, "utc_now", lambda: NOW)
     conn = SharedCalendarConnection()
@@ -23,7 +25,7 @@ def test_percentile_calendar_stays_fixed_when_retention_grows(monkeypatch, reten
     assert calendar["floor_key"] == 20260313
     assert calendar["retained_since_utc"] == NOW - timedelta(days=retention)
     period = next(p for _, p in conn.bound_calls if "closed_before" in p)
-    assert period["since_utc"] == datetime(2026, 3, 13, 12, tzinfo=UTC)
+    assert period["since_utc"] == datetime(2026, *period_floor, 12, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("retention", [0, 1, 10, 13])
@@ -36,9 +38,9 @@ def test_warm_build_refuses_insufficient_retention_before_connecting(retention):
         )
 
 
-@pytest.mark.parametrize("retention", [0, 1, 10, 13])
+@pytest.mark.parametrize("retention", [0, 1])
 def test_period_build_refuses_insufficient_retention_before_connecting(retention):
-    with pytest.raises(ValueError, match="retained facts.*at least 14"):
+    with pytest.raises(ValueError, match="at least two days of retained facts"):
         delay_periods.build_delay_periods(
             FakeEngine(FakeConnection()),
             provider_id="lookback",

@@ -22,7 +22,6 @@ from transit_ops.gold.delay_days import (
 from transit_ops.gold.delay_hours import delay_hour_statement, refresh_changed_delay_hours
 from transit_ops.gold.delay_periods import (
     GHOST_DELAY_ABS_SECONDS,
-    PERCENTILE_LOOKBACK_DAYS,
     SEVERE_DELAY_SECONDS,
     UPSERT_WARM_ROLLUP_PERIOD,
     PeriodBuildProgress,
@@ -39,6 +38,9 @@ from transit_ops.settings import Settings, get_settings
 from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
+
+# A method window: retaining more facts must not widen the published percentiles.
+PERCENTILE_LOOKBACK_DAYS = 13
 
 SET_ROLLUP_WORK_MEM = named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'")
 

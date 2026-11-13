@@ -13,8 +13,6 @@ from transit_ops.sql_registry import named_query
 
 SEVERE_DELAY_SECONDS = 300
 GHOST_DELAY_ABS_SECONDS = 3600
-# A method window: retaining more facts must not widen the published percentiles.
-PERCENTILE_LOOKBACK_DAYS = 13
 
 
 @dataclass
@@ -262,13 +260,10 @@ def build_delay_periods(
     repair_premature: bool = False,
     dry_run: bool = False,
 ) -> int:
-    if retention_days < PERCENTILE_LOOKBACK_DAYS + 1:
-        raise ValueError(
-            "Delay period builds require retained facts for at least "
-            f"{PERCENTILE_LOOKBACK_DAYS + 1} days to cover the percentile lookback"
-        )
+    if retention_days < 2:
+        raise ValueError("Delay period builds require at least two days of retained facts")
     closed_before = period_start(now)
-    retained_since = period_start(now - timedelta(days=PERCENTILE_LOOKBACK_DAYS))
+    retained_since = period_start(now - timedelta(days=retention_days - 1))
     if repair_premature:
         if since_utc is None or until_utc is None:
             raise ValueError("Premature-period repair requires explicit bounds")
