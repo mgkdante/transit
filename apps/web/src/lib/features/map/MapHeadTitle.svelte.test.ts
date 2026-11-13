@@ -6,8 +6,9 @@ import MapHeadTitle from './MapHeadTitle.svelte';
 
 describe('MapHeadTitle', () => {
 	it.each(['en', 'fr'] as const)('renders the %s title without an eyebrow', (locale) => {
+		const { heading, headingLead: lead } = MAP_COPY[locale];
 		const { container } = render(MapHeadTitle, {
-			props: { locale, heading: MAP_COPY[locale].heading, presentation: stampFixture() },
+			props: { locale, heading, lead, presentation: stampFixture() },
 		});
 		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
 			`${MAP_COPY[locale].heading}.`,
@@ -17,6 +18,10 @@ describe('MapHeadTitle', () => {
 		expect(report).toBeInTheDocument();
 		expect(
 			report!.compareDocumentPosition(screen.getByRole('heading', { level: 1 })) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(
+			screen.getByRole('heading', { level: 1 }).compareDocumentPosition(screen.getByText(lead)) &
 				Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
 	});

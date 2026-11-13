@@ -387,7 +387,7 @@ describe('MapSelectionDetail', () => {
 		const { container } = render(MapSelectionDetail, { props: { detail, locale: 'en' } });
 		const chips = container.querySelector('[data-slot="detail-meta"]')!;
 		expect(chips).not.toHaveTextContent('veh-1');
-		expect(chips).toHaveTextContent('Route 24');
+		expect(chips).toHaveTextContent('Line 24');
 		expect(chips).not.toHaveTextContent('Late');
 		expect(chips).not.toHaveTextContent('Standing');
 		expect(chips).not.toHaveTextContent('Trip trip-24-a');
@@ -612,7 +612,7 @@ describe('MapSelectionDetail', () => {
 		const moreDepartures = container.querySelector<HTMLElement>(
 			'[data-slot="detail-more-departures"]',
 		)!;
-		expect(routeTimes.querySelector('button')).toHaveAccessibleName(/Select route/);
+		expect(routeTimes.querySelector('button')).toHaveAccessibleName(/Select line/);
 		expect(moreDepartures).toHaveAttribute('data-ladder-expand', '560');
 		expect(routeTimes.compareDocumentPosition(moreDepartures)).toBe(
 			Node.DOCUMENT_POSITION_FOLLOWING,
@@ -675,7 +675,7 @@ describe('MapSelectionDetail', () => {
 			},
 		});
 		expect(getByRole('button')).toHaveAccessibleName(
-			`Select vehicle veh-1, Route 24, ${expectedTime}, Late, Delay: +4 min`,
+			`Select vehicle veh-1, Line 24, ${expectedTime}, Late, Delay: +4 min`,
 		);
 	});
 
@@ -939,7 +939,7 @@ describe('MapSelectionDetail', () => {
 			},
 		);
 
-		expect(container.querySelector('[data-slot="detail-meta"]')).toHaveTextContent('Route 24');
+		expect(container.querySelector('[data-slot="detail-meta"]')).toHaveTextContent('Line 24');
 		expect(detailValue(container, 'Status')).toHaveTextContent('▲ Late');
 		expect(detailValue(container, 'Crowding')).toHaveTextContent(
 			`${occupancyGlyph('standing')} Standing`,
@@ -957,7 +957,7 @@ describe('MapSelectionDetail', () => {
 		).toBeInTheDocument();
 
 		if (detail?.kind !== 'vehicle') throw new Error('expected vehicle detail');
-		await fireEvent.click(getByRole('button', { name: 'Select route 24' }));
+		await fireEvent.click(getByRole('button', { name: 'Select line 24' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
 
 		await fireEvent.click(
@@ -1148,7 +1148,7 @@ describe('MapSelectionDetail', () => {
 			['Departures', '2 departures'],
 		]);
 		expect(document.querySelector('[data-slot="detail-meta"]')).toBeNull();
-		expect(getAllByText(/Route 24/).length).toBeGreaterThan(0);
+		expect(getAllByText(/Line 24/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Past times:/).length).toBeGreaterThan(0);
 		expect(getAllByText(/Next times:/).length).toBeGreaterThan(0);
 		expect(getByText(/08:00/)).toBeInTheDocument();
@@ -1157,7 +1157,7 @@ describe('MapSelectionDetail', () => {
 			getByRole('button', { name: 'Select alert Stop 52618 moved to the northeast corner.' }),
 		).toBeInTheDocument();
 
-		await fireEvent.click(getByRole('button', { name: 'Select departure route 24' }));
+		await fireEvent.click(getByRole('button', { name: 'Select departure line 24' }));
 		expect(onselect).toHaveBeenCalledWith({ kind: 'route', id: '24' });
 
 		await fireEvent.click(getAllByRole('button', { name: 'Filter trip trip-24-a' })[0]);
@@ -1197,7 +1197,7 @@ describe('MapSelectionDetail', () => {
 			props: { detail, locale: 'en', onselect },
 		});
 
-		expect(getAllByText('Route 24').length).toBeGreaterThan(0);
+		expect(getAllByText('Line 24').length).toBeGreaterThan(0);
 		expect(getByText('Sherbrooke')).toBeInTheDocument();
 		expect(getAllByText('toward Van Horne / Rockland').length).toBeGreaterThan(0);
 		expect(getByText('2 vehicles visible')).toBeInTheDocument();

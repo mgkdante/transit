@@ -6,17 +6,22 @@
 	interface Props {
 		locale: Locale;
 		heading: string;
+		/** What colour and shape mean. Below desktop width the legend's first line carries it. */
+		lead: string;
 		presentation: StampPresentation;
+		/** Rendered height of the title block, so the controls below it can clear it. */
+		height?: number;
 	}
 
-	let { locale, heading, presentation }: Props = $props();
+	let { locale, heading, lead, presentation, height = $bindable(0) }: Props = $props();
 </script>
 
-<div class="map-overlay map-head">
+<div class="map-overlay map-head" bind:offsetHeight={height}>
 	<MapFreshness placement="head" {presentation} {locale} />
 	<div class="map-title-row">
 		<h1 class="map-heading">{heading}<span class="map-dot">.</span></h1>
 	</div>
+	<p class="map-lead" data-slot="map-lead">{lead}</p>
 </div>
 
 <style>
@@ -56,6 +61,18 @@
 	.map-dot {
 		color: var(--primary);
 	}
+	/* The controls column is 300px wide; the line stays inside it, clear of the centred banners. */
+	.map-lead {
+		align-self: flex-start;
+		max-width: 300px;
+		margin: 0;
+		padding: 0.25rem 0.5rem;
+		font-size: var(--text-caption);
+		line-height: 1.4;
+		color: var(--muted-foreground);
+		background: var(--card);
+		border-radius: var(--radius-sm);
+	}
 
 	@media (--desktop-max) {
 		.map-head {
@@ -85,6 +102,9 @@
 		}
 		.map-heading {
 			font-size: var(--text-subheading);
+		}
+		.map-lead {
+			display: none;
 		}
 	}
 </style>

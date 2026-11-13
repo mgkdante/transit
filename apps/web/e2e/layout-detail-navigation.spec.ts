@@ -193,7 +193,7 @@ for (const provider of ['stm', 'octranspo'])
 				);
 				await expect(
 					panel.getByRole('button', {
-						name: locale === 'fr' ? 'Sélectionner la ligne 24' : 'Select route 24',
+						name: locale === 'fr' ? 'Sélectionner la ligne 24' : 'Select line 24',
 						exact: true,
 					}),
 				).toBeVisible();
@@ -235,7 +235,7 @@ for (const provider of ['stm', 'octranspo'])
 
 				await panel
 					.getByRole('button', {
-						name: locale === 'fr' ? 'Sélectionner la ligne 24' : 'Select route 24',
+						name: locale === 'fr' ? 'Sélectionner la ligne 24' : 'Select line 24',
 						exact: true,
 					})
 					.click();

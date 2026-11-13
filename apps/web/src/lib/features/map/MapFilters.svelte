@@ -30,6 +30,7 @@
 	import MapFilterGroup from './MapFilterGroup.svelte';
 	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
 	import MapFilterRail from './MapFilterRail.svelte';
+	import MapLegend from './MapLegend.svelte';
 	import MarkerGlyph from './MarkerGlyph.svelte';
 	import { copy as MAP_COPY } from './map.copy';
 
@@ -64,11 +65,14 @@
 
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let filterOpen = $state(true);
-	let markersOpen = $state(true);
-	let alertsOpen = $state(true);
-	let activeOpen = $state(false);
-	let statusOpen = $state(true);
-	let crowdingOpen = $state(true);
+	const groupOpen = $state<Record<MapFilterGroupKind, boolean>>({
+		legend: true,
+		markers: true,
+		alerts: true,
+		active: false,
+		status: true,
+		crowding: true,
+	});
 	let previousSelectedCount = 0;
 
 	const t = $derived(MAP_COPY[locale]);
@@ -113,8 +117,8 @@
 
 	$effect(() => {
 		const count = selectedCount;
-		if (count > 0 && previousSelectedCount === 0) activeOpen = true;
-		if (count === 0) activeOpen = false;
+		if (count > 0 && previousSelectedCount === 0) groupOpen.active = true;
+		if (count === 0) groupOpen.active = false;
 		previousSelectedCount = count;
 	});
 
@@ -164,24 +168,10 @@
 		rootEl?.querySelector<HTMLElement>(open ? '.mf-toggle' : '.mf-rail-expand')?.focus();
 	}
 
-	function toggleGroup(kind: MapFilterGroupKind): void {
-		if (kind === 'markers') markersOpen = !markersOpen;
-		else if (kind === 'alerts') alertsOpen = !alertsOpen;
-		else if (kind === 'active') activeOpen = !activeOpen;
-		else if (kind === 'status') statusOpen = !statusOpen;
-		else crowdingOpen = !crowdingOpen;
-	}
-
-	function openGroup(kind: MapFilterGroupKind): void {
-		if (kind === 'markers') markersOpen = true;
-		else if (kind === 'alerts') alertsOpen = true;
-		else if (kind === 'active') activeOpen = true;
-		else if (kind === 'status') statusOpen = true;
-		else crowdingOpen = true;
-	}
+	const toggleGroup = (kind: MapFilterGroupKind) => (groupOpen[kind] = !groupOpen[kind]);
 
 	async function activateRail(target: RailTarget): Promise<void> {
-		if (target !== 'motion') openGroup(target);
+		if (target !== 'motion') groupOpen[target] = true;
 		setPanelOpen(true);
 		await tick();
 		const selector =
@@ -309,9 +299,17 @@
 		<Separator decorative />
 		<div class="mf-body">
 			<MapFilterGroup
+				kind="legend"
+				label={t.legend.title}
+				open={groupOpen.legend}
+				{presentation}
+				ontoggle={() => toggleGroup('legend')}
+				><MapLegend {locale} lead={presentation === 'drawer'} /></MapFilterGroup
+			>
+			<MapFilterGroup
 				kind="markers"
 				label={t.legendTitle}
-				open={markersOpen}
+				open={groupOpen.markers}
 				{presentation}
 				ontoggle={() => toggleGroup('markers')}
 			>
@@ -345,7 +343,7 @@
 				<MapFilterGroup
 					kind="alerts"
 					label={t.modeAlerts}
-					open={alertsOpen}
+					open={groupOpen.alerts}
 					{presentation}
 					ontoggle={() => toggleGroup('alerts')}
 				>
@@ -373,7 +371,7 @@
 			<MapFilterGroup
 				kind="active"
 				label={t.activeTitle}
-				open={activeOpen}
+				open={groupOpen.active}
 				{presentation}
 				count={selectedCount}
 				ontoggle={() => toggleGroup('active')}
@@ -469,7 +467,8 @@
 			<MapFilterGroup
 				kind="status"
 				label={t.modeStatus}
-				open={statusOpen}
+				help={t.statusHelp}
+				open={groupOpen.status}
 				{presentation}
 				ontoggle={() => toggleGroup('status')}
 			>
@@ -500,7 +499,7 @@
 			{#if occupancyAvailable}<MapFilterGroup
 					kind="crowding"
 					label={t.modeOccupancy}
-					open={crowdingOpen}
+					open={groupOpen.crowding}
 					{presentation}
 					ontoggle={() => toggleGroup('crowding')}
 				>
