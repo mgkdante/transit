@@ -1,0 +1,10 @@
+header { gtfs_realtime_version: "2.0" }
+entity { id: "selectors-fixture" alert {
+ header_text { translation { language: "en" text: "Imaginary selector notice" } }
+ informed_entity { agency_id: "fictional-agency" }
+ informed_entity { route_id: "fictional-route" }
+ informed_entity { route_type: 0 }
+ informed_entity { stop_id: "fictional-stop" }
+ informed_entity { trip { trip_id: "fictional-trip" route_id: "trip-route" direction_id: 1 start_time: "25:10:00" start_date: "20261112" schedule_relationship: SCHEDULED } direction_id: 1 }
+ informed_entity { agency_id: "combined-agency" route_id: "combined-route" route_type: 3 stop_id: "combined-stop" trip { trip_id: "combined-trip" direction_id: 0 start_time: "08:00:00" start_date: "20261112" } }
+} }

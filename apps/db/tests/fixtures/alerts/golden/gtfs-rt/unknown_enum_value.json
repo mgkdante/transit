@@ -1,0 +1,52 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": null,
+      "alert_header_text": null,
+      "alert_header_text_en": null,
+      "alert_id": "x",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "bec785a0f458ee6bf8c0919465d0d3f4",
+      "description_text": null,
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "id": "x",
+        "informedEntities": []
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "converted_payload": {
+    "alerts": [
+      {
+        "id": "x",
+        "informedEntities": []
+      }
+    ],
+    "gtfsRealtimeVersion": "2.0",
+    "timestamp": null
+  },
+  "entity_rows": [],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:x",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    }
+  ],
+  "period_rows": []
+}

@@ -1,0 +1,70 @@
+{
+ "schema_version": 1,
+ "methodology_version": "live-2",
+ "publish_generation_id": "r2guard_alerts@T0+0s",
+ "generated_utc": "T0+0s",
+ "vehicles_in_service": 6,
+ "on_time_pct": 50,
+ "status_dist": {
+  "on_time": 1,
+  "late": 1,
+  "severe": 1,
+  "early": 1,
+  "unknown": 2
+ },
+ "delay_p50_min": 2,
+ "delay_p90_min": 8,
+ "occupancy_mix": {
+  "empty": 0.3333333333333333,
+  "many_seats": 0.16666666666666666,
+  "few_seats": 0.16666666666666666,
+  "standing": 0.3333333333333333,
+  "full": 0.0
+ },
+ "non_responding": 0,
+ "feed_freshness_s": "<clock>",
+ "coverage_pct": 67,
+ "delay_histogram": [
+  {
+   "lo_min": null,
+   "hi_min": -5,
+   "count": 0
+  },
+  {
+   "lo_min": -5,
+   "hi_min": -2,
+   "count": 0
+  },
+  {
+   "lo_min": -2,
+   "hi_min": 0,
+   "count": 1
+  },
+  {
+   "lo_min": 0,
+   "hi_min": 2,
+   "count": 1
+  },
+  {
+   "lo_min": 2,
+   "hi_min": 5,
+   "count": 1
+  },
+  {
+   "lo_min": 5,
+   "hi_min": 10,
+   "count": 0
+  },
+  {
+   "lo_min": 10,
+   "hi_min": 15,
+   "count": 1
+  },
+  {
+   "lo_min": 15,
+   "hi_min": null,
+   "count": 0
+  }
+ ],
+ "non_responding_by_route": null
+}

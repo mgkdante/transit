@@ -1,0 +1,98 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "family": "repeat_offenders",
+ "selection_mode": "date",
+ "entity_id": null,
+ "collection_generation_id": "f6af402ff9e6136cb58188aa9c92c06b458c9bf447da07adae20a7b1684df4f2",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "available_dates": [
+  "2025-06-03",
+  "2025-06-19",
+  "2025-07-03",
+  "2025-07-19",
+  "2025-08-03",
+  "2025-08-19"
+ ],
+ "gaps": [
+  {
+   "start_date": "2025-06-04",
+   "end_date": "2025-06-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-06-20",
+   "end_date": "2025-07-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-04",
+   "end_date": "2025-07-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-20",
+   "end_date": "2025-08-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-08-04",
+   "end_date": "2025-08-18",
+   "reason": null
+  }
+ ],
+ "partitions": [
+  {
+   "path": "historic/history/repeat_offenders/generations/3653904e0d6163887271899ef1f3b22f1a7d273e5d076de0f88543746f0341c3/2025-06-03.json",
+   "coverage_start": "2025-06-03",
+   "coverage_end": "2025-06-03",
+   "count": 1,
+   "sha256": "3653904e0d6163887271899ef1f3b22f1a7d273e5d076de0f88543746f0341c3",
+   "byte_size": 175
+  },
+  {
+   "path": "historic/history/repeat_offenders/generations/50e50f0b9e16424d273695a4202022c2d4118e2ef457d20f3ed59dbc1c3822c7/2025-06-19.json",
+   "coverage_start": "2025-06-19",
+   "coverage_end": "2025-06-19",
+   "count": 1,
+   "sha256": "50e50f0b9e16424d273695a4202022c2d4118e2ef457d20f3ed59dbc1c3822c7",
+   "byte_size": 858
+  },
+  {
+   "path": "historic/history/repeat_offenders/generations/966a71f210b22e1b856a534cac8098c407622b477e0e8df83c990c38b715e3a3/2025-07-03.json",
+   "coverage_start": "2025-07-03",
+   "coverage_end": "2025-07-03",
+   "count": 1,
+   "sha256": "966a71f210b22e1b856a534cac8098c407622b477e0e8df83c990c38b715e3a3",
+   "byte_size": 858
+  },
+  {
+   "path": "historic/history/repeat_offenders/generations/05c46447b5968f493ef6a1cf0ba60128342097c6e3fe521292fe6122ba137c3e/2025-07-19.json",
+   "coverage_start": "2025-07-19",
+   "coverage_end": "2025-07-19",
+   "count": 1,
+   "sha256": "05c46447b5968f493ef6a1cf0ba60128342097c6e3fe521292fe6122ba137c3e",
+   "byte_size": 858
+  },
+  {
+   "path": "historic/history/repeat_offenders/generations/bb968127d1c3b422180de38840d0fe2b2f06428708a52a7ead6f0de797150a32/2025-08-03.json",
+   "coverage_start": "2025-08-03",
+   "coverage_end": "2025-08-03",
+   "count": 1,
+   "sha256": "bb968127d1c3b422180de38840d0fe2b2f06428708a52a7ead6f0de797150a32",
+   "byte_size": 858
+  },
+  {
+   "path": "historic/history/repeat_offenders/generations/7dff32c8c7411f9f93ed141f573e546c95b37b924c4b48c6724111ce57cffeea/2025-08-19.json",
+   "coverage_start": "2025-08-19",
+   "coverage_end": "2025-08-19",
+   "count": 1,
+   "sha256": "7dff32c8c7411f9f93ed141f573e546c95b37b924c4b48c6724111ce57cffeea",
+   "byte_size": 858
+  }
+ ],
+ "metrics": []
+}

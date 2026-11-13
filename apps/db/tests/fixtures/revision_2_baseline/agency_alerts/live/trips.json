@@ -1,0 +1,77 @@
+{
+ "schema_version": 1,
+ "methodology_version": "live-2",
+ "publish_generation_id": "r2guard_alerts@T0+0s",
+ "generated_utc": "T0+0s",
+ "feed_captured_utc": "T0-30s",
+ "trips": {
+  "L1": {
+   "route": "M1",
+   "status": "on_time",
+   "delay_min": 1,
+   "stops": [
+    {
+     "stop": "S2",
+     "eta_utc": "T0+630s",
+     "delay_min": 1
+    },
+    {
+     "stop": "S3",
+     "eta_utc": "T0+2430s",
+     "delay_min": 1
+    }
+   ]
+  },
+  "L2": {
+   "route": "M1",
+   "status": "early",
+   "delay_min": -2,
+   "stops": [
+    {
+     "stop": "S2",
+     "eta_utc": "T0+480s",
+     "delay_min": -2
+    },
+    {
+     "stop": "S1",
+     "eta_utc": "T0+2280s",
+     "delay_min": -2
+    }
+   ]
+  },
+  "L3": {
+   "route": "B10",
+   "status": "late",
+   "delay_min": 3,
+   "stops": [
+    {
+     "stop": "S3",
+     "eta_utc": "T0+780s",
+     "delay_min": 3
+    },
+    {
+     "stop": "S4",
+     "eta_utc": "T0+2580s",
+     "delay_min": 3
+    }
+   ]
+  },
+  "L4": {
+   "route": "B10",
+   "status": "severe",
+   "delay_min": 10,
+   "stops": [
+    {
+     "stop": "S3",
+     "eta_utc": "T0+1200s",
+     "delay_min": 10
+    },
+    {
+     "stop": "S2",
+     "eta_utc": "T0+3000s",
+     "delay_min": 10
+    }
+   ]
+  }
+ }
+}

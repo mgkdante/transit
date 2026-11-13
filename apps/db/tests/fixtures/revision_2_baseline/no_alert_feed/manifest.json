@@ -1,0 +1,92 @@
+{
+ "schema_version": 1,
+ "methodology_version": "manifest-1",
+ "publish_generation_id": "r2guard_plain@T0+0s",
+ "provider": "r2guard_plain",
+ "display_name": "r2guard_plain",
+ "short_name": "R2",
+ "city": "Ville",
+ "tz": "America/Toronto",
+ "bbox": [
+  -73.9,
+  45.4,
+  -73.4,
+  45.7
+ ],
+ "default_lang": "fr",
+ "attribution": "",
+ "basemap": null,
+ "dataset_version": "r2-2025",
+ "labels": {
+  "fr": "labels/fr.json",
+  "en": "labels/en.json"
+ },
+ "files": {
+  "live": {
+   "generations": {
+    "live/vehicles.json": "r2guard_plain@T0+0s",
+    "live/trips.json": "r2guard_plain@T0+0s",
+    "live/alerts.json": "r2guard_plain@T0+0s",
+    "live/network.json": "r2guard_plain@T0+0s",
+    "live/stop_departures.json": "r2guard_plain@T0+0s",
+    "status/data_health.json": "r2guard_plain@T0+0s"
+   },
+   "input_captures": {
+    "i3_alerts": null,
+    "trip_updates": "T0-30s",
+    "vehicle_positions": "T0-20s",
+    "static_schedule": "2025-05-30T12:00:00Z"
+   },
+   "vehicles": "live/vehicles.json",
+   "trips": "live/trips.json",
+   "alerts": "live/alerts.json",
+   "network": "live/network.json",
+   "stop_departures": "live/stop_departures.json",
+   "data_health": "status/data_health.json",
+   "source_lag_s": 0,
+   "ttl_s": 20,
+   "generated_utc": "T0+0s"
+  },
+  "static": {
+   "routes_index": "static/routes_index.json",
+   "stops_index": "static/stops_index.json",
+   "basemap": null,
+   "routes_prefix": "static/routes/",
+   "stops_prefix": "static/stops/",
+   "ttl_s": 86400,
+   "generated_utc": "2025-05-30T12:00:00Z"
+  },
+  "historic": {
+   "network_trend": "historic/network_trend.json",
+   "hotspots": "historic/hotspots.json",
+   "repeat_offenders": "historic/repeat_offenders.json",
+   "alert_history": "historic/alert_history.json",
+   "alerts_index": "historic/alerts/index.json",
+   "history_index": "historic/history/index.json",
+   "provenance": "provenance.json",
+   "receipts_index": "historic/receipts/index.json",
+   "route_reliability_prefix": "historic/route_reliability/",
+   "route_reliability_index": "historic/route_reliability/index.json",
+   "stop_reliability_prefix": "historic/stop_reliability/",
+   "receipts_prefix": "historic/receipts/",
+   "ttl_s": 86400,
+   "generated_utc": "2025-09-02T00:00:00Z"
+  }
+ },
+ "surfaces": [
+  "live_map",
+  "network_health",
+  "lookups",
+  "reliability",
+  "accountability",
+  "data_trust"
+ ],
+ "capabilities": {
+  "live_map": "enabled",
+  "network_health": "enabled",
+  "lookups": "enabled",
+  "reliability": "enabled",
+  "accountability": "enabled",
+  "data_trust": "enabled"
+ }
+}

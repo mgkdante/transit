@@ -1,0 +1,112 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": null,
+      "alert_header_text": "Votre trajet imaginaire",
+      "alert_header_text_en": "Your imaginary journey",
+      "alert_id": "etat-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "fe3dfb600ef70ad8709dd8310d984b4d",
+      "description_text": "Arrets fictifs annules",
+      "description_text_en": "Fictional stops cancelled",
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "description_texts": [
+          {
+            "language": "fr",
+            "text": "Arrets fictifs annules"
+          },
+          {
+            "language": "en",
+            "text": "Fictional stops cancelled"
+          }
+        ],
+        "header_texts": [
+          {
+            "language": "fr",
+            "text": "Votre trajet imaginaire"
+          },
+          {
+            "language": "en",
+            "text": "Your imaginary journey"
+          }
+        ],
+        "id": "etat-fixture",
+        "informed_entities": [
+          {
+            "route_short_name": "R14"
+          },
+          {
+            "direction_id": "S"
+          },
+          {
+            "stop_code": "S53010"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "entity_rows": [
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "route_short_name": "R14"
+      },
+      "route_id": "R14",
+      "stop_id": null,
+      "trip_id": null
+    },
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 1,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "direction_id": "S"
+      },
+      "route_id": null,
+      "stop_id": null,
+      "trip_id": null
+    },
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 2,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "stop_code": "S53010"
+      },
+      "route_id": null,
+      "stop_id": "S53010",
+      "trip_id": null
+    }
+  ],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:etat-fixture",
+      "has_explicit_en": true,
+      "has_explicit_fr": true,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": false
+    }
+  ],
+  "period_rows": []
+}

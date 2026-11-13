@@ -1,0 +1,34 @@
+{
+  "messages": [
+    {
+      "header": "Identical occurrence",
+      "description": "Imaginary service notice",
+      "informedEntities": [
+        {
+          "routeId": "Identical occurrence-route",
+          "stopId": "Identical occurrence-stop"
+        }
+      ],
+      "activePeriod": {
+        "start": "2026-05-25T04:00:00Z",
+        "end": "2026-05-25T05:00:00Z"
+      },
+      "id": "identical-fixture"
+    },
+    {
+      "header": "Identical occurrence",
+      "description": "Imaginary service notice",
+      "informedEntities": [
+        {
+          "routeId": "Identical occurrence-route",
+          "stopId": "Identical occurrence-stop"
+        }
+      ],
+      "activePeriod": {
+        "start": "2026-05-25T04:00:00Z",
+        "end": "2026-05-25T05:00:00Z"
+      },
+      "id": "identical-fixture"
+    }
+  ]
+}

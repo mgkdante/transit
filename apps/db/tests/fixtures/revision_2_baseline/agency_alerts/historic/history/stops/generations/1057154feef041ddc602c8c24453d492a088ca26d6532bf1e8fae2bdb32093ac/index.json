@@ -1,0 +1,29 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "family": "stops",
+ "selection_mode": "range",
+ "collection_generation_id": "8a9b5b817041335f0210c4c1d9974b93eaf00abb4d58199276f1564494c3105f",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "entities": [
+  {
+   "entity_id": "S2",
+   "encoded_id": "5332",
+   "index_path": "historic/history/stops/5332/generations/f0a19eadb9a7a3277045c72893e53aa8336d455f49261972837012be0b3c8afd/index.json",
+   "collection_generation_id": "bd23f247b15a36786990c2068c8a0ba690de40d126c3c1735415350fc40092ad",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19"
+  },
+  {
+   "entity_id": "S3",
+   "encoded_id": "5333",
+   "index_path": "historic/history/stops/5333/generations/d247fc6fb17427fba04370db9db22294d54fe8a8210854571e88786db4686dfc/index.json",
+   "collection_generation_id": "f03ef6871d4422567ac04599ba82c0e61a6d4992e504dd6306a47dfd10f640dd",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19"
+  }
+ ]
+}

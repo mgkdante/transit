@@ -1,0 +1,148 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "family": "stops",
+ "selection_mode": "range",
+ "entity_id": "S3",
+ "collection_generation_id": "f03ef6871d4422567ac04599ba82c0e61a6d4992e504dd6306a47dfd10f640dd",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "available_dates": [
+  "2025-06-03",
+  "2025-06-19",
+  "2025-07-03",
+  "2025-07-19",
+  "2025-08-03",
+  "2025-08-19"
+ ],
+ "gaps": [
+  {
+   "start_date": "2025-06-04",
+   "end_date": "2025-06-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-06-20",
+   "end_date": "2025-07-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-04",
+   "end_date": "2025-07-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-20",
+   "end_date": "2025-08-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-08-04",
+   "end_date": "2025-08-18",
+   "reason": null
+  }
+ ],
+ "partitions": [
+  {
+   "path": "historic/history/stops/5333/generations/e354d0fdedb2a65c14b75f6ae1484dc7bcdb45756fc5b0eac24314e834f5aab9/2025-06.json",
+   "coverage_start": "2025-06-03",
+   "coverage_end": "2025-06-19",
+   "count": 2,
+   "sha256": "e354d0fdedb2a65c14b75f6ae1484dc7bcdb45756fc5b0eac24314e834f5aab9",
+   "byte_size": 686
+  },
+  {
+   "path": "historic/history/stops/5333/generations/556b0a9d691cdae87986ee07d78c1d8104b7fb20f397b1a6de2ea4c07f2dfc28/2025-07.json",
+   "coverage_start": "2025-07-03",
+   "coverage_end": "2025-07-19",
+   "count": 2,
+   "sha256": "556b0a9d691cdae87986ee07d78c1d8104b7fb20f397b1a6de2ea4c07f2dfc28",
+   "byte_size": 686
+  },
+  {
+   "path": "historic/history/stops/5333/generations/f0b592f3734474562c2541a9c2db52f0c7c8ad3b4c8abc7bfe2435439390606c/2025-08.json",
+   "coverage_start": "2025-08-03",
+   "coverage_end": "2025-08-19",
+   "count": 2,
+   "sha256": "f0b592f3734474562c2541a9c2db52f0c7c8ad3b4c8abc7bfe2435439390606c",
+   "byte_size": 686
+  }
+ ],
+ "metrics": [
+  {
+   "metric": "delay",
+   "aggregation": "additive",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19",
+   "gaps": [
+    {
+     "start_date": "2025-06-04",
+     "end_date": "2025-06-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-06-20",
+     "end_date": "2025-07-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-04",
+     "end_date": "2025-07-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-20",
+     "end_date": "2025-08-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-08-04",
+     "end_date": "2025-08-18",
+     "reason": null
+    }
+   ]
+  },
+  {
+   "metric": "delay_percentiles",
+   "aggregation": "daily_only",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19",
+   "gaps": [
+    {
+     "start_date": "2025-06-04",
+     "end_date": "2025-06-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-06-20",
+     "end_date": "2025-07-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-04",
+     "end_date": "2025-07-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-20",
+     "end_date": "2025-08-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-08-04",
+     "end_date": "2025-08-18",
+     "reason": null
+    }
+   ]
+  },
+  {
+   "metric": "occupancy",
+   "aggregation": "additive",
+   "first_available_date": null,
+   "last_available_date": null,
+   "gaps": []
+  }
+ ]
+}

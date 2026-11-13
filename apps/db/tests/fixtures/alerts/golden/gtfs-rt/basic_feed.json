@@ -1,0 +1,135 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": "2026-03-30T19:46:40+00:00",
+      "active_period_start_utc": "2026-03-30T02:20:00+00:00",
+      "alert_header_text": "Detour de ligne fictive",
+      "alert_header_text_en": "Fictional route detour",
+      "alert_id": "basic-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": "CONSTRUCTION",
+      "content_hash": "b08e0638ede004dfae406b967195a163",
+      "description_text": "Travaux imaginaires",
+      "description_text_en": null,
+      "effect": "DETOUR",
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriod": [
+          {
+            "end": 1774900000,
+            "start": 1774837200
+          }
+        ],
+        "cause": "CONSTRUCTION",
+        "description": [
+          {
+            "language": "fr",
+            "text": "Travaux imaginaires"
+          }
+        ],
+        "effect": "DETOUR",
+        "header": [
+          {
+            "language": "fr",
+            "text": "Detour de ligne fictive"
+          },
+          {
+            "language": "en",
+            "text": "Fictional route detour"
+          }
+        ],
+        "id": "basic-fixture",
+        "informedEntities": [
+          {
+            "routeId": "R33",
+            "stopId": "S1"
+          }
+        ],
+        "severity": "WARNING"
+      },
+      "severity": "WARNING",
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "converted_payload": {
+    "alerts": [
+      {
+        "activePeriod": [
+          {
+            "end": 1774900000,
+            "start": 1774837200
+          }
+        ],
+        "cause": "CONSTRUCTION",
+        "description": [
+          {
+            "language": "fr",
+            "text": "Travaux imaginaires"
+          }
+        ],
+        "effect": "DETOUR",
+        "header": [
+          {
+            "language": "fr",
+            "text": "Detour de ligne fictive"
+          },
+          {
+            "language": "en",
+            "text": "Fictional route detour"
+          }
+        ],
+        "id": "basic-fixture",
+        "informedEntities": [
+          {
+            "routeId": "R33",
+            "stopId": "S1"
+          }
+        ],
+        "severity": "WARNING"
+      }
+    ],
+    "gtfsRealtimeVersion": "2.0",
+    "timestamp": 1774837200
+  },
+  "entity_rows": [
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "routeId": "R33",
+        "stopId": "S1"
+      },
+      "route_id": "R33",
+      "stop_id": "S1",
+      "trip_id": null
+    }
+  ],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:basic-fixture",
+      "has_explicit_en": true,
+      "has_explicit_fr": true,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": false
+    }
+  ],
+  "period_rows": [
+    {
+      "alert_index": 0,
+      "end_utc": "2026-03-30T19:46:40+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "2026-03-30T02:20:00+00:00"
+    }
+  ]
+}

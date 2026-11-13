@@ -1,0 +1,32 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_plain@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "routes": [
+  {
+   "id": "B10",
+   "short": "10",
+   "long": "Ligne 10",
+   "color": null,
+   "type": 3,
+   "reliability": true
+  },
+  {
+   "id": "B20",
+   "short": "20",
+   "long": "Ligne 20",
+   "color": null,
+   "type": 3,
+   "reliability": true
+  },
+  {
+   "id": "M1",
+   "short": "1",
+   "long": "Ligne 1",
+   "color": null,
+   "type": 1,
+   "reliability": true
+  }
+ ]
+}

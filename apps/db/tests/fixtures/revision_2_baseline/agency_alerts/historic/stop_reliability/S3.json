@@ -1,0 +1,111 @@
+{
+ "schema_version": 1,
+ "methodology_version": "reliability-2",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "id": "S3",
+ "name": "Arret S3",
+ "periods": [
+  {
+   "grain": "day",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": null,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "grain": "week",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": null,
+   "p90_min": null,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5
+  },
+  {
+   "grain": "month",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": null,
+   "p90_min": null,
+   "severe_pct": 50.0,
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
+  },
+  {
+   "grain": "midday",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": null,
+   "p90_min": null,
+   "severe_pct": 50.0,
+   "observation_count": 12,
+   "wilson_lo": 25.4,
+   "wilson_hi": 74.6
+  },
+  {
+   "grain": "weekday",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": null,
+   "p90_min": null,
+   "severe_pct": 50.0,
+   "observation_count": 8,
+   "wilson_lo": 21.5,
+   "wilson_hi": 78.5
+  },
+  {
+   "grain": "weekend",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": null,
+   "p90_min": null,
+   "severe_pct": 50.0,
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0
+  }
+ ],
+ "habits": null,
+ "day_of_week": [
+  {
+   "day_of_week_iso": 2,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 4
+  },
+  {
+   "day_of_week_iso": 4,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 4
+  },
+  {
+   "day_of_week_iso": 6,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 2
+  },
+  {
+   "day_of_week_iso": 7,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 2
+  }
+ ],
+ "by_route": [
+  {
+   "route": "B10",
+   "avg_delay_min": 6.5
+  }
+ ],
+ "occupancy_mix": null,
+ "daily": []
+}

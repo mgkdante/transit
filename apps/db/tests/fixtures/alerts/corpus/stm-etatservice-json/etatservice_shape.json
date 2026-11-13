@@ -1,0 +1,38 @@
+{
+  "messages": [
+    {
+      "id": "etat-fixture",
+      "header_texts": [
+        {
+          "language": "fr",
+          "text": "Votre trajet imaginaire"
+        },
+        {
+          "language": "en",
+          "text": "Your imaginary journey"
+        }
+      ],
+      "description_texts": [
+        {
+          "language": "fr",
+          "text": "Arrets fictifs annules"
+        },
+        {
+          "language": "en",
+          "text": "Fictional stops cancelled"
+        }
+      ],
+      "informed_entities": [
+        {
+          "route_short_name": "R14"
+        },
+        {
+          "direction_id": "S"
+        },
+        {
+          "stop_code": "S53010"
+        }
+      ]
+    }
+  ]
+}

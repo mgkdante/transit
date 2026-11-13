@@ -1,0 +1,29 @@
+{
+  "alerts": [
+    {
+      "id": "common-fixture",
+      "header": {
+        "text": "Invented interruption"
+      },
+      "description": {
+        "text": "Imaginary corridor issue"
+      },
+      "severity": "warning",
+      "cause": "technical_problem",
+      "effect": "delay",
+      "activePeriod": {
+        "start": "2026-05-25T04:00:00Z",
+        "end": "2026-05-25T05:00:00Z"
+      },
+      "informedEntities": [
+        {
+          "routeId": "R2",
+          "stopId": "S43"
+        },
+        {
+          "areaId": "fictional-area"
+        }
+      ]
+    }
+  ]
+}
