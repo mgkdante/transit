@@ -363,12 +363,9 @@ def _mark_sealed(
 ) -> None:
     identity = _copy_identity(copy)
     with connection.begin():
-        current = _locked_copy(connection, copy)
-        marker = _read_rejection(storage, copy)
-        if marker is not None:
-            if current is not None and current.rejected_at_utc is None:
-                _reject_row(connection, copy, *marker, actor)
-        else:
+        _locked_copy(connection, copy)
+        marker = reconcile_rejection_marker(connection, storage, copy, actor=actor)
+        if marker is None:
             result = connection.execute(
                 text("""
             UPDATE core.history_archive_copy SET sealed_at_utc=clock_timestamp()
@@ -383,6 +380,27 @@ def _mark_sealed(
             ledger.record_event(connection, kind="seal", actor=actor, **identity)
     if marker is not None:
         raise _MarkedRejected(f"could not seal copy {identity}: {marker[1]}")
+
+
+def reconcile_rejection_marker(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    copy: ledger.ArchiveCopy,
+    *,
+    actor: str | None = None,
+) -> tuple[datetime, str] | None:
+    """Reconcile an authoritative marker inside the caller's window lock transaction."""
+    marker = _read_rejection(storage, copy)
+    if marker is not None:
+        day = date.fromisoformat(copy.window_key)
+        copies = ledger.find_copies(
+            connection, dataset_id=copy.dataset_id, provider_id=copy.provider_id,
+            start=day, end=day, revision=copy.revision,
+        )
+        current = next((c for c in copies if c.content_version == copy.content_version), None)
+        if current is not None and current.rejected_at_utc is None:
+            _reject_row(connection, copy, *marker, actor)
+    return marker
 
 
 def _write_rejection_marker(

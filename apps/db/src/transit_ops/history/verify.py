@@ -1,9 +1,13 @@
 """Check archive copies against storage and against their working day."""
 
 import hashlib
-from dataclasses import asdict, replace
-from datetime import UTC, datetime
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, date, datetime
+from typing import Literal, TypedDict
 
+from sqlalchemy import Connection, text
+
+from transit_ops.history import ledger
 from transit_ops.history.ledger import ArchiveCopy
 from transit_ops.history.manifest import Manifest, ManifestInvalid, read_copy_manifest
 from transit_ops.history.pack import BinaryReader, PackCorrupt, PackedCapture, read_pack
@@ -16,12 +20,213 @@ from transit_ops.history.poll_record import (
     canonical_json,
     poll_record_sha256,
 )
-from transit_ops.history.seal_captures import OBJECT_ABSENT, OBJECT_MISMATCH
+from transit_ops.history.seal_captures import (
+    OBJECT_ABSENT,
+    OBJECT_MISMATCH,
+    CopyContentMissing,
+    reconcile_rejection_marker,
+    reject_capture_copy,
+)
+from transit_ops.history.working_captures import read_working_day, rows_fingerprint
 from transit_ops.ingestion.storage import BronzeStorage, BronzeStorageResolver
 
 
 class CopyCorrupt(ValueError):
     """A copy's objects disagree with its row, with its manifest or with themselves."""
+
+
+@dataclass(frozen=True)
+class Verification:
+    copy: ArchiveCopy
+    outcome: Literal["verified", "rejected"]
+    reason: str | None
+    difference: str | None
+    became_current: bool
+
+
+class _WindowIdentity(TypedDict):
+    dataset_id: str
+    provider_id: str
+    window_key: str
+
+
+def _identity(copy: ArchiveCopy) -> _WindowIdentity:
+    return dict(
+        dataset_id=copy.dataset_id, provider_id=copy.provider_id, window_key=copy.window_key
+    )
+
+
+def _read_state(
+    connection: Connection, copy: ArchiveCopy,
+) -> tuple[ledger.WindowState, ArchiveCopy, list[ArchiveCopy]]:
+    identity = _identity(copy)
+    window = ledger.window_state(connection, **identity)
+    day = date.fromisoformat(copy.window_key)
+    copies = ledger.find_copies(
+        connection, dataset_id=copy.dataset_id, provider_id=copy.provider_id, start=day, end=day,
+    )
+    row = next((c for c in copies if c.content_version == copy.content_version), None)
+    if window is None or row is None:
+        raise LookupError(f"copy not found: {identity}, version {copy.content_version}")
+    return window, row, copies
+
+
+def _refuse_window(window: ledger.WindowState, copy: ArchiveCopy) -> None:
+    if window.working_state in ("partial", "trimmed"):
+        raise NotImplementedError(
+            "verifying a copy of a day whose working rows were trimmed is not built: "
+            "it needs the copy compared with the remainder recorded by trim"
+        )
+    if window.current_version is not None and window.current_version > copy.content_version:
+        raise ValueError(
+            f"copy version {copy.content_version} is older than {window.current_version}"
+        )
+
+
+def _result(
+    connection: Connection, copy: ArchiveCopy, reason: str | None, difference: str | None,
+) -> Verification:
+    with connection.begin():
+        _, row, _ = _read_state(connection, copy)
+    return Verification(
+        row, "rejected" if reason else "verified", row.reject_reason, difference, reason is None
+    )
+
+
+def _reject(
+    connection: Connection, storage: BronzeStorageResolver, copy: ArchiveCopy,
+    reason: str, difference: str, actor: str | None,
+) -> Verification:
+    if not reject_capture_copy(connection, storage, copy, reason=reason, actor=actor):
+        with connection.begin():
+            _, row, _ = _read_state(connection, copy)
+        raise RuntimeError(
+            f"{_identity(row)} version {row.content_version}: "
+            f"another process acted on it ({row.state})"
+        )
+    return _result(connection, copy, reason, difference)
+
+
+def verify_capture_copy(
+    connection: Connection, storage: BronzeStorageResolver, copy: ArchiveCopy,
+    *, actor: str | None = None,
+) -> Verification:
+    if connection.in_transaction():
+        raise ValueError("verify requires a connection without a transaction")
+    if actor == "":
+        raise ValueError("actor must not be empty")
+    with connection.begin():
+        window, row, _ = _read_state(connection, copy)
+        if row.state == "verified":
+            return Verification(row, "verified", None, None, row.is_current)
+        if row.state != "sealed":
+            raise ValueError(f"{_identity(row)} version {row.content_version} is {row.state}")
+        _refuse_window(window, row)
+    try:
+        manifest = read_back_capture_copy(storage, row)
+    except CopyCorrupt as exc:
+        return _reject(connection, storage, row, "corrupt_object", str(exc), actor)
+    reason, difference = _verify_locked(connection, storage, row, manifest, actor)
+    if reason == "stale" and difference != "rejection marker present":
+        assert difference is not None
+        return _reject(connection, storage, row, reason, difference, actor)
+    return _result(connection, row, reason, difference)
+
+
+class _WorkingArgs(TypedDict):
+    provider_id: str
+    endpoint_key: str
+    utc_date: date
+
+
+def _verify_locked(
+    connection: Connection, storage: BronzeStorageResolver, copy: ArchiveCopy,
+    manifest: Manifest, actor: str | None,
+) -> tuple[str | None, str | None]:
+    identity = _identity(copy)
+    with connection.begin():
+        ledger.acquire_window_lock(connection, **identity)
+        verified_at = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
+        window, row, copies = _read_state(connection, copy)
+        if row.state != "sealed":
+            raise RuntimeError(
+                f"{identity} version {row.content_version}: "
+                f"another process acted on it ({row.state})"
+            )
+        _refuse_window(window, row)
+        marker = reconcile_rejection_marker(connection, storage, row, actor=actor)
+        if marker is not None:
+            return marker[1], "rejection marker present"
+        args = _WorkingArgs(
+            provider_id=row.provider_id,
+            endpoint_key=row.dataset_id.removeprefix("capture."),
+            utc_date=date.fromisoformat(row.window_key),
+        )
+        record = read_working_day(connection, **args, current=manifest)
+        fingerprint = rows_fingerprint(connection, **args)
+        difference = first_difference(manifest, record)
+        if difference is None and fingerprint != row.details.get("rows_fingerprint"):
+            difference = "row fingerprint differs"
+        if difference is not None:
+            return "stale", difference
+        current = next((c for c in copies if c.content_version == window.current_version), None)
+        if window.current_version is not None:
+            if current is None:
+                raise LookupError(f"current copy not found: {identity}")
+            _require_superseding_content(read_copy_manifest(storage, current), manifest)
+        _make_current(connection, row, verified_at, window.current_version, actor)
+    return None, None
+
+
+def _require_superseding_content(current: Manifest, candidate: Manifest) -> None:
+    label = f"{candidate.provider_id}/{candidate.endpoint_key}/{candidate.utc_date}"
+    polls = {p.ingestion_run_id for p in candidate.polls}
+    for poll in current.polls:
+        if poll.ingestion_run_id not in polls:
+            raise CopyContentMissing(f"{label}: missing poll {poll.ingestion_run_id}")
+    captures = {(c.index_family, c.capture_row_id): c for c in candidate.captures}
+    for capture in current.captures:
+        key = (capture.index_family, capture.capture_row_id)
+        replacement = captures.get(key)
+        if replacement is None:
+            raise CopyContentMissing(f"{label}: missing capture {key}")
+        if capture.packed and (
+            not replacement.packed
+            or replacement.sha256 != capture.sha256
+            or replacement.byte_size != capture.byte_size
+        ):
+            raise CopyContentMissing(f"{label}: packed capture {key} loses or changes bytes")
+
+
+def _make_current(
+    connection: Connection, copy: ArchiveCopy, verified_at: datetime,
+    previous: int | None, actor: str | None,
+) -> None:
+    identity = _identity(copy)
+    values = dict(identity, version=copy.content_version, verified_at=verified_at)
+    updated = connection.execute(text("""
+        UPDATE core.history_archive_copy SET verified_at_utc=:verified_at
+        WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=0
+          AND window_key=:window_key AND content_version=:version
+          AND sealed_at_utc IS NOT NULL AND verified_at_utc IS NULL AND rejected_at_utc IS NULL
+    """), values)
+    if updated.rowcount != 1:
+        raise RuntimeError(f"could not verify copy {identity}")
+    updated = connection.execute(text("""
+        UPDATE core.history_window SET current_version=:version
+        WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=0
+          AND window_key=:window_key AND (current_version IS NULL OR current_version < :version)
+    """), values)
+    if updated.rowcount != 1:
+        raise RuntimeError(f"could not make copy current {identity}")
+    ledger.record_event(
+        connection, kind="verify", revision=0, content_version=copy.content_version,
+        actor=actor, **identity,
+    )
+    ledger.record_event(
+        connection, kind="current", revision=0, content_version=copy.content_version,
+        details={"previous_version": previous}, actor=actor, **identity,
+    )
 
 
 def _corrupt(copy: ArchiveCopy, reason: str) -> CopyCorrupt:

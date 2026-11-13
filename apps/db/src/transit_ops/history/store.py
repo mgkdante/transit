@@ -5,6 +5,7 @@ from sqlalchemy import Connection
 from transit_ops.history import datasets
 from transit_ops.history.ledger import ArchiveCopy
 from transit_ops.history.seal_captures import seal_capture_day
+from transit_ops.history.verify import Verification, verify_capture_copy
 from transit_ops.ingestion.storage import BronzeStorageResolver
 
 
@@ -25,9 +26,9 @@ def seal(
     dataset = datasets.get_dataset(dataset_id)
     start = datasets.window_start(dataset, window_key)
     if isinstance(dataset.source, datasets.TableSource):
-        raise NotImplementedError("table seal requires H10a")
+        raise NotImplementedError("sealing a table dataset is not built")
     if isinstance(dataset.source, datasets.ObjectSource):
-        raise NotImplementedError("object seal requires H24")
+        raise NotImplementedError("sealing an archived object is not built")
     if revision != 0:
         raise ValueError("capture revision must be 0")
     assert start is not None
@@ -41,3 +42,17 @@ def seal(
         sealed_by=sealed_by,
         actor=actor,
     )
+
+
+def verify(
+    connection: Connection, storage: BronzeStorageResolver, copy: ArchiveCopy,
+    *, actor: str | None = None,
+) -> Verification:
+    if connection.in_transaction():
+        raise ValueError("verify requires a connection without a transaction")
+    dataset = datasets.get_dataset(copy.dataset_id)
+    if isinstance(dataset.source, datasets.TableSource):
+        raise NotImplementedError("verifying a copy of a table dataset is not built")
+    if isinstance(dataset.source, datasets.ObjectSource):
+        raise NotImplementedError("verifying an archived object is not built")
+    return verify_capture_copy(connection, storage, copy, actor=actor)
