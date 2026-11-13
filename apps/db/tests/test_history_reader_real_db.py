@@ -597,13 +597,13 @@ def stream_copy(conn, root, at=START, feed="trip_updates", missing=False):
     key = f"{feed}-{at.date()}.gz"
     (root / key).write_bytes(data)
     values = copy_values(conn, at, record, data, feed)
-    values.update(dataset="capture." + feed, path=key)
+    values.update(dataset="capture." + feed, path=key, day=at.date())
     conn.execute(
         text("""
         INSERT INTO core.history_window
         (dataset_id,provider_id,revision,window_key,window_start,working_state,
          working_changed_at_utc)
-        VALUES (:dataset,:p,0,:key,CAST(:key AS date),'present',now()-interval '1 hour')
+        VALUES (:dataset,:p,0,:key,:day,'present',now()-interval '1 hour')
     """),
         values,
     )
