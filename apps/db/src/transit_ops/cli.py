@@ -339,8 +339,18 @@ def _seed_feed_endpoints(connection, manifest: ProviderManifest, settings: Setti
 
 
 @app.callback()
-def main() -> None:
-    settings = get_settings()
+def main(ctx: typer.Context) -> None:
+    try:
+        settings = get_settings()
+    except ValueError:
+        if ctx.invoked_subcommand not in (
+            "set-pipeline-switch",
+            "list-pipeline-switches",
+            "show-pipeline-switch",
+        ):
+            raise
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
+        raise typer.Exit(1) from None
     configure_logging(settings.LOG_LEVEL)
 
 
@@ -1813,6 +1823,105 @@ def db_storage_report_command(
         )
         report = build_storage_report(conn, limit=limit, editions=editions)
     typer.echo(json.dumps(report, indent=2))
+
+
+@app.command("list-pipeline-switches")
+def list_pipeline_switches_command() -> None:
+    """List owner-controlled pipeline switches in key order."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from transit_ops import pipeline_switches as switches
+
+    engine = None
+    try:
+        engine = make_engine(get_settings())
+        with engine.connect() as connection:
+            rows = [switches.display_switch(row) for row in switches.list_switches(connection)]
+        typer.echo(json.dumps(rows))
+    except (SQLAlchemyError, ValueError):
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
+        raise typer.Exit(1) from None
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
+@app.command("show-pipeline-switch")
+def show_pipeline_switch_command(switch_key: str) -> None:
+    """Show a switch, including an absent switch's off state."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from transit_ops import pipeline_switches as switches
+
+    try:
+        switches.validate_text(switch_key, "switch key")
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from None
+    engine = None
+    try:
+        engine = make_engine(get_settings())
+        with engine.connect() as connection:
+            row = switches.show_switch(connection, switch_key)
+        typer.echo(json.dumps(switches.display_switch(row, switch_key)))
+    except (SQLAlchemyError, ValueError):
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
+        raise typer.Exit(1) from None
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
+@app.command("set-pipeline-switch")
+def set_pipeline_switch_command(
+    switch_key: str,
+    state: str,
+    reason: str = typer.Option(..., "--reason"),
+    actor: str | None = typer.Option(None, "--actor"),
+) -> None:
+    """Commit a guarded switch transition and show its committed readback."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from transit_ops import pipeline_switches as switches
+
+    try:
+        for name, value in (("switch key", switch_key), ("reason", reason)):
+            switches.validate_text(value, name)
+        if actor is not None:
+            switches.validate_text(actor, "actor")
+        if state not in ("on", "off"):
+            raise ValueError("state must be on or off")
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from None
+    engine = None
+    try:
+        engine = make_engine(get_settings())
+        with engine.connect() as connection:
+            if actor is None:
+                with connection.begin():
+                    actor = connection.execute(
+                        text(
+                            "SELECT COALESCE(NULLIF(btrim("
+                            "current_setting('application_name')), ''), "
+                            "current_user)"
+                        )
+                    ).scalar_one()
+            switches.set_switch(
+                connection, switch_key, on=state == "on", updated_by=actor, reason=reason
+            )
+            row = switches.show_switch(connection, switch_key)
+        typer.echo(json.dumps(switches.display_switch(row, switch_key)))
+    except (switches.GuardRefused, switches.SchemaNotReady, switches.ReservedSwitch) as error:
+        typer.echo(" ".join(str(error).splitlines()), err=True)
+        raise typer.Exit(1) from None
+    except SQLAlchemyError:
+        typer.echo("Pipeline switch database operation failed.", err=True)
+        raise typer.Exit(1) from None
+    except ValueError:
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
+        raise typer.Exit(1) from None
+    finally:
+        if engine is not None:
+            engine.dispose()
 
 
 @app.command("history-close-runs")
