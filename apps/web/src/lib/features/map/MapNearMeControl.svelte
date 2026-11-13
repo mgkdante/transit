@@ -58,7 +58,7 @@
 	const showSuggestions = $derived(
 		open && suggestionsOpen && suggestions.length > 0 && shouldSuggestNearMeAddress(query),
 	);
-	const nearMeClearance = 'calc(1rem + 2.75rem + 0.75rem)';
+	const nearMeClearance = 'var(--map-north-clearance)';
 
 	$effect(() => {
 		const host = rootEl?.parentElement;

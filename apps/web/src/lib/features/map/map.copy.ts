@@ -2,6 +2,8 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 
 export const copy = defineCopy({
 	en: {
+		northControl: 'Turn the map north up',
+		northStatus: 'Map is north up',
 		outOfServiceVehicles: 'Out-of-service vehicles',
 		precision: {
 			address: 'Address',
@@ -117,6 +119,8 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
+		northControl: 'Remettre le nord en haut',
+		northStatus: 'La carte est orientée vers le nord',
 		outOfServiceVehicles: 'Véhicules hors service',
 		precision: {
 			address: 'Adresse',
