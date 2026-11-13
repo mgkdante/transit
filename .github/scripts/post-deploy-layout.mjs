@@ -4,14 +4,32 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { liveProductionSha } from "./deploy-scope.mjs";
 
-export async function verifyDeployedSha(sha, fetcher = fetch) {
-  if (
-    !/^[a-f0-9]{40}$/.test(sha ?? "") ||
-    (await liveProductionSha(fetcher)) !== sha
-  ) {
+export async function verifyDeployedSha(sha, fetcher = fetch, {
+  deadlineMs = 90_000, intervalMs = 3_000,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now = Date.now, log = console.log,
+} = {}) {
+  if (!/^[a-f0-9]{40}$/.test(sha ?? "")) {
     throw new Error(
       "Production Worker does not report the deployed source SHA",
     );
+  }
+  const start = now();
+  while (true) {
+    const reported = await liveProductionSha(fetcher);
+    const elapsed = now() - start;
+    const seconds = elapsed / 1_000;
+    if (reported === sha) {
+      log(`Production Worker reports the deployed source SHA after ${seconds}s`);
+      return;
+    }
+    if (elapsed >= deadlineMs) {
+      throw new Error(
+        `Production Worker does not report the deployed source SHA: expected ${sha}, reported ${reported ?? "nothing"}, waited ${seconds}s`,
+      );
+    }
+    log(`Waiting for deployed source SHA: waited ${seconds}s, reported ${reported ?? "nothing"}`);
+    await sleep(intervalMs);
   }
 }
 
