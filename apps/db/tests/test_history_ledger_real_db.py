@@ -595,3 +595,45 @@ def test_holds_and_reads_run_as_the_pipeline_role(conn, monkeypatch):
             end=date(2026, 11, 1),
         )
         assert len(copies) == 1 and copies[0].state == "allocated"
+
+
+def test_plain_lock_blocks_a_writer_in_another_session(real_db_engine):
+    with real_db_engine.connect() as a, real_db_engine.connect() as b:
+        try:
+            ledger.acquire_window_lock(a, **IDENTITY)
+            b.exec_driver_sql("SET LOCAL lock_timeout = '100ms'")
+            with pytest.raises(OperationalError) as error:
+                ledger.lock_window(b, **IDENTITY)
+            assert error.value.orig.sqlstate == "55P03"
+        finally:
+            a.rollback()
+            b.rollback()
+
+
+def test_plain_lock_does_not_create_or_change_a_window(conn):
+    ledger.acquire_window_lock(conn, **IDENTITY)
+    assert ledger.window_state(conn, **IDENTITY) is None
+    ledger.lock_window(conn, **IDENTITY)
+    conn.exec_driver_sql("UPDATE core.history_window SET working_state='trimmed'")
+    before = ledger.window_state(conn, **IDENTITY)
+    events = conn.exec_driver_sql("SELECT count(*) FROM core.history_event").scalar_one()
+    ledger.acquire_window_lock(conn, **IDENTITY)
+    assert ledger.window_state(conn, **IDENTITY) == before
+    assert conn.exec_driver_sql("SELECT count(*) FROM core.history_event").scalar_one() == events
+    with pytest.raises(UndeclaredDataset):
+        ledger.acquire_window_lock(None, **{**IDENTITY, "dataset_id": "unknown"})
+    for invalid in ({"window_key": "2026-11"}, {"revision": 1}):
+        with pytest.raises(ValueError):
+            ledger.acquire_window_lock(None, **{**IDENTITY, **invalid})
+
+
+def test_find_copies_ignores_a_later_table_column(conn):
+    ledger.lock_window(conn, **IDENTITY)
+    _copy(conn, key="'capture.trip_updates','network',0,'2026-11-01'")
+    scope = dict(dataset_id=IDENTITY["dataset_id"], provider_id=IDENTITY["provider_id"])
+    before = ledger.find_copies(conn, **scope, start=date(2026, 11, 1), end=date(2026, 11, 1))
+    assert len(before) == 1
+    conn.exec_driver_sql("ALTER TABLE core.history_archive_copy ADD COLUMN later_addition text")
+    assert ledger.find_copies(
+        conn, **scope, start=date(2026, 11, 1), end=date(2026, 11, 1)
+    ) == before
