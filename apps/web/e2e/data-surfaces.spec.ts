@@ -190,3 +190,30 @@ test('the status page stacks its coverage table on phones and says when data is 
 	expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 	await expect(page.getByRole('main').getByRole('status').first()).toBeVisible();
 });
+test('rankings name lines by number in both languages', async ({ page }) => {
+	for (const lang of PUBLISHED_LOCALES) {
+		await page.goto(localizeHref('/hotspots', lang));
+		const headline = page.locator('[data-slot="hotspots-verdict"]').getByRole('link');
+		await expect(headline).toContainText('1 · Confederation');
+		await page.locator('[data-slot="hotspot-section"]').first().scrollIntoViewIfNeeded();
+		const unindexed = page.getByRole('button', {
+			name: `${lang === 'fr' ? 'Ligne' : 'Line'} Lansdowne`,
+			exact: true,
+		});
+		await expect(unindexed).toBeVisible();
+		const label =
+			(await unindexed.evaluate((element) => element.namespaceURI)) === 'http://www.w3.org/2000/svg'
+				? page
+						.locator('[data-slot="hotspot-section"]')
+						.first()
+						.locator('svg text')
+						.filter({ hasText: /^Lansdowne$/ })
+				: unindexed;
+		await expect(label).toBeVisible();
+		await expect(label).toHaveText('Lansdowne');
+		await page.goto(localizeHref('/repeat-offenders', lang));
+		await expect(page.locator('[data-slot="offenders-hero"]').getByRole('link')).toHaveText(
+			'1 · Confederation',
+		);
+	}
+});

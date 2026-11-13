@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FilterState } from '#lib/filters/index.ts';
-import { VehicleSchema } from '#lib/v1/schemas/index.ts';
+import { STATUS_CODES, VehicleSchema } from '#lib/v1/schemas/index.ts';
 import type { VehicleSilenceContext } from './vehicleLayer';
 import { toVehicleFeatures } from './vehicleLayer';
-import { BUS_ICON, stateBadgeIconId, VEHICLE_MARKER_GEOMETRY } from './vehicleSprites';
+import { BUS_ICON, bodyIconId, stateBadgeIconId, VEHICLE_MARKER_GEOMETRY } from './vehicleSprites';
 import { STALE_CUTOFF_S } from './vehicleProjection';
 
 const EMPTY_FILTER: FilterState = {
@@ -45,8 +45,14 @@ describe('toVehicleFeatures entity filtering', () => {
 			},
 		].map((candidate) => VehicleSchema.parse({ trip: 'assigned-trip', ...candidate }));
 		const cases = [
-			['default', EMPTY_FILTER, '', 1, BUS_ICON],
-			['entity-only', { ...EMPTY_FILTER, entities: ['bus'] } as FilterState, '', 1, BUS_ICON],
+			['default', EMPTY_FILTER, stateBadgeIconId('status', 'on_time'), 1, 'veh-s-on_time'],
+			[
+				'entity-only',
+				{ ...EMPTY_FILTER, entities: ['bus'] } as FilterState,
+				stateBadgeIconId('status', 'on_time'),
+				1,
+				'veh-s-on_time',
+			],
 			[
 				'status',
 				{ ...EMPTY_FILTER, status: ['on_time'] } as FilterState,
@@ -84,6 +90,58 @@ describe('toVehicleFeatures entity filtering', () => {
 		}).features[0].properties;
 		expect(nullProperties).toMatchObject({ mark: '', matched: 0, body: BUS_ICON });
 		expect(nullProperties).toHaveProperty('mark');
+	});
+
+	it('colours buses by status when no filter is active', () => {
+		const fleet = STATUS_CODES.map((status) =>
+			VehicleSchema.parse({
+				id: `bus-${status}`,
+				trip: `trip-${status}`,
+				lat: 45.5,
+				lon: -73.6,
+				status,
+				occupancy: 'full',
+				updated_utc: '2026-06-15T00:00:00Z',
+			}),
+		);
+		const parked = VehicleSchema.parse({
+			id: 'parked',
+			trip: null,
+			lat: 45.5,
+			lon: -73.6,
+			status: 'on_time',
+			updated_utc: '2026-06-15T00:00:00Z',
+		});
+		const statusLook = (status: string) => ({
+			body: bodyIconId('status', status),
+			mark: stateBadgeIconId('status', status),
+			matched: 1,
+		});
+
+		const plain = toVehicleFeatures([...fleet, parked], {
+			...EMPTY_FILTER,
+			showOutOfService: true,
+		});
+		STATUS_CODES.forEach((status, index) => {
+			expect(plain.features[index].properties, status).toMatchObject(statusLook(status));
+		});
+		expect(plain.features.at(-1)!.properties).toMatchObject({ body: BUS_ICON, mark: '' });
+
+		const ticked = toVehicleFeatures(fleet, { ...EMPTY_FILTER, status: ['late'] });
+		for (const [index, status] of STATUS_CODES.entries()) {
+			const properties = ticked.features[index].properties;
+			if (status === 'late') expect(properties, status).toMatchObject(statusLook(status));
+			else expect(properties.matched, status).toBe(0);
+		}
+
+		const crowding = toVehicleFeatures(fleet, { ...EMPTY_FILTER, occupancy: ['full'] });
+		for (const feature of crowding.features) {
+			expect(feature.properties).toMatchObject({
+				body: bodyIconId('occupancy', 'full'),
+				mark: stateBadgeIconId('occupancy', 'full'),
+				matched: 1,
+			});
+		}
 	});
 
 	it('keeps every bearing outside the upright bus silhouette', () => {

@@ -2,12 +2,19 @@
 	import { Button } from '@yesid/ui/button';
 	import type { Snippet } from 'svelte';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
+	import InfoIcon from '@lucide/svelte/icons/info';
 	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import UsersRoundIcon from '@lucide/svelte/icons/users-round';
 
-	export type MapFilterGroupKind = 'markers' | 'alerts' | 'active' | 'status' | 'crowding';
+	export type MapFilterGroupKind =
+		| 'legend'
+		| 'markers'
+		| 'alerts'
+		| 'active'
+		| 'status'
+		| 'crowding';
 
 	interface Props {
 		kind: MapFilterGroupKind;
@@ -15,11 +22,13 @@
 		open: boolean;
 		presentation: 'desktop' | 'drawer';
 		count?: number;
+		/** One line of guidance shown above the group's rows. */
+		help?: string;
 		ontoggle: () => void;
 		children?: Snippet;
 	}
 
-	let { kind, label, open, presentation, count = 0, ontoggle, children }: Props = $props();
+	let { kind, label, open, presentation, count = 0, help, ontoggle, children }: Props = $props();
 	const contentId = $derived(`map-filter-group-${presentation}-${kind}`);
 </script>
 
@@ -34,7 +43,9 @@
 		onclick={ontoggle}
 	>
 		<span class="mf-group-badge" data-icon={kind} aria-hidden="true">
-			{#if kind === 'markers'}
+			{#if kind === 'legend'}
+				<InfoIcon size={14} strokeWidth={2.25} />
+			{:else if kind === 'markers'}
 				<MapPinnedIcon size={14} strokeWidth={2.25} />
 			{:else if kind === 'alerts'}
 				<TriangleAlertIcon size={14} strokeWidth={2.25} />
@@ -52,6 +63,7 @@
 		{/if}
 	</Button>
 	<div id={contentId} class="mf-group-content" hidden={!open}>
+		{#if help}<p class="mf-group-help">{help}</p>{/if}
 		{@render children?.()}
 	</div>
 </fieldset>
@@ -120,6 +132,12 @@
 
 	:global(.mf-group-content) {
 		min-width: 0;
+	}
+	:global(.mf-group-help) {
+		margin: 0 0 0.375rem;
+		font-size: var(--text-caption);
+		line-height: 1.4;
+		color: var(--muted-foreground);
 	}
 	:global(.mf-group-trigger:focus-visible) {
 		outline: 2px solid var(--ring);

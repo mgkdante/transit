@@ -12,6 +12,8 @@ const files = Object.fromEntries(
 		['/v1/stm/static/stops/S1.json', 'stop.json'],
 		['/v1/stm/static/stops_index.json', 'stops-index.json'],
 		['/v1/stm/static/routes_index.json', 'routes-index.json'],
+		['/v1/stm/historic/hotspots.json', 'hotspots.json'],
+		['/v1/stm/historic/repeat_offenders.json', 'repeat-offenders.json'],
 		['/v1/stm/live/stop_departures.json', 'departures.json'],
 		['/v1/stm/live/alerts.json', 'alerts.json'],
 		['/v1/stm/live/trips.json', 'trips.json'],
@@ -103,6 +105,7 @@ hedgedReliability.periods_by_grain = [
 files['/__layout/hedged/v1/stm/historic/route_reliability/24.json'] =
 	JSON.stringify(hedgedReliability);
 const hedgedRoutes = JSON.parse(files['/v1/stm/static/routes_index.json']);
+hedgedRoutes.routes = hedgedRoutes.routes.filter(({ id }) => id === '24');
 hedgedRoutes.routes.push({ id: '25', short: '25', long: 'Ontario', type: 3 });
 files['/__layout/hedged/v1/stm/static/routes_index.json'] = JSON.stringify(hedgedRoutes);
 layoutFiles['/v1/stm/historic/receipts/2026-08-29.json'] = JSON.stringify({

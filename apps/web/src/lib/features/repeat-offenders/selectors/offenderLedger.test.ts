@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildOffenderLedger, publishedSeverity } from './offenderLedger';
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import type { Offender } from '#lib/v1/schemas/index.ts';
 
 const labels = {
@@ -32,6 +33,20 @@ describe('publishedSeverity — READ the contract, never re-derive', () => {
 });
 
 describe('buildOffenderLedger — the doctrine-clean fallback ledger', () => {
+	it('names the line and keeps the trip id as secondary text', () => {
+		const directory = createLineDirectory(
+			[{ id: 'opaque', short: '1', long: 'Confederation', type: 1 }],
+			{ line: (id) => `Line ${id}` },
+		);
+		const [row] = buildOffenderLedger([{ type: 'trip', id: 'T1', route: 'opaque' }], {
+			...labels,
+			directory,
+			typeLabel: () => 'Trip',
+		});
+		expect(row.title).toBe('1 · Confederation');
+		expect(row.subtitle).toContain('Trip T1');
+		expect(row.subtitle).not.toContain('opaque');
+	});
 	it('preserves worst-first order + carries the RAW avg_delay_min as the bar value', () => {
 		const list: Offender[] = [
 			{

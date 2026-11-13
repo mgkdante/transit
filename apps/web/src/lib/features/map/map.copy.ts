@@ -2,6 +2,8 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 
 export const copy = defineCopy({
 	en: {
+		northControl: 'Turn the map north up',
+		northStatus: 'Map is north up',
 		outOfServiceVehicles: 'Out-of-service vehicles',
 		precision: {
 			address: 'Address',
@@ -25,6 +27,7 @@ export const copy = defineCopy({
 		mapImportRetry: 'Try live map again',
 		staticNoScript: 'JavaScript is required to load the live interactive map.',
 		heading: 'Network map',
+		headingLead: 'Where buses are now. Colour and shape show early, on time or late.',
 		mapLabel: '{city} network map with vehicle status',
 		mapCanvasLabel: 'Interactive map',
 		attributionToggle: 'Toggle attribution',
@@ -36,7 +39,7 @@ export const copy = defineCopy({
 		modeStatus: 'Status',
 		modeOccupancy: 'Crowding',
 		modeAlerts: 'Alerts',
-		modeRoutes: 'Routes',
+		modeRoutes: 'Lines',
 		modeStops: 'Stops',
 		modeVehicles: 'Vehicles',
 		modeTrips: 'Trips',
@@ -59,6 +62,14 @@ export const copy = defineCopy({
 		entityBus: 'Vehicle',
 		entityStop: 'Stop',
 		legendTitle: 'Markers',
+		legend: {
+			title: 'Legend',
+			heading: 'Direction of travel',
+			notReporting: 'Not reporting: no position for a few minutes',
+			stop: 'Stop',
+			zoomBadges: 'Zoom in to see each bus’s status badge.',
+		},
+		statusHelp: 'Tick a status to show only those buses.',
 		entityFilterTitle: 'Filter map markers',
 		filterTitle: 'Filter',
 		controlsTitle: 'Controls',
@@ -68,6 +79,7 @@ export const copy = defineCopy({
 		controlsDone: 'Done',
 		rail: {
 			motion: 'Pos.',
+			legend: 'Legend',
 			markers: 'Mark.',
 			alerts: 'Alerts',
 			active: 'Active',
@@ -77,7 +89,7 @@ export const copy = defineCopy({
 		filterClear: 'Clear',
 		filterRemove: 'Remove filter:',
 		filterClose: 'Close filters',
-		routeRemove: 'Remove route',
+		routeRemove: 'Remove line',
 		vehicleLabel: 'Vehicle',
 		stopLabel: 'Stop',
 		tripLabel: 'Trip',
@@ -117,6 +129,8 @@ export const copy = defineCopy({
 		},
 	},
 	fr: {
+		northControl: 'Remettre le nord en haut',
+		northStatus: 'La carte est orientée vers le nord',
 		outOfServiceVehicles: 'Véhicules hors service',
 		precision: {
 			address: 'Adresse',
@@ -141,6 +155,8 @@ export const copy = defineCopy({
 		mapImportRetry: 'Réessayer la carte en direct',
 		staticNoScript: 'JavaScript est requis pour charger la carte interactive en direct.',
 		heading: 'Carte du réseau',
+		headingLead:
+			'Où sont les bus en ce moment. La couleur et la forme indiquent s’ils sont en avance, à l’heure ou en retard.',
 		mapLabel: 'Carte du réseau · {city}, avec l’état des véhicules',
 		mapCanvasLabel: 'Carte interactive',
 		attributionToggle: 'Afficher ou masquer les attributions',
@@ -175,6 +191,14 @@ export const copy = defineCopy({
 		entityBus: 'Véhicule',
 		entityStop: 'Arrêt',
 		legendTitle: 'Marqueurs',
+		legend: {
+			title: 'Légende',
+			heading: 'Sens de déplacement',
+			notReporting: 'Ne répond plus : aucune position depuis quelques minutes',
+			stop: 'Arrêt',
+			zoomBadges: 'Zoomez pour voir le symbole de statut.',
+		},
+		statusHelp: 'Cochez un état pour n’afficher que ces bus.',
 		entityFilterTitle: 'Filtrer les marqueurs de la carte',
 		filterTitle: 'Filtrer',
 		controlsTitle: 'Contrôles',
@@ -184,6 +208,7 @@ export const copy = defineCopy({
 		controlsDone: 'Terminé',
 		rail: {
 			motion: 'Pos.',
+			legend: 'Lég.',
 			markers: 'Marq.',
 			alerts: 'Alertes',
 			active: 'Actifs',

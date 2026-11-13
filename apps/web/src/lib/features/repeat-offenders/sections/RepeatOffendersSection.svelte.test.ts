@@ -141,10 +141,10 @@ describe('RepeatOffendersSection article-card body', () => {
 		expect(container.querySelector('[data-slot="offender-ladder-empty"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="absent-value"]')).not.toBeNull();
 		const belowFloor = container.querySelector('[data-slot="offender-tray"]') as HTMLElement;
-		expect(within(belowFloor).getByRole('link', { name: tray[0].ariaLabel })).toHaveAttribute(
-			'href',
-			'/lines/55',
-		);
+		expect(within(belowFloor).getByRole('link')).not.toHaveAttribute('aria-label');
+		expect(
+			within(belowFloor).getByRole('link', { name: `${tray[0].title} ${tray[0].subtitle}` }),
+		).toHaveAttribute('href', '/lines/55');
 	});
 
 	it('renders an honest empty state when neither ranked nor below-floor evidence exists', () => {

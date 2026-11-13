@@ -1,4 +1,5 @@
 import type { SeverityCode, Offender } from '#lib/v1/schemas/index.ts';
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 
 const SEVERITY_MAP: Readonly<Record<string, SeverityCode>> = {
 	critical: 'critical',
@@ -12,11 +13,11 @@ export function publishedSeverity(severity: string | null | undefined): Severity
 }
 
 export interface OffenderLedgerLabels {
+	readonly directory?: LineDirectory;
 	typeLabel: (type: string) => string;
 	recurrenceLabel: string;
 	recurrenceUnknown: string;
 	fmtMin: (v: number | null) => string | null;
-	viewDetail: (title: string) => string;
 	href: (o: Offender) => string;
 }
 
@@ -29,7 +30,6 @@ export interface OffenderLedgerRow {
 	readonly value: number | null;
 	readonly display: string | null;
 	readonly href: string;
-	readonly ariaLabel: string;
 }
 
 function offenderTitle(o: Offender, typeLabel: (t: string) => string): string {
@@ -45,6 +45,11 @@ function offenderSubtitle(o: Offender, labels: OffenderLedgerLabels): string {
 	const recurrenceText = recurrence
 		? `${labels.recurrenceLabel} ${recurrence}`
 		: labels.recurrenceUnknown;
+	if (labels.directory) {
+		return o.type === 'trip' || o.type === 'vehicle'
+			? `${labels.typeLabel(o.type)} ${o.id} · ${recurrenceText}`
+			: recurrenceText;
+	}
 	const route = o.route?.trim();
 	const routeText = route && o.route_name?.trim() ? ` · ${labels.typeLabel(o.type)} ${route}` : '';
 	return `${recurrenceText}${routeText}`;
@@ -54,8 +59,11 @@ export function buildOffenderLedger(
 	list: readonly Offender[],
 	labels: OffenderLedgerLabels,
 ): OffenderLedgerRow[] {
+	const directory = labels.directory;
 	return list.map((o, i) => {
-		const title = offenderTitle(o, labels.typeLabel);
+		const lineId = o.route || (o.type === 'route' ? o.id : null);
+		const name = directory && lineId ? directory.name(lineId, o.route_name) : null;
+		const title = name?.label ?? offenderTitle(o, labels.typeLabel);
 		const delay = o.avg_delay_min ?? null;
 		return {
 			key: `${o.type}:${o.id}:${o.route ?? ''}`,
@@ -66,7 +74,6 @@ export function buildOffenderLedger(
 			value: delay,
 			display: labels.fmtMin(delay),
 			href: labels.href(o),
-			ariaLabel: labels.viewDetail(title),
 		};
 	});
 }

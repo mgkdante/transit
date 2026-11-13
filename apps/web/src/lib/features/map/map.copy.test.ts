@@ -114,6 +114,7 @@ describe('map copy', () => {
 	it('uses frozen prefix-matching rail abbreviations and drawer actions', () => {
 		expect(copy.en.rail).toEqual({
 			motion: 'Pos.',
+			legend: 'Legend',
 			markers: 'Mark.',
 			alerts: 'Alerts',
 			active: 'Active',
@@ -122,6 +123,7 @@ describe('map copy', () => {
 		});
 		expect(copy.fr.rail).toEqual({
 			motion: 'Pos.',
+			legend: 'Lég.',
 			markers: 'Marq.',
 			alerts: 'Alertes',
 			active: 'Actifs',

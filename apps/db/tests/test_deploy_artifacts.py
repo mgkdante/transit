@@ -57,8 +57,8 @@ PYTHON_IMAGE = (
     "sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"
 )
 POSTGRES_IMAGE = (
-    "postgres:16.15-bookworm@"
-    "sha256:bb3e1a57e5407e0a5280b4211980a5e537f4abd234a87014ac979849a78dd825"
+    "postgres:16.16-bookworm@"
+    "sha256:a49f7438ba03589f9b1ca062f2da82e899b48ea1dc50d2449fa09a70be83ebca"
 )
 CADDY_IMAGE = (
     "caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
@@ -779,7 +779,7 @@ def test_env_example_documents_all_runtime_knobs() -> None:
         "HEALTH_RUNTIME_CACHE_SECONDS=30",
         "SILVER_REALTIME_RETENTION_DAYS=1",
         "GOLD_FACT_RETENTION_DAYS=14",
-        "BRONZE_REALTIME_RETENTION_DAYS=30",
+        "BRONZE_REALTIME_RETENTION_DAYS=400",
         "GOLD_WARM_ROLLUP_RETENTION_DAYS=730",
         "BRONZE_PRUNE_MAX_OBJECTS_PER_BATCH=5000",
         "BRONZE_PRUNE_MAX_BATCHES=2",
@@ -800,13 +800,47 @@ def test_gold_fact_retention_default_matches_compose_and_env_template() -> None:
     assert "keep 7 days" not in env_example
 
 
-def test_compose_bronze_realtime_default_matches_the_thirty_day_runtime_contract() -> None:
-    compose_text = (DB_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-    assert (
-        compose_text.count("BRONZE_REALTIME_RETENTION_DAYS: ${BRONZE_REALTIME_RETENTION_DAYS:-30}")
-        == 2
-    )
-    assert "BRONZE_REALTIME_RETENTION_DAYS:-90" not in compose_text
+def test_bronze_retention_defaults_match_compose_and_env_template() -> None:
+    assert Settings.model_fields["BRONZE_STATIC_RETENTION_DAYS"].default == 400
+    assert Settings.model_fields["BRONZE_REALTIME_RETENTION_DAYS"].default == 400
+    services = _compose()["services"]
+    for service_name in ("worker", "health"):
+        environment = services[service_name]["environment"]
+        assert environment["BRONZE_STATIC_RETENTION_DAYS"] == (
+            "${BRONZE_STATIC_RETENTION_DAYS:-400}"
+        )
+        assert environment["BRONZE_REALTIME_RETENTION_DAYS"] == (
+            "${BRONZE_REALTIME_RETENTION_DAYS:-400}"
+        )
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "BRONZE_STATIC_RETENTION_DAYS=400" in _active_lines(env_example)
+    assert "BRONZE_REALTIME_RETENTION_DAYS=400" in _active_lines(env_example)
+
+
+def test_alert_retention_defaults_match_compose_and_env_template() -> None:
+    assert Settings.model_fields["BRONZE_I3_RETENTION_DAYS"].default == 400
+    assert Settings.model_fields["SILVER_I3_CLOSED_RETENTION_DAYS"].default == 90
+    environments = [
+        service["environment"]
+        for service in _compose()["services"].values()
+        if "BRONZE_I3_RETENTION_DAYS" in service.get("environment", {})
+    ]
+    assert environments
+    for environment in environments:
+        assert environment["BRONZE_I3_RETENTION_DAYS"] == "${BRONZE_I3_RETENTION_DAYS:-400}"
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "BRONZE_I3_RETENTION_DAYS=400" in _active_lines(env_example)
+    assert "SILVER_I3_CLOSED_RETENTION_DAYS=90" in _active_lines(env_example)
+
+
+def test_compose_bronze_realtime_defaults_match_settings() -> None:
+    default = Settings.model_fields["BRONZE_REALTIME_RETENTION_DAYS"].default
+    assert default == 400
+    services = _compose()["services"]
+    for service_name in ("worker", "health"):
+        assert services[service_name]["environment"]["BRONZE_REALTIME_RETENTION_DAYS"] == (
+            f"${{BRONZE_REALTIME_RETENTION_DAYS:-{default}}}"
+        )
 
 
 def test_local_1password_env_files_stay_ignored() -> None:

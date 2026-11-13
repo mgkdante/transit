@@ -78,8 +78,7 @@
 		}
 		.map-feed-stall {
 			top: auto;
-			/* Above the collapsed map credits (24px), which sit one control row up. */
-			bottom: calc(var(--map-mobile-control-bottom) + 2.75rem + 0.75rem + 24px + 10px);
+			bottom: var(--map-north-clearance);
 			left: 0.75rem;
 			right: 0.75rem;
 			margin-inline: 0;

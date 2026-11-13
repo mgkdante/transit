@@ -54,7 +54,7 @@
 {/snippet}
 
 {#snippet hotspotTypeIdCell(row: TrayRow)}
-	{copy.tray.rowSubtitle(row.type, row.id)}
+	{row.type}
 {/snippet}
 
 {#snippet hotspotReadingsCell(row: TrayRow)}

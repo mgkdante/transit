@@ -48,7 +48,7 @@ describe('detailActions', () => {
 	it('uses the entity-specific route and stop action labels', () => {
 		expect(actionFor(routeDetail)).toEqual({
 			href: '/lines/24',
-			label: 'Open the full analysis for route 24',
+			label: 'Open the full analysis for line 24',
 		});
 		expect(actionFor(stopDetail)).toEqual({
 			href: '/stop/stop-missing-name',
@@ -123,7 +123,7 @@ describe('detailActions', () => {
 
 		expect(action).toEqual({
 			href: '/lines/24',
-			label: 'Open the full analysis for route 24',
+			label: 'Open the full analysis for line 24',
 		});
 	});
 

@@ -11,6 +11,7 @@
 	import type { MapSelection } from './selectionSession/mapSelection';
 	import MapHeadTitle from './MapHeadTitle.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
+	import MapNorthControl from './MapNorthControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
 	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
@@ -19,6 +20,9 @@
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
 	interface Props {
+		orientation: { bearing: number; pitch: number };
+		northStatus: string;
+		onnorth: () => void;
 		locale: Locale;
 		t: MapCopy;
 		presentation: LivePresentation;
@@ -43,6 +47,9 @@
 	}
 
 	let {
+		orientation,
+		northStatus,
+		onnorth,
 		locale,
 		t,
 		presentation,
@@ -68,6 +75,7 @@
 	const visiblePeek = $derived(peekRepeatsDetail(hoverPeek, detailSelection) ? null : hoverPeek);
 
 	let desktopControlsMounted = $state(false);
+	let headHeight = $state(0);
 	$effect(() => {
 		if (isDesktop) desktopControlsMounted = true;
 	});
@@ -78,9 +86,17 @@
 	data-active-placement={isDesktop ? 'floating' : 'head'}
 	data-not-responding={presentation.stamp.ageLabel ? 'true' : 'false'}
 >
-	<MapHeadTitle {locale} heading={t.heading} presentation={presentation.stamp} />
+	<MapHeadTitle
+		{locale}
+		heading={t.heading}
+		lead={t.headingLead}
+		presentation={presentation.stamp}
+		bind:height={headHeight}
+	/>
 	<MapFreshness placement="floating" presentation={presentation.stamp} {locale} />
 </div>
+
+<MapNorthControl copy={t} {...orientation} status={northStatus} onreset={onnorth} />
 
 <MapNearMeControl
 	bind:open={nearMeOpen}
@@ -99,7 +115,7 @@
 />
 
 {#if isDesktop || desktopControlsMounted}
-	<div class="map-overlay map-filter-panel">
+	<div class="map-overlay map-filter-panel" style:--map-head-height="{headHeight}px">
 		{@render controls(undefined)}
 	</div>
 {/if}
@@ -120,7 +136,7 @@
 		z-index: var(--z-map-overlay);
 	}
 	.map-filter-panel {
-		top: calc(var(--chrome-offset) + 4rem);
+		top: calc(var(--chrome-offset) + max(4rem, var(--map-head-height, 0px) + 0.75rem));
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
 	}
 

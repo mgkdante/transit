@@ -122,8 +122,8 @@ describe('MapFilters', () => {
 			Array.from(container.querySelectorAll('[data-filter-group]'), (group) =>
 				group.getAttribute('data-filter-group'),
 			),
-		).toEqual(['markers', 'alerts', 'active', 'status', 'crowding']);
-		for (const name of ['Markers', 'Alerts', 'Status', 'Crowding']) {
+		).toEqual(['legend', 'markers', 'alerts', 'active', 'status', 'crowding']);
+		for (const name of ['Legend', 'Markers', 'Alerts', 'Status', 'Crowding']) {
 			expect(getByRole('button', { name })).toHaveAttribute('aria-expanded', 'true');
 		}
 		expect(getByRole('button', { name: /^Active/ })).toHaveAttribute('aria-expanded', 'false');
@@ -146,11 +146,11 @@ describe('MapFilters', () => {
 
 		const rail = container.querySelector('[data-testid="map-filter-rail"]');
 		expect(rail).toBeInTheDocument();
-		expect(rail?.querySelectorAll('.mf-rail-glyph')).toHaveLength(6);
+		expect(rail?.querySelectorAll('.mf-rail-glyph')).toHaveLength(7);
 		expect(rail?.querySelectorAll('.mf-chip')).toHaveLength(0);
 		expect(
 			Array.from(rail?.querySelectorAll('.mf-rail-abbr') ?? [], (item) => item.textContent),
-		).toEqual(['Pos.', 'Mark.', 'Alerts', 'Active', 'Status', 'Crowd']);
+		).toEqual(['Pos.', 'Legend', 'Mark.', 'Alerts', 'Active', 'Status', 'Crowd']);
 		expect(within(rail as HTMLElement).getByRole('button', { name: 'Active 1' })).toHaveTextContent(
 			'1',
 		);
@@ -365,6 +365,30 @@ describe('MapFilters', () => {
 		expect(container.querySelector('.map-filters')).toHaveAttribute('data-controls', 'false');
 		expect(container.querySelector('[data-testid="map-filter-header"]')).not.toBeInTheDocument();
 	});
+
+	it.each([
+		['desktop', true],
+		['drawer', false],
+	] as const)(
+		'renders the legend open as the first group of the %s controls',
+		async (presentation, collapsible) => {
+			const store = createFilterStore(emptyFilterState());
+			const view = render(MapFilters, { props: { store, locale: 'fr', collapsible } });
+			const [first] = view.container.querySelectorAll<HTMLElement>('[data-filter-group]');
+			expect(first).toHaveAttribute('data-filter-group', 'legend');
+			const trigger = within(first).getByRole('button', { name: 'Légende' });
+			expect(trigger).toHaveAttribute('aria-expanded', 'true');
+			expect(within(first).getByRole('list', { name: 'Légende' })).toBeVisible();
+			const lead = within(first).queryByText(/^Où sont les bus en ce moment\./);
+			if (presentation === 'drawer') expect(lead).toBeVisible();
+			else expect(lead).toBeNull();
+			if (!collapsible) return;
+			await fireEvent.click(view.getByRole('button', { name: 'Réduire les contrôles' }));
+			const rail = view.getByTestId('map-filter-rail');
+			await fireEvent.click(within(rail).getByRole('button', { name: 'Légende' }));
+			await waitFor(() => expect(view.getByRole('button', { name: 'Légende' })).toHaveFocus());
+		},
+	);
 
 	it('restores the persisted desktop rail state with a browser-safe localStorage key', async () => {
 		localStorage.setItem('transit:controls-rail', 'true');

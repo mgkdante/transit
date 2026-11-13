@@ -866,6 +866,7 @@ function verifyLedger(cell, fixture, ledger) {
 			['browser', 'live/network.json', 200, 1],
 		],
 	}[cell.surface];
+	expected.push(['ssr', 'static/routes_index.json', 404, 1]);
 	if (selectedLine && historyStatus === 404)
 		expected.push(['ssr', 'historic/history/index.json', 404, 1]);
 	const selectedRefs = (index) => {

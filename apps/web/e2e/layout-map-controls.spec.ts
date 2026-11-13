@@ -34,3 +34,47 @@ for (const provider of ['stm', 'octranspo'])
 			);
 		});
 	}
+
+// The legend opens first in every layout; on a laptop it must leave the Markers group in view.
+for (const locale of ['en', 'fr'])
+	test(`${locale} map legend opens first and stays compact at 1280x800 @layout`, async ({
+		page,
+	}) => {
+		const width = page.viewportSize()!.width;
+		if (width === 1280) await page.setViewportSize({ width: 1280, height: 800 });
+		await page.goto(`${locale === 'fr' ? '/fr' : ''}/map`, { waitUntil: 'networkidle' });
+		if (width < 1024) await page.getByTestId('map-filter-pill').click();
+		const panel = page.locator('.map-filters:visible');
+		const first = panel.locator('[data-filter-group]').first();
+		await expect(first).toHaveAttribute('data-filter-group', 'legend');
+		await expect(first.locator('.mf-group-trigger')).toHaveAttribute('aria-expanded', 'true');
+		await expect(first.getByRole('list')).toBeVisible();
+		// The height budget is measured at the laptop size; other widths check placement above.
+		if (width !== 1280) return;
+		const measured = await panel.evaluate((root) => {
+			const body = root.querySelector('.mf-body')!;
+			const legend = root.querySelector('[data-filter-group="legend"]')!;
+			const markers = root.querySelector('[data-filter-group="markers"]')!;
+			const rows = [
+				markers.querySelector('.mf-group-trigger')!,
+				...markers.querySelectorAll('[role="checkbox"]'),
+			].slice(0, 3);
+			return {
+				legendHeight: legend.getBoundingClientRect().height,
+				scrollTop: body.scrollTop,
+				bodyBottom: body.getBoundingClientRect().bottom,
+				rowBottoms: rows.map((row) => row.getBoundingClientRect().bottom),
+				clipped: [...legend.querySelectorAll('li, p, [data-slot="status-badge"]')].filter(
+					(el) => el.scrollWidth > el.clientWidth + 1,
+				).length,
+				overflow: legend.scrollWidth > legend.clientWidth + 1,
+			};
+		});
+		expect(measured.legendHeight).toBeLessThanOrEqual(170);
+		expect(measured.scrollTop).toBe(0);
+		expect(measured.rowBottoms).toHaveLength(3);
+		for (const bottom of measured.rowBottoms)
+			expect(bottom).toBeLessThanOrEqual(measured.bodyBottom);
+		expect(measured.clipped).toBe(0);
+		expect(measured.overflow).toBe(false);
+	});

@@ -82,6 +82,9 @@
 {/snippet}
 
 <MapOverlayChrome
+	orientation={{ bearing: 0, pitch: 0 }}
+	northStatus=""
+	onnorth={() => {}}
 	{locale}
 	{t}
 	{presentation}

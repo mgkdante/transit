@@ -1,18 +1,73 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
-from test_bronze_prune_real_db import NOW, PROVIDER, REALTIME_ROWS, TU_OLD_A, TU_OLD_B, TU_OLD_C
+from test_bronze_prune_real_db import (
+    NOW,
+    PROVIDER,
+    REALTIME_ROWS,
+    STATIC_RUN_UNREFERENCED,
+    TU_OLD_A,
+    TU_OLD_B,
+    TU_OLD_C,
+    FakeBronzeStorage,
+    _seed_static_runs,
+)
 from test_bronze_prune_real_db import conn as conn
 
 from transit_ops.maintenance import (
     bronze,
 )
 from transit_ops.settings import Settings
+
+
+@pytest.mark.parametrize("age_days,selected", [(399, False), (401, True)])
+def test_static_prune_uses_default_retention_boundary(conn, age_days, selected):
+    _seed_static_runs(conn)
+    conn.execute(
+        text("UPDATE raw.ingestion_runs SET started_at_utc=:started WHERE ingestion_run_id=:r"),
+        {"started": NOW - timedelta(days=age_days), "r": STATIC_RUN_UNREFERENCED},
+    )
+    storage = FakeBronzeStorage()
+    _, counts, _, failed = bronze.prune_bronze_static_objects(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=Settings.model_fields["BRONZE_STATIC_RETENTION_DAYS"].default,
+        bronze_storage=storage,
+        now_utc=NOW,
+    )
+    assert counts == {"static": int(selected)}
+    assert failed == set()
+    assert storage.deleted == (["bronze-prune-test/static/unreferenced.zip"] if selected else [])
+
+
+@pytest.mark.parametrize("age_days,selected", [(399, False), (401, True)])
+def test_realtime_prune_uses_default_retention_boundary(conn, age_days, selected):
+    captured = NOW - timedelta(days=age_days)
+    conn.execute(
+        text("UPDATE raw.ingestion_runs SET started_at_utc=:captured WHERE ingestion_run_id=:r"),
+        {"captured": captured, "r": TU_OLD_A[0]},
+    )
+    conn.execute(
+        text("UPDATE raw.realtime_snapshot_index SET captured_at_utc=:captured "
+             "WHERE realtime_snapshot_id=:s"),
+        {"captured": captured, "s": TU_OLD_A[2]},
+    )
+    storage = FakeBronzeStorage()
+    _, counts, _, failed = bronze.prune_bronze_realtime_objects(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=Settings.model_fields["BRONZE_REALTIME_RETENTION_DAYS"].default,
+        bronze_storage=storage,
+        now_utc=NOW,
+    )
+    assert counts == {"realtime": int(selected)}
+    assert failed == set()
+    assert storage.deleted == ([TU_OLD_A[5]] if selected else [])
 
 
 class TransactionEngine:
@@ -307,3 +362,76 @@ def test_public_prune_preserves_failed_archive_and_never_claims_success(retentio
         "static": 0,
     }
     assert failed_path.is_dir()
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_alert_archive_entry_older_than_the_rollup_cutoff_is_kept(
+    conn, retention, monkeypatch, dry_run
+):
+    from transit_ops.maintenance import gold
+
+    settings, engine, _ = retention
+    monkeypatch.setattr(gold, "utc_now", lambda: NOW)
+    old_month = (NOW - timedelta(days=1100)).date().replace(day=1)
+    recent_month = NOW.date().replace(day=1)
+    for alert_id, month in (("old", old_month), ("recent", recent_month)):
+        conn.execute(
+            text("""
+                INSERT INTO gold.alert_archive_entry
+                    (provider_id, alert_id, archive_month, first_seen_utc,
+                     last_seen_utc, content_hash)
+                VALUES (:p, :id, :month, :seen, :seen, 'retention-test')
+            """),
+            {"p": PROVIDER, "id": alert_id, "month": month, "seen": NOW},
+        )
+
+    result = gold.prune_warm_rollup_storage(
+        PROVIDER, settings=settings, engine=engine, dry_run=dry_run
+    )
+
+    assert set(conn.execute(
+        text("SELECT alert_id FROM gold.alert_archive_entry WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == {"old", "recent"}
+    assert "gold.alert_archive_entry" not in result.deleted_row_counts
+
+
+def test_rollup_tables_are_pruned_as_before(conn, retention, monkeypatch):
+    from transit_ops.maintenance import gold
+
+    settings, engine, _ = retention
+    monkeypatch.setattr(gold, "utc_now", lambda: NOW)
+    cutoff = NOW - timedelta(days=settings.GOLD_WARM_ROLLUP_RETENTION_DAYS)
+    old = cutoff - timedelta(days=2)
+    recent = cutoff + timedelta(days=2)
+    for captured in (old, recent):
+        conn.execute(
+            text("""
+                INSERT INTO gold.warm_rollup_periods
+                    (provider_id, rollup_kind, period_start_utc, built_at_utc)
+                VALUES (:p, 'trip_delay', :captured, :captured)
+            """),
+            {"p": PROVIDER, "captured": captured},
+        )
+        conn.execute(
+            text("""
+                INSERT INTO gold.citizen_accountability_daily
+                    (provider_id, provider_local_date)
+                VALUES (:p, :day)
+            """),
+            {"p": PROVIDER, "day": captured.date()},
+        )
+
+    result = gold.prune_warm_rollup_storage(PROVIDER, settings=settings, engine=engine)
+
+    assert result.deleted_row_counts["gold.warm_rollup_periods"] == 1
+    assert result.deleted_row_counts["gold.citizen_accountability_daily"] == 1
+    assert list(conn.execute(
+        text("SELECT period_start_utc FROM gold.warm_rollup_periods WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == [recent]
+    assert list(conn.execute(
+        text("SELECT provider_local_date FROM gold.citizen_accountability_daily "
+             "WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == [recent.date()]

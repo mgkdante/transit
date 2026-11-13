@@ -228,7 +228,9 @@ for (const locale of PUBLISHED_LOCALES) {
 
 		const attribution = page.getByLabel(t.attributionToggle, { exact: true }).locator('..');
 		const boxes = await Promise.all(
-			[banner, nearMe, attribution].map(async (control) => (await control.boundingBox())!),
+			[banner, nearMe, attribution, page.locator('[data-slot="map-north"]')].map(
+				async (control) => (await control.boundingBox())!,
+			),
 		);
 		const viewport = page.viewportSize()!;
 		for (const [i, a] of boxes.entries()) {

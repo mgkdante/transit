@@ -17,7 +17,7 @@ async function framing(page: Page, bounds: number[]) {
 		const map = document.querySelector('[data-slot="map-stage"]')!.getBoundingClientRect();
 		const blockers = [
 			...document.querySelectorAll(
-				'header,.map-head,.map-filter-panel,.map-near,.map-filter-pill-container,[data-slot="map-detail-overlay"],[data-slot="right-panel"],.maplibregl-ctrl',
+				'header,.map-head,.map-filter-panel,.map-near,[data-slot="map-north"],.map-filter-pill-container,[data-slot="map-detail-overlay"],[data-slot="right-panel"],.maplibregl-ctrl',
 			),
 		]
 			.filter((el) => el.checkVisibility())
@@ -362,6 +362,43 @@ for (const provider of read('providers').providers) {
 					expect(geometry.titleRight).toBeCloseTo(geometry.report.right, 0);
 				}
 			}
+			// The line under the title says what colour and shape mean. Below desktop width
+			// the title block has no room for it, so the legend's first line carries it.
+			const lead = page.locator('.map-head [data-slot="map-lead"]');
+			if (geometry.width < 1024) {
+				await expect(lead).toBeHidden();
+				await page.getByTestId('map-filter-pill').click();
+				await expect(page.locator('[data-slot="map-legend-lead"]:visible')).toHaveCount(1);
+				return;
+			}
+			await expect(lead).toBeVisible();
+			await expect(lead).not.toBeEmpty();
+			const placement = await lead.evaluate((el) => {
+				const box = el.getBoundingClientRect();
+				const title = el.closest('.map-head')!.querySelector('h1')!.getBoundingClientRect();
+				const covering = [
+					...document.querySelectorAll(
+						'.map-filter-panel,.map-freshness[data-placement="floating"],.map-near,[data-slot="map-north"],.map-filter-pill-container,[data-slot="map-detail-overlay"],[data-slot="map-hover-peek"],.map-live-edge,.maplibregl-ctrl',
+					),
+				]
+					.filter((other) => other.checkVisibility())
+					.filter((other) => {
+						const r = other.getBoundingClientRect();
+						return (
+							Math.min(r.right, box.right) - Math.max(r.left, box.left) > 0 &&
+							Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top) > 0
+						);
+					})
+					.map((other) => other.className || other.tagName);
+				return {
+					belowTitle: box.top >= title.bottom,
+					covering,
+					clipped: el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1,
+				};
+			});
+			expect(placement.belowTitle).toBe(true);
+			expect(placement.covering).toEqual([]);
+			expect(placement.clipped).toBe(false);
 		});
 	}
 }

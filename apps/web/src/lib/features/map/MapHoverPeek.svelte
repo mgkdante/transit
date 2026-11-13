@@ -58,7 +58,9 @@
 			{#if peek.route}
 				<Badge variant="tag" size="xs" class="peek-route-tag">{t.route} {line(peek.route.id)}</Badge
 				>
-				<span class="peek-lede-item">{peek.route.longName}</span>
+				<span class="peek-lede-item"
+					>{peek.route.longName ?? `${t.route} ${line(peek.route.id)}`}</span
+				>
 				{#if peek.route.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 			{:else}
 				<AbsentValue reason={vehicleAbsence} {locale} />
@@ -126,7 +128,7 @@
 		</dl>
 	{:else if peek.kind === 'route'}
 		<p class="peek-lede" data-slot="peek-lede">
-			<span class="peek-lede-item">{peek.longName}</span>
+			<span class="peek-lede-item">{peek.longName ?? `${t.route} ${peek.title}`}</span>
 			{#if peek.labelInferred}<AbsentValue reason="inferred" {locale} />{/if}
 		</p>
 		<dl class="peek-facts">

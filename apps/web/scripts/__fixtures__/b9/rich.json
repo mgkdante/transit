@@ -2114,5 +2114,5 @@
 			"route_ids": ["24"]
 		}
 	},
-	"not_found": []
+	"not_found": ["static/routes_index.json"]
 }

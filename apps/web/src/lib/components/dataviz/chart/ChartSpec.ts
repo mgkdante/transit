@@ -80,6 +80,7 @@ interface ChartSpecBase {
 }
 
 export interface MagnitudeDatum {
+	readonly spoken?: string;
 	readonly key: string;
 	readonly label: string;
 	readonly value: number | null;

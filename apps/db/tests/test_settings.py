@@ -15,8 +15,8 @@ EXPECTED_RETENTION_CONTRACT = {
     "SILVER_REALTIME_RETENTION_DAYS": 1,
     "GOLD_FACT_RETENTION_DAYS": 14,
     "GOLD_REPORTING_OPEN_WINDOW_DAYS": 10,
-    "BRONZE_REALTIME_RETENTION_DAYS": 30,
-    "BRONZE_STATIC_RETENTION_DAYS": 30,
+    "BRONZE_REALTIME_RETENTION_DAYS": 400,
+    "BRONZE_STATIC_RETENTION_DAYS": 400,
     "GOLD_WARM_ROLLUP_RETENTION_DAYS": 730,
 }
 SETTINGS_DEFAULT_ENV_KEYS = (
@@ -168,7 +168,7 @@ def test_gold_fact_prune_batch_default_and_display(
 def test_i3_retention_defaults(clean_default_settings_env: None) -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.BRONZE_I3_RETENTION_DAYS == 30
+    assert settings.BRONZE_I3_RETENTION_DAYS == 400
     assert settings.SILVER_I3_CLOSED_RETENTION_DAYS == 90
 
 
@@ -177,7 +177,7 @@ def test_display_dict_includes_i3_retention_keys(
 ) -> None:
     display = Settings(_env_file=None).display_dict()
 
-    assert display["BRONZE_I3_RETENTION_DAYS"] == 30
+    assert display["BRONZE_I3_RETENTION_DAYS"] == 400
     assert display["SILVER_I3_CLOSED_RETENTION_DAYS"] == 90
 
 

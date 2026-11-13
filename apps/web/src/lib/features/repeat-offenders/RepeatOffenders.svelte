@@ -1,5 +1,7 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { createOffenderNames } from './offenderNames';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
@@ -80,6 +82,7 @@
 	import RepeatOffendersSection from './sections/RepeatOffendersSection.svelte';
 	import { copy as COPY } from './repeatOffenders.copy';
 
+	const display = transitDisplay();
 	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
@@ -159,10 +162,10 @@
 		const kind: SurfaceKind = 'line';
 		return localizeHref(routeFor({ kind, id: route }), locale);
 	}
-	function unnamed(e: RepeatOffenderEntry): string {
-		const route = e.route?.trim();
-		return route ? `${t.type.other} ${route}` : t.unnamed(e.id);
-	}
+	const { unnamed, spoken, typeLabel } = createOffenderNames(
+		() => display.directory,
+		() => t,
+	);
 	function ladderNote(e: RepeatOffenderEntry): string {
 		const parts: string[] = [];
 		if (e.recurrence_days != null && e.observed_days != null)
@@ -178,7 +181,7 @@
 		href: string | null,
 		evidence: OffenderPopoverEvidence,
 	): ChartDatumPopoverModel {
-		const heading = entry.route_name ?? unnamed(entry);
+		const heading = unnamed(entry);
 		const rows: Array<{ label: string; value: string }> = [];
 		const severe = fmtPct(entry.severe_pct, { locale, suffix: t.units.pct });
 		if (severe != null) rows.push({ label: t.ladder.severeRateLabel, value: severe });
@@ -224,7 +227,6 @@
 						action: {
 							href,
 							label: t.chart.popover.viewLine,
-							ariaLabel: t.viewDetail(heading),
 						},
 					}
 				: {}),
@@ -239,6 +241,7 @@
 	function ladderFor(kind: 'trip' | 'vehicle', total: number | null | undefined) {
 		const kindEntries = kindEntriesFor(kind);
 		const res = selectOffenderLadder(kindEntries, cap, locale, {
+			directory: display.directory,
 			title: t.ladder.heading,
 			rowLabel: kind === 'trip' ? t.type.trip : t.type.vehicle,
 			xLabel: t.ladder.severeRateLabel,
@@ -255,6 +258,7 @@
 	const vehicleLadder = $derived(ladderFor('vehicle', activeLadder?.total_ranked_vehicles));
 	function evidenceFor(kind: 'trip' | 'vehicle') {
 		return buildOffenderEvidenceRows(kindEntriesFor(kind), cap, {
+			directory: display.directory,
 			unnamed,
 			href: hrefFor,
 			ariaLabel: t.viewDetail,
@@ -280,7 +284,7 @@
 
 	const topOffender = $derived<RepeatOffenderEntry | null>(activeLadder?.entries?.[0] ?? null);
 	const round1 = (x: number): number => Math.round(x * 10) / 10;
-	const heroName = $derived(topOffender ? (topOffender.route_name ?? unnamed(topOffender)) : null);
+	const heroName = $derived(topOffender ? unnamed(topOffender) : null);
 	const heroRecurrence = $derived.by<string | null>(() => {
 		if (!topOffender) return null;
 		return topOffender.recurrence_days != null && topOffender.observed_days != null
@@ -306,14 +310,13 @@
 			.filter((e) => e.type === kind)
 			.map((e) => {
 				const href = hrefFor(e);
-				const title = e.route_name ?? unnamed(e);
+				const title = unnamed(e);
 				const tag = kind === 'trip' ? t.type.trip : t.type.vehicle;
 				return {
 					key: `${e.type}-${e.id}-${e.route ?? ''}`,
 					title,
 					subtitle: t.tray.rowSubtitle(tag, e.id),
 					href,
-					ariaLabel: t.viewDetail(title),
 				};
 			});
 	}
@@ -326,17 +329,6 @@
 			: t.window[grainKey],
 	);
 
-	function typeLabel(type: string): string {
-		return type === 'route'
-			? t.type.route
-			: type === 'stop'
-				? t.type.stop
-				: type === 'trip'
-					? t.type.trip
-					: type === 'vehicle'
-						? t.type.vehicle
-						: t.type.other;
-	}
 	function fmtMin(v: number | null): string | null {
 		return sharedFmtDelayMin(v, { rounding: 'fixed1', suffix: t.units.min });
 	}
@@ -353,11 +345,11 @@
 	}
 	const legacyRows = $derived(
 		buildOffenderLedger(offenders.data?.offenders ?? [], {
+			directory: display.directory,
 			typeLabel,
 			recurrenceLabel: t.recurrenceLabel,
 			recurrenceUnknown: t.recurrenceUnknown,
 			fmtMin,
-			viewDetail: t.viewDetail,
 			href: legacyHref,
 		}),
 	);
@@ -552,7 +544,11 @@
 										{#if topOffender && heroName != null}
 											<span class="offenders-hero-overline">{t.hero.overline}</span>
 											{#if heroHref}
-												<a class="offenders-hero-name" href={heroHref}>{heroName}</a>
+												<a
+													class="offenders-hero-name"
+													href={heroHref}
+													aria-label={spoken(topOffender)}>{heroName}</a
+												>
 											{:else}
 												<span class="offenders-hero-name">{heroName}</span>
 											{/if}
@@ -613,7 +609,6 @@
 													href={row.href}
 													data-sveltekit-preload-data="hover"
 													data-slot="offender-link"
-													aria-label={row.ariaLabel}
 												>
 													<RankedRow
 														bare
@@ -717,6 +712,7 @@
 		text-decoration: none;
 	}
 	a.offenders-hero-name {
+		min-height: 44px;
 		border-bottom: 1px solid transparent;
 		transition: border-color var(--duration-fast) var(--ease-default);
 		width: fit-content;

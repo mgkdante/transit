@@ -107,7 +107,7 @@ export const copy = defineCopy({
 			listLabel: 'Points non classés, sous le seuil d’observations',
 			columns: {
 				item: 'Élément',
-				typeId: 'Type / ID',
+				typeId: 'Type',
 				readings: 'Relevés',
 			},
 			rowSubtitle: (kind: string, id: string) => `${kind} · ${id}`,
@@ -119,9 +119,9 @@ export const copy = defineCopy({
 		},
 		verdict: {
 			label: 'Point chaud n°1',
-			topWithRate: (name: string, severePct: string) =>
-				`Point chaud en tête : ${name}, ${severePct} de prévisions de retard grave.`,
-			topNoRate: (name: string) => `Point chaud en tête : ${name}.`,
+			beforeName: () => 'Point chaud en tête : ',
+			afterName: (severePct: string | null) =>
+				severePct == null ? '.' : `, ${severePct} de prévisions de retard grave.`,
 			none: 'Aucun point chaud pour l’instant.',
 		},
 		type: {
@@ -232,7 +232,7 @@ export const copy = defineCopy({
 			listLabel: 'Un-ranked spots, below the observations floor',
 			columns: {
 				item: 'Item',
-				typeId: 'Type / ID',
+				typeId: 'Type',
 				readings: 'Readings',
 			},
 			rowSubtitle: (kind, id) => `${kind} · ${id}`,
@@ -244,9 +244,9 @@ export const copy = defineCopy({
 		},
 		verdict: {
 			label: '#1 hotspot',
-			topWithRate: (name, severePct) =>
-				`Top-ranked hotspot: ${name}, ${severePct} severe-delay predictions.`,
-			topNoRate: (name) => `Top-ranked hotspot: ${name}.`,
+			beforeName: () => 'Top-ranked hotspot: ',
+			afterName: (severePct) =>
+				severePct == null ? '.' : `, ${severePct} severe-delay predictions.`,
 			none: 'Nothing is a hotspot right now.',
 		},
 		type: {

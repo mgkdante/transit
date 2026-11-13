@@ -299,7 +299,9 @@ describe('HotspotsBoard article', () => {
 			payload.current!.by_grain![0].entries![0].otp_delta_pts = 9.7;
 			render(HotspotsBoard);
 
-			expect(screen.getByText(expectedVerdict)).toBeInTheDocument();
+			expect(screen.getByLabelText(hotspotsCopy[locale].verdict.label)).toHaveTextContent(
+				expectedVerdict,
+			);
 		},
 	);
 
@@ -310,7 +312,7 @@ describe('HotspotsBoard article', () => {
 	] as const)('preserves the supplied severe share %s in its headline', (severe, expected) => {
 		payload.current!.by_grain![0].entries![0].severe_pct = severe;
 		render(HotspotsBoard);
-		expect(screen.getByText(expected)).toBeInTheDocument();
+		expect(screen.getByLabelText(hotspotsCopy.en.verdict.label)).toHaveTextContent(expected);
 	});
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
@@ -352,8 +354,8 @@ describe('HotspotsBoard article', () => {
 				}),
 			);
 
-			const dialog = await screen.findByRole('dialog', { name: 'Item 51' });
-			expect(within(dialog).getByRole('link', { name: 'View detail for Item 51' })).toHaveAttribute(
+			const dialog = await screen.findByRole('dialog', { name: 'Line 51' });
+			expect(within(dialog).getByRole('link', { name: 'View line' })).toHaveAttribute(
 				'href',
 				'/lines/51',
 			);
@@ -389,7 +391,7 @@ describe('HotspotsBoard article', () => {
 		expect(capturedRow('stop-S1').tapPopover).toEqual({
 			key: 'stop-S1',
 			heading: 'Berri-UQAM',
-			meta: 'Stop · S1',
+			meta: 'Stop',
 			rows: [
 				{ label: 'Severe-delay rate', value: '70%' },
 				{ label: '95% CI', value: '69.9%–83.2%' },
@@ -399,13 +401,12 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/stop/S1',
 				label: 'View stop',
-				ariaLabel: 'View detail for Berri-UQAM',
 			},
 		});
 		expect(capturedRow('route-51').tapPopover).toEqual({
 			key: 'route-51',
-			heading: 'Item 51',
-			meta: 'Line · 51',
+			heading: 'Line 51',
+			meta: 'Line',
 			rows: [
 				{ label: 'Severe-delay rate', value: '40%' },
 				{ label: 'Readings', value: '100' },
@@ -413,7 +414,6 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/lines/51',
 				label: 'View line',
-				ariaLabel: 'View detail for Item 51',
 			},
 		});
 	});
@@ -425,7 +425,7 @@ describe('HotspotsBoard article', () => {
 		expect(capturedRow('stop-S1').tapPopover).toEqual({
 			key: 'stop-S1',
 			heading: 'Berri-UQAM',
-			meta: 'Arrêt · S1',
+			meta: 'Arrêt',
 			rows: [
 				{ label: 'Taux de retards graves', value: '70%' },
 				{ label: 'IC à 95 %', value: '69,9%–83,2%' },
@@ -435,13 +435,11 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/fr/stop/S1',
 				label: 'Voir l’arrêt',
-				ariaLabel: 'Voir le détail de Berri-UQAM',
 			},
 		});
 		expect(capturedRow('route-51').tapPopover?.action).toEqual({
 			href: '/fr/lines/51',
 			label: 'Voir la ligne',
-			ariaLabel: 'Voir le détail de Élément 51',
 		});
 	});
 
@@ -564,11 +562,11 @@ describe('HotspotsBoard article', () => {
 			within(stopTable)
 				.getAllByRole('columnheader')
 				.map((cell) => cell.textContent?.trim()),
-		).toEqual(['Item', 'Type / ID', 'Readings']);
-		const detail = within(stopTable).getByRole('link', { name: /View detail for Quiet Ave/ });
+		).toEqual(['Item', 'Type', 'Readings']);
+		const detail = within(stopTable).getByRole('link', { name: 'Quiet Ave' });
 		expect(detail).toHaveAttribute('href', '/stop/S2');
 		const servedRow = detail.closest('tr') as HTMLTableRowElement;
-		expect(servedRow).toHaveTextContent('Stop · S2');
+		expect(servedRow).toHaveTextContent('Stop');
 		expect(servedRow).toHaveTextContent('12');
 		expect(servedRow.querySelector('[data-slot="absent-value"]')).toBeNull();
 		const reason = stopTray.querySelector('[data-slot="hotspot-tray-reason"]') as HTMLElement;
@@ -582,12 +580,12 @@ describe('HotspotsBoard article', () => {
 		expect(lineTable).not.toBeNull();
 		const nullTitle = within(lineTable).getByText('Sparse Route');
 		const nullRow = nullTitle.closest('tr') as HTMLTableRowElement;
-		expect(nullRow).toHaveTextContent('Line · R2');
+		expect(nullRow).toHaveTextContent('Line');
 		expect(nullRow.querySelectorAll('[data-slot="absent-value"]')).toHaveLength(1);
 		expect(nullRow).not.toHaveTextContent(/\b0\b/);
 		const zeroTitle = within(lineTable).getByText('Zero Route');
 		const zeroRow = zeroTitle.closest('tr') as HTMLTableRowElement;
-		expect(zeroRow).toHaveTextContent('Line · R3');
+		expect(zeroRow).toHaveTextContent('Line');
 		expect(
 			within(zeroRow.querySelector('[data-column="readings"]') as HTMLElement).getByText('0'),
 		).toBeInTheDocument();

@@ -1,14 +1,11 @@
 import type { OccupancyCode } from '#lib/v1/index.ts';
+import { createLineDirectory } from './lineDirectory';
 
 export function lineLabel(
 	id: string,
 	routes: readonly { id: string; short: string }[] = [],
-	provider?: string,
 ): string {
-	return (
-		routes.find((route) => route.id === id)?.short ||
-		(provider === 'octranspo' ? id.replace(/^(\d+)-\d+$/, '$1') : id)
-	);
+	return createLineDirectory(routes, { line: (id) => id }).number(id);
 }
 
 const abbreviations = new Set(['NB', 'SB', 'EB', 'WB', 'O-TRAIN', 'UOTTAWA', 'H.S.', 'AD.']);
