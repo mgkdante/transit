@@ -85,13 +85,15 @@ it('selects only ready providers and falls back when bounds are absent or ambigu
 	).toBe('new-provider');
 });
 
-it('clears provider-specific entities when automatic location selection changes the network', () => {
+it('preserves provider-specific entities when automatic location selection chooses the network', () => {
 	const result = resolveProvider(
 		new URL('https://transit.test/fr/stop/123?lat=45.5&lon=-73.6'),
 		PublicProviderCatalogSchema.parse(readyProviders),
 		{ lat: 45.42, lon: -75.7 },
 	);
-	expect(result.url.pathname + result.url.search).toBe('/fr/map?provider=octranspo');
+	expect(result.url.pathname + result.url.search).toBe(
+		'/fr/stop/123?lat=45.5&lon=-73.6&provider=octranspo',
+	);
 });
 
 it('only disables alerts when both input families are explicitly unavailable', () => {
@@ -116,7 +118,7 @@ it('selects any ready provider and normalizes unknown or duplicate choices to th
 	for (const query of ['provider=unknown', 'provider=stm&provider=octranspo']) {
 		const selected = resolveProvider(new URL(`https://transit.test/fr/lines/42?${query}`), ready);
 		expect(selected.provider.id).toBe('test');
-		expect(selected.url.pathname + selected.url.search).toBe('/fr/lines?provider=test');
+		expect(selected.url.pathname + selected.url.search).toBe('/fr/lines/42?provider=test');
 	}
 	expect(
 		providerHref(

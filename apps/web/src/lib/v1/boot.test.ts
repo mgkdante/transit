@@ -18,6 +18,71 @@ describe('bootV1 request reuse', () => {
 		mocks.getLabels.mockReset();
 	});
 
+	it.each([
+		['/lines/7?tab=reliability', '/lines/7?tab=reliability&provider=octranspo'],
+		['/stop/3009', '/stop/3009?provider=octranspo'],
+		['/trip/trip-123', '/trip/trip-123?provider=octranspo'],
+		['/search?q=7', '/search?q=7&provider=octranspo'],
+		['/hotspots?grain=month', '/hotspots?grain=month&provider=octranspo'],
+		['/fr/search?q=7', '/fr/search?q=7&provider=octranspo'],
+		[
+			'/fr/lines/7/?tab=reliability&date=2026-11-10&mode=bus&tag=a&tag=b',
+			'/fr/lines/7/?tab=reliability&date=2026-11-10&mode=bus&tag=a&tag=b&provider=octranspo',
+		],
+	])(
+		'keeps the requested page and query when normalizing an Ottawa arrival: %s',
+		async (path, expected) => {
+			const fetch = vi.fn(async () => new Response(JSON.stringify(readyProviders)));
+			const url = new URL(path, 'https://transit.test');
+			const result = await bootProvider(
+				url,
+				path.startsWith('/fr/') ? 'fr' : 'en',
+				{ fetch },
+				{
+					lat: 45.42,
+					lon: -75.7,
+				},
+			);
+			expect(result.redirectHref).toBe(expected);
+			expect(url.pathname + url.search).toBe(path);
+			expect(mocks.getManifest).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		['/lines/7?tab=reliability', { lat: 45.5, lon: -73.6 }],
+		['/lines/7?tab=reliability', null],
+		['/lines/7?tab=reliability&provider=octranspo', { lat: 45.5, lon: -73.6 }],
+		['/lines/7?tab=reliability&provider=stm', { lat: 45.42, lon: -75.7 }],
+	] as const)(
+		'does not redirect default, unavailable or explicit selections: %s',
+		async (path, location) => {
+			const fetch = vi.fn(async () => new Response(JSON.stringify(readyProviders)));
+			const result = await bootProvider(
+				new URL(path, 'https://transit.test'),
+				'en',
+				{ fetch },
+				location,
+			);
+			expect(result.redirectHref).toBeNull();
+		},
+	);
+
+	it.each(['provider=unknown', 'provider=', 'provider=stm&provider=octranspo'])(
+		'normalizes %s while keeping the path and other parameters',
+		async (query) => {
+			const fetch = vi.fn(async () => new Response(JSON.stringify(readyProviders)));
+			const result = await bootProvider(
+				new URL(`https://transit.test/fr/lines/7?tab=reliability&${query}&q=7&tag=a&tag=b`),
+				'fr',
+				{ fetch },
+				{ lat: 45.42, lon: -75.7 },
+			);
+			expect(result.providerId).toBe('stm');
+			expect(result.redirectHref).toBe('/fr/lines/7?tab=reliability&provider=stm&q=7&tag=a&tag=b');
+		},
+	);
+
 	it('redirects an Ottawa arrival before reading any default-city manifest or labels', async () => {
 		const fetch = vi.fn(async () => new Response(JSON.stringify(readyProviders)));
 		const result = await bootProvider(
