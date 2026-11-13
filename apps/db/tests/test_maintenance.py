@@ -201,11 +201,6 @@ class RecordingConnection:
             return IterableResult([])
         if "gold.dim_route" in sql_text and "SELECT DISTINCT dataset_version_id" in sql_text:
             return IterableResult(self.gold_referenced_rows)
-        if "gold.alert_archive_entry" in sql_text:
-            if "SELECT COUNT(*)" in sql_text:
-                return ScalarResult(17)
-            if "DELETE FROM" in sql_text:
-                return RowcountResult(17)
         for table_name, rowcount in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS.items():
             if f"DELETE FROM {table_name}" in sql_text:
                 return RowcountResult(rowcount)
@@ -979,19 +974,16 @@ def test_prune_warm_rollup_storage_applies_aggregate_retention_to_reporting_mart
     assert isinstance(result, WarmRollupStoragePruneResult)
     assert connection.calls[:2] == TRANSACTION_TIMEOUT_SQL
     assert result.retention_days == 365
-    assert result.deleted_row_counts == {
-        **EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS,
-        "gold.alert_archive_entry": 17,
-    }
+    assert result.deleted_row_counts == EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS
     for table_name in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS:
         assert any(f"FROM {table_name}" in sql for sql in connection.calls)
     assert all("DELETE" not in sql for sql in connection.calls)
 
 
-def test_alert_archive_retention_is_distinct_from_every_aggregate_registry() -> None:
+def test_alert_archive_is_distinct_from_every_aggregate_registry() -> None:
     from transit_ops.gold.rollups import REPORTING_AGGREGATE_TABLES
 
-    table = gold_maintenance_module.ALERT_ARCHIVE_RETENTION_TABLE
+    table = gold_maintenance_module.ALERT_ARCHIVE_TABLE
 
     assert table == "gold.alert_archive_entry"
     assert table not in gold_maintenance_module.GOLD_AGGREGATE_TABLES
@@ -1002,48 +994,16 @@ def test_alert_archive_retention_is_distinct_from_every_aggregate_registry() -> 
     assert "alert_archive_entry" not in REPORTING_AGGREGATE_TABLES
 
 
-def test_alert_archive_retention_keeps_complete_cutoff_partition() -> None:
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("retention_days", [0, 730])
+def test_warm_prune_never_touches_alert_archive(dry_run, retention_days) -> None:
     connection = RecordingConnection()
-
-    cutoff_month, count = gold_maintenance_module.prune_alert_archive_history(
-        connection,
-        provider_id="stm",
-        retention_days=730,
-        now_utc=datetime(2026, 7, 13, 3, 30, tzinfo=UTC),
+    settings = SimpleNamespace(GOLD_WARM_ROLLUP_RETENTION_DAYS=retention_days)
+    result = prune_warm_rollup_storage(
+        "stm", settings=settings, engine=RecordingEngine(connection), dry_run=dry_run
     )
-
-    assert cutoff_month == date(2024, 7, 1)
-    assert count == 17
-    sql, params = connection.executed[-1]
-    assert "DELETE FROM gold.alert_archive_entry" in sql
-    assert "archive_month < :cutoff_month" in sql
-    assert "archive_month <= :cutoff_month" not in sql
-    assert params == {"provider_id": "stm", "cutoff_month": date(2024, 7, 1)}
-
-
-def test_alert_archive_retention_dry_run_and_disabled_modes_do_not_delete() -> None:
-    connection = RecordingConnection()
-
-    cutoff_month, count = gold_maintenance_module.prune_alert_archive_history(
-        connection,
-        provider_id="stm",
-        retention_days=730,
-        dry_run=True,
-        now_utc=datetime(2026, 7, 13, 3, 30, tzinfo=UTC),
-    )
-    disabled_cutoff, disabled_count = gold_maintenance_module.prune_alert_archive_history(
-        connection,
-        provider_id="stm",
-        retention_days=0,
-    )
-
-    assert cutoff_month == date(2024, 7, 1)
-    assert count == 17
-    assert disabled_cutoff is None
-    assert disabled_count == 0
-    assert len(connection.calls) == 1
-    assert "SELECT COUNT(*) FROM gold.alert_archive_entry" in connection.calls[0]
-    assert "DELETE" not in connection.calls[0]
+    assert "gold.alert_archive_entry" not in result.deleted_row_counts
+    assert all("gold.alert_archive_entry" not in sql for sql in connection.calls)
 
 
 def test_stop_delay_spine_is_append_only_with_retention() -> None:

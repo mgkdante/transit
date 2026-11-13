@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
@@ -9,7 +9,6 @@ from sqlalchemy.engine import Connection, Engine
 from transit_ops.db.connection import make_engine, set_daily_warm_transaction_timeouts
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings, get_settings
-from transit_ops.sql_registry import named_query
 
 from ._helpers import _safe_rowcount, _safe_scalar_count
 
@@ -84,26 +83,8 @@ GOLD_AGGREGATE_RETENTION_COLUMNS = (
 
 VALID_GOLD_AGGREGATE_RETENTION_TARGETS = frozenset(GOLD_AGGREGATE_RETENTION_COLUMNS)
 
-# Alert event archives have a separate month-partition lifecycle.
-ALERT_ARCHIVE_RETENTION_TABLE = "gold.alert_archive_entry"
-
-_DELETE_EXPIRED_ALERT_ARCHIVE = named_query(
-    "retention.alert_archive.delete",
-    """
-    DELETE FROM gold.alert_archive_entry
-    WHERE provider_id = :provider_id
-      AND archive_month < :cutoff_month
-    """,
-)
-
-_COUNT_EXPIRED_ALERT_ARCHIVE = named_query(
-    "retention.alert_archive.count",
-    """
-    SELECT COUNT(*) FROM gold.alert_archive_entry
-    WHERE provider_id = :provider_id
-      AND archive_month < :cutoff_month
-    """,
-)
+# Never prune by age: filed by alert start, this is the only copy after Silver rows are gone.
+ALERT_ARCHIVE_TABLE = "gold.alert_archive_entry"
 
 # Bound fact deletes; dry-run counts report the full backlog.
 DELETE_OLD_FACT_TRIP_DELAY_SNAPSHOTS = text(
@@ -181,27 +162,6 @@ def _gold_aggregate_retention_statement(
           AND {retention_column} < {cutoff_expression}
         """
     )
-
-
-def prune_alert_archive_history(
-    connection: Connection,
-    *,
-    provider_id: str,
-    retention_days: int,
-    dry_run: bool = False,
-    now_utc: datetime | None = None,
-) -> tuple[date | None, int]:
-
-    if retention_days <= 0:
-        return None, 0
-
-    cutoff_day = ((now_utc or utc_now()) - timedelta(days=retention_days)).date()
-    cutoff_month = cutoff_day.replace(day=1)
-    statement = _COUNT_EXPIRED_ALERT_ARCHIVE if dry_run else _DELETE_EXPIRED_ALERT_ARCHIVE
-    params = {"provider_id": provider_id, "cutoff_month": cutoff_month}
-    result = connection.execute(statement, params)
-    count = _safe_scalar_count(result) if dry_run else _safe_rowcount(result)
-    return cutoff_month, count
 
 
 @dataclass(frozen=True)
@@ -329,10 +289,7 @@ def prune_warm_rollup_storage(
             dry_run=dry_run,
             retention_days=retention_days,
             cutoff_utc=None,
-            deleted_row_counts={
-                **{table_name: 0 for table_name in GOLD_AGGREGATE_TABLES},
-                ALERT_ARCHIVE_RETENTION_TABLE: 0,
-            },
+            deleted_row_counts={table_name: 0 for table_name in GOLD_AGGREGATE_TABLES},
             completed_at_utc=utc_now(),
         )
 
@@ -357,14 +314,6 @@ def prune_warm_rollup_storage(
             )
             for table_name, retention_column, date_only in GOLD_AGGREGATE_RETENTION_COLUMNS
         }
-        _, archive_count = prune_alert_archive_history(
-            connection,
-            provider_id=provider_id,
-            retention_days=retention_days,
-            dry_run=dry_run,
-            now_utc=now_utc,
-        )
-        deleted_row_counts[ALERT_ARCHIVE_RETENTION_TABLE] = archive_count
         completed_at_utc = utc_now()
 
     return WarmRollupStoragePruneResult(

@@ -362,3 +362,76 @@ def test_public_prune_preserves_failed_archive_and_never_claims_success(retentio
         "static": 0,
     }
     assert failed_path.is_dir()
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_alert_archive_entry_older_than_the_rollup_cutoff_is_kept(
+    conn, retention, monkeypatch, dry_run
+):
+    from transit_ops.maintenance import gold
+
+    settings, engine, _ = retention
+    monkeypatch.setattr(gold, "utc_now", lambda: NOW)
+    old_month = (NOW - timedelta(days=1100)).date().replace(day=1)
+    recent_month = NOW.date().replace(day=1)
+    for alert_id, month in (("old", old_month), ("recent", recent_month)):
+        conn.execute(
+            text("""
+                INSERT INTO gold.alert_archive_entry
+                    (provider_id, alert_id, archive_month, first_seen_utc,
+                     last_seen_utc, content_hash)
+                VALUES (:p, :id, :month, :seen, :seen, 'retention-test')
+            """),
+            {"p": PROVIDER, "id": alert_id, "month": month, "seen": NOW},
+        )
+
+    result = gold.prune_warm_rollup_storage(
+        PROVIDER, settings=settings, engine=engine, dry_run=dry_run
+    )
+
+    assert set(conn.execute(
+        text("SELECT alert_id FROM gold.alert_archive_entry WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == {"old", "recent"}
+    assert "gold.alert_archive_entry" not in result.deleted_row_counts
+
+
+def test_rollup_tables_are_pruned_as_before(conn, retention, monkeypatch):
+    from transit_ops.maintenance import gold
+
+    settings, engine, _ = retention
+    monkeypatch.setattr(gold, "utc_now", lambda: NOW)
+    cutoff = NOW - timedelta(days=settings.GOLD_WARM_ROLLUP_RETENTION_DAYS)
+    old = cutoff - timedelta(days=2)
+    recent = cutoff + timedelta(days=2)
+    for captured in (old, recent):
+        conn.execute(
+            text("""
+                INSERT INTO gold.warm_rollup_periods
+                    (provider_id, rollup_kind, period_start_utc, built_at_utc)
+                VALUES (:p, 'trip_delay', :captured, :captured)
+            """),
+            {"p": PROVIDER, "captured": captured},
+        )
+        conn.execute(
+            text("""
+                INSERT INTO gold.citizen_accountability_daily
+                    (provider_id, provider_local_date)
+                VALUES (:p, :day)
+            """),
+            {"p": PROVIDER, "day": captured.date()},
+        )
+
+    result = gold.prune_warm_rollup_storage(PROVIDER, settings=settings, engine=engine)
+
+    assert result.deleted_row_counts["gold.warm_rollup_periods"] == 1
+    assert result.deleted_row_counts["gold.citizen_accountability_daily"] == 1
+    assert list(conn.execute(
+        text("SELECT period_start_utc FROM gold.warm_rollup_periods WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == [recent]
+    assert list(conn.execute(
+        text("SELECT provider_local_date FROM gold.citizen_accountability_daily "
+             "WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == [recent.date()]

@@ -326,12 +326,6 @@ class FakeConnection:
         if "DELETE FROM gold.repeat_offender_daily_spine" in sql:
             return RowcountResult(6)
 
-        if "SELECT COUNT(*)" in sql and "FROM gold.alert_archive_entry" in sql:
-            return ScalarResult(2)
-
-        if "DELETE FROM gold.alert_archive_entry" in sql:
-            return RowcountResult(2)
-
         for table_name, rowcount in BUILD_REPORTING_AGGREGATE_ROWCOUNTS.items():
             if f"INSERT INTO gold.{table_name}" in sql:
                 return RowcountResult(rowcount)
@@ -1664,6 +1658,8 @@ def test_prune_warm_rollup_storage_deletes_old_periods() -> None:
 
     assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
     assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
+    assert "gold.alert_archive_entry" not in result.deleted_row_counts
+    assert all("gold.alert_archive_entry" not in sql for sql in conn.executed)
 
 
 def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
@@ -1696,10 +1692,11 @@ def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
     assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
     assert result.deleted_row_counts["gold.route_scheduled_trips_daily"] == 17
     assert result.deleted_row_counts["gold.repeat_offender_daily_spine"] == 6
-    assert result.deleted_row_counts["gold.alert_archive_entry"] == 2
+    assert "gold.alert_archive_entry" not in result.deleted_row_counts
+    assert all("gold.alert_archive_entry" not in sql for sql in conn.executed)
 
     count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    assert len(count_queries) == 22
+    assert len(count_queries) == 21
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:
