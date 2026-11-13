@@ -5,7 +5,10 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
 from typing import Literal, NamedTuple
 
+# A vehicle capture is evidence for a reading at most this far from it.
 VEHICLE_EVIDENCE_WINDOW_SECONDS = 120
+# An instance's window opens this long before its scheduled start
+# and closes this long after its scheduled end.
 EARLY_START_MAX_LEAD_SECONDS = 900
 SANITY_DELAY_SECONDS = 10_800
 
@@ -13,16 +16,20 @@ Resolution = Literal["single_window", "descriptor", "other_instance", "ambiguous
 
 
 class TripInstance(NamedTuple):
+    """One dated instance of a trip id, from that date's own list."""
+
     trip_id: str
     service_date: date
-    start_utc: datetime
-    end_utc: datetime
-    first_departure_seconds: int
+    start_utc: datetime  # scheduled first departure
+    end_utc: datetime  # scheduled last arrival
+    first_departure_seconds: int  # seconds after the service-day anchor, as the list stores it
 
 
 class VehicleDescriptor(NamedTuple):
+    """What the vehicle itself said in a capture, when the feed carries it."""
+
     start_date: date | None
-    start_time: str
+    start_time: str  # 'HH:MM:SS' as the feed gave it; '' when it gave none
 
 
 def _validate(captured_at_utc: datetime, instances: Sequence[TripInstance]) -> None:
