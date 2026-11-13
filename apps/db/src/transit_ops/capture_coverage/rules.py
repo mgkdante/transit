@@ -1,6 +1,7 @@
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from itertools import groupby
 from typing import Literal, NamedTuple
 
 Feed = Literal["trip_updates", "vehicle_positions", "alerts"]
@@ -87,3 +88,154 @@ NOT_MEASURED_REASONS: tuple[str, ...] = (
     "applicability_unresolved",
     "schedule_mismatch",
 )
+
+
+PollFailure = Literal[
+    "not_stored",
+    "unusable_not_processed",
+    "unusable_not_advanced",
+    "unusable_stale",
+    "unusable_empty",
+]
+
+
+class PollVerdict(NamedTuple):
+    """One poll and its first failing test; reason=None means usable.
+
+    not_stored belongs to attempted-minus-stored, not a stored-poll counter.
+    Decoding is unknown here: a caller that counts unusable_not_decoded gets it
+    from the capture reader, or leaves that counter null.
+    """
+
+    poll: PollFacts
+    reason: PollFailure | None
+
+
+def _validate_times(polls: Sequence[PollFacts], spans: Sequence[tuple[datetime, datetime]]) -> None:
+    times = [time for p in polls for time in (p.time_utc, p.feed_timestamp_utc) if time is not None]
+    times.extend(time for span in spans for time in span)
+    if any(time.utcoffset() is None for time in times):
+        raise ValueError("poll and service span times must have a time zone")
+    if any(end < start for start, end in spans):
+        raise ValueError("service span ends before it starts")
+
+
+def _poll_failure(
+    poll: PollFacts,
+    previous: datetime | None,
+    consumed: Collection[CaptureKey] | None,
+    spans: Sequence[tuple[datetime, datetime]],
+    lag: int,
+) -> PollFailure | None:
+    if poll.status != "stored":
+        return "not_stored"  # Undecoded payloads already have failed status.
+    processed = poll.capture in consumed if consumed is not None else poll.processed is True
+    if not processed:
+        return "unusable_not_processed"
+    exempt = poll.feed == "alerts" and poll.feed_timestamp_source == "capture_time"
+    if not exempt:
+        timestamp = poll.feed_timestamp_utc
+        if (
+            poll.feed_timestamp_source != "header"
+            or timestamp is None
+            or (previous is not None and timestamp <= previous)
+        ):
+            return "unusable_not_advanced"
+        if (poll.time_utc - timestamp).total_seconds() > FRESH_FEED_AGE_SECONDS + lag:
+            return "unusable_stale"
+    if poll.entity_count is None or (
+        poll.entity_count == 0
+        and poll.feed != "alerts"
+        and any(start <= poll.time_utc <= end for start, end in spans)
+    ):
+        return "unusable_empty"
+    return None
+
+
+def judge_polls(
+    polls: Sequence[PollFacts],
+    *,
+    read_source: ReadSource,
+    consumed_captures: Collection[CaptureKey] | None,
+    service_spans: Sequence[tuple[datetime, datetime]],
+    source_lag_seconds: int,
+) -> list[PollVerdict]:
+    """Judge once, in stable time order, returning the first failed test per poll.
+
+    Callers count stored failures by reason. No list means the caller supplies a
+    span covering the whole window; no service means an empty span sequence.
+    Equal-time polls share earlier history, independently of their input order.
+    """
+    if read_source == "daily_pass" and consumed_captures is None:
+        raise ValueError("daily_pass requires consumed_captures")
+    if source_lag_seconds < 0:
+        raise ValueError("source_lag_seconds must not be negative")
+    _validate_times(polls, service_spans)
+    newest: dict[Feed, datetime] = {}
+    verdicts: list[PollVerdict] = []
+    for _, group in groupby(sorted(polls, key=lambda p: p.time_utc), key=lambda p: p.time_utc):
+        batch = list(group)
+        verdicts.extend(
+            PollVerdict(
+                p,
+                _poll_failure(
+                    p,
+                    newest.get(p.feed),
+                    consumed_captures,
+                    service_spans,
+                    source_lag_seconds,
+                ),
+            )
+            for p in batch
+        )
+        for poll in batch:
+            timestamp = poll.feed_timestamp_utc
+            if timestamp is not None:
+                newest[poll.feed] = max(timestamp, newest.get(poll.feed, timestamp))
+    return verdicts
+
+
+def usable_polls(
+    polls: Sequence[PollFacts],
+    *,
+    read_source: ReadSource,
+    consumed_captures: Collection[CaptureKey] | None,
+    service_spans: Sequence[tuple[datetime, datetime]],
+    source_lag_seconds: int,
+) -> list[PollFacts]:
+    """Return usable polls unchanged, in stable ascending time order.
+
+    With no list, pass a span covering the window; with no service, pass [].
+    """
+    return [
+        v.poll
+        for v in judge_polls(
+            polls,
+            read_source=read_source,
+            consumed_captures=consumed_captures,
+            service_spans=service_spans,
+            source_lag_seconds=source_lag_seconds,
+        )
+        if v.reason is None
+    ]
+
+
+def covered_intervals(usable: Sequence[PollFacts]) -> list[CoveredInterval]:
+    """Join usable polls of one feed at spacings up to and including the limit."""
+    _validate_times(usable, ())
+    if len({poll.feed for poll in usable}) > 1:
+        raise ValueError("covered_intervals requires a single feed")
+    intervals: list[CoveredInterval] = []
+    for poll in sorted(usable, key=lambda p: p.time_utc):
+        if (
+            intervals
+            and (poll.time_utc - intervals[-1].end_utc).total_seconds()
+            <= USABLE_SPACING_MAX_SECONDS
+        ):
+            last = intervals[-1]
+            intervals[-1] = CoveredInterval(
+                last.start_utc, poll.time_utc, last.usable_poll_count + 1
+            )
+        else:
+            intervals.append(CoveredInterval(poll.time_utc, poll.time_utc, 1))
+    return intervals
