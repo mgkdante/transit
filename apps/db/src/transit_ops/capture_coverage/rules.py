@@ -103,8 +103,8 @@ class PollVerdict(NamedTuple):
     """One poll and its first failing test; reason=None means usable.
 
     not_stored belongs to attempted-minus-stored, not a stored-poll counter.
-    Decoding is unknown here: C3 must obtain unusable_not_decoded from the reader
-    or leave that counter null.
+    Decoding is unknown here: a caller that counts unusable_not_decoded gets it
+    from the capture reader, or leaves that counter null.
     """
 
     poll: PollFacts
