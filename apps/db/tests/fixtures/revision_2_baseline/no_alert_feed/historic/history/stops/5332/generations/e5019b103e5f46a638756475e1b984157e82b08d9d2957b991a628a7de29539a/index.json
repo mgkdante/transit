@@ -1,0 +1,174 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "family": "stops",
+ "selection_mode": "range",
+ "entity_id": "S2",
+ "collection_generation_id": "0b8378a0b141a2727925d2ab2efd5f5017ce899e48830ea7be9c4c2ed04726e6",
+ "first_available_date": "2025-06-03",
+ "last_available_date": "2025-08-19",
+ "available_dates": [
+  "2025-06-03",
+  "2025-06-19",
+  "2025-07-03",
+  "2025-07-19",
+  "2025-08-03",
+  "2025-08-19"
+ ],
+ "gaps": [
+  {
+   "start_date": "2025-06-04",
+   "end_date": "2025-06-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-06-20",
+   "end_date": "2025-07-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-04",
+   "end_date": "2025-07-18",
+   "reason": null
+  },
+  {
+   "start_date": "2025-07-20",
+   "end_date": "2025-08-02",
+   "reason": null
+  },
+  {
+   "start_date": "2025-08-04",
+   "end_date": "2025-08-18",
+   "reason": null
+  }
+ ],
+ "partitions": [
+  {
+   "path": "historic/history/stops/5332/generations/1d60cb076be6af6f3d33923855edaee04a9b961597e535d68072e95a68686788/2025-06.json",
+   "coverage_start": "2025-06-03",
+   "coverage_end": "2025-06-19",
+   "count": 2,
+   "sha256": "1d60cb076be6af6f3d33923855edaee04a9b961597e535d68072e95a68686788",
+   "byte_size": 800
+  },
+  {
+   "path": "historic/history/stops/5332/generations/27b212289658cd310d875e663b78aae8577c12c771c259a3eb5e7263ab8622bb/2025-07.json",
+   "coverage_start": "2025-07-03",
+   "coverage_end": "2025-07-19",
+   "count": 2,
+   "sha256": "27b212289658cd310d875e663b78aae8577c12c771c259a3eb5e7263ab8622bb",
+   "byte_size": 800
+  },
+  {
+   "path": "historic/history/stops/5332/generations/f8ef136d504e63adc1615647988cf17fdaff81fee888d078b860d08fed649f03/2025-08.json",
+   "coverage_start": "2025-08-03",
+   "coverage_end": "2025-08-19",
+   "count": 2,
+   "sha256": "f8ef136d504e63adc1615647988cf17fdaff81fee888d078b860d08fed649f03",
+   "byte_size": 800
+  }
+ ],
+ "metrics": [
+  {
+   "metric": "delay",
+   "aggregation": "additive",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19",
+   "gaps": [
+    {
+     "start_date": "2025-06-04",
+     "end_date": "2025-06-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-06-20",
+     "end_date": "2025-07-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-04",
+     "end_date": "2025-07-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-20",
+     "end_date": "2025-08-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-08-04",
+     "end_date": "2025-08-18",
+     "reason": null
+    }
+   ]
+  },
+  {
+   "metric": "delay_percentiles",
+   "aggregation": "daily_only",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19",
+   "gaps": [
+    {
+     "start_date": "2025-06-04",
+     "end_date": "2025-06-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-06-20",
+     "end_date": "2025-07-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-04",
+     "end_date": "2025-07-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-20",
+     "end_date": "2025-08-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-08-04",
+     "end_date": "2025-08-18",
+     "reason": null
+    }
+   ]
+  },
+  {
+   "metric": "occupancy",
+   "aggregation": "additive",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19",
+   "gaps": [
+    {
+     "start_date": "2025-06-04",
+     "end_date": "2025-06-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-06-20",
+     "end_date": "2025-07-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-04",
+     "end_date": "2025-07-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-20",
+     "end_date": "2025-08-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-08-04",
+     "end_date": "2025-08-18",
+     "reason": null
+    }
+   ]
+  }
+ ]
+}

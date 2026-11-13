@@ -10,15 +10,15 @@
     "snapshot_id": "8610705",
     "alert_index": 0,
     "captured_utc": "2025-08-19T14:00:00Z",
-    "header_language": null,
-    "description_language": null,
-    "url_language": null
+    "header_language": "fr",
+    "description_language": "fr",
+    "url_language": "fr"
    },
    "severity": "high",
    "header_text": "Travaux",
-   "header_text_en": null,
+   "header_text_en": "Works",
    "description": "Detour",
-   "description_en": null,
+   "description_en": "Diversion",
    "routes": [
     "B10"
    ],
@@ -30,8 +30,8 @@
    "cause": "CONSTRUCTION",
    "effect": "DETOUR",
    "severity_level": "warning",
-   "url": null,
-   "url_en": null,
+   "url": "https://example.test/fr",
+   "url_en": "https://example.test/en",
    "active_periods": [
     {
      "start_utc": "2025-08-19T13:00:00Z",
@@ -82,15 +82,15 @@
     "snapshot_id": "8610704",
     "alert_index": 0,
     "captured_utc": "2025-08-03T14:00:00Z",
-    "header_language": null,
-    "description_language": null,
-    "url_language": null
+    "header_language": "fr",
+    "description_language": "fr",
+    "url_language": "fr"
    },
    "severity": "high",
    "header_text": "Travaux",
-   "header_text_en": null,
+   "header_text_en": "Works",
    "description": "Detour",
-   "description_en": null,
+   "description_en": "Diversion",
    "routes": [
     "B10"
    ],
@@ -102,8 +102,8 @@
    "cause": "CONSTRUCTION",
    "effect": "DETOUR",
    "severity_level": "warning",
-   "url": null,
-   "url_en": null,
+   "url": "https://example.test/fr",
+   "url_en": "https://example.test/en",
    "active_periods": [
     {
      "start_utc": "2025-08-03T13:00:00Z",
@@ -154,15 +154,15 @@
     "snapshot_id": "8610703",
     "alert_index": 0,
     "captured_utc": "2025-07-19T14:00:00Z",
-    "header_language": null,
-    "description_language": null,
-    "url_language": null
+    "header_language": "fr",
+    "description_language": "fr",
+    "url_language": "fr"
    },
    "severity": "high",
    "header_text": "Travaux",
-   "header_text_en": null,
+   "header_text_en": "Works",
    "description": "Detour",
-   "description_en": null,
+   "description_en": "Diversion",
    "routes": [
     "B10"
    ],
@@ -174,8 +174,8 @@
    "cause": "CONSTRUCTION",
    "effect": "DETOUR",
    "severity_level": "warning",
-   "url": null,
-   "url_en": null,
+   "url": "https://example.test/fr",
+   "url_en": "https://example.test/en",
    "active_periods": [
     {
      "start_utc": "2025-07-19T13:00:00Z",
@@ -226,15 +226,15 @@
     "snapshot_id": "8610702",
     "alert_index": 0,
     "captured_utc": "2025-07-03T14:00:00Z",
-    "header_language": null,
-    "description_language": null,
-    "url_language": null
+    "header_language": "fr",
+    "description_language": "fr",
+    "url_language": "fr"
    },
    "severity": "high",
    "header_text": "Travaux",
-   "header_text_en": null,
+   "header_text_en": "Works",
    "description": "Detour",
-   "description_en": null,
+   "description_en": "Diversion",
    "routes": [
     "B10"
    ],
@@ -246,8 +246,8 @@
    "cause": "CONSTRUCTION",
    "effect": "DETOUR",
    "severity_level": "warning",
-   "url": null,
-   "url_en": null,
+   "url": "https://example.test/fr",
+   "url_en": "https://example.test/en",
    "active_periods": [
     {
      "start_utc": "2025-07-03T13:00:00Z",
@@ -298,15 +298,15 @@
     "snapshot_id": "8610701",
     "alert_index": 0,
     "captured_utc": "2025-06-19T14:00:00Z",
-    "header_language": null,
-    "description_language": null,
-    "url_language": null
+    "header_language": "fr",
+    "description_language": "fr",
+    "url_language": "fr"
    },
    "severity": "high",
    "header_text": "Travaux",
-   "header_text_en": null,
+   "header_text_en": "Works",
    "description": "Detour",
-   "description_en": null,
+   "description_en": "Diversion",
    "routes": [
     "B10"
    ],
@@ -318,8 +318,8 @@
    "cause": "CONSTRUCTION",
    "effect": "DETOUR",
    "severity_level": "warning",
-   "url": null,
-   "url_en": null,
+   "url": "https://example.test/fr",
+   "url_en": "https://example.test/en",
    "active_periods": [
     {
      "start_utc": "2025-06-19T13:00:00Z",
@@ -370,15 +370,15 @@
     "snapshot_id": "8610700",
     "alert_index": 0,
     "captured_utc": "2025-06-03T14:00:00Z",
-    "header_language": null,
-    "description_language": null,
-    "url_language": null
+    "header_language": "fr",
+    "description_language": "fr",
+    "url_language": "fr"
    },
    "severity": "high",
    "header_text": "Travaux",
-   "header_text_en": null,
+   "header_text_en": "Works",
    "description": "Detour",
-   "description_en": null,
+   "description_en": "Diversion",
    "routes": [
     "B10"
    ],
@@ -390,8 +390,8 @@
    "cause": "CONSTRUCTION",
    "effect": "DETOUR",
    "severity_level": "warning",
-   "url": null,
-   "url_en": null,
+   "url": "https://example.test/fr",
+   "url_en": "https://example.test/en",
    "active_periods": [
     {
      "start_utc": "2025-06-03T13:00:00Z",
@@ -475,8 +475,8 @@
    }
   ]
  },
- "window_start": "<clock>",
- "window_end": "<clock>",
+ "window_start": "1925-09-27",
+ "window_end": "2025-09-02",
  "total_in_window": 12,
  "truncated": false
 }

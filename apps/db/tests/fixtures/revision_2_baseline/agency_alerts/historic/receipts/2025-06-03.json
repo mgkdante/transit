@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "methodology_version": "receipt-1",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "date": "2025-06-03",
+ "vehicles": null,
+ "otp_pct": 50,
+ "avg_delay_min": 2.9,
+ "severe_pct": 25.0,
+ "worst_route": {
+  "id": "B10",
+  "name": "Ligne 10",
+  "otp_delta_pts": 0.0
+ },
+ "worst_stop": {
+  "id": "S3",
+  "name": "Arret S3",
+  "avg_delay_min": 6.5
+ },
+ "affected_routes": 1,
+ "affected_stops": 1,
+ "alerts": 2,
+ "rider_impact_score": 13.0,
+ "by_shift": [
+  {
+   "shift": "midday",
+   "observation_count": 4,
+   "severe_count": 1,
+   "severe_pct": 25.0,
+   "avg_delay_min": 2.9
+  }
+ ],
+ "service_states": {
+  "scheduled_trip_days": 6,
+  "delivered_trip_days": 5,
+  "cancelled_trip_days": 1,
+  "silent_trip_days": 0,
+  "not_reported_route_count": 0,
+  "service_completeness_pct": 83.33,
+  "not_reported_routes": []
+ }
+}

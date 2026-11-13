@@ -2,7 +2,7 @@
  "schema_version": 1,
  "methodology_version": "history-1",
  "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
- "generated_utc": "2025-09-01T06:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
  "families": [
   {
    "family": "alerts",
@@ -17,8 +17,8 @@
   {
    "family": "hotspots",
    "selection_mode": "date",
-   "index_path": "historic/history/hotspots/generations/910f8670a4f20c2bdf0f39768d189e6ac3b2f4f88591619ceabed74c47600534/index.json",
-   "collection_generation_id": "59b25a3794fbc7c57d2a5ef136bd7365f3d6b634edbee6a87b59e1d5f843025e",
+   "index_path": "historic/history/hotspots/generations/918746a96b9ec34055003815cec4ecf1d5eade41172c93850b3dbd51a1f47390/index.json",
+   "collection_generation_id": "c140b70011ca2f30936cb2eaa6c209a98058f6b7dfd1c110e9f64d9d37d3449f",
    "first_available_date": "2025-06-03",
    "last_available_date": "2025-08-19",
    "gaps": [
@@ -464,18 +464,44 @@
   {
    "family": "receipts",
    "selection_mode": "date",
-   "index_path": "historic/receipts/generations/4ad7eeadba58186b2341fd23aa8e975272ed5efdde3543f251a82aab86ef8df5/index.json",
-   "collection_generation_id": "176a295f7d63602386fc3d8723406f50c90fd6fcd831f844bc88baf62e5aa902",
-   "first_available_date": null,
-   "last_available_date": null,
-   "gaps": [],
+   "index_path": "historic/receipts/generations/728ec44cadc82517a6adbd4f5da37e08a785212cc07a5bb7cda9cbcab7653fad/index.json",
+   "collection_generation_id": "887c01144257eedb65d826ce3d23031b13a679d588b17d6d36846fbe85a877f8",
+   "first_available_date": "2025-06-03",
+   "last_available_date": "2025-08-19",
+   "gaps": [
+    {
+     "start_date": "2025-06-04",
+     "end_date": "2025-06-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-06-20",
+     "end_date": "2025-07-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-04",
+     "end_date": "2025-07-18",
+     "reason": null
+    },
+    {
+     "start_date": "2025-07-20",
+     "end_date": "2025-08-02",
+     "reason": null
+    },
+    {
+     "start_date": "2025-08-04",
+     "end_date": "2025-08-18",
+     "reason": null
+    }
+   ],
    "metrics": []
   },
   {
    "family": "repeat_offenders",
    "selection_mode": "date",
-   "index_path": "historic/history/repeat_offenders/generations/007bd446f00df2e00ee8c602cf5f950ea50efce8227be3ff1e63c703b0d0242a/index.json",
-   "collection_generation_id": "f6af402ff9e6136cb58188aa9c92c06b458c9bf447da07adae20a7b1684df4f2",
+   "index_path": "historic/history/repeat_offenders/generations/0684137abf9f4e237615b0238582712d086702f275be0066b72a7cdcf51d514f/index.json",
+   "collection_generation_id": "74f8e2d5f879c900dee686619472317c5444252dbf0e858ff11d14ebf5f63206",
    "first_available_date": "2025-06-03",
    "last_available_date": "2025-08-19",
    "gaps": [
@@ -510,8 +536,8 @@
   {
    "family": "stops",
    "selection_mode": "range",
-   "index_path": "historic/history/stops/generations/032f147a6ab83ffe3be82099427c46836d7bead0d9064b6b26501ae7882e4b5f/index.json",
-   "collection_generation_id": "6c931f1383a1c497735514217f200e9aae4157090348bdc1cfa8c826bb5f379d",
+   "index_path": "historic/history/stops/generations/d65defd7bb532b57a9d2ac3749ac1a9609f971901caa64f4d1a422e877b628f6/index.json",
+   "collection_generation_id": "dd20b8f34a1e69e8fe43b8c80201832a154c2b004495f6c199d75997e01f848e",
    "first_available_date": "2025-06-03",
    "last_available_date": "2025-08-19",
    "gaps": [
@@ -611,9 +637,35 @@
     {
      "metric": "occupancy",
      "aggregation": "additive",
-     "first_available_date": null,
-     "last_available_date": null,
-     "gaps": []
+     "first_available_date": "2025-06-03",
+     "last_available_date": "2025-08-19",
+     "gaps": [
+      {
+       "start_date": "2025-06-04",
+       "end_date": "2025-06-18",
+       "reason": null
+      },
+      {
+       "start_date": "2025-06-20",
+       "end_date": "2025-07-02",
+       "reason": null
+      },
+      {
+       "start_date": "2025-07-04",
+       "end_date": "2025-07-18",
+       "reason": null
+      },
+      {
+       "start_date": "2025-07-20",
+       "end_date": "2025-08-02",
+       "reason": null
+      },
+      {
+       "start_date": "2025-08-04",
+       "end_date": "2025-08-18",
+       "reason": null
+      }
+     ]
     }
    ]
   }

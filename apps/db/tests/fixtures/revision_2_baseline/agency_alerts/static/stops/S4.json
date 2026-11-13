@@ -4,7 +4,7 @@
  "publish_generation_id": "r2guard_alerts@2025-05-30T12:00:00Z",
  "generated_utc": "2025-05-30T12:00:00Z",
  "id": "S4",
- "code": null,
+ "code": "S4",
  "name": "Arret S4",
  "lat": 45.534,
  "lon": -73.574,
