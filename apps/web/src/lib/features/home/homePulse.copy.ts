@@ -25,8 +25,7 @@ type PulseKey =
 	| 'openMap'
 	| 'openMapNote'
 	| 'openNetwork'
-	| 'openNetworkNote'
-	| 'notMeasured';
+	| 'openNetworkNote';
 
 export const homePulseCopy = defineCopy({
 	fr: {
@@ -41,7 +40,7 @@ export const homePulseCopy = defineCopy({
 		earlyNote: 'un bus en avance peut laisser des gens à l’arrêt',
 		notReporting: 'Trajets sans signal',
 		notReportingNote: 'prévus, mais aucun bus ne se signale',
-		liveUnavailable: 'Chiffres en direct indisponibles pour le moment',
+		liveUnavailable: 'Chiffres en direct indisponibles',
 		worstLines: 'Lignes les plus en retard',
 		worstStops: 'Arrêts les plus en retard',
 		worstNote:
@@ -56,7 +55,6 @@ export const homePulseCopy = defineCopy({
 		openMapNote: 'Chaque bus en direct, là où il se signale',
 		openNetwork: 'Santé du réseau',
 		openNetworkNote: 'Retards, tendances et couverture des données',
-		notMeasured: 'non mesuré',
 	},
 	en: {
 		title: 'Right now in {city}',
@@ -70,7 +68,7 @@ export const homePulseCopy = defineCopy({
 		earlyNote: 'an early bus can leave riders behind',
 		notReporting: 'Trips without a signal',
 		notReportingNote: 'scheduled, but no bus is reporting',
-		liveUnavailable: 'Live numbers unavailable right now',
+		liveUnavailable: 'Live numbers unavailable',
 		worstLines: 'Most delayed lines',
 		worstStops: 'Most delayed stops',
 		worstNote:
@@ -85,7 +83,6 @@ export const homePulseCopy = defineCopy({
 		openMapNote: 'Every bus, live, where it reports itself',
 		openNetwork: 'Network health',
 		openNetworkNote: 'Delays, trends and data coverage',
-		notMeasured: 'not measured',
 	},
 } satisfies Readonly<Record<Locale, Readonly<Record<PulseKey, string>>>>);
 

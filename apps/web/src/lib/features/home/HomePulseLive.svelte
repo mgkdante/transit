@@ -9,6 +9,7 @@
 	import { getRoutesIndex } from '#lib/v1/repositories/static.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import type { Manifest } from '#lib/v1/schemas/index.ts';
+	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { FreshnessStamp } from '#lib/components/surface/index.ts';
 	import { fmtCount, fmtPct } from '#lib/utils/index.ts';
 	import { formatDateKey } from '#lib/utils/time.ts';
@@ -60,41 +61,47 @@
 	const rankHref = (rank: PulseRank) =>
 		localizeHref(routeFor({ kind: rank.kind, id: rank.id }), locale);
 
+	interface PulseTile {
+		readonly key: string;
+		readonly label: string;
+		readonly value: string | null;
+		/** Present when the tile reserves a line for the count its figure is out of. */
+		readonly of?: string;
+		readonly note: string | null;
+	}
+
 	// Labels and notes are known before any data, so every tile has its final size at first paint.
-	const tiles = $derived([
+	const tiles: readonly PulseTile[] = $derived([
 		{
 			key: 'in-service',
 			label: t.inService,
 			value: pulse ? count(pulse.inService) : null,
-			of: null,
 			note: null,
 		},
 		{
 			key: 'on-time',
 			label: t.onTime,
 			value: pulse ? pct(pulse.onTimePct) : null,
-			of: null,
 			note: t.onTimeNote,
 		},
 		{
 			key: 'late',
 			label: t.severeLate,
 			value: pulse?.severeLate == null ? null : count(pulse.severeLate),
-			of: pulse?.severeLate == null ? null : t.ofCount.replace('{n}', count(pulse.withReading)),
+			// Its own line, reserved before the data: a count beside the figure does not fit a phone tile.
+			of: pulse?.severeLate == null ? '' : t.ofCount.replace('{n}', count(pulse.withReading)),
 			note: t.severeLateNote,
 		},
 		{
 			key: 'early',
 			label: t.early,
 			value: pulse?.early == null ? null : count(pulse.early),
-			of: null,
 			note: t.earlyNote,
 		},
 		{
 			key: 'not-reporting',
 			label: t.notReporting,
 			value: pulse ? count(pulse.notReporting) : null,
-			of: null,
 			note: t.notReportingNote,
 		},
 	]);
@@ -116,15 +123,19 @@
 					<span class="pulse-figure">
 						{#if tile.value != null}
 							<span class="pulse-value">{tile.value}</span>
-							{#if tile.of}<span class="pulse-of">{tile.of}</span>{/if}
 						{:else if pulse}
-							<span class="pulse-value pulse-value--absent">{t.notMeasured}</span>
+							<AbsentValue variant="compact" reason="no-observations" {locale} />
 						{:else}
 							<span class="pulse-value pulse-value--absent" aria-hidden="true">—</span>
 							{#if liveFailed}<span class="sr-only">{t.unavailable}</span>{/if}
 						{/if}
 					</span>
-					{#if tile.note}<span class="pulse-note">{tile.note}</span>{/if}
+					{#if tile.note}
+						<span class="pulse-note">
+							{#if tile.of != null}<span class="pulse-of">{tile.of}</span>{/if}
+							{tile.note}
+						</span>
+					{/if}
 				</dd>
 			</div>
 		{/each}
@@ -160,11 +171,12 @@
 								<span class="pulse-rank-name">
 									{#if rank.kind === 'line'}
 										<span class="pulse-route">{rank.label}</span>
-										{#if rank.detail}<span class="pulse-rank-text pulse-rank-detail"
-												>{rank.detail}</span
+										{#if rank.detail}<span
+												class="pulse-rank-text pulse-rank-detail"
+												title={rank.detail}>{rank.detail}</span
 											>{/if}
 									{:else}
-										<span class="pulse-rank-text">{rank.label}</span>
+										<span class="pulse-rank-text" title={rank.label}>{rank.label}</span>
 									{/if}
 								</span>
 								{#if rank.severePct != null}
@@ -190,7 +202,8 @@
 <style>
 	/*
 	 * Nothing here may change size when data arrives: content below the strip must not move.
-	 * Slots reserve their final height, and every line that carries a live value stays on one line.
+	 * Each slot reserves its final height with a minimum, never by cutting its content off, and each
+	 * live value has a line to itself so no value has to share a phone tile's width.
 	 */
 	.pulse-live,
 	.pulse-worst {
@@ -203,8 +216,6 @@
 		display: flex;
 		align-items: center;
 		min-height: 1.5rem;
-		overflow: hidden;
-		white-space: nowrap;
 	}
 	.pulse-tiles {
 		display: grid;
@@ -237,11 +248,9 @@
 	}
 	.pulse-figure {
 		display: flex;
-		align-items: baseline;
-		gap: 0.375rem;
-		height: calc(var(--text-heading) * 1.1);
-		overflow: hidden;
-		white-space: nowrap;
+		align-items: center;
+		min-width: 0;
+		min-height: calc(var(--text-heading) * 1.1);
 	}
 	.pulse-value {
 		font-family: var(--font-heading);
@@ -256,7 +265,8 @@
 		color: var(--muted-foreground);
 	}
 	.pulse-of {
-		font-size: var(--text-small);
+		display: block;
+		min-height: 1lh;
 		font-variant-numeric: tabular-nums;
 		color: var(--secondary-foreground);
 	}
@@ -268,15 +278,10 @@
 		color: var(--muted-foreground);
 	}
 	.pulse-worst-through {
-		min-height: 1.45em;
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
+		min-height: 1lh;
 	}
 	.pulse-absent {
 		margin: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
 		color: var(--secondary-foreground);
 		font-size: var(--text-small);
 	}

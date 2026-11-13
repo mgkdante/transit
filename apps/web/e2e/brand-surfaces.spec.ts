@@ -189,6 +189,27 @@ test('the home strip holds its place while its numbers and rankings arrive', asy
 	expect(Math.abs((await documentTop()) - before)).toBeLessThanOrEqual(1);
 });
 
+test('the home strip holds its place when the live numbers cannot be loaded', async ({ page }) => {
+	// French on the narrowest phone: the longest message in the least room.
+	await page.setViewportSize({ width: 320, height: 800 });
+	let release = (): void => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route('**/v1/stm/live/network.json', async (route) => {
+		await held;
+		await route.fulfill({ status: 404, json: {} });
+	});
+	await page.goto('/fr');
+	const strip = page.locator('[data-slot="home-pulse"]');
+	const below = page.locator('[data-slot="home-search"]');
+	const documentTop = () =>
+		below.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+	await expect(strip.getByRole('term')).toHaveCount(5);
+	const before = await documentTop();
+	release();
+	await expect(strip.getByText('Chiffres en direct indisponibles')).toBeVisible();
+	expect(Math.abs((await documentTop()) - before)).toBeLessThanOrEqual(1);
+});
+
 test('homepage props remain static without JavaScript and switch instantly with reduced motion', async ({
 	browser,
 	baseURL,

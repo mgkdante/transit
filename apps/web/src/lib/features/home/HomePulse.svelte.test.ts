@@ -137,6 +137,26 @@ describe('Home accountability strip', () => {
 		expect(screen.getByRole('region', { name: 'Most delayed stops' })).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: /All hotspots/ })).toBeInTheDocument();
 		expect(screen.queryByRole('status')).toBeNull();
+		// The count the late figure is out of has its line before the number exists.
+		const late = screen.getByText('More than 5 min late').closest('div') as HTMLElement;
+		expect(late.querySelector('.pulse-of')?.textContent).toBe('');
+	});
+
+	it('explains a figure no reading stands behind instead of printing a number', () => {
+		state.network = {
+			...liveNetwork,
+			on_time_pct: null,
+			status_dist: { on_time: 0, late: 0, severe: 0, early: 0, unknown: 355 },
+		};
+		render(HomePulse, { props: { locale: 'en', city: 'Ottawa', manifest } });
+		for (const label of ['On time', 'More than 5 min late', 'More than 1 min early']) {
+			const tile = screen.getByText(label).closest('div') as HTMLElement;
+			expect(
+				within(tile).getByRole('button', { name: 'No data, not enough readings yet' }),
+			).toBeInTheDocument();
+			expect(tile).not.toHaveTextContent(/\d(?! min)/);
+		}
+		expect(screen.getByText('Buses in service').closest('div')).toHaveTextContent('355');
 	});
 
 	it('says the live numbers are unavailable instead of showing zeros', () => {
