@@ -49,6 +49,12 @@ function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 	return { phase: 'idle', otpPct: null, verdict: null, series: [], ...partial };
 }
 
+const localeState = vi.hoisted(() => ({ locale: 'en' as 'en' | 'fr' }));
+vi.mock('#lib/i18n/index.ts', async (importOriginal) => ({
+	...(await importOriginal<typeof import('#lib/i18n/index.ts')>()),
+	getLocale: () => localeState.locale,
+}));
+
 const urlBox = vi.hoisted(() => ({ query: 'q=ber' }));
 const liveHarness = vi.hoisted(() => ({ createLiveStore: vi.fn() }));
 function setUrlQuery(q: string) {
@@ -105,6 +111,7 @@ function nextResource() {
 }
 
 beforeEach(() => {
+	localeState.locale = 'en';
 	routeSnaps.clear();
 	stopSnaps.clear();
 	resourceCall = 0;
@@ -127,6 +134,18 @@ beforeEach(() => {
 });
 
 describe('SearchSurface idle state', () => {
+	it.each(['en', 'fr'] as const)('omits the catalogue census and live age in %s', (locale) => {
+		localeState.locale = locale;
+		setUrlQuery('');
+		const { container } = render(SearchSurface);
+		expect(container.querySelector('[data-slot="search-census"]')).toBeNull();
+		expect(container.querySelector('[data-slot="freshness-stamp"]')).toBeNull();
+		expect(screen.queryByText(/The network right now|Le réseau en ce moment/)).toBeNull();
+		expect(
+			screen.getByRole('button', { name: /^(Line number|Numéro de ligne)$/ }),
+		).toBeInTheDocument();
+	});
+
 	it('uses the shared listing search with an accessible name and magnifier', () => {
 		const { container } = render(SearchSurface);
 		const box = screen.getByRole('textbox', { name: 'Search lines, stops and buses' });

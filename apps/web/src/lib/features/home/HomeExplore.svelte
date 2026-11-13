@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getLocalizeHref, intl, type Locale } from '#lib/i18n/index.ts';
+	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { FilterGroup, FilterSummary } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
@@ -101,14 +101,6 @@
 			}))
 			.filter(({ entries }) => entries.length > 0),
 	);
-
-	const matchSummary = $derived.by(() => {
-		const { singular, plural } = HOME_FILTER_COUNT_LABEL[locale];
-		return (intl.plural(locale).select(matchCount) === 'one' ? singular : plural).replace(
-			'{count}',
-			String(matchCount),
-		);
-	});
 </script>
 
 <svelte:window onkeydown={closeFilters} />
@@ -131,7 +123,6 @@
 	<nav aria-label={t.exploreNav}>
 		<div class="directory-head">
 			<h2>{t.exploreNav}</h2>
-			<span class="label-metric" aria-live="polite">{matchSummary}</span>
 		</div>
 		<div class="hub-launch">
 			<details
@@ -365,9 +356,6 @@
 		font-size: var(--text-heading);
 		font-weight: 800;
 		letter-spacing: var(--tracking-tight);
-	}
-	.directory-head > span {
-		color: var(--muted-foreground);
 	}
 	.hub-launch {
 		display: grid;

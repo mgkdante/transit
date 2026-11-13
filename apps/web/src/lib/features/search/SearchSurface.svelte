@@ -8,7 +8,7 @@
 	import { stopReliabilityCopy } from '#lib/features/stops/reliability/stops-reliability.copy.ts';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { intl, getLocale, type Locale } from '#lib/i18n/index.ts';
+	import { getLocale, type Locale } from '#lib/i18n/index.ts';
 	import { desktop } from '@yesid/ui/state';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import { getRoutesIndex, getStopsIndex } from '#lib/v1/repositories/static.ts';
@@ -159,9 +159,6 @@
 	const occupancyLabelFor = (o: OccupancyCode | null | undefined): string | null =>
 		o ? OCCUPANCY_LABELS[locale][o] : null;
 
-	const lineCount = $derived(routes.data?.routes?.length ?? null);
-	const stopCount = $derived(stops.data?.stops?.length ?? null);
-	const numberFmt = $derived(intl.number(locale));
 	const presentation = $derived(
 		livePresentation({
 			familyStates: live.familyStates,
@@ -198,22 +195,7 @@
 					<span class="search-idle-glyph" aria-hidden="true">⌕</span>
 					<p class="search-idle-title">{t.idleTitle}</p>
 					<p class="search-idle-body">{t.idleBody}</p>
-					<div class="search-census" data-slot="search-census">
-						<span class="search-census__label">{t.census.label}</span>
-						<p class="search-census__counts">
-							{#if lineCount != null}
-								<span class="search-census__stat"
-									>{t.census.lines(numberFmt.format(lineCount))}</span
-								>
-							{/if}
-							{#if stopCount != null}
-								<span class="search-census__dot" aria-hidden="true">·</span>
-								<span class="search-census__stat"
-									>{t.census.stops(numberFmt.format(stopCount))}</span
-								>
-							{/if}
-						</p>
-						<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
+					<div class="search-census">
 						<div class="search-census__examples">
 							<span class="search-census__examples-label">{t.census.examplesLabel}</span>
 							<div class="search-census__chips">
@@ -367,33 +349,6 @@
 		padding-top: 1rem;
 		border-top: 1px solid var(--border);
 		width: 100%;
-	}
-	.search-census__label {
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: 600;
-		letter-spacing: var(--tracking-eyebrow);
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.search-census__counts {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		justify-content: center;
-		gap: 0.5rem;
-		margin: 0;
-	}
-	.search-census__stat {
-		font-family: var(--font-heading);
-		font-size: 1.375rem;
-		font-weight: 800;
-		line-height: 1.1;
-		color: var(--foreground);
-		font-variant-numeric: tabular-nums;
-	}
-	.search-census__dot {
-		color: var(--muted-foreground);
 	}
 	.search-census__examples {
 		display: flex;
