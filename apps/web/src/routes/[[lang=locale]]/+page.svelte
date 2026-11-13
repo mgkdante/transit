@@ -6,7 +6,7 @@
 	import HomeInvite from '#lib/features/home/HomeInvite.svelte';
 	import HomePulse from '#lib/features/home/HomePulse.svelte';
 	import HomeSearch from '#lib/features/home/HomeSearch.svelte';
-	import { homeCopy } from '#lib/features/home/home.copy.ts';
+	import { homeCadence, homeCopy } from '#lib/features/home/home.copy.ts';
 	import type { PageData } from './$types';
 
 	let { data }: { data: Pick<PageData, 'provider' | 'v1'> } = $props();
@@ -22,6 +22,7 @@
 	);
 	const copy = $derived({
 		...homeCopy[locale],
+		cadence: homeCadence(locale, data.v1?.manifest.files.live.ttl_s),
 		headline: homeCopy[locale].headline.replace('{city}', city),
 		auditBody: homeCopy[locale].auditBody.replace('{city}', city).replace('{operator}', operator),
 		audience: homeCopy[locale].audience.replace('{operator}', operator),

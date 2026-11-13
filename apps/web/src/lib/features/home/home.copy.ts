@@ -5,6 +5,7 @@ type CopyKey =
 	| 'auditBody'
 	| 'audience'
 	| 'cadence'
+	| 'cadenceLive'
 	| 'headline'
 	| 'headlineAccent'
 	| 'clearFilters'
@@ -29,7 +30,8 @@ export const homeCopy = defineCopy({
 		audience:
 			'Il s’adresse aux résidents, aux groupes citoyens, aux journalistes et aux élus qui veulent des faits pour exiger un meilleur service. Ce n’est pas un planificateur de trajets, et le site n’est pas affilié à {operator}.',
 		cadence:
-			'Les positions en direct sont mises à jour environ toutes les 30 secondes. Le bilan de fiabilité est republié chaque semaine. Quand une donnée manque, nous le disons.',
+			'Le bilan de fiabilité est republié chaque semaine. Quand une donnée manque, nous le disons.',
+		cadenceLive: 'Les données en direct sont actualisées environ toutes les {seconds} secondes.',
 		headline: 'Le transport à {city},',
 		headlineAccent: 'à l’épreuve des données.',
 		clearFilters: 'Effacer les filtres',
@@ -53,8 +55,8 @@ export const homeCopy = defineCopy({
 			'Transit is an independent public record of the bus service {city} actually gets. It shows how often {operator} buses run late, by how much, and on which lines and stops, using the agency’s own open data.',
 		audience:
 			'It is for residents, advocates, journalists and councillors who want evidence when they ask for better service. It is not a trip planner, and it is not affiliated with {operator}.',
-		cadence:
-			'Live positions update about every 30 seconds. The reliability record is republished every week. When data is missing, we say so.',
+		cadence: 'The reliability record is republished every week. When data is missing, we say so.',
+		cadenceLive: 'Live data refreshes about every {seconds} seconds.',
 		headline: 'How {city}’s',
 		headlineAccent: 'transit holds up.',
 		clearFilters: 'Clear filters',
@@ -75,6 +77,13 @@ export const homeCopy = defineCopy({
 } satisfies Readonly<Record<Locale, Readonly<Record<CopyKey, string>>>>);
 
 export type HomeCopy = (typeof homeCopy)[Locale];
+
+/** How current the data is. The live rate comes from the network; none is assumed. */
+export function homeCadence(locale: Locale, liveSeconds: number | null | undefined): string {
+	const t = homeCopy[locale];
+	if (liveSeconds == null) return t.cadence;
+	return `${t.cadenceLive.replace('{seconds}', String(liveSeconds))} ${t.cadence}`;
+}
 
 export type HomeTempo = 'now' | 'record' | 'method';
 

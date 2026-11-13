@@ -17,7 +17,7 @@
 	// Generic fallbacks ("Line number") are hints, not queries, so only real examples become chips.
 	const examples = $derived(searchExampleQueries(provider, locale) ?? []);
 	function exampleHref(query: string): string {
-		const fields = provider ? { q: query, provider } : { q: query };
+		const fields: Record<string, string> = provider ? { q: query, provider } : { q: query };
 		return `${action}?${new URLSearchParams(fields).toString()}`;
 	}
 </script>
