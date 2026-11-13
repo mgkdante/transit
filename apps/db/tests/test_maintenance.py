@@ -960,24 +960,36 @@ class WarmRollupSettings:
     GOLD_WARM_ROLLUP_RETENTION_DAYS = 365
 
 
-def test_prune_warm_rollup_storage_applies_aggregate_retention_to_reporting_marts() -> None:
-    connection = RecordingConnection()
-    engine = RecordingEngine(connection)
+@pytest.mark.parametrize("retention_days", [730, 365, 0, -1])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_warm_prune_keeps_all_rows_without_database_io(monkeypatch, retention_days, dry_run):
+    class NoDatabaseEngine:
+        def begin(self):
+            raise AssertionError("warm pruning must not open a transaction")
 
+        def connect(self):
+            raise AssertionError("warm pruning must not open a connection")
+
+    now = datetime(2026, 11, 13, tzinfo=UTC)
+    monkeypatch.setattr(gold_maintenance_module, "utc_now", lambda: now)
+    settings = SimpleNamespace(GOLD_WARM_ROLLUP_RETENTION_DAYS=retention_days)
     result = prune_warm_rollup_storage(
-        "stm",
-        settings=WarmRollupSettings(),  # type: ignore[arg-type]
-        engine=engine,  # type: ignore[arg-type]
-        dry_run=True,
+        "unseeded-provider", settings=settings, engine=NoDatabaseEngine(), dry_run=dry_run
     )
-
+    tables = (
+        tuple(EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS)
+        if retention_days > 0 else gold_maintenance_module.GOLD_AGGREGATE_TABLES
+    )
     assert isinstance(result, WarmRollupStoragePruneResult)
-    assert connection.calls[:2] == TRANSACTION_TIMEOUT_SQL
-    assert result.retention_days == 365
-    assert result.deleted_row_counts == EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS
-    for table_name in EXPECTED_GOLD_AGGREGATE_TABLE_COUNTS:
-        assert any(f"FROM {table_name}" in sql for sql in connection.calls)
-    assert all("DELETE" not in sql for sql in connection.calls)
+    assert result.display_dict() == {
+        "provider_id": "unseeded-provider",
+        "dry_run": dry_run,
+        "retention_days": retention_days,
+        "cutoff_utc": None,
+        "deleted_row_counts": dict.fromkeys(tables, 0),
+        "completed_at_utc": now.isoformat(),
+    }
+    assert settings.GOLD_WARM_ROLLUP_RETENTION_DAYS == retention_days
 
 
 def test_alert_archive_is_distinct_from_every_aggregate_registry() -> None:
