@@ -22,16 +22,15 @@ export function createLineDirectory(
 			const route = index.get(id);
 			const number = route?.short?.trim() || null;
 			const name = publishedName?.trim() || route?.long?.trim() || null;
-			const distinct = name != null && name !== number;
+			const suffix = number && name !== number ? name : null;
 			return {
 				number,
 				name,
-				label: number ? (distinct ? `${number} · ${name}` : number) : name || copy.line(id),
-				spoken: number
-					? distinct
-						? `${copy.line(number)}, ${name}`
-						: copy.line(number)
-					: name || copy.line(id),
+				label: [number, suffix].filter(Boolean).join(' · ') || name || copy.line(id),
+				spoken:
+					[number ? copy.line(number) : null, suffix].filter(Boolean).join(', ') ||
+					name ||
+					copy.line(id),
 			};
 		},
 	};

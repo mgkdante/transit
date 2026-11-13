@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '../hotspots/rankingTargets.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { createOffenderNames } from './offenderNames';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';

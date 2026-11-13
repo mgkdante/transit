@@ -2,7 +2,7 @@
 	"generated_utc": "2026-06-15T12:00:00Z",
 	"by_grain": [
 		{
-			"grain": "day",
+			"grain": "week",
 			"entries": [
 				{
 					"rank": 1,

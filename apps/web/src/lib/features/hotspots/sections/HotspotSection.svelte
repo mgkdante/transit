@@ -66,7 +66,7 @@
 	/>
 {/snippet}
 
-<section class="hotspot-section" data-slot="hotspot-section">
+<section class="hotspot-section" data-slot="hotspot-section" style:--ranking-rows={ladder.shown}>
 	{#if ladder.shown > 0}
 		<div class="hotspot-section-head">
 			<SectionHeading level={3} overline={headingText}>

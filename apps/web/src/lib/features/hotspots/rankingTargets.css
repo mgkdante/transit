@@ -1,0 +1,16 @@
+/* A .42 band padding and 76px steps leave at least 44px for each chart target. */
+:is(.hotspot-section, .offender-section) .dv-barmark-plot {
+	min-height: calc((var(--ranking-rows) + 0.42) * 76px + 54px);
+}
+
+:is(.hotspot-section, .offender-section) :is(table.sr-only a, .ranking-name),
+.offender-evidence-link {
+	display: inline-flex;
+	min-height: 24px;
+	align-items: center;
+}
+
+.hotspots-verdict-line,
+.offenders-hero-name {
+	min-height: 44px;
+}

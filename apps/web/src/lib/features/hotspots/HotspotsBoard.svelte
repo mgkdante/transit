@@ -1,4 +1,5 @@
 <script lang="ts">
+	import './rankingTargets.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	const display = transitDisplay();
@@ -220,17 +221,15 @@
 			: (entry.name ?? t.unnamed(entry.id));
 	}
 	const topHotspot = $derived<HotspotEntry | null>(activeLadder?.entries?.[0] ?? null);
-	function verdictFor(spoken = false): string {
+	function verdictFor(name: string): string {
 		if (!topHotspot) {
 			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
 		}
-		const topHotspotName = nameFor(topHotspot, spoken);
 		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
-		return severe == null
-			? t.verdict.topNoRate(topHotspotName)
-			: t.verdict.topWithRate(topHotspotName, severe);
+		return severe == null ? t.verdict.topNoRate(name) : t.verdict.topWithRate(name, severe);
 	}
-	const verdictLine = $derived(verdictFor());
+	const verdictLine = $derived(verdictFor(topHotspot ? nameFor(topHotspot) : ''));
+	const verdictParts = $derived(verdictFor('\0').split('\0'));
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
 
 	function ladderFor(kind: 'route' | 'stop', total: number | null | undefined) {
@@ -472,12 +471,14 @@
 										data-slot="hotspots-verdict"
 										aria-label={t.verdict.label}
 									>
-										{#if topHotspotHref}
-											<a
-												class="hotspots-verdict-line"
-												href={topHotspotHref}
-												aria-label={verdictFor(true)}>{verdictLine}</a
-											>
+										{#if topHotspotHref && topHotspot}
+											<p class="hotspots-verdict-line">
+												{verdictParts[0]}<a
+													class="hotspots-verdict-line"
+													href={topHotspotHref}
+													aria-label={nameFor(topHotspot, true)}>{nameFor(topHotspot)}</a
+												>{verdictParts[1]}
+											</p>
 										{:else}
 											<p class="hotspots-verdict-line">{verdictLine}</p>
 										{/if}

@@ -42,7 +42,7 @@
 	);
 </script>
 
-<section class="offender-section" data-slot="offender-section">
+<section class="offender-section" data-slot="offender-section" style:--ranking-rows={ladder.shown}>
 	{#if ladder.shown > 0}
 		<div class="offender-section-head">
 			<SectionHeading level={3} overline={headingText}>

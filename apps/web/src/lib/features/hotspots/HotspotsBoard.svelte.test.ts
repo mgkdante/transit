@@ -299,7 +299,9 @@ describe('HotspotsBoard article', () => {
 			payload.current!.by_grain![0].entries![0].otp_delta_pts = 9.7;
 			render(HotspotsBoard);
 
-			expect(screen.getByText(expectedVerdict)).toBeInTheDocument();
+			expect(screen.getByLabelText(hotspotsCopy[locale].verdict.label)).toHaveTextContent(
+				expectedVerdict,
+			);
 		},
 	);
 
@@ -310,7 +312,7 @@ describe('HotspotsBoard article', () => {
 	] as const)('preserves the supplied severe share %s in its headline', (severe, expected) => {
 		payload.current!.by_grain![0].entries![0].severe_pct = severe;
 		render(HotspotsBoard);
-		expect(screen.getByText(expected)).toBeInTheDocument();
+		expect(screen.getByLabelText(hotspotsCopy.en.verdict.label)).toHaveTextContent(expected);
 	});
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
