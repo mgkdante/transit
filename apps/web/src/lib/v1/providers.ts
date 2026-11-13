@@ -53,6 +53,12 @@ export function providerHref(url: URL, provider: string, lang = pathLocale(url.p
 	return next.pathname + next.search;
 }
 
+function normalizeProviderUrl(url: URL, provider: string): URL {
+	const next = new URL(url);
+	next.searchParams.set('provider', provider);
+	return next;
+}
+
 export function resolveProvider(
 	url: URL,
 	catalog: PublicProviderCatalog,
@@ -78,7 +84,7 @@ export function resolveProvider(
 		values.length > 1 ||
 		(values.length === 1 && values[0] !== provider.id) ||
 		(values.length === 0 && provider.id !== catalog.default_provider)
-			? new URL(providerHref(url, provider.id), url)
+			? normalizeProviderUrl(url, provider.id)
 			: url;
 	return { provider, url: normalized };
 }
