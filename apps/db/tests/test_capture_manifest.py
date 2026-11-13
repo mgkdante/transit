@@ -1,12 +1,14 @@
 import gzip
 import io
 import json
-from dataclasses import replace
+from dataclasses import fields as dataclass_fields
+from dataclasses import is_dataclass, replace
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from history_fixtures import scripted_feed_day
 
+from transit_ops.history import poll_record
 from transit_ops.history.manifest import (
     ManifestInvalid,
     build_manifest,
@@ -16,6 +18,17 @@ from transit_ops.history.manifest import (
 )
 from transit_ops.history.pack import read_pack, write_pack
 from transit_ops.history.poll_record import canonical_json, observed_interval_ms, poll_record_sha256
+
+
+def test_feed_day_key_is_the_poll_record_key_type():
+    assert is_dataclass(poll_record.FeedDayKey)
+    assert [field.name for field in dataclass_fields(poll_record.FeedDayKey)] == [
+        "provider_id",
+        "endpoint_key",
+        "index_family",
+        "utc_date",
+    ]
+    assert not hasattr(poll_record, "Feed" "Day")
 
 
 def archive(*, family="realtime_snapshot", limit=1000):

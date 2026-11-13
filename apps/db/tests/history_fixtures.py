@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from transit_ops.history.poll_record import (
     CaptureEntry,
-    FeedDay,
+    FeedDayKey,
     PollEntry,
     PollRecord,
     ProcessingEntry,
@@ -30,7 +30,7 @@ def scripted_feed_day(
             data = payloads[i] if i < 3 else b"missing"
             captures.append(_capture(i, data, at, stamp, source, payloads, index_family))
     return PollRecord(
-        FeedDay(provider_id, endpoint_key, index_family, date(2026, 1, 2)),
+        FeedDayKey(provider_id, endpoint_key, index_family, date(2026, 1, 2)),
         tuple(polls),
         tuple(captures),
         _processing(index_family, start),

@@ -10,7 +10,7 @@ from typing import Any, get_args, get_origin, get_type_hints
 
 
 @dataclass(frozen=True)
-class FeedDay:
+class FeedDayKey:
     provider_id: str
     endpoint_key: str
     index_family: str
@@ -80,7 +80,7 @@ class ProcessingEntry:
 
 @dataclass(frozen=True)
 class PollRecord:
-    feed_day: FeedDay
+    feed_day: FeedDayKey
     polls: tuple[PollEntry, ...]
     captures: tuple[CaptureEntry, ...]
     processing: tuple[ProcessingEntry, ...]

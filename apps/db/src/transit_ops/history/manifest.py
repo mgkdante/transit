@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from transit_ops.history.pack import PackedCapture, PackResult, StreamEntry
 from transit_ops.history.poll_record import (
     CaptureEntry,
-    FeedDay,
+    FeedDayKey,
     PollEntry,
     PollRecord,
     PollRecordInvalid,
@@ -35,7 +35,7 @@ class PackReference:
 
 
 @dataclass(frozen=True)
-class Manifest(FeedDay):
+class Manifest(FeedDayKey):
     format: str
     format_version: int
     feed_endpoint_id: int
@@ -178,7 +178,7 @@ def decode_manifest(data: bytes) -> Manifest:
         ):
             raise ManifestInvalid("unsupported format or codec")
         record = PollRecord(
-            FeedDay(m.provider_id, m.endpoint_key, m.index_family, m.utc_date),
+            FeedDayKey(m.provider_id, m.endpoint_key, m.index_family, m.utc_date),
             m.polls,
             m.captures,
             m.processing,

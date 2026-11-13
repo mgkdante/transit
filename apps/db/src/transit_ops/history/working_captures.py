@@ -10,7 +10,7 @@ from transit_ops.history.datasets import CaptureSource, get_dataset
 from transit_ops.history.manifest import Manifest
 from transit_ops.history.poll_record import (
     CaptureEntry,
-    FeedDay,
+    FeedDayKey,
     PollEntry,
     PollRecord,
     PollRecordInvalid,
@@ -131,16 +131,16 @@ def _validated(record: PollRecord) -> PollRecord:
 
 def _feed_day(
     provider_id: str, endpoint_key: str, utc_date: date, current: Manifest | None
-) -> FeedDay:
+) -> FeedDayKey:
     source = get_dataset("capture." + endpoint_key).source
     if not isinstance(source, CaptureSource):
         raise ValueError("dataset is not a capture source")
     if type(utc_date) is not date:
         raise ValueError("utc_date must be a date")
-    day = FeedDay(provider_id, endpoint_key, source.index_family, utc_date)
+    day = FeedDayKey(provider_id, endpoint_key, source.index_family, utc_date)
     if (
         current is not None
-        and FeedDay(
+        and FeedDayKey(
             current.provider_id, current.endpoint_key, current.index_family, current.utc_date
         )
         != day
@@ -248,7 +248,7 @@ def _evidence_details(details: Any, family: str, event_id: int) -> tuple[datetim
         raise PollRecordInvalid(f"event {event_id}: {exc}") from exc
 
 
-def _recorded_evidence(connection: Connection, day: FeedDay) -> dict[int, ProcessingEntry]:
+def _recorded_evidence(connection: Connection, day: FeedDayKey) -> dict[int, ProcessingEntry]:
     events = connection.execute(
         text("""
         SELECT event_id, details FROM core.history_event
@@ -321,7 +321,7 @@ def _prefer_evidence(
 
 def _gold_facts(
     connection: Connection,
-    day: FeedDay,
+    day: FeedDayKey,
     captures: tuple[CaptureEntry, ...],
     current: Manifest | None,
 ) -> tuple[ProcessingEntry, ...]:
