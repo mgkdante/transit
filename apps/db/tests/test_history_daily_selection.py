@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 from unittest.mock import Mock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -15,6 +16,48 @@ def test_invalid_dataset_fails_before_reads(datasets):
             conn, datasets=datasets, start=date.today(), end=date.today(), empty_since=None
         )
     conn.execute.assert_not_called()
+
+
+@pytest.mark.parametrize("use_utc", [False, True])
+def test_later_processing_during_fall_back_is_changed(monkeypatch, use_utc):
+    from transit_ops.history import daily_selection as selection
+    from transit_ops.history import ledger
+
+    zone = ZoneInfo("America/Toronto")
+    verified = datetime(2026, 11, 1, 1, 50, tzinfo=zone, fold=0)
+    changed = datetime(2026, 11, 1, 1, 10, tzinfo=zone, fold=1)
+    if use_utc:
+        verified, changed = verified.astimezone(UTC), changed.astimezone(UTC)
+    day = CaptureDay("network", "capture.trip_updates", date(2026, 10, 30))
+    window = ledger.WindowState(
+        day.dataset_id,
+        day.provider_id,
+        0,
+        day.utc_date.isoformat(),
+        day.utc_date,
+        "present",
+        changed,
+        2,
+        1,
+        None,
+        None,
+        None,
+        None,
+    )
+    current = Mock(
+        content_version=1,
+        state="verified",
+        verified_at_utc=verified,
+        sealed_at_utc=verified,
+        details={"rows_fingerprint": "same"},
+    )
+    monkeypatch.setattr(ledger, "window_state", lambda *a, **k: window)
+    monkeypatch.setattr(ledger, "find_copies", lambda *a, **k: [current])
+    monkeypatch.setattr(selection, "rows_fingerprint", lambda *a, **k: "same")
+    conn = Mock()
+    conn.execute.return_value.one_or_none.return_value = (verified, True)
+    result = selection.capture_day_status(conn, day, now=changed)
+    assert (result.state, result.reason) == ("needs_work", "working_changed")
 
 
 @pytest.mark.parametrize("start,end", [(date(2026, 2, 2), date(2026, 2, 1)), ("bad", "bad")])

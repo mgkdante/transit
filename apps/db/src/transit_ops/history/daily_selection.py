@@ -52,19 +52,27 @@ def _date(value: date) -> None:
         raise ValueError("capture dates must be dates")
 
 
-def _aware(value: datetime) -> None:
+def _instant(value: datetime) -> datetime:
     if not isinstance(value, datetime) or value.utcoffset() is None:
         raise ValueError("clock and empty_since must be timezone aware")
+    return value.astimezone(UTC)
 
 
-_DAYS = """
-WITH providers AS (
-    SELECT r.provider_id FROM raw.ingestion_runs r
-    JOIN core.feed_endpoints e USING (provider_id, feed_endpoint_id)
+_PROVIDERS = """
+    SELECT e.provider_id FROM core.feed_endpoints e
     WHERE e.endpoint_key = ANY(:capture_feeds)
+      AND EXISTS (
+          SELECT 1 FROM raw.ingestion_runs r
+          WHERE r.provider_id = e.provider_id AND r.feed_endpoint_id = e.feed_endpoint_id
+            AND r.started_at_utc >= :qualify_from AND r.started_at_utc < :end_at
+          OFFSET 0 -- Keep the per-endpoint existence probe correlated.
+      )
     UNION
     SELECT provider_id FROM core.history_window WHERE dataset_id = ANY(:capture_ids)
-), evidenced AS (
+"""
+
+_DAYS = """
+WITH evidenced AS (
     SELECT r.provider_id, (r.started_at_utc AT TIME ZONE 'UTC')::date AS day
     FROM raw.ingestion_runs r JOIN core.feed_endpoints e USING (provider_id, feed_endpoint_id)
     WHERE e.endpoint_key = :endpoint AND r.started_at_utc >= :start_at
@@ -74,15 +82,36 @@ WITH providers AS (
     WHERE dataset_id = :dataset AND revision = 0 AND window_start BETWEEN :start_day AND :end_day
 ), absent AS (
     SELECT e.provider_id, d::date AS day
-    FROM core.feed_endpoints e JOIN providers p USING (provider_id)
+    FROM core.feed_endpoints e
     CROSS JOIN generate_series(CAST(:start_day AS date)::timestamp,
                               CAST(:end_day AS date)::timestamp, interval '1 day') d
-    WHERE e.endpoint_key = :endpoint AND CAST(:empty_at AS timestamptz) IS NOT NULL
+    WHERE e.provider_id = ANY(:providers) AND e.endpoint_key = :endpoint
+      AND CAST(:empty_at AS timestamptz) IS NOT NULL
       AND d AT TIME ZONE 'UTC' >= CAST(:empty_at AS timestamptz)
       AND d AT TIME ZONE 'UTC' >= e.created_at_utc
 )
 SELECT provider_id, day FROM evidenced UNION SELECT provider_id, day FROM absent
 """
+
+
+def _providers(
+    connection: Connection, start: datetime, end: datetime, empty_since: datetime | None
+) -> list[str]:
+    captures = [
+        (k, v.source)
+        for k, v in declarations.HISTORY_DATASETS.items()
+        if isinstance(v.source, declarations.CaptureSource)
+    ]
+    rows = connection.execute(
+        text(_PROVIDERS),
+        dict(
+            capture_feeds=[v.endpoint_key for _, v in captures],
+            capture_ids=[k for k, _ in captures],
+            qualify_from=min(_instant(start), _instant(empty_since or start)),
+            end_at=_instant(end),
+        ),
+    ).scalars()
+    return [str(provider) for provider in rows]
 
 
 def capture_days(
@@ -100,23 +129,20 @@ def capture_days(
     if start > end:
         raise ValueError("start must not be after end")
     if empty_since is not None:
-        _aware(empty_since)
-    captures = [
-        (k, v.source)
-        for k, v in declarations.HISTORY_DATASETS.items()
-        if isinstance(v.source, declarations.CaptureSource)
-    ]
+        empty_since = _instant(empty_since)
     days: set[CaptureDay] = set()
+    start_at = datetime.combine(start, time(), UTC)
+    end_at = datetime.combine(end, time(), UTC) + timedelta(days=1)
+    providers = _providers(connection, start_at, end_at, empty_since) if sources else []
     for dataset, source in sources:
         rows = connection.execute(
             text(_DAYS),
             dict(
-                capture_feeds=[v.endpoint_key for _, v in captures],
-                capture_ids=[k for k, _ in captures],
+                providers=list(providers),
                 endpoint=source.endpoint_key,
                 dataset=dataset,
-                start_at=datetime.combine(start, time(), UTC),
-                end_at=datetime.combine(end, time(), UTC) + timedelta(days=1),
+                start_at=start_at,
+                end_at=end_at,
                 start_day=start,
                 end_day=end,
                 empty_at=empty_since,
@@ -146,7 +172,11 @@ def _working(connection: Connection, day: CaptureDay, endpoint: str) -> tuple[st
     ).one_or_none()
     if row is None:
         return hashlib.sha256(b"").hexdigest(), False
-    permitted = day.empty_since is not None and start >= day.empty_since and start >= row[0]
+    permitted = (
+        day.empty_since is not None
+        and _instant(start) >= _instant(day.empty_since)
+        and _instant(start) >= _instant(row[0])
+    )
     return rows_fingerprint(
         connection, provider_id=day.provider_id, endpoint_key=endpoint, utc_date=day.utc_date
     ), bool(row[1] or permitted)
@@ -193,10 +223,9 @@ def _classify(
     if current is None:
         return ("needs_work", "first_seal") if evidenced or window else ("refused", "unproven_gap")
     assert window is not None and current.verified_at_utc is not None
-    if (
-        fingerprint != current.details.get("rows_fingerprint")
-        or window.working_changed_at_utc > current.verified_at_utc
-    ):
+    if fingerprint != current.details.get("rows_fingerprint") or _instant(
+        window.working_changed_at_utc
+    ) > _instant(current.verified_at_utc):
         return "needs_work", "working_changed"
     return "unchanged", "current_matches_working"
 
@@ -207,11 +236,11 @@ def capture_day_status(
     """Classify in the caller's transaction; never seal, verify, or mutate state."""
     source = _source(day.dataset_id)
     _date(day.utc_date)
-    _aware(now)
+    now = _instant(now)
     if day.empty_since is not None:
-        _aware(day.empty_since)
+        _instant(day.empty_since)
     closes = declarations.utc_day_closes_at(day.utc_date)
-    if now < closes:
+    if _instant(now) < _instant(closes):
         return CaptureDayStatus("unchanged", "still_open")
     window = ledger.window_state(
         connection,
@@ -229,7 +258,7 @@ def capture_day_status(
     fingerprint, evidenced = _working(connection, day, source.endpoint_key)
     state, reason = _classify(window, copies, fingerprint, evidenced)
     overdue = (
-        now >= closes + timedelta(days=7)
+        _instant(now) >= _instant(closes) + timedelta(days=7)
         and (evidenced or window is not None)
         and not any(c.sealed_at_utc is not None for c in copies)
     )

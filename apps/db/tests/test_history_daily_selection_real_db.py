@@ -105,6 +105,7 @@ def test_failed_only_and_processing_only_days_are_selected(conn):
     )
     assert days(conn, AT.date() - timedelta(days=1)) == [DAY, CaptureDay(P, DS, date(2026, 1, 1))]
     assert status(conn).state == "needs_work"
+    assert status(conn, CaptureDay(P, DS, date(2026, 1, 1))).reason == "first_seal"
 
 
 def test_selection_finds_an_in_place_edit_and_new_processing_evidence(conn):
@@ -167,6 +168,13 @@ def test_empty_days_do_not_relabel_unproven_history(conn):
     copy(conn, day=gap)
     assert status(conn, gap).state == "unchanged"
     assert gap in days(conn, start=gap.utc_date)
+    conn.execute(
+        text("UPDATE core.feed_endpoints SET created_at_utc=:at WHERE provider_id=:p"),
+        dict(at=AT + timedelta(days=1, seconds=1), p=P),
+    )
+    assert days(conn, end=tomorrow, empty_since=AT) == [DAY]
+    later = AT.date() + timedelta(days=2)
+    assert days(conn, end=later, empty_since=AT)[0].utc_date == later
 
 
 def test_partial_day_uses_its_remainder_and_refuses_new_work(conn):
@@ -210,6 +218,8 @@ def test_partial_day_uses_its_remainder_and_refuses_new_work(conn):
     )
     assert hashlib.sha256(b"").hexdigest() != fingerprint
     assert status(conn).state == "unchanged"
+    seed(conn, run_id=2, status="failed", with_capture=False)
+    assert status(conn).reason == "trimmed_work_requires_union"
     conn.execute(
         text("UPDATE core.history_window SET hold_reason='ledger_rebuilt' WHERE provider_id=:p"),
         {"p": P},
@@ -240,6 +250,10 @@ def test_invalid_current_pointer_is_not_treated_as_unsealed(conn):
     copy(conn, state="sealed")
     with pytest.raises(RuntimeError, match="current"):
         status(conn)
+    conn.execute(
+        text("UPDATE core.history_archive_copy SET verified_at_utc=:at WHERE provider_id=:p"),
+        dict(at=NOW, p=P),
+    )
     conn.execute(
         text(
             "UPDATE core.history_archive_copy SET rejected_at_utc=:at, "
@@ -277,3 +291,70 @@ def test_other_declared_capture_feeds_are_selected(conn, endpoint):
     day = CaptureDay(P, "capture." + endpoint, AT.date())
     assert day in selected
     assert status(conn, day).reason == "first_seal"
+
+
+def test_old_evidence_is_selected_inside_an_explicit_range(conn):
+    old = AT - timedelta(days=401)
+    seed(conn, started_at_utc=old, status="failed", with_capture=False)
+    selected = days(conn, start=old.date(), end=old.date(), empty_since=AT)
+    assert selected == [CaptureDay(P, DS, old.date())]
+    assert status(conn, selected[0]).reason == "first_seal"
+    assert days(conn, empty_since=AT) == []
+
+
+@pytest.mark.parametrize("form", ["partial", "trimmed"])
+@pytest.mark.parametrize("pending", ["allocated", "sealed"])
+def test_trimmed_forms_refuse_pending_copies(conn, form, pending):
+    seed(conn, status="failed", with_capture=False)
+    window(conn)
+    copy(conn)
+    copy(conn, version=2, state=pending)
+    fingerprint = rows_fingerprint(
+        conn, provider_id=P, endpoint_key="trip_updates", utc_date=DAY.utc_date
+    )
+    ledger.record_event(
+        conn,
+        kind="trim",
+        dataset_id=DS,
+        provider_id=P,
+        revision=0,
+        window_key=DAY.utc_date.isoformat(),
+        details={"remainder_fingerprint": fingerprint},
+    )
+    conn.execute(
+        text("UPDATE core.history_window SET working_state=:form WHERE provider_id=:p"),
+        dict(form=form, p=P),
+    )
+    assert status(conn).reason == "trimmed_work_requires_union"
+
+
+def test_provider_discovery_can_use_the_bounded_run_index(conn):
+    from transit_ops.history.daily_selection import _PROVIDERS
+
+    seed(conn, status="failed", with_capture=False)
+    conn.execute(text("SET LOCAL enable_seqscan=off"))
+    plan = conn.execute(
+        text("EXPLAIN (FORMAT JSON, COSTS OFF) " + _PROVIDERS),
+        dict(
+            capture_feeds=["trip_updates"],
+            capture_ids=[DS],
+            qualify_from=AT,
+            end_at=AT + timedelta(days=1),
+        ),
+    ).scalar_one()
+
+    def nodes(node):
+        yield node
+        for child in node.get("Plans", []):
+            yield from nodes(child)
+
+    scan = next(
+        node
+        for node in nodes(plan[0]["Plan"])
+        if node.get("Index Name") == "ix_ingestion_runs_provider_endpoint_started"
+    )
+    condition = scan["Index Cond"]
+    assert all(
+        column in condition
+        for column in ("provider_id", "feed_endpoint_id", "started_at_utc", ">=", "<")
+    )
