@@ -339,8 +339,18 @@ def _seed_feed_endpoints(connection, manifest: ProviderManifest, settings: Setti
 
 
 @app.callback()
-def main() -> None:
-    settings = get_settings()
+def main(ctx: typer.Context) -> None:
+    try:
+        settings = get_settings()
+    except ValueError:
+        if ctx.invoked_subcommand not in (
+            "set-pipeline-switch",
+            "list-pipeline-switches",
+            "show-pipeline-switch",
+        ):
+            raise
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
+        raise typer.Exit(1) from None
     configure_logging(settings.LOG_LEVEL)
 
 
@@ -1829,7 +1839,7 @@ def list_pipeline_switches_command() -> None:
             rows = [switches.display_switch(row) for row in switches.list_switches(connection)]
         typer.echo(json.dumps(rows))
     except (SQLAlchemyError, ValueError):
-        typer.echo("Pipeline switch database read failed.", err=True)
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
         raise typer.Exit(1) from None
     finally:
         if engine is not None:
@@ -1854,7 +1864,7 @@ def show_pipeline_switch_command(switch_key: str) -> None:
             row = switches.show_switch(connection, switch_key)
         typer.echo(json.dumps(switches.display_switch(row, switch_key)))
     except (SQLAlchemyError, ValueError):
-        typer.echo("Pipeline switch database read failed.", err=True)
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
         raise typer.Exit(1) from None
     finally:
         if engine is not None:
@@ -1900,11 +1910,11 @@ def set_pipeline_switch_command(
             )
             row = switches.show_switch(connection, switch_key)
         typer.echo(json.dumps(switches.display_switch(row, switch_key)))
-    except (switches.GuardRefused, switches.SchemaNotReady, ValueError) as error:
+    except (switches.GuardRefused, switches.SchemaNotReady, switches.ReservedSwitch) as error:
         typer.echo(" ".join(str(error).splitlines()), err=True)
         raise typer.Exit(1) from None
-    except SQLAlchemyError:
-        typer.echo("Pipeline switch database operation failed.", err=True)
+    except (SQLAlchemyError, ValueError):
+        typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
         raise typer.Exit(1) from None
     finally:
         if engine is not None:

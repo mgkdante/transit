@@ -31,6 +31,10 @@ class SchemaNotReady(ValueError):
     pass
 
 
+class ReservedSwitch(ValueError):
+    pass
+
+
 _guards: dict[str, Callable[[Connection, str], GuardResult]] = {}
 _columns = "switch_key, enabled, updated_at_utc, updated_by, reason"
 
@@ -118,7 +122,7 @@ def set_switch(
     for name, value in (("switch key", switch_key), ("actor", updated_by), ("reason", reason)):
         validate_text(value, name)
     if switch_key.startswith("stop_time_diet:"):
-        raise ValueError("use set-stop-time-diet for this key")
+        raise ReservedSwitch("use set-stop-time-diet for this key")
     if connection.in_transaction():
         raise ValueError("set_switch requires a connection without a transaction")
     with connection.begin():

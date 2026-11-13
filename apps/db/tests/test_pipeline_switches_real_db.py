@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC
+from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -125,12 +126,7 @@ def test_repeated_on_preserves_the_enabled_interval(connection, real_db_engine):
     c, key = connection
     switches.register_guard(key, lambda *a: switches.GuardResult(True))
 
-    def setter():
-        with real_db_engine.connect() as other:
-            set_value(other, key)
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(lambda _: setter(), range(2)))
+    set_value(c, key)
     before = switches.show_switch(c, key)
     c.rollback()
     switches.set_switch(c, key, on=True, updated_by="other", reason="other")
@@ -140,6 +136,46 @@ def test_repeated_on_preserves_the_enabled_interval(connection, real_db_engine):
     set_value(c, key)
     after = switches.show_switch(c, key)
     assert after.updated_at_utc.astimezone(UTC) > before.updated_at_utc.astimezone(UTC)
+    assert [r.switch_key for r in switches.list_switches(c)].count(key) == 1
+
+
+def test_concurrent_setters_wait_and_timestamp_after_commit(connection, real_db_engine):
+    c, key = connection
+    locked, release = Event(), Event()
+
+    def guard(*a):
+        locked.set()
+        assert release.wait(5), "first setter was not released"
+        return switches.GuardResult(True)
+
+    def first_setter():
+        with real_db_engine.connect() as first:
+            set_value(first, key)
+            return first.exec_driver_sql("SELECT clock_timestamp()").scalar_one()
+
+    set_value(c, key, False)
+    switches.register_guard(key, guard)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(first_setter)
+        try:
+            assert locked.wait(5), "first setter never obtained the row lock"
+            c.exec_driver_sql("SET lock_timeout = '100ms'")
+            c.commit()
+            with pytest.raises(OperationalError) as error:
+                set_value(c, key, False)
+            assert error.value.orig.sqlstate == "55P03"
+            assert not first.done()
+        finally:
+            release.set()
+            c.exec_driver_sql("RESET lock_timeout")
+            c.commit()
+        committed_at = first.result(timeout=5)
+    assert switches.show_switch(c, key).enabled
+    c.rollback()
+    set_value(c, key, False)
+    row = switches.show_switch(c, key)
+    assert not row.enabled
+    assert row.updated_at_utc.astimezone(UTC) > committed_at.astimezone(UTC)
     assert [r.switch_key for r in switches.list_switches(c)].count(key) == 1
 
 

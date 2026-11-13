@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from transit_ops import cli
 from transit_ops import pipeline_switches as switches
+from transit_ops.pipeline_switches import set_switch
 
 runner = CliRunner()
 
@@ -84,6 +85,7 @@ def test_missing_switch_is_shown_as_off(database, monkeypatch):
     [
         switches.GuardRefused("not ready"),
         switches.SchemaNotReady("schema not ready"),
+        switches.ReservedSwitch("use set-stop-time-diet for this key"),
         SQLAlchemyError("private detail"),
     ],
 )
@@ -98,20 +100,64 @@ def test_switch_command_reports_refusals(database, monkeypatch, error):
     assert result.exit_code == 1
     assert len(result.stderr.splitlines()) == 1
     assert "private detail" not in result.stderr
+    if isinstance(error, (switches.GuardRefused, switches.SchemaNotReady, switches.ReservedSwitch)):
+        assert result.stderr == f"{error}\n"
     assert database[-1] == "dispose"
 
 
 def test_switch_command_uses_database_actor_when_omitted(database, monkeypatch):
+    @contextmanager
+    def begin():
+        database.append("setter begin")
+        yield
+        database.append("setter commit")
+
+    def setter(c, key, **kw):
+        assert database[-1] == "commit"
+        assert kw["updated_by"] == "db_actor"
+        results = iter(["core.pipeline_switches", True])
+        c.begin, c.in_transaction = begin, lambda: False
+        c.execute = lambda *a: SimpleNamespace(scalar_one=lambda: next(results))
+        set_switch(c, key, **kw)
+
     def readback(*a):
-        assert database[-2] == "commit"
-        assert database[-1]["updated_by"] == "db_actor"
+        assert database[-2:] == ["setter begin", "setter commit"]
+        database.append("readback")
         return None
 
+    monkeypatch.setattr(switches, "set_switch", setter)
     monkeypatch.setattr(switches, "show_switch", readback)
     result = runner.invoke(
         cli.app, ["set-pipeline-switch", "history_daily", "off", "--reason", "approved"]
     )
     assert result.exit_code == 0, result.output
+    assert database[-3:] == ["readback", "close", "dispose"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["set-pipeline-switch", "history_daily", "on", "--reason", "approved"],
+        ["set-pipeline-switch", "history_daily", "off", "--reason", "approved"],
+        ["list-pipeline-switches"],
+        ["show-pipeline-switch", "history_daily"],
+    ],
+)
+@pytest.mark.parametrize("failure", ["url", "settings"])
+def test_malformed_database_url_never_discloses_its_contents(monkeypatch, command, failure):
+    secret = "notarealpassword"
+    monkeypatch.setenv("DATABASE_URL", "postgresql://owner:" + secret + "/localhost/db")
+
+    def settings():
+        if failure == "settings":
+            raise ValueError(secret)
+        return cli.Settings(_env_file=None)
+
+    monkeypatch.setattr(cli, "get_settings", settings)
+    result = runner.invoke(cli.app, command)
+    assert result.exit_code == 1
+    assert result.stderr == "Database settings could not be read; check DATABASE_URL\n"
+    assert secret not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(
