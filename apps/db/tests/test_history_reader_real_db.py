@@ -11,7 +11,12 @@ from transit_ops.history import ledger
 from transit_ops.history.datasets import UndeclaredDataset
 from transit_ops.history.manifest import build_manifest, encode_manifest
 from transit_ops.history.poll_record import poll_record_sha256
-from transit_ops.history.reader import ArchiveNotVerified, WindowNotAvailable, open_window
+from transit_ops.history.reader import (
+    ArchiveNotVerified,
+    WindowNotAvailable,
+    WorkingRowsMissing,
+    open_window,
+)
 from transit_ops.history.working_captures import read_working_day, rows_fingerprint
 from transit_ops.ingestion.storage import LocalBronzeStorage
 
@@ -279,8 +284,8 @@ def copy_values(conn, at, record, data):
         sha=hashlib.sha256(data).hexdigest(),
         polls=len(record.polls),
         captures=len(record.captures),
-        first=record.polls[0].time_utc,
-        last=record.polls[-1].time_utc,
+        first=record.polls[0].time_utc if record.polls else None,
+        last=record.polls[-1].time_utc if record.polls else None,
         digest=poll_record_sha256(record),
         details=json.dumps(
             dict(
@@ -469,3 +474,40 @@ def test_current_copy_requires_all_details(conn, key):
     conn.execute(text("UPDATE core.history_archive_copy SET details=details-:key"), dict(key=key))
     with pytest.raises(ValueError, match=key):
         plan(conn)
+
+
+def test_open_window_takes_no_window_lock(conn, real_db_engine):
+    seed(conn)
+    copy_day(conn)
+    assert plan(conn).days[0].form == "archive_copy"
+    pid = conn.execute(text("SELECT pg_backend_pid()")).scalar_one()
+    with real_db_engine.connect() as observer:
+        assert not observer.execute(
+            text("SELECT EXISTS (SELECT FROM pg_locks WHERE locktype='advisory' AND pid=:pid)"),
+            dict(pid=pid),
+        ).scalar_one()
+    assert conn.in_transaction()
+
+
+def test_present_day_whose_rows_left_without_a_trim_raises(conn):
+    seed(conn)
+    copy_day(conn)
+    trim_rows(conn, event=False)
+    with pytest.raises(WorkingRowsMissing, match="trip_updates.*2026-01-02"):
+        plan(conn)
+
+
+def test_marked_empty_day_with_an_empty_copy_reads_no_polls(conn):
+    seed(conn)
+    trim_rows(conn, event=False)
+    record = copy_day(conn)
+    assert record.polls == ()
+    conn.execute(
+        text(
+            "UPDATE core.history_window SET working_changed_at_utc=clock_timestamp() "
+            "WHERE provider_id=:p AND window_key=:key"
+        ),
+        dict(p=PROVIDER, key=START.date().isoformat()),
+    )
+    day = plan(conn).days[0]
+    assert day.state == "not_available" and day.reason == "no_polls"

@@ -120,6 +120,10 @@ class ArchiveNotVerified(RuntimeError):
     """A day's only archive copy has not been verified after a ledger rebuild."""
 
 
+class WorkingRowsMissing(RuntimeError):
+    """A present day's current copy holds polls absent from its working tables."""
+
+
 class CaptureWindow:
     def __init__(
         self,
@@ -394,6 +398,14 @@ def _plan_day(
         record = _working_record(connection, storage, provider, feed, day, version)
         records[feed, day] = record
         return _object_day(record)
+    if version is not None and state in ("present", None):
+        current = _current_copy(connection, provider, feed, day, window)
+        if current is not None and current.poll_count == 0:
+            return _unavailable(provider, feed, day, "no_polls")
+        raise WorkingRowsMissing(
+            f"{provider}/{feed} {day}: the ledger holds the day as present, "
+            "its current copy holds polls, and the tables hold no row of the day"
+        )
     if state == "empty":
         return _unavailable(provider, feed, day, "no_polls")
     reason: NotAvailableReason = "never_collected" if day < created else "pruned_before_archive"
@@ -428,22 +440,6 @@ def _windows(connection: Connection, params: dict[str, Any]) -> dict[str, dict[s
     return {row["window_key"]: dict(row) for row in rows}
 
 
-def _locked_windows(
-    connection: Connection,
-    params: dict[str, Any],
-    candidates: set[date],
-) -> dict[str, dict[str, Any]]:
-    for day in sorted(candidates):
-        ledger.acquire_window_lock(
-            connection,
-            dataset_id=params["dataset_id"],
-            provider_id=params["provider_id"],
-            window_key=day.isoformat(),
-        )
-    params.update(keys=[d.isoformat() for d in candidates])
-    return _windows(connection, params)
-
-
 def _feed_plan(
     connection: Connection,
     storage: BronzeStorageResolver,
@@ -471,7 +467,8 @@ def _feed_plan(
     poll_days = _poll_days(connection, source, params)
     params.update(dataset_id="capture." + feed)
     candidates = dates | poll_days | _archive_days(connection, params)
-    by_key = _locked_windows(connection, params, candidates)
+    params.update(keys=[d.isoformat() for d in candidates])
+    by_key = _windows(connection, params)
     created = endpoint["created_at_utc"].astimezone(UTC).date()
     return [
         _plan_day(
