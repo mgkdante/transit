@@ -270,9 +270,23 @@ def test_allocated_or_rejected_copy_does_not_block_a_new_version(engine, tmp_pat
             conn, dataset_id="capture.trip_updates", provider_id=PROVIDER, start=DAY, end=DAY
         )
         assert [(c.content_version, c.state) for c in copies] == [
-            (1, "rejected" if rejected else "allocated"),
+            (1, "rejected"),
             (2, "sealed"),
         ]
+        if not rejected:
+            import gzip
+            import json
+
+            assert copies[0].reject_reason == "incomplete_write"
+            marker = tmp_path / (PREFIX + "1.rejected.json.gz")
+            assert json.loads(gzip.decompress(marker.read_bytes()))["reason"] == "incomplete_write"
+            assert conn.execute(
+                text(
+                    "SELECT content_version, reason FROM core.history_event "
+                    "WHERE provider_id=:p AND kind='reject'"
+                ),
+                {"p": PROVIDER},
+            ).all() == [(1, "incomplete_write")]
 
 
 def verify(engine, copy):
