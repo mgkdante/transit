@@ -299,19 +299,18 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		expect(link).toHaveAccessibleName(expect.stringContaining(name));
 		expect(within(link).getByTitle(name)).toHaveTextContent(name);
 	});
-	it('counts prediction rows and names the last reported stop without inferring a terminal', async () => {
+	it('counts prediction rows without claiming a last reported stop', async () => {
 		const { container } = await render(TripDetail, { props: { id: 't161' }, context });
 		const stop = screen.getByRole('link', { name: /sA/ });
 		expect(stop).toHaveAccessibleName(
 			`${locale === 'en' ? 'View stop' : 'Voir l’arrêt'} sA ${stop.querySelector('time')!.textContent} ${tripCopy[locale].predictionLabel} ${locale === 'en' ? '4 min late' : '4 min en retard'}`,
 		);
-		expect(container.querySelector('.trip-last-stop-name')).toHaveTextContent('sB');
+		expect(container.querySelector('.trip-last-stop-name')).not.toBeInTheDocument();
+		expect(container.querySelectorAll('.trip-stop')).toHaveLength(2);
 		expect(container.querySelector('.trip-prediction-count')).toHaveTextContent(
 			locale === 'fr' ? '2 prédictions communiquées' : '2 predictions reported',
 		);
-		expect(container.textContent).toContain(
-			locale === 'fr' ? 'Dernier arrêt communiqué' : 'Last reported stop',
-		);
+		expect(container.textContent).not.toMatch(/Last reported stop|Dernier arrêt communiqué/);
 		expect(container.textContent).not.toMatch(/Destination|stops remaining|arrêts restants/);
 	});
 	it.each([false, true])(
