@@ -189,13 +189,14 @@ def seed_stored_capture(
         captured_at_utc=captured_at_utc,
     )
     values = dict(id=run_id, digest=hashlib.sha256(payload).hexdigest(), size=len(payload))
-    connection.execute(
+    storage_path = connection.execute(
         text(
             "UPDATE raw.ingestion_objects SET storage_backend='local', "
-            "checksum_sha256=:digest, byte_size=:size WHERE ingestion_object_id=:id"
+            "checksum_sha256=:digest, byte_size=:size WHERE ingestion_object_id=:id "
+            "RETURNING storage_path"
         ),
         values,
-    )
+    ).scalar_one()
     if endpoint_key in ("i3_alerts", "service_alerts"):
         connection.execute(
             text(
@@ -205,7 +206,7 @@ def seed_stored_capture(
             ),
             dict(values, id=capture_id),
         )
-    path = root / f"capture/{run_id}"
+    path = root / storage_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     return endpoint

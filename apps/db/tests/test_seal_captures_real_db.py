@@ -44,7 +44,7 @@ def run_seal(engine, root, **kwargs):
     with engine.connect() as conn:
         return seal(
             conn,
-            lambda backend: LocalBronzeStorage(root),
+            lambda backend: LocalBronzeStorage("local", root),
             dataset_id="capture.trip_updates",
             provider_id=PROVIDER,
             window_key=kwargs.pop("window_key", DAY.isoformat()),
@@ -147,7 +147,7 @@ def test_open_day_is_refused(engine, tmp_path):
             )
             == []
         )
-    assert list(LocalBronzeStorage(tmp_path).list_keys("archive/")) == []
+    assert list(LocalBronzeStorage("local", tmp_path).list_keys("archive/")) == []
 
 
 def test_day_with_only_failed_polls_is_sealed(engine, tmp_path):
@@ -157,7 +157,7 @@ def test_day_with_only_failed_polls_is_sealed(engine, tmp_path):
     assert copy.state == "sealed"
     assert (copy.storage_path, copy.byte_size, copy.sha256, m.pack) == (None,) * 4
     assert (m.poll_count, m.capture_count) == (2, 0)
-    assert list(LocalBronzeStorage(tmp_path).list_keys("archive/")) == [copy.manifest_path]
+    assert list(LocalBronzeStorage("local", tmp_path).list_keys("archive/")) == [copy.manifest_path]
 
 
 def test_day_with_no_poll_becomes_an_empty_window(engine, tmp_path):
@@ -172,7 +172,7 @@ def test_empty_day_gets_a_manifest_only_copy(engine, tmp_path):
     assert (copy.poll_count, copy.record_count) == (0, 0)
     assert (copy.storage_path, copy.byte_size, copy.sha256, m.pack) == (None,) * 4
     assert (m.polls, m.captures, m.processing) == ((), (), ())
-    assert list(LocalBronzeStorage(tmp_path).list_keys("archive/")) == [copy.manifest_path]
+    assert list(LocalBronzeStorage("local", tmp_path).list_keys("archive/")) == [copy.manifest_path]
 
 
 def test_unreadable_object_is_recorded_and_the_rest_is_sealed(engine, tmp_path):
@@ -181,7 +181,14 @@ def test_unreadable_object_is_recorded_and_the_rest_is_sealed(engine, tmp_path):
         before = rows_fingerprint(
             conn, provider_id=PROVIDER, endpoint_key="trip_updates", utc_date=DAY
         )
-    (tmp_path / "capture/771002").unlink()
+        storage_path = conn.execute(
+            text(
+                "SELECT storage_path FROM raw.ingestion_objects "
+                "WHERE provider_id=:p AND ingestion_run_id=:r"
+            ),
+            {"p": PROVIDER, "r": 771002},
+        ).scalar_one()
+    (tmp_path / storage_path).unlink()
     copy = run_seal(engine, tmp_path)
     m = manifest(tmp_path, copy)
     assert (m.polls[1].status, m.polls[1].missing_reason) == ("capture_missing", "object_absent")
@@ -218,7 +225,7 @@ def test_seal_needs_a_connection_without_a_transaction(engine, tmp_path):
     with engine.begin() as conn, pytest.raises(ValueError, match="transaction"):
         seal(
             conn,
-            lambda backend: LocalBronzeStorage(tmp_path),
+            lambda backend: LocalBronzeStorage("local", tmp_path),
             dataset_id="capture.trip_updates",
             provider_id=PROVIDER,
             window_key=DAY.isoformat(),
