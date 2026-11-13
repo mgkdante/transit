@@ -14,7 +14,6 @@
 		readonly title: string;
 		readonly subtitle: string;
 		readonly href: string | null;
-		readonly ariaLabel: string;
 	}
 	interface RepeatOffendersSectionProps {
 		heading: string;
@@ -42,7 +41,7 @@
 	);
 </script>
 
-<section class="offender-section" data-slot="offender-section" style:--ranking-rows={ladder.shown}>
+<section class="offender-section" data-slot="offender-section">
 	{#if ladder.shown > 0}
 		<div class="offender-section-head">
 			<SectionHeading level={3} overline={headingText}>
@@ -85,7 +84,6 @@
 								class="offender-tray-link"
 								href={row.href}
 								data-sveltekit-preload-data="hover"
-								aria-label={row.ariaLabel}
 								data-testid="offender-tray-link"
 							>
 								<span class="offender-tray-title">{row.title}</span>

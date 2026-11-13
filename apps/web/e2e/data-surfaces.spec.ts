@@ -195,9 +195,13 @@ test('rankings name lines by number in both languages', async ({ page }) => {
 		await page.goto(localizeHref('/hotspots', lang));
 		const headline = page.locator('[data-slot="hotspots-verdict"]').getByRole('link');
 		await expect(headline).toContainText('1 · Confederation');
-		await expect(
-			page.getByRole('button', { name: 'Lansdowne', exact: true }).first(),
-		).toBeVisible();
+		await page.locator('[data-slot="hotspot-section"]').first().scrollIntoViewIfNeeded();
+		const unindexed = page.getByRole('button', {
+			name: `${lang === 'fr' ? 'Ligne' : 'Line'} Lansdowne`,
+			exact: true,
+		});
+		await expect(unindexed).toBeVisible();
+		await expect(unindexed).toHaveText('Lansdowne');
 		await page.goto(localizeHref('/repeat-offenders', lang));
 		await expect(page.locator('[data-slot="offenders-hero"]').getByRole('link')).toHaveText(
 			'1 · Confederation',

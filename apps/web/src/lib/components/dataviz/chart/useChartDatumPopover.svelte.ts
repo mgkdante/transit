@@ -7,7 +7,7 @@ export interface ChartDatumPopoverRow {
 export interface ChartDatumPopoverAction {
 	readonly href: string;
 	readonly label: string;
-	readonly ariaLabel: string;
+	readonly ariaLabel?: string;
 }
 
 export interface ChartDatumPopoverModel {

@@ -7,6 +7,7 @@ export interface LineName {
 	readonly spoken: string;
 }
 export interface LineDirectory {
+	spoken(label: string): string;
 	name(id: string, publishedName?: string | null): LineName;
 	number(id: string): string;
 }
@@ -16,22 +17,17 @@ export function createLineDirectory(
 	copy: { line: (id: string) => string },
 ): LineDirectory {
 	const index = new Map((routes ?? []).map((route) => [route.id, route]));
+	const spoken = (label: string) => copy.line(label);
 	return {
+		spoken,
 		number: (id) => index.get(id)?.short || id,
 		name(id, publishedName) {
 			const route = index.get(id);
 			const number = route?.short?.trim() || null;
 			const name = publishedName?.trim() || route?.long?.trim() || null;
 			const suffix = number && name !== number ? name : null;
-			return {
-				number,
-				name,
-				label: [number, suffix].filter(Boolean).join(' · ') || name || copy.line(id),
-				spoken:
-					[number ? copy.line(number) : null, suffix].filter(Boolean).join(', ') ||
-					name ||
-					copy.line(id),
-			};
+			const label = [number, suffix].filter(Boolean).join(' · ') || name || copy.line(id);
+			return { number, name, label, spoken: spoken(label) };
 		},
 	};
 }

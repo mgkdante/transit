@@ -355,7 +355,7 @@ describe('HotspotsBoard article', () => {
 			);
 
 			const dialog = await screen.findByRole('dialog', { name: 'Line 51' });
-			expect(within(dialog).getByRole('link', { name: 'View detail for Line 51' })).toHaveAttribute(
+			expect(within(dialog).getByRole('link', { name: 'View line' })).toHaveAttribute(
 				'href',
 				'/lines/51',
 			);
@@ -401,7 +401,6 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/stop/S1',
 				label: 'View stop',
-				ariaLabel: 'View detail for Berri-UQAM',
 			},
 		});
 		expect(capturedRow('route-51').tapPopover).toEqual({
@@ -415,7 +414,6 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/lines/51',
 				label: 'View line',
-				ariaLabel: 'View detail for Line 51',
 			},
 		});
 	});
@@ -437,13 +435,11 @@ describe('HotspotsBoard article', () => {
 			action: {
 				href: '/fr/stop/S1',
 				label: 'Voir l’arrêt',
-				ariaLabel: 'Voir le détail de Berri-UQAM',
 			},
 		});
 		expect(capturedRow('route-51').tapPopover?.action).toEqual({
 			href: '/fr/lines/51',
 			label: 'Voir la ligne',
-			ariaLabel: 'Voir le détail de Ligne 51',
 		});
 	});
 
@@ -567,7 +563,7 @@ describe('HotspotsBoard article', () => {
 				.getAllByRole('columnheader')
 				.map((cell) => cell.textContent?.trim()),
 		).toEqual(['Item', 'Type / ID', 'Readings']);
-		const detail = within(stopTable).getByRole('link', { name: /View detail for Quiet Ave/ });
+		const detail = within(stopTable).getByRole('link', { name: 'Quiet Ave' });
 		expect(detail).toHaveAttribute('href', '/stop/S2');
 		const servedRow = detail.closest('tr') as HTMLTableRowElement;
 		expect(servedRow).toHaveTextContent('Stop');

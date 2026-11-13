@@ -228,7 +228,6 @@
 						action: {
 							href,
 							label: t.chart.popover.viewLine,
-							ariaLabel: t.viewDetail(spoken(entry)),
 						},
 					}
 				: {}),
@@ -319,7 +318,6 @@
 					title,
 					subtitle: t.tray.rowSubtitle(tag, e.id),
 					href,
-					ariaLabel: t.viewDetail(spoken(e)),
 				};
 			});
 	}
@@ -353,7 +351,6 @@
 			recurrenceLabel: t.recurrenceLabel,
 			recurrenceUnknown: t.recurrenceUnknown,
 			fmtMin,
-			viewDetail: t.viewDetail,
 			href: legacyHref,
 		}),
 	);
@@ -613,7 +610,6 @@
 													href={row.href}
 													data-sveltekit-preload-data="hover"
 													data-slot="offender-link"
-													aria-label={row.ariaLabel}
 												>
 													<RankedRow
 														bare

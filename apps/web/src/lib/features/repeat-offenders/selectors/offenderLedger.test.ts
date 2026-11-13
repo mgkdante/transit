@@ -44,7 +44,6 @@ describe('buildOffenderLedger — the doctrine-clean fallback ledger', () => {
 			typeLabel: () => 'Trip',
 		});
 		expect(row.title).toBe('1 · Confederation');
-		expect(row.ariaLabel).toBe('View detail for Line 1, Confederation');
 		expect(row.subtitle).toContain('Trip T1');
 		expect(row.subtitle).not.toContain('opaque');
 	});

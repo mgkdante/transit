@@ -197,9 +197,7 @@
 			heading,
 			meta: typeTag(entry.type) ?? entry.type,
 			rows,
-			...(actionLabel && href
-				? { action: { href, label: actionLabel, ariaLabel: t.viewDetail(nameFor(entry, true)) } }
-				: {}),
+			...(actionLabel && href ? { action: { href, label: actionLabel } } : {}),
 		};
 	}
 	function ladderNote(entry: HotspotEntry): string {
@@ -272,7 +270,7 @@
 					id: entry.id,
 					observationCount: entry.observation_count ?? null,
 					href: hrefFor(entry),
-					ariaLabel: t.viewDetail(nameFor(entry, true)),
+					ariaLabel: nameFor(entry, true),
 				};
 			});
 	}

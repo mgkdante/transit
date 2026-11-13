@@ -128,7 +128,7 @@ describe('MagnitudeBarsMark — Wilson CI surfacing guard (PR-WEB-2 Feature B)',
 });
 
 describe('MagnitudeBarsMark — localized semantic AT table', () => {
-	it.each([undefined, 'Line 1, Confederation', 'Ligne 1, Confederation'])(
+	it.each([undefined, 'Line 1 · Confederation', 'Ligne 1 · Confederation'])(
 		'uses the optional spoken name, falling back to the visible label (%s)',
 		(spoken) => {
 			const spec = baseSpec();

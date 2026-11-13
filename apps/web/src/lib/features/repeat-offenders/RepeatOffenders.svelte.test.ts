@@ -441,7 +441,6 @@ describe('RepeatOffenders — approved analytical article', () => {
 			action: {
 				href: '/lines/11',
 				label: 'View line',
-				ariaLabel: 'View detail for Montagne / Sommet',
 			},
 		});
 	});
@@ -605,7 +604,7 @@ describe('RepeatOffenders — approved analytical article', () => {
 
 			const dialog = await screen.findByRole('dialog', { name: 'Montagne / Sommet' });
 			expect(within(dialog).getAllByRole('link')).toHaveLength(1);
-			expect(within(dialog).getByRole('link', { name: /View detail/ })).toHaveAttribute(
+			expect(within(dialog).getByRole('link', { name: 'View line' })).toHaveAttribute(
 				'href',
 				'/lines/11',
 			);

@@ -34,9 +34,7 @@ export function selectOffenderLadder(
 			...result.spec,
 			rows: result.spec.rows.map((row, i) => ({
 				...row,
-				spoken: entries[i].route
-					? directory.name(entries[i].route!, entries[i].route_name).spoken
-					: row.label,
+				spoken: entries[i].route || entries[i].route_name ? directory.spoken(row.label) : row.label,
 			})),
 		};
 	}

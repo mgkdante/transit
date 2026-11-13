@@ -102,9 +102,15 @@
 
 <style>
 	:global(table.offender-evidence-table.data-table) {
+		table-layout: auto;
+		overflow-wrap: normal;
 		font-size: var(--text-detail-body-mobile);
 	}
 	.offender-evidence-link {
+		display: block;
+		min-height: 3em;
+		overflow-wrap: normal;
+		word-break: normal;
 		border-radius: var(--radius-sm);
 		text-decoration: none;
 		color: inherit;

@@ -29,11 +29,8 @@
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
 	const hasKeyboardRows = $derived(spec.rows.some((r) => r.tapPopover != null || r.href != null));
-	const hasPointerRows = $derived(
-		spec.rows.some((r) => r.value != null && (r.tapPopover != null || r.href != null)),
-	);
 	const BAND_PADDING = 0.42;
-	const MIN_POINTER_STEP_PX = 24;
+	const MIN_POINTER_STEP_PX = Math.ceil(44 / (1 - BAND_PADDING));
 	const popover = createChartDatumPopover();
 	let figure = $state<HTMLElement | null>(null);
 	const layerStructureKey = $derived(
@@ -83,7 +80,7 @@
 		),
 	);
 	const frameHeight = $derived(
-		hasPointerRows ? `max(${remHeight}rem, ${pointerHeight}px)` : `${remHeight}rem`,
+		hasKeyboardRows ? `max(${remHeight}rem, ${pointerHeight}px)` : `${remHeight}rem`,
 	);
 
 	function onRowClick(event: MouseEvent, detail: { data?: MagnitudeDatum }): void {
@@ -297,6 +294,7 @@
 		gap: 0.375rem;
 	}
 	.ranking-name {
+		min-height: 44px;
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 2;
@@ -315,6 +313,11 @@
 	}
 	.ranking-name:focus-visible {
 		outline: 2px solid var(--ring);
+	}
+	table.sr-only a {
+		display: inline-flex;
+		min-height: 24px;
+		align-items: center;
 	}
 	.ranking-track {
 		position: relative;

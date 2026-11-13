@@ -18,7 +18,6 @@ export interface OffenderLedgerLabels {
 	recurrenceLabel: string;
 	recurrenceUnknown: string;
 	fmtMin: (v: number | null) => string | null;
-	viewDetail: (title: string) => string;
 	href: (o: Offender) => string;
 }
 
@@ -31,7 +30,6 @@ export interface OffenderLedgerRow {
 	readonly value: number | null;
 	readonly display: string | null;
 	readonly href: string;
-	readonly ariaLabel: string;
 }
 
 function offenderTitle(o: Offender, typeLabel: (t: string) => string): string {
@@ -76,7 +74,6 @@ export function buildOffenderLedger(
 			value: delay,
 			display: labels.fmtMin(delay),
 			href: labels.href(o),
-			ariaLabel: labels.viewDetail(name?.spoken ?? title),
 		};
 	});
 }

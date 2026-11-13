@@ -231,5 +231,5 @@ it('ladder rows lead with the line number', () => {
 	);
 	if (result.spec.kind !== 'magnitude-bars') throw new Error('expected rows');
 	expect(result.spec.rows[0].label).toBe('1 · Confederation');
-	expect(result.spec.rows[0].spoken).toBe('Line 1, Confederation');
+	expect(result.spec.rows[0].spoken).toBe('Line 1 · Confederation');
 });

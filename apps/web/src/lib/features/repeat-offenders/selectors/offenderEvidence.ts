@@ -47,7 +47,10 @@ export function buildOffenderEvidenceRows(
 			key: `${entry.type}-${entry.id}-${entry.route ?? ''}`,
 			title,
 			href: labels.href(entry),
-			ariaLabel: labels.ariaLabel(name?.spoken ?? title),
+			ariaLabel:
+				directory && (entry.route || entry.route_name)
+					? directory.spoken(title)
+					: labels.ariaLabel(title),
 			typeId: labels.typeId(entry),
 			severeRate: labels.severeRate(entry.severe_pct),
 			confidenceInterval,
