@@ -104,6 +104,8 @@ function brokenStatusWords(element: Element) {
 	return words;
 }
 async function holdReliability(page: Page, path: string) {
+	const entityFile =
+		path === '/lines' ? '/route_reliability/24.json' : '/stop_reliability/52095.json';
 	const gate = {
 		holding: true,
 		state: 'ready',
@@ -116,21 +118,17 @@ async function holdReliability(page: Page, path: string) {
 		const url = new URL(route.request().url());
 		url.pathname = '/__layout/fresh' + url.pathname;
 		const response = await route.fetch({ url: url.href });
-		if (/historic\/(?:route|stop)_reliability\/(?!index)[^/]+\.json$/.test(url.pathname)) {
+		if (url.pathname.endsWith('/historic' + entityFile)) {
 			entered(route.request());
 			if (gate.holding)
 				await new Promise<void>((resolve) => {
 					gate.releases.push(resolve);
 				});
 			if (state === 'empty') {
-				const headers = response.headers();
-				delete headers['transfer-encoding'];
-				headers['content-length'] = '0';
 				await route.fulfill({
-					response,
 					status: 404,
-					body: '',
-					headers: { ...headers, 'cache-control': 'no-store' },
+					json: {},
+					headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
 				});
 				return;
 			}
@@ -183,9 +181,10 @@ for (const locale of ['en', 'fr'] as const)
 						const response = await delivered;
 						await response.finished();
 						expect(response.status()).toBe(state === 'empty' ? 404 : 200);
-						if (state === 'empty')
+						if (state === 'empty') {
+							expect(await response.json()).toEqual({});
 							await expect(row.locator('[data-slot="entity-result-status"]')).toHaveCount(0);
-						else
+						} else
 							await expect(
 								row.locator(
 									state === 'hedge' || state === 'low-sample'
