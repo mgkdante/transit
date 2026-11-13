@@ -375,3 +375,53 @@ def test_histogram_count_preserves_large_integer_precision() -> None:
     histogram, average = hist_and_avg(row)
     assert sum(histogram) == count
     assert average == 1.0
+
+
+@pytest.mark.parametrize("numeric_type", [float, Decimal])
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (-61, "early"),
+        (-60, "on_time"),
+        (0, "on_time"),
+        (300, "on_time"),
+        (301, "late"),
+        (-60.5, "early"),
+        (300.5, "late"),
+    ],
+)
+def test_band_of_edges(numeric_type, value, expected) -> None:
+    from transit_ops.gold.reader import band_of
+
+    assert band_of(numeric_type(value)) == expected
+    if value == int(value):
+        assert band_of(int(value)) == expected
+    assert band_of(None) == "unknown"
+
+
+def test_band_constants_are_the_specified_edges() -> None:
+    from transit_ops.gold.reader import EARLY_BELOW_SECONDS, LATE_ABOVE_SECONDS
+
+    assert EARLY_BELOW_SECONDS == -60
+    assert LATE_ABOVE_SECONDS == 300
+    assert type(EARLY_BELOW_SECONDS) is int
+    assert type(LATE_ABOVE_SECONDS) is int
+
+
+def test_band_of_refuses_what_it_cannot_band() -> None:
+    from transit_ops.gold.reader import band_of
+
+    for value in (True, False):
+        with pytest.raises(TypeError):
+            band_of(value)
+    for value in (
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        Decimal("NaN"),
+        Decimal("sNaN"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+    ):
+        with pytest.raises(ValueError):
+            band_of(value)
