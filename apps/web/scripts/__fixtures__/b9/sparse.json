@@ -326,5 +326,5 @@
 			"methodology_version": "b9"
 		}
 	},
-	"not_found": ["historic/history/index.json"]
+	"not_found": ["historic/history/index.json", "static/routes_index.json"]
 }

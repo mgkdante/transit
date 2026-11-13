@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { createReliabilityViewState } from '#lib/reliability/viewState.svelte.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { onDestroy } from 'svelte';
@@ -61,6 +62,7 @@
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
 
+	const display = transitDisplay();
 	const localizeHref = getLocalizeHref();
 
 	const locale: Locale = getLocale();
@@ -160,7 +162,7 @@
 		href: string | null,
 		evidence: HotspotPopoverEvidence,
 	): ChartDatumPopoverModel {
-		const heading = entry.name ?? t.unnamed(entry.id);
+		const heading = nameFor(entry);
 		const rows: Array<{ label: string; value: string }> = [];
 		const severe = fmtPct(entry.severe_pct, { locale, suffix: t.units.pct });
 		if (severe != null) rows.push({ label: t.ladder.severeRateLabel, value: severe });
@@ -192,11 +194,9 @@
 		return {
 			key: `${entry.type}-${entry.id}`,
 			heading,
-			meta: t.tray.rowSubtitle(typeTag(entry.type) ?? entry.type, entry.id),
+			meta: typeTag(entry.type) ?? entry.type,
 			rows,
-			...(actionLabel && href
-				? { action: { href, label: actionLabel, ariaLabel: t.viewDetail(heading) } }
-				: {}),
+			...(actionLabel && href ? { action: { href, label: actionLabel } } : {}),
 		};
 	}
 	function ladderNote(entry: HotspotEntry): string {
@@ -212,24 +212,26 @@
 	}
 
 	const activeLadder = $derived(ladders.get(grainKey));
+	const nameFor = (entry: HotspotEntry, spoken = false): string =>
+		navKindFor(entry.type) === 'line'
+			? display.lineName(entry.id, entry.name)[spoken ? 'spoken' : 'label']
+			: (entry.name ?? t.unnamed(entry.id));
 	const topHotspot = $derived<HotspotEntry | null>(activeLadder?.entries?.[0] ?? null);
-	const topHotspotName = $derived(
-		topHotspot ? (topHotspot.name ?? t.unnamed(topHotspot.id)) : null,
-	);
-	const verdictLine = $derived.by<string>(() => {
+	const topHotspotName = $derived(topHotspot ? nameFor(topHotspot) : null);
+	const verdictParts = $derived.by(() => {
 		if (!topHotspot || topHotspotName == null) {
-			return hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
+			const before = hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
+			return { before, after: '' };
 		}
 		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
-		return severe == null
-			? t.verdict.topNoRate(topHotspotName)
-			: t.verdict.topWithRate(topHotspotName, severe);
+		return { before: t.verdict.beforeName(), after: t.verdict.afterName(severe) };
 	});
 	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
 
 	function ladderFor(kind: 'route' | 'stop', total: number | null | undefined) {
 		const entries = (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
 		const result = selectHotspotLadder(entries, cap, locale, {
+			directory: display.directory,
 			title: t.ladder.heading,
 			rowLabel: kind === 'route' ? t.type.route : t.type.stop,
 			xLabel: t.ladder.severeRateLabel,
@@ -258,7 +260,7 @@
 		return (activeLadder?.tray ?? [])
 			.filter((entry) => entry.type === kind)
 			.map((entry) => {
-				const title = entry.name ?? t.unnamed(entry.id);
+				const title = nameFor(entry);
 				return {
 					key: `${entry.type}-${entry.id}`,
 					title,
@@ -266,7 +268,7 @@
 					id: entry.id,
 					observationCount: entry.observation_count ?? null,
 					href: hrefFor(entry),
-					ariaLabel: t.viewDetail(title),
+					ariaLabel: nameFor(entry, true),
 				};
 			});
 	}
@@ -465,11 +467,15 @@
 										data-slot="hotspots-verdict"
 										aria-label={t.verdict.label}
 									>
-										{#if topHotspotHref}
-											<a class="hotspots-verdict-line" href={topHotspotHref}>{verdictLine}</a>
-										{:else}
-											<p class="hotspots-verdict-line">{verdictLine}</p>
-										{/if}
+										<p class="hotspots-verdict-line">
+											{verdictParts.before}
+											{#if topHotspotHref && topHotspot}
+												<a
+													class="hotspots-verdict-line"
+													href={topHotspotHref}
+													aria-label={nameFor(topHotspot, true)}>{topHotspotName}</a
+												>{:else}{topHotspotName}{/if}{verdictParts.after}
+										</p>
 									</div>
 									<p class="hotspots-window hotspots-window--article">{windowCaption}</p>
 									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
@@ -541,6 +547,8 @@
 		text-decoration: none;
 	}
 	a.hotspots-verdict-line {
+		display: inline;
+		padding-block: 0.75em;
 		border-bottom: 1px solid transparent;
 		transition: border-color var(--duration-fast) var(--ease-default);
 	}

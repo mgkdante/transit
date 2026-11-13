@@ -1,4 +1,7 @@
 {
 	"generated_utc": "2026-06-15T12:00:00Z",
-	"routes": [{ "id": "24", "short": "24", "long": "Sherbrooke", "type": 3 }]
+	"routes": [
+		{ "id": "24", "short": "24", "long": "Sherbrooke", "type": 3 },
+		{ "id": "1-373", "short": "1", "long": "Confederation", "type": 1 }
+	]
 }

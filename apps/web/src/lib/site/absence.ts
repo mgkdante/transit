@@ -250,7 +250,7 @@ export function readLiveAbsenceContext(): () => LiveAbsenceContext {
 }
 
 const NAME_FALLBACK_COPY: Record<Locale, { stop: string; route: string }> = {
-	en: { stop: 'Stop {id} (name unavailable)', route: 'Route {id}' },
+	en: { stop: 'Stop {id} (name unavailable)', route: 'Line {id}' },
 	fr: { stop: 'Arrêt {id} (nom indisponible)', route: 'Ligne {id}' },
 };
 

@@ -29,11 +29,8 @@
 	const xDomain = $derived<[number, number]>([spec.domain[0], spec.domain[1]]);
 	const hasTapPopover = $derived(spec.rows.some((r) => r.tapPopover != null));
 	const hasKeyboardRows = $derived(spec.rows.some((r) => r.tapPopover != null || r.href != null));
-	const hasPointerRows = $derived(
-		spec.rows.some((r) => r.value != null && (r.tapPopover != null || r.href != null)),
-	);
 	const BAND_PADDING = 0.42;
-	const MIN_POINTER_STEP_PX = 24;
+	const MIN_POINTER_STEP_PX = 44;
 	const popover = createChartDatumPopover();
 	let figure = $state<HTMLElement | null>(null);
 	const layerStructureKey = $derived(
@@ -78,12 +75,10 @@
 	const padding = $derived({ top: 12, right: 28, bottom: 42, left: gutter.left });
 	const remHeight = $derived(Math.max(3, spec.rows.length) * 1.35 + 3);
 	const pointerHeight = $derived(
-		Math.ceil(
-			(spec.rows.length + BAND_PADDING) * MIN_POINTER_STEP_PX + padding.top + padding.bottom,
-		),
+		(spec.rows.length + BAND_PADDING) * MIN_POINTER_STEP_PX + padding.top + padding.bottom,
 	);
 	const frameHeight = $derived(
-		hasPointerRows ? `max(${remHeight}rem, ${pointerHeight}px)` : `${remHeight}rem`,
+		hasKeyboardRows ? `max(${remHeight}rem, ${pointerHeight}px)` : `${remHeight}rem`,
 	);
 
 	function onRowClick(event: MouseEvent, detail: { data?: MagnitudeDatum }): void {
@@ -125,12 +120,14 @@
 					<button
 						class="ranking-name dv-barmark-keyboard-row"
 						title={row.label}
-						aria-label={row.label}
+						aria-label={row.spoken ?? row.label}
 						aria-haspopup="dialog"
 						onclick={(event) => onRowButtonActivate(event, row)}>{row.label}</button
 					>
 				{:else if row.href}
-					<a class="ranking-name" title={row.label} href={row.href}>{row.label}</a>
+					<a class="ranking-name" title={row.label} href={row.href} aria-label={row.spoken}
+						>{row.label}</a
+					>
 				{:else}<span class="ranking-name" title={row.label}>{row.label}</span>{/if}
 				<div
 					class="ranking-track"
@@ -196,14 +193,16 @@
 								<MagnitudeCiWhiskers rows={reals} domain={xDomain} />
 							{/if}
 							{#each spec.rows as row (row.key)}
-								{@const rowY = context.yScale(row.key) as number | undefined}
-								{@const rowHeight =
-									(context.yScale as { bandwidth?: () => number }).bandwidth?.() ?? 0}
+								{@const band = context.yScale as ReturnType<typeof scaleBand>}
+								{@const rowY = band(row.key)}
+								{@const rowHeight = band.bandwidth()}
+								{@const rowStep = band.step()}
 								{#if Number.isFinite(rowY) && rowHeight > 0 && context.width > 0}
+									{@const rowTop = Number(rowY) - (rowStep - rowHeight) / 2}
 									{#if row.tapPopover}
 										<g
 											role="button"
-											aria-label={row.label}
+											aria-label={row.spoken ?? row.label}
 											aria-haspopup="dialog"
 											aria-expanded="false"
 											tabindex="0"
@@ -211,11 +210,15 @@
 											onkeydown={(event) => onRowButtonActivate(event, row)}
 											onclick={(event) => onRowButtonActivate(event, row)}
 										>
-											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+											<rect x="0" y={rowTop} width={context.width} height={rowStep} />
 										</g>
 									{:else if row.href}
-										<a href={row.href} aria-label={row.label} class="dv-barmark-keyboard-row">
-											<rect x="0" y={rowY} width={context.width} height={rowHeight} />
+										<a
+											href={row.href}
+											aria-label={row.spoken ?? row.label}
+											class="dv-barmark-keyboard-row"
+										>
+											<rect x="0" y={rowTop} width={context.width} height={rowStep} />
 										</a>
 									{/if}
 								{/if}
@@ -257,7 +260,8 @@
 			{#each spec.rows as r (r.key)}
 				<tr data-key={r.key}>
 					<th scope="row">
-						{#if r.href}<a href={r.href} tabindex="-1">{r.label}</a>{:else}{r.label}{/if}
+						{#if r.href}<a href={r.href} tabindex="-1" aria-label={r.spoken}>{r.label}</a
+							>{:else}{r.spoken ?? r.label}{/if}
 					</th>
 					<td>
 						{fmtWithUnit(
@@ -290,6 +294,7 @@
 		gap: 0.375rem;
 	}
 	.ranking-name {
+		min-height: 44px;
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 2;
@@ -308,6 +313,11 @@
 	}
 	.ranking-name:focus-visible {
 		outline: 2px solid var(--ring);
+	}
+	table.sr-only a {
+		display: inline-flex;
+		min-height: 24px;
+		align-items: center;
 	}
 	.ranking-track {
 		position: relative;

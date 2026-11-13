@@ -1,0 +1,26 @@
+{
+	"generated_utc": "2026-06-15T12:00:00Z",
+	"by_grain": [
+		{
+			"grain": "day",
+			"entries": [
+				{
+					"rank": 1,
+					"type": "route",
+					"id": "1-373",
+					"name": "Confederation",
+					"severe_pct": 40,
+					"observation_count": 100
+				},
+				{
+					"rank": 2,
+					"type": "route",
+					"id": "event",
+					"name": "Lansdowne",
+					"severe_pct": 30,
+					"observation_count": 80
+				}
+			]
+		}
+	]
+}

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const harness = vi.hoisted(() => ({
 	bootProvider: vi.fn(),
 	serverV1Context: vi.fn(),
+	getRoutesIndex: vi.fn(),
 }));
 
 vi.mock('#lib/v1/boot.ts', () => ({
@@ -14,6 +15,9 @@ vi.mock('#lib/v1/serverContext.ts', () => ({
 }));
 
 import { load as loadServerLayout } from './+layout.server';
+vi.mock('#lib/v1/repositories/static.ts', () => ({
+	getRoutesIndex: (...args: unknown[]) => harness.getRoutesIndex(...args),
+}));
 import { load as loadUniversalLayout } from './+layout';
 
 const manifest = {
@@ -67,9 +71,27 @@ beforeEach(() => {
 	harness.bootProvider.mockReset();
 	harness.bootProvider.mockResolvedValue(selection(null));
 	harness.serverV1Context.mockReset();
+	harness.getRoutesIndex.mockReset().mockResolvedValue({ routes: [] });
 });
 
 describe('root server layout boot', () => {
+	it('loads the directory before returning page data and tolerates a failed index', async () => {
+		const selected = selection(v1('en', 'one'));
+		harness.bootProvider.mockResolvedValue(selected);
+		const routesIndex = { routes: [{ id: '1-373', short: '1', type: 1 }] };
+		harness.getRoutesIndex.mockResolvedValueOnce(routesIndex);
+		const request = serverEvent(undefined, '/network');
+		const result = await loadServerLayout(request);
+		expect(result).toMatchObject({ routesIndex });
+		expect(harness.getRoutesIndex).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ manifest: selected.v1?.manifest, providerId: selected.providerId }),
+		);
+		harness.getRoutesIndex.mockRejectedValueOnce(new Error('index unavailable'));
+		await expect(loadServerLayout(request)).resolves.toMatchObject({
+			routesIndex: null,
+			v1: selected.v1,
+		});
+	});
 	it('passes request-only location to provider selection without returning coordinates', async () => {
 		const request = serverEvent('fr', '/network');
 		const location = { lat: 45.42, lon: -75.7 };

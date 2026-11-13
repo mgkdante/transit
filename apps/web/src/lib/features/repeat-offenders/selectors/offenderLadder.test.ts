@@ -1,3 +1,4 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import { describe, expect, it } from 'vitest';
 import { selectOffenderLadder } from './offenderLadder';
 import type { RepeatOffenderEntry } from '#lib/v1/schemas/index.ts';
@@ -216,4 +217,19 @@ describe('selectOffenderLadder', () => {
 		});
 		expect(res.spec.rows[0].tapPopover).toBeUndefined();
 	});
+});
+it('ladder rows lead with the line number', () => {
+	const directory = createLineDirectory(
+		[{ id: '1-373', short: '1', long: 'Confederation', type: 1 }],
+		{ line: (id) => `Line ${id}` },
+	);
+	const result = selectOffenderLadder(
+		[entry({ route: '1-373', route_name: 'Confederation' })],
+		10,
+		'en',
+		{ ...labels, directory },
+	);
+	if (result.spec.kind !== 'magnitude-bars') throw new Error('expected rows');
+	expect(result.spec.rows[0].label).toBe('1 · Confederation');
+	expect(result.spec.rows[0].spoken).toBe('Line 1 · Confederation');
 });

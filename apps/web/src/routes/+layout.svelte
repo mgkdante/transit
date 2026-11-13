@@ -8,6 +8,9 @@
 
 <script lang="ts">
 	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
+	import { createLineDirectory } from '#lib/site/lineDirectory.ts';
+	import { setLineDirectory } from '#lib/site/transitDisplayContext.ts';
+	import { routeNameFallback } from '#lib/site/absence.ts';
 	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
@@ -94,6 +97,12 @@
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
 	const locale = $derived<Locale>(data.lang ?? DEFAULT_LOCALE);
+	const lineDirectory = $derived(
+		createLineDirectory(data.routesIndex?.routes ?? null, {
+			line: (id) => routeNameFallback(id, locale),
+		}),
+	);
+	setLineDirectory(() => lineDirectory);
 	setLocaleContext(
 		() => data.lang ?? DEFAULT_LOCALE,
 		() => data.providerId,
