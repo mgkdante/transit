@@ -11,6 +11,18 @@ _Avoid_: edition (a schedule edition, which the code calls a dataset version)
 The kind of span a dataset is archived by: UTC day, service day, month or edition.
 _Avoid_: grain (the reporting span: day, week, month)
 
+**History ledger**:
+The record of what is kept, in which form, and whether it was checked.
+_Avoid_: archive (the stored copies themselves)
+
+**Window key**:
+The key of one window: `YYYY-MM-DD`, `YYYY-MM`, or a checksum for a schedule edition.
+_Avoid_: window (the span identified by the key)
+
+**Working copy**:
+The form the pipeline writes and reads every day: rows on the server, and for captures one object per capture.
+_Avoid_: archive copy (a version kept in history)
+
 **Hot window**:
 The age after which a verified window may have its working copy trimmed.
 _Avoid_: deletion age (trim also requires a verified archive copy)
