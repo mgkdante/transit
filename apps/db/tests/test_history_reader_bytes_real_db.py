@@ -84,7 +84,7 @@ def test_feeds_merge_by_capture_time_endpoint_and_row_id(engine, tmp_path):
     seed(engine, tmp_path, first=786030, count=1)
     storage = RecordingStorage(tmp_path)
     archive(engine, storage, day=START.date() - timedelta(days=1))
-    result = read(engine, storage)
+    result = read(engine, storage, feeds=("trip_updates", "vehicle_positions"))
     assert [c.capture_row_id for c in result.captures()] == [
         786001,
         786020,
