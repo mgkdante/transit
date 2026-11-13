@@ -87,6 +87,7 @@ files = [
     "src/transit_ops/gold/transactions.py",
     "src/transit_ops/gold/realtime.py",
     "src/transit_ops/maintenance/_helpers.py",
+    "src/transit_ops/maintenance/storage_report.py",
     "src/transit_ops/maintenance/silver.py",
     "src/transit_ops/maintenance/bronze.py",
     "src/transit_ops/maintenance/i3.py",

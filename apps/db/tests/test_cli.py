@@ -1305,6 +1305,8 @@ def test_db_storage_report_help() -> None:
 
     assert result.exit_code == 0
     assert "--limit" in result.stdout
+    assert "--editions" in result.stdout
+    assert "--statement-timeout-seconds" in result.stdout
 
 
 class _FakeBatchLoadResult:
