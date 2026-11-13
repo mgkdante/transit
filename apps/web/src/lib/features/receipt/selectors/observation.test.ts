@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { formatDateKey } from '#lib/utils/time.ts';
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
+import { copy } from '../receipt.copy';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IsoUtc, Manifest, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
 import { receiptObservation } from './observation';
 
@@ -34,7 +37,7 @@ describe('receipt observation text', () => {
 			);
 			expect(text).toContain('0%');
 			expect(text).toContain('3.4 min');
-			expect(text).toContain('2026-06-18T07:00:00Z');
+			expect(text).not.toContain(receipt.generated_utc);
 			expect(text).toContain('generation-a');
 			expect(text).toContain('reliability-2');
 			expect(text).toContain('2026-06-15 – 2026-06-17');
@@ -75,4 +78,19 @@ describe('receipt observation text', () => {
 		expect(text).not.toContain('120');
 		expect(text).not.toContain('Published receipt dates');
 	});
+});
+
+afterEach(() => vi.useRealTimers());
+it.each(['en', 'fr'] as const)('copied text carries the record stamp sentence in %s', (locale) => {
+	vi.useFakeTimers();
+	vi.setSystemTime(new Date('2026-11-12T12:00:00Z'));
+	const text = receiptObservation(receipt, index, manifest, locale, 'https://transit.example');
+	expect(text.split('\n')).toContain(
+		stampCopy[locale].record(
+			formatDateKey(receipt.date, locale),
+			formatDateKey(receipt.generated_utc.slice(0, 10), locale),
+			'day',
+		),
+	);
+	expect(text).not.toContain(`${copy[locale].observation.generated}:`);
 });

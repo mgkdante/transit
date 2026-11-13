@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
@@ -25,11 +27,7 @@
 	import { fromSearchParams, type AlertAffects, type DateWindow } from '#lib/filters/index.ts';
 	import { mirrorSearchParams } from '#lib/site/urlMirror.ts';
 	import { ResourceBoundary } from '#lib/components/surface/index.ts';
-	import {
-		ArticleKeywords,
-		ArticleSectionStack,
-		type ArticleMetaEntry,
-	} from '#lib/components/layout/index.ts';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
 	import { DetailFrame, SurfaceRail, type SurfaceRailContext } from '@yesid/ui/layout';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { CollapsibleSection, TocNav, SectionHeading } from '@yesid/ui/brand';
@@ -473,15 +471,11 @@
 	});
 	const tocEntries = $derived(navigation.entries);
 	const { navigate } = navigation;
+	const record = createRecordStamp(getV1Context().manifest, () => generatedUtc);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const meta: ArticleMetaEntry[] = [];
-		if (generatedUtc) {
-			meta.push({
-				text: formatUtc(generatedUtc, locale),
-				datetime: generatedUtc,
-				label: t.asOf,
-			});
-		}
+		const stamp = record.meta(locale);
+		if (stamp) meta.push(stamp);
 		if (displayData != null) {
 			meta.push(t.article.matches(filtered.length));
 			meta.push(t.article.sections(tocEntries.length));
@@ -556,7 +550,6 @@
 			/>
 		</div>
 	{/if}
-	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 {/snippet}
 
 {#snippet railCell()}
@@ -588,7 +581,8 @@
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
-			metaPending={alertsAvailable && (displayResource.loading || !displayResource.settled)}
+			metaPending={(alertsAvailable && (displayResource.loading || !displayResource.settled)) ||
+				record.pending}
 			titleId="alerts-title"
 		>
 			{#snippet controls()}

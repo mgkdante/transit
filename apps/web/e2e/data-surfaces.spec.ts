@@ -10,6 +10,8 @@ import { tripCopy } from '../src/lib/features/trips/trips.copy';
 import { DEFAULT_LOCALE as locale, PUBLISHED_LOCALES } from '../src/lib/i18n/config';
 import { localizeHref } from '../src/lib/i18n/routing';
 import { STATUS_LABELS } from '../src/lib/v1/enumLabels';
+import { stampCopy } from '../src/lib/v1/stamp.copy';
+import { intl } from '../src/lib/i18n/copy';
 
 const fixture = (name: string) =>
 	JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'));
@@ -21,6 +23,48 @@ const grains = fixture('stop-reliability.json').periods.map(
 );
 // Inside the live data's 30 s freshness window.
 const now = Date.parse(departures.generated_utc) + 30_000;
+
+for (const lang of PUBLISHED_LOCALES)
+	test(`${lang}: record pages show only the record stamp form`, async ({ page }) => {
+		const manifest = fixture('manifest.json');
+		const bundle = fixture('../scripts/__fixtures__/b9/rich.json').files;
+		const day = bundle['historic/receipts/index.json'].dates.at(-1);
+		// The core server synthesizes the receipt with its live fixture's publication date.
+		const records = [
+			['hotspots', fixture('hotspots.json').generated_utc, null],
+			['repeat-offenders', fixture('repeat-offenders.json').generated_utc, null],
+			['alerts', fixture('alerts.json').generated_utc, null],
+			['receipt', manifest.files.live.generated_utc, day],
+			['metrics', fixture('provenance.json').generated_utc, null],
+		];
+		// Supply the empty alerts fixture at the record endpoint absent from the core server.
+		await page.route('**/historic/alert_history.json', (route) =>
+			route.fulfill({ json: fixture('alerts.json') }),
+		);
+		const date = (key: string) =>
+			intl
+				.dateTime(lang, {
+					month: 'short',
+					day: 'numeric',
+					timeZone: 'UTC',
+					...(!manifest.tz ? { year: 'numeric' as const } : {}),
+				})
+				.format(new Date(key));
+		for (const [path, generated, day] of records) {
+			const published = generated.slice(0, 10);
+			const expected = stampCopy[lang].record(
+				day ? date(day) : null,
+				date(published),
+				day ? 'day' : 'window',
+			);
+			await page.goto(localizeHref(`/${path}`, lang, manifest.provider));
+			const header = page.locator('[data-slot="article-header"]');
+			await expect(header.locator('time')).toHaveText(expected);
+			await expect(header.locator('time')).toHaveAttribute('datetime', published);
+			await expect(page.locator('[data-slot="article-keywords"]')).toHaveCount(0);
+			await expect(page.locator('[data-slot="stat-freshness"]')).toHaveCount(0);
+		}
+	});
 
 test.use({ bypassCSP: true });
 

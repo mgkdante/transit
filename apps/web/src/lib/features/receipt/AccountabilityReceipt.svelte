@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { recordStamp, stampText } from '#lib/v1/stamp.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
@@ -8,7 +9,7 @@
 	import { absenceShort, stopNameFallback } from '#lib/site/absence.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { mirrorSearchParam } from '#lib/site/urlMirror.ts';
-	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import {
 		fmtCount as sharedFmtCount,
 		fmtDelayMin as sharedFmtDelayMin,
@@ -37,11 +38,7 @@
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import { HistoryNavigator, ResourceBoundary } from '#lib/components/surface/index.ts';
 	import { historyCopy } from '#lib/components/surface/historyCopy.ts';
-	import {
-		ArticleKeywords,
-		ArticleSectionStack,
-		type ArticleMetaEntry,
-	} from '#lib/components/layout/index.ts';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
 	import { DetailFrame, SurfaceRail, type SurfaceRailContext } from '@yesid/ui/layout';
 	import { TerminalPanel, CollapsibleSection, TocNav } from '@yesid/ui/brand';
 	import { TypedInformationCard } from '#lib/components/shared/index.ts';
@@ -305,13 +302,14 @@
 	const railSummary = $derived(selectedDate ? formatDateKey(selectedDate, locale) : '');
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
-		if (generatedUtc) {
-			entries.push({
-				text: formatUtc(generatedUtc, locale),
-				datetime: generatedUtc,
-				label: t.article.generatedLabel,
-			});
-		}
+		const stamp = recordStamp({
+			manifest,
+			historyIndex: anchor.data,
+			fileGeneratedUtc: generatedUtc,
+			day: currentReceipt?.date,
+		});
+		const text = stampText(stamp, locale, manifest.tz);
+		if (text) entries.push({ text, datetime: stamp.publishedOn ?? undefined });
 		if (selectedDate) {
 			entries.push({
 				text: formatDateKey(selectedDate, locale),
@@ -388,7 +386,6 @@
 			/>
 		</div>
 	{/if}
-	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 {/snippet}
 
 {#snippet railCell()}

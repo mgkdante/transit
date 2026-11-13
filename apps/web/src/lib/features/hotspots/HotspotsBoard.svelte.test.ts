@@ -1,3 +1,8 @@
+vi.mock('#lib/v1/boot.ts', () => ({
+	getV1Context: () => ({ manifest: { tz: 'America/Toronto', files: {} } }),
+}));
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
 import { sectionsToggleCopy } from '#lib/components/shared/sectionsToggle.copy.ts';
 import { copy } from './hotspots.copy';
 import { observeChartFrames } from '#lib/components/dataviz/chart/__fixtures__/observeChartFrames.ts';
@@ -690,4 +695,20 @@ describe('HotspotsBoard article', () => {
 		expect(container.querySelectorAll('[data-toc^="hotspots-"]')).toHaveLength(0);
 		expect(container.querySelectorAll('table.sr-only tbody tr')).toHaveLength(0);
 	});
+});
+
+it('shows the record stamp and no publication time', async () => {
+	const { container } = render(HotspotsBoard);
+	const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
+	const expected = stampCopy.en.record(
+		null,
+		formatDateKey(payload.current!.generated_utc.slice(0, 10), 'en'),
+		'window',
+	);
+	await waitFor(() => expect(header).toHaveTextContent(expected));
+	expect(header.querySelector('time')).toHaveAttribute(
+		'datetime',
+		payload.current!.generated_utc.slice(0, 10),
+	);
+	expect(container.querySelector('[data-slot="article-keywords"]')).toBeNull();
 });

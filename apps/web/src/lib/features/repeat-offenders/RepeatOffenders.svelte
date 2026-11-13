@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { getV1Context } from '#lib/v1/boot.ts';
+	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { createOffenderNames } from './offenderNames';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
@@ -20,7 +22,7 @@
 		fmtDelayMin as sharedFmtDelayMin,
 		fmtPct,
 	} from '#lib/utils/index.ts';
-	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
+	import { formatDateKey } from '#lib/utils/time.ts';
 	import { availabilityFromPointCollectionIndex } from '#lib/v1/history/selection.ts';
 	import { createHistoryCorrectionPresentation } from '#lib/v1/history/datePresentation.svelte.ts';
 	import {
@@ -45,11 +47,7 @@
 		GrainPicker,
 		type GrainSegment,
 	} from '#lib/components/surface/index.ts';
-	import {
-		ArticleKeywords,
-		ArticleSectionStack,
-		type ArticleMetaEntry,
-	} from '#lib/components/layout/index.ts';
+	import { ArticleSectionStack, type ArticleMetaEntry } from '#lib/components/layout/index.ts';
 	import {
 		DashboardGrid,
 		DetailFrame,
@@ -395,15 +393,11 @@
 	});
 	const tocEntries = $derived(navigation.entries);
 	const { navigate } = navigation;
+	const record = createRecordStamp(getV1Context().manifest, () => generatedUtc);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
-		if (generatedUtc) {
-			entries.push({
-				text: formatUtc(generatedUtc, locale),
-				datetime: generatedUtc,
-				label: t.asOf,
-			});
-		}
+		const stamp = record.meta(locale);
+		if (stamp) entries.push(stamp);
 		if (tocEntries.length > 0) entries.push(t.article.sections(tocEntries.length));
 		return entries;
 	});
@@ -470,7 +464,6 @@
 			/>
 		</div>
 	{/if}
-	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 {/snippet}
 
 {#snippet railCell()}
@@ -502,7 +495,7 @@
 			backHref={localizeHref('/', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
-			metaPending={offenders.loading || !offenders.settled}
+			metaPending={offenders.loading || !offenders.settled || record.pending}
 			titleId="repeat-offenders-title"
 		>
 			{#snippet controls()}

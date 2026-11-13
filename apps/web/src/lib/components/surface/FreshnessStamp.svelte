@@ -1,14 +1,17 @@
 <script lang="ts">
+	import { stampText, type RecordStamp } from '#lib/v1/stamp.ts';
 	import { cn } from '#lib/utils/index.ts';
 	import { type Locale } from '#lib/i18n/index.ts';
 	import type { StampPresentation } from '#lib/v1/live/livePresentation.ts';
 
 	import { StatusDot } from '@yesid/ui/brand';
 
-	type Variant = 'live' | 'updated';
+	type Variant = 'live' | 'updated' | 'record';
 
 	export interface FreshnessStampProps {
-		presentation: StampPresentation;
+		presentation?: StampPresentation;
+		stamp?: RecordStamp;
+		timeZone?: string;
 		variant?: Variant;
 		locale: Locale;
 		label?: string;
@@ -17,6 +20,8 @@
 
 	let {
 		presentation,
+		stamp,
+		timeZone,
 		variant = 'live',
 		locale,
 		label,
@@ -34,15 +39,23 @@
 	};
 	const t = $derived(L[locale]);
 	const displayLabel = $derived(
-		label ?? presentation.label ?? (variant === 'live' ? t.live : t.updated),
+		label ?? presentation?.label ?? (variant === 'live' ? t.live : t.updated),
 	);
 </script>
 
-{#if variant === 'live'}
+{#if variant === 'record' && stamp}
+	{@const text = stampText(stamp, locale, timeZone)}
+	{#if text}<span
+			class={cn('freshness-stamp', className)}
+			data-slot="freshness-stamp"
+			data-form="record"><time datetime={stamp.publishedOn ?? undefined}>{text}</time></span
+		>{/if}
+{:else if variant === 'live' && presentation}
 	<span
 		class={cn('freshness-stamp freshness-stamp--live', className)}
 		data-slot="freshness-stamp"
 		data-variant="live"
+		data-form="live"
 		data-stale={presentation.isStale}
 		data-degraded={presentation.degraded ? 'true' : undefined}
 		data-age-seconds={presentation.ageSeconds ?? undefined}
@@ -59,7 +72,7 @@
 			<span class="freshness-stamp-stale">· {t.stale}</span>
 		{/if}
 	</span>
-{:else}
+{:else if presentation}
 	<span
 		class={cn('freshness-stamp freshness-stamp--updated', className)}
 		data-slot="freshness-stamp"

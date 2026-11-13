@@ -52,3 +52,22 @@ it('renders a prepared absolute timestamp without reformatting it', () => {
 	});
 	expect(container.querySelector('time')).toHaveTextContent('Jun 14, 08:00 EDT');
 });
+
+it('renders the record form with a calendar date', () => {
+	const stamp = {
+		form: 'record',
+		scope: 'day',
+		dataThrough: '2026-11-10',
+		publishedOn: '2026-11-11',
+		nextUpdateUtc: null,
+		warning: false,
+	} as const;
+	const { container } = render(FreshnessStamp, {
+		props: { variant: 'record', stamp, timeZone: 'America/Toronto', locale: 'en' },
+	});
+	expect(container.querySelector('[data-form="record"] time')).toHaveAttribute(
+		'datetime',
+		stamp.publishedOn,
+	);
+	expect(container.querySelector('[data-form="live"]')).toBeNull();
+});

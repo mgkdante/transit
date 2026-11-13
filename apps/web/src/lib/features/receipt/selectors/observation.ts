@@ -1,3 +1,4 @@
+import { recordStamp, stampText } from '#lib/v1/stamp.ts';
 import { localizeHref, type Locale } from '#lib/i18n/index.ts';
 import { fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
 import type { Manifest, Receipt, ReceiptsIndex } from '#lib/v1/schemas/index.ts';
@@ -32,7 +33,16 @@ export function receiptObservation(
 		`${labels.date}: ${receipt.date}${manifest.tz ? ` (${manifest.tz})` : ''}`,
 		...values.map(([, label, value]) => `${label}: ${value ?? labels.unknown}`),
 		t.caveat,
-		`${labels.generated}: ${receipt.generated_utc}`,
+		stampText(
+			recordStamp({
+				manifest,
+				historyIndex: null,
+				fileGeneratedUtc: receipt.generated_utc,
+				day: receipt.date,
+			}),
+			locale,
+			manifest.tz,
+		),
 		...(receipt.publish_generation_id
 			? [`${labels.generation}: ${receipt.publish_generation_id}`]
 			: []),
