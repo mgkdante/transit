@@ -617,6 +617,7 @@ describe('StopDetail article contract', () => {
 		expect(
 			screen.getByText(detailCopy.fr.info.feedId).closest('[data-slot="metric-display"]'),
 		).toHaveTextContent('57191');
+		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);
 	});
 
 	it.each(['next', 'info', 'unknown'])(
@@ -999,6 +1000,8 @@ describe('StopDetail map drilldown', () => {
 		expect(
 			screen.getByText(detailCopy.en.info.feedId).closest('[data-slot="metric-display"]'),
 		).toHaveTextContent('57191');
+		expect(screen.getAllByText('STM').length).toBeGreaterThan(0);
+		expect(container.querySelectorAll('a[href="/stops"]')).toHaveLength(1);
 		expect(screen.getByRole('link', { name: /View stop Test stop on map/ })).toHaveAttribute(
 			'href',
 			'/map?stop=57191&focus=stop%3A57191',
