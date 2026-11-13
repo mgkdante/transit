@@ -224,9 +224,7 @@ def test_rows_after_empty_seal_are_available(conn):
     assert plan(conn).days[0].form == "objects"
 
 
-@pytest.mark.parametrize(
-    "method,packet", [("polls", "H06a4"), ("captures", "H06a4"), ("processing", "H06b")]
-)
+@pytest.mark.parametrize("method,packet", [("captures", "H06b"), ("processing", "H06b")])
 def test_iteration_is_refused_until_implemented(conn, method, packet):
     result = plan(conn)
     with pytest.raises(NotImplementedError, match=packet):
@@ -277,7 +275,7 @@ def copy_manifest(conn, record):
     return data
 
 
-def copy_values(conn, at, record, data):
+def copy_values(conn, at, record, data, feed="trip_updates"):
     return dict(
         p=PROVIDER,
         key=at.date().isoformat(),
@@ -289,7 +287,9 @@ def copy_values(conn, at, record, data):
         digest=poll_record_sha256(record),
         details=json.dumps(
             dict(
-                rows_fingerprint=fingerprint(conn, at),
+                rows_fingerprint=rows_fingerprint(
+                    conn, provider_id=PROVIDER, endpoint_key=feed, utc_date=at.date()
+                ),
                 declared_interval_seconds=record.declared_interval_seconds,
                 observed_interval_ms=record.observed_interval_ms,
             ),
@@ -511,3 +511,225 @@ def test_marked_empty_day_with_an_empty_copy_reads_no_polls(conn):
     )
     day = plan(conn).days[0]
     assert day.state == "not_available" and day.reason == "no_polls"
+
+
+def test_polls_hold_failed_attempts_and_no_silver_load(conn):
+    seed(conn)
+    for n, status in ((2, "failed"), (3, "running"), (4, "failed")):
+        seed(
+            conn,
+            at=START + timedelta(seconds=30 * n),
+            run_id=n,
+            status=status,
+            with_capture=False,
+            run_kind="silver_load" if n == 4 else None,
+        )
+    polls = list(plan(conn).polls())
+    assert [(p.ingestion_run_id, p.status) for p in polls] == [
+        (1, "stored"),
+        (2, "failed"),
+        (3, "unfinished"),
+    ]
+    assert all((p.provider_id, p.endpoint_key) == (PROVIDER, "trip_updates") for p in polls)
+
+
+def test_poll_that_ends_a_day_later_is_found(conn):
+    seed(conn, at=START - timedelta(seconds=2), captured_at_utc=START + timedelta(seconds=3))
+    result = plan(conn, end=START + timedelta(minutes=10))
+    assert [p.ingestion_run_id for p in result.polls()] == [1]
+    assert [c.capture_row_id for c in result.captures(with_bytes=False)] == [1]
+
+
+def stream_manifest(conn, at, feed, missing):
+    from transit_ops.history.pack import PackedCapture, PackResult, StreamEntry
+
+    record = read_working_day(conn, provider_id=PROVIDER, endpoint_key=feed, utc_date=at.date())
+    captures = tuple(
+        replace(
+            c, packed=not missing, stream=None if missing else 0, offset=None if missing else i * 12
+        )
+        for i, c in enumerate(record.captures)
+    )
+    record = replace(
+        record,
+        captures=captures,
+        polls=tuple(
+            replace(p, status="capture_missing", missing_reason="object_absent") if missing else p
+            for p in record.polls
+        ),
+    )
+    pack = (
+        None
+        if missing
+        else PackResult(
+            1,
+            "b" * 64,
+            12 * len(captures),
+            (StreamEntry(0, 0, 1, 12 * len(captures), 0, len(captures)),),
+            tuple(PackedCapture(0, i * 12, c.byte_size, c.sha256) for i, c in enumerate(captures)),
+        )
+    )
+    endpoint = conn.execute(
+        text(
+            "SELECT feed_endpoint_id FROM core.feed_endpoints "
+            "WHERE provider_id=:p AND endpoint_key=:feed"
+        ),
+        dict(p=PROVIDER, feed=feed),
+    ).scalar_one()
+    data = encode_manifest(
+        build_manifest(
+            record,
+            feed_endpoint_id=endpoint,
+            feed_kind=feed,
+            content_version=1,
+            supersedes=None,
+            pack_path=None if missing else "never-open.pack",
+            pack=pack,
+            sealed_at_utc=conn.execute(text("SELECT now()")).scalar_one(),
+            sealed_by="test",
+        )
+    )
+    return record, data
+
+
+def stream_copy(conn, root, at=START, feed="trip_updates", missing=False):
+    record, data = stream_manifest(conn, at, feed, missing)
+    key = f"{feed}-{at.date()}.gz"
+    (root / key).write_bytes(data)
+    values = copy_values(conn, at, record, data, feed)
+    values.update(dataset="capture." + feed, path=key)
+    conn.execute(
+        text("""
+        INSERT INTO core.history_window
+        (dataset_id,provider_id,revision,window_key,window_start,working_state,
+         working_changed_at_utc)
+        VALUES (:dataset,:p,0,:key,CAST(:key AS date),'present',now()-interval '1 hour')
+    """),
+        values,
+    )
+    conn.execute(
+        text("""
+        INSERT INTO core.history_archive_copy
+        (dataset_id,provider_id,revision,window_key,content_version,schema_version,
+         storage_backend,manifest_path,manifest_sha256,allocated_at_utc,poll_count,
+         record_count,first_time_utc,last_time_utc,poll_record_sha256,details)
+        VALUES (:dataset,:p,0,:key,1,1,'local',:path,:sha,clock_timestamp(),:polls,
+                :captures,:first,:last,:digest,CAST(:details AS jsonb))
+    """),
+        values,
+    )
+    for table, assignment in (
+        ("history_archive_copy", "sealed_at_utc=clock_timestamp()"),
+        ("history_archive_copy", "verified_at_utc=clock_timestamp()"),
+        ("history_window", "current_version=1"),
+    ):
+        conn.execute(
+            text(
+                f"UPDATE core.{table} SET {assignment} "
+                "WHERE dataset_id=:dataset AND provider_id=:p AND window_key=:key"
+            ),
+            values,
+        )
+    return key
+
+
+def recording_storage(root):
+    opened = []
+
+    class Storage(LocalBronzeStorage):
+        def open_stream(self, key):
+            opened.append(key)
+            return super().open_stream(key)
+
+    storage = Storage(storage_backend="local", root=root)
+    return lambda backend: storage, opened
+
+
+def test_read_without_bytes_says_indexed_until_the_day_is_sealed(conn, tmp_path):
+    seed(conn)
+    result = plan(conn)
+    assert not result.days[0].bytes_verified
+    (capture,) = result.captures(with_bytes=False)
+    assert capture.payload is None and capture.checksum_sha256 == "a" * 64
+    stream_copy(conn, tmp_path, missing=True)
+    storage, opened = recording_storage(tmp_path)
+    result = plan(conn, storage=storage)
+    assert result.days[0].bytes_verified
+    assert list(result.captures(with_bytes=False)) == []
+    (poll,) = result.polls()
+    assert (poll.status, poll.missing_reason) == ("capture_missing", "object_absent")
+    assert all(key.endswith(".gz") for key in opened)
+
+
+def test_feeds_and_days_merge_in_reader_order(conn, tmp_path):
+    feeds = ("vehicle_positions", "trip_updates")
+    for n, (feed, start, captured) in enumerate(
+        (
+            ("trip_updates", START - timedelta(seconds=2), START + timedelta(seconds=6)),
+            ("vehicle_positions", START - timedelta(seconds=1), START + timedelta(seconds=4)),
+            ("trip_updates", START, START + timedelta(seconds=4)),
+            ("vehicle_positions", START + timedelta(seconds=1), START + timedelta(seconds=4)),
+            ("trip_updates", START + timedelta(seconds=2), START + timedelta(seconds=10)),
+        ),
+        1,
+    ):
+        seed(conn, feed, at=start, captured_at_utc=captured, run_id=n, capture_id=n)
+    storage, opened = recording_storage(tmp_path)
+    before = plan(conn, feeds, end=START + timedelta(seconds=10), storage=storage)
+    polls, captures = list(before.polls()), list(before.captures(with_bytes=False))
+    assert [p.ingestion_run_id for p in polls] == [3, 2, 4, 1]
+    assert [c.capture_row_id for c in captures] == [3, 2, 4, 1]
+    assert all(c.payload is None for c in captures) and opened == []
+    for at in (START - timedelta(days=1), START):
+        for feed in feeds:
+            stream_copy(conn, tmp_path, at, feed)
+    after = plan(conn, feeds, end=START + timedelta(seconds=10), storage=storage)
+    assert all(day.form == "archive_copy" for day in after.days)
+    assert list(after.polls()) == polls
+    assert list(after.captures(with_bytes=False)) == captures
+
+
+def test_archived_day_reads_its_manifest_and_no_pack(conn, tmp_path):
+    keys = []
+    for n in range(2):
+        at = START + timedelta(days=n)
+        seed(conn, at=at, run_id=n + 1, capture_id=n + 1)
+        keys.append(stream_copy(conn, tmp_path, at))
+    storage, opened = recording_storage(tmp_path)
+    result = plan(conn, end=START + timedelta(days=2), storage=storage)
+    assert opened == []
+    for read in (result.polls, lambda: result.captures(with_bytes=False)):
+        opened.clear()
+        stream = read()
+        assert opened == []
+        assert len(list(stream)) == 2
+        assert opened == keys
+
+
+@pytest.mark.parametrize("remove", ["poll", "capture", None])
+def test_present_day_missing_rows_of_its_current_copy_raises(conn, tmp_path, remove):
+    seed(conn)
+    seed(conn, at=START + timedelta(seconds=30), run_id=2, capture_id=2)
+    copy_day(conn, root=tmp_path)
+    if remove == "poll":
+        trim_rows(conn, keep=1, event=False)
+    elif remove == "capture":
+        conn.execute(text("DELETE FROM raw.realtime_snapshot_index WHERE ingestion_run_id=2"))
+    else:
+        ledger.lock_window(
+            conn,
+            dataset_id="capture.trip_updates",
+            provider_id=PROVIDER,
+            window_key=START.date().isoformat(),
+        )
+    storage, opened = recording_storage(tmp_path)
+    if remove:
+        with pytest.raises(
+            WorkingRowsMissing, match="history_reader_test/trip_updates.*2026-01-02"
+        ):
+            plan(conn, storage=storage)
+    else:
+        result = plan(conn, storage=storage)
+        assert result.days[0].form == "objects"
+        assert [p.ingestion_run_id for p in result.polls()] == [1, 2]
+    assert opened == ["manifest.gz"]
