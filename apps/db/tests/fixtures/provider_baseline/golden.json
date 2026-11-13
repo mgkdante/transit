@@ -1,0 +1,377 @@
+{
+  "octranspo": {
+    "catalogue_entry": {
+      "alert_links": {
+        "en": "https://www.octranspo.com/en/alerts/",
+        "fr": "https://www.octranspo.com/fr/alertes/"
+      },
+      "fit_bounds": [
+        -75.95,
+        45.2,
+        -75.43,
+        45.55
+      ],
+      "geocode_context": "Ottawa, Ontario",
+      "id": "octranspo",
+      "inputs": {
+        "gis_static": false,
+        "i3_alerts": false,
+        "service_alerts": false,
+        "static_schedule": true,
+        "trip_updates": true,
+        "vehicle_positions": true
+      },
+      "labels": {
+        "en": {
+          "city": "Ottawa",
+          "operator": "OC Transpo"
+        },
+        "fr": {
+          "city": "Ottawa",
+          "operator": "OC Transpo"
+        }
+      },
+      "max_bounds": [
+        -76.15,
+        45.1,
+        -75.24,
+        45.65
+      ],
+      "posters_url": "/map/basemap-ottawa-posters.json"
+    },
+    "feed_endpoint_seeds": [
+      {
+        "auth_type": "none",
+        "endpoint_key": "static_schedule",
+        "feed_kind": "static_schedule",
+        "is_enabled": true,
+        "provider_id": "octranspo",
+        "refresh_interval_seconds": 86400,
+        "source_format": "gtfs_schedule_zip",
+        "source_url": "https://oct-gtfs-emasagcnfmcgeham.z01.azurefd.net/public-access/GTFSExport.zip"
+      },
+      {
+        "auth_type": "api_key",
+        "endpoint_key": "trip_updates",
+        "feed_kind": "trip_updates",
+        "is_enabled": true,
+        "provider_id": "octranspo",
+        "refresh_interval_seconds": 30,
+        "source_format": "gtfs_rt_trip_updates",
+        "source_url": "https://nextrip-public-api.azure-api.net/octranspo/gtfs-rt-tp/beta/v1/TripUpdates"
+      },
+      {
+        "auth_type": "api_key",
+        "endpoint_key": "vehicle_positions",
+        "feed_kind": "vehicle_positions",
+        "is_enabled": true,
+        "provider_id": "octranspo",
+        "refresh_interval_seconds": 20,
+        "source_format": "gtfs_rt_vehicle_positions",
+        "source_url": "https://nextrip-public-api.azure-api.net/octranspo/gtfs-rt-vp/beta/v1/VehiclePositions"
+      }
+    ],
+    "live_policy_text": "[{\"gap_id\": \"otrain_realtime\", \"route_ids\": [], \"route_types\": [0]}]",
+    "provider_seed": {
+      "attribution_text": "Contains information licensed under the Open Government Licence – City of Ottawa.",
+      "city": "Ottawa",
+      "default_currency": "CAD",
+      "default_language": "en",
+      "display_name": "OC Transpo",
+      "is_active": true,
+      "max_latitude": 45.55,
+      "max_longitude": -75.33,
+      "min_latitude": 45.1,
+      "min_longitude": -76.05,
+      "provider_id": "octranspo",
+      "provider_key": "octranspo",
+      "short_name": "OC Transpo",
+      "timezone": "America/Toronto",
+      "website_url": "https://www.octranspo.com/"
+    },
+    "show_provider": {
+      "provider": {
+        "bounds": {
+          "max_latitude": 45.55,
+          "max_longitude": -75.33,
+          "min_latitude": 45.1,
+          "min_longitude": -76.05
+        },
+        "is_active": true,
+        "provider_id": "octranspo",
+        "website_url": "https://www.octranspo.com/"
+      },
+      "public": {
+        "basemap_bounds": {
+          "max_latitude": 46.3,
+          "max_longitude": -74.2,
+          "min_latitude": 44.5,
+          "min_longitude": -77.2
+        },
+        "basemap_url": "/data/v1/octranspo/static/basemap/ottawa.pmtiles",
+        "enabled": true,
+        "fit_bounds": {
+          "max_latitude": 45.55,
+          "max_longitude": -75.43,
+          "min_latitude": 45.2,
+          "min_longitude": -75.95
+        },
+        "labels": {
+          "en": {
+            "city": "Ottawa",
+            "operator": "OC Transpo"
+          },
+          "fr": {
+            "city": "Ottawa",
+            "operator": "OC Transpo"
+          }
+        },
+        "max_bounds": {
+          "max_latitude": 45.65,
+          "max_longitude": -75.24,
+          "min_latitude": 45.1,
+          "min_longitude": -76.15
+        },
+        "posters_url": "/map/basemap-ottawa-posters.json"
+      }
+    }
+  },
+  "stm": {
+    "catalogue_entry": {
+      "alert_links": {},
+      "fit_bounds": [
+        -73.9757,
+        45.4022,
+        -73.4764,
+        45.7028
+      ],
+      "geocode_context": "Montréal, Québec",
+      "id": "stm",
+      "inputs": {
+        "gis_static": true,
+        "i3_alerts": true,
+        "service_alerts": false,
+        "static_schedule": true,
+        "trip_updates": true,
+        "vehicle_positions": true
+      },
+      "labels": {
+        "en": {
+          "city": "Montréal",
+          "operator": "STM"
+        },
+        "fr": {
+          "city": "Montréal",
+          "operator": "STM"
+        }
+      },
+      "max_bounds": [
+        -74.28605,
+        45.3,
+        -73.16605,
+        45.82
+      ],
+      "posters_url": "/map/basemap-montreal-posters.json"
+    },
+    "feed_endpoint_seeds": [
+      {
+        "auth_type": "none",
+        "endpoint_key": "static_schedule",
+        "feed_kind": "static_schedule",
+        "is_enabled": true,
+        "provider_id": "stm",
+        "refresh_interval_seconds": 86400,
+        "source_format": "gtfs_schedule_zip",
+        "source_url": "https://beta.stm.info/getContentAsset/38dcb679-4237-4c02-b6f4-5f8434665e5c/dfc3d011-8f63-43f6-9ed8-4b444333a1d0/GTFS_STM.zip?language=fr"
+      },
+      {
+        "auth_type": "none",
+        "endpoint_key": "gis_static",
+        "feed_kind": "gis_static",
+        "is_enabled": true,
+        "provider_id": "stm",
+        "refresh_interval_seconds": 86400,
+        "source_format": "stm_gis_zip",
+        "source_url": "https://beta.stm.info/getContentAsset/3023ab97-ecd3-4b5e-ab25-16c90fe0bdd1/dfc3d011-8f63-43f6-9ed8-4b444333a1d0/stm_sig.zip?language=fr"
+      },
+      {
+        "auth_type": "api_key",
+        "endpoint_key": "trip_updates",
+        "feed_kind": "trip_updates",
+        "is_enabled": true,
+        "provider_id": "stm",
+        "refresh_interval_seconds": 30,
+        "source_format": "gtfs_rt_trip_updates",
+        "source_url": "https://api.stm.info/pub/od/gtfs-rt/ic/v2/tripUpdates"
+      },
+      {
+        "auth_type": "api_key",
+        "endpoint_key": "vehicle_positions",
+        "feed_kind": "vehicle_positions",
+        "is_enabled": true,
+        "provider_id": "stm",
+        "refresh_interval_seconds": 20,
+        "source_format": "gtfs_rt_vehicle_positions",
+        "source_url": "https://api.stm.info/pub/od/gtfs-rt/ic/v2/vehiclePositions"
+      },
+      {
+        "auth_type": "api_key",
+        "endpoint_key": "i3_alerts",
+        "feed_kind": "i3_alerts",
+        "is_enabled": true,
+        "provider_id": "stm",
+        "refresh_interval_seconds": 300,
+        "source_format": "api_i3_json",
+        "source_url": "https://api.stm.info/pub/od/i3/v2/messages/etatservice"
+      }
+    ],
+    "live_policy_text": "[{\"gap_id\": \"metro_realtime\", \"route_ids\": [], \"route_types\": [1]}]",
+    "provider_seed": {
+      "attribution_text": "Contains STM data made available under CC BY 4.0.",
+      "city": "Montréal",
+      "default_currency": "CAD",
+      "default_language": "fr",
+      "display_name": "Société de transport de Montréal",
+      "is_active": true,
+      "max_latitude": 45.75,
+      "max_longitude": -73.2,
+      "min_latitude": 45.25,
+      "min_longitude": -74.1,
+      "provider_id": "stm",
+      "provider_key": "stm",
+      "short_name": "STM",
+      "timezone": "America/Toronto",
+      "website_url": "https://www.stm.info/"
+    },
+    "show_provider": {
+      "provider": {
+        "bounds": {
+          "max_latitude": 45.75,
+          "max_longitude": -73.2,
+          "min_latitude": 45.25,
+          "min_longitude": -74.1
+        },
+        "is_active": true,
+        "provider_id": "stm",
+        "website_url": "https://www.stm.info/"
+      },
+      "public": {
+        "basemap_bounds": {
+          "max_latitude": 46.3,
+          "max_longitude": -72.5,
+          "min_latitude": 44.8,
+          "min_longitude": -75.0
+        },
+        "basemap_url": "/data/v1/stm/static/basemap/montreal.pmtiles",
+        "enabled": true,
+        "fit_bounds": {
+          "max_latitude": 45.7028,
+          "max_longitude": -73.4764,
+          "min_latitude": 45.4022,
+          "min_longitude": -73.9757
+        },
+        "labels": {
+          "en": {
+            "city": "Montréal",
+            "operator": "STM"
+          },
+          "fr": {
+            "city": "Montréal",
+            "operator": "STM"
+          }
+        },
+        "max_bounds": {
+          "max_latitude": 45.82,
+          "max_longitude": -73.16605,
+          "min_latitude": 45.3,
+          "min_longitude": -74.28605
+        },
+        "posters_url": "/map/basemap-montreal-posters.json"
+      }
+    }
+  },
+  "sto": {
+    "feed_endpoint_seeds": [
+      {
+        "auth_type": "none",
+        "endpoint_key": "static_schedule",
+        "feed_kind": "static_schedule",
+        "is_enabled": true,
+        "provider_id": "sto",
+        "refresh_interval_seconds": 86400,
+        "source_format": "gtfs_schedule_zip",
+        "source_url": "https://contenu.sto.ca/GTFS/GTFS.zip"
+      },
+      {
+        "auth_type": "api_key_signed",
+        "endpoint_key": "trip_updates",
+        "feed_kind": "trip_updates",
+        "is_enabled": true,
+        "provider_id": "sto",
+        "refresh_interval_seconds": 30,
+        "source_format": "gtfs_rt_trip_updates",
+        "source_url": null
+      },
+      {
+        "auth_type": "api_key_signed",
+        "endpoint_key": "vehicle_positions",
+        "feed_kind": "vehicle_positions",
+        "is_enabled": true,
+        "provider_id": "sto",
+        "refresh_interval_seconds": 30,
+        "source_format": "gtfs_rt_vehicle_positions",
+        "source_url": null
+      },
+      {
+        "auth_type": "api_key_signed",
+        "endpoint_key": "service_alerts",
+        "feed_kind": "service_alerts",
+        "is_enabled": true,
+        "provider_id": "sto",
+        "refresh_interval_seconds": 300,
+        "source_format": "gtfs_rt_service_alerts",
+        "source_url": null
+      }
+    ],
+    "live_policy_text": "[]",
+    "provider_seed": {
+      "attribution_text": "This service incorporates the open data provided by the Société de transport de l'Outaouais (STO). The STO is not responsible for the accuracy of the information generated by this app. Last update: YYYY-MM-DD.",
+      "city": "Gatineau",
+      "default_currency": "CAD",
+      "default_language": "fr",
+      "display_name": "Société de transport de l'Outaouais",
+      "is_active": false,
+      "max_latitude": 45.6,
+      "max_longitude": -75.55,
+      "min_latitude": 45.4,
+      "min_longitude": -76.1,
+      "provider_id": "sto",
+      "provider_key": "sto",
+      "short_name": "STO",
+      "timezone": "America/Toronto",
+      "website_url": "https://www.sto.ca/"
+    },
+    "show_provider": {
+      "provider": {
+        "bounds": {
+          "max_latitude": 45.6,
+          "max_longitude": -75.55,
+          "min_latitude": 45.4,
+          "min_longitude": -76.1
+        },
+        "is_active": false,
+        "provider_id": "sto",
+        "website_url": "https://www.sto.ca/"
+      },
+      "public": {
+        "basemap_bounds": null,
+        "basemap_url": null,
+        "enabled": false,
+        "fit_bounds": null,
+        "labels": {},
+        "max_bounds": null,
+        "posters_url": null
+      }
+    }
+  }
+}
