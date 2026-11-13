@@ -3,13 +3,13 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 export const tripCopy = defineCopy({
 	fr: {
 		kicker: 'TRAJET',
-		back: 'Retour à l’accueil',
+		back: '← Retour à l’aperçu',
+		backLine: (line: string) => `← ${line}`,
 		keywordsLabel: 'Mots-clés',
 		keywords: ['Trajet', 'Prédictions', 'Arrêts'],
 		heading: (id: string) => `Trajet ${id}`,
 		subheading: 'Prédictions communiquées pour ce trajet',
 		route: 'Ligne',
-		viewRoute: (route: string) => `Voir la ligne ${route}`,
 		verdictHeading: 'Verdict',
 		lastReportedStop: 'Dernier arrêt communiqué',
 		predictionCount: (n: number) =>
@@ -44,13 +44,13 @@ export const tripCopy = defineCopy({
 	},
 	en: {
 		kicker: 'TRIP',
-		back: 'Back to home',
+		back: '← Back to overview',
+		backLine: (line) => `← ${line}`,
 		keywordsLabel: 'Keywords',
 		keywords: ['Trip', 'Predictions', 'Stops'],
 		heading: (id) => `Trip ${id}`,
 		subheading: 'Reported predictions for this trip',
 		route: 'Line',
-		viewRoute: (route) => `View line ${route}`,
 		verdictHeading: 'Verdict',
 		lastReportedStop: 'Last reported stop',
 		predictionCount: (n) => (n === 1 ? '1 prediction reported' : `${n} predictions reported`),

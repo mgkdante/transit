@@ -249,15 +249,4 @@ export function readLiveAbsenceContext(): () => LiveAbsenceContext {
 	return getContext<(() => LiveAbsenceContext) | undefined>(LIVE_ABSENCE_CONTEXT) ?? (() => ({}));
 }
 
-const NAME_FALLBACK_COPY: Record<Locale, { stop: string; route: string }> = {
-	en: { stop: 'Stop {id} (name unavailable)', route: 'Line {id}' },
-	fr: { stop: 'Arrêt {id} (nom indisponible)', route: 'Ligne {id}' },
-};
-
-export function stopNameFallback(id: string, locale: Locale): string {
-	return interpolate((NAME_FALLBACK_COPY[locale] ?? NAME_FALLBACK_COPY.en).stop, { id });
-}
-
-export function routeNameFallback(id: string, locale: Locale): string {
-	return interpolate((NAME_FALLBACK_COPY[locale] ?? NAME_FALLBACK_COPY.en).route, { id });
-}
+export { stopNameFallback, routeNameFallback } from './nameFallback';

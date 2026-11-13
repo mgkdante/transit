@@ -7,6 +7,8 @@
 </script>
 
 <script lang="ts">
+	import { setPageTitleContext, resolvePageTitle } from '#lib/seo/pageTitle.ts';
+	const clientTitle = setPageTitleContext();
 	import { providerAttribution } from '#lib/i18n/providerAttribution.ts';
 	import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 	import { setLineDirectory } from '#lib/site/transitDisplayContext.ts';
@@ -165,7 +167,14 @@
 	const seoSiteName = $derived(seo.siteName);
 	const isErrorStatus = $derived((page.status ?? 200) >= 400);
 	const errorHead = $derived(errorDocumentHead(page.status ?? 500, locale));
-	const headTitle = $derived(isErrorStatus ? errorHead.title : seo.title);
+	const headTitle = $derived(
+		resolvePageTitle(
+			isErrorStatus ? errorHead.title : null,
+			$clientTitle?.(),
+			page.data.seoTitle,
+			seo.title,
+		),
+	);
 	const headDescription = $derived(isErrorStatus ? errorHead.description : seo.description);
 	const headSiteName = $derived(isErrorStatus ? 'Transit' : seoSiteName);
 
@@ -184,7 +193,13 @@
 		];
 
 		const breadcrumb = breadcrumbJsonLd(
-			breadcrumbItemsForHead(page.url.pathname, locale, siteConfig.siteOrigin, seo.providerId),
+			breadcrumbItemsForHead(
+				page.url.pathname,
+				locale,
+				siteConfig.siteOrigin,
+				seo.providerId,
+				page.data.seoTitle,
+			),
 		);
 
 		if (breadcrumb) nodes.push(breadcrumb);

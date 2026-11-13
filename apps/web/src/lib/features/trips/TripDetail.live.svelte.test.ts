@@ -17,6 +17,7 @@ const fixture = vi.hoisted(() => ({
 	alerts: vi.fn(),
 	network: vi.fn(),
 	stopNames: vi.fn(),
+	route: vi.fn(),
 	clockDispose: vi.fn(),
 	clockSubscribe: vi.fn(),
 }));
@@ -44,7 +45,10 @@ vi.mock('#lib/v1/live/store.svelte.ts', async (importOriginal) => {
 		) => actual.createLiveStore(manifest, reader, options),
 	};
 });
-vi.mock('#lib/v1/repositories/static.ts', () => ({ getStopsIndex: fixture.stopNames }));
+vi.mock('#lib/v1/repositories/static.ts', () => ({
+	getStopsIndex: fixture.stopNames,
+	getRoute: fixture.route,
+}));
 vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@yesid/ui/state')>()),
 	clock: {
@@ -122,6 +126,7 @@ beforeEach(() => {
 		method.mockReset();
 	fixture.trips.mockResolvedValue(report());
 	fixture.stopNames.mockResolvedValue(null);
+	fixture.route.mockReset().mockResolvedValue(null);
 	fixture.clockSubscribe.mockReturnValue(fixture.clockDispose);
 	restoreRuntime = configureV1Runtime({
 		clock: {
@@ -212,7 +217,7 @@ describe('TripDetail with the shared live store', () => {
 		expect(stamp().querySelector('time')).toHaveAttribute('datetime', report().generated_utc);
 		fixture.trips.mockResolvedValue(report(30));
 		await advance(30);
-		expect(screen.getByRole('heading', { name: 'Trip probe' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Line 24' })).toBeInTheDocument();
 		expect(screen.queryByTestId('trip-standdown')).toBeNull();
 	});
 
@@ -266,3 +271,52 @@ describe('TripDetail with the shared live store', () => {
 		},
 	);
 });
+
+it.each(['found', 'missing', 'failed'] as const)(
+	'waits for a %s route lookup and freezes its first heading',
+	async (outcome) => {
+		let finish!: (value: unknown) => void;
+		let fail!: (reason: Error) => void;
+		fixture.route.mockReturnValue(
+			new Promise((resolve, reject) => {
+				finish = resolve;
+				fail = reject;
+			}),
+		);
+		const initial = report();
+		initial.trips!.probe!.stops.push({
+			stop: 'sB',
+			eta_utc: '2026-06-15T12:10:00Z',
+			delay_min: null,
+		});
+		fixture.trips.mockResolvedValue(initial);
+		render(TripDetail, { props: { id: 'probe' } });
+		await settle();
+		expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+		if (outcome === 'failed') fail(new Error('optional route unavailable'));
+		else
+			finish(
+				outcome === 'missing'
+					? null
+					: {
+							directions: [
+								{
+									dir: 0,
+									headsign: 'Terminal',
+									stops: [
+										{ id: 'sA', seq: 1 },
+										{ id: 'sB', seq: 2 },
+									],
+								},
+							],
+						},
+			);
+		await settle();
+		const heading = outcome === 'found' ? 'Line 24 · Terminal' : 'Line 24';
+		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(heading);
+		fixture.trips.mockResolvedValue(report(30));
+		await advance(30);
+		expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(heading);
+		expect(fixture.route).toHaveBeenCalledTimes(1);
+	},
+);

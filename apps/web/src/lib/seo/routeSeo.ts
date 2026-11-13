@@ -199,19 +199,31 @@ export function resolveRouteSeo(
 	};
 }
 
-export function resolveBreadcrumbTrail(pathname: string, locale: Locale): BreadcrumbTrailItem[] {
+export function resolveBreadcrumbTrail(
+	pathname: string,
+	locale: Locale,
+	name?: string | null,
+): BreadcrumbTrailItem[] {
 	const path = delocalizePath(pathname);
 	const home: BreadcrumbTrailItem = { name: CRUMB_LABELS.home[locale], path: '/' };
 
 	if (path.startsWith('/lines/')) {
 		const id = decodeURIComponent(path.slice('/lines/'.length));
 		if (!id) return [];
-		return [home, { name: CRUMB_LABELS.lines[locale], path: '/lines' }, { name: id, path }];
+		return [
+			home,
+			{ name: CRUMB_LABELS.lines[locale], path: '/lines' },
+			{ name: name?.trim() ? name : id, path },
+		];
 	}
 	if (path.startsWith('/stop/')) {
 		const id = decodeURIComponent(path.slice('/stop/'.length));
 		if (!id) return [];
-		return [home, { name: CRUMB_LABELS.stops[locale], path: '/stops' }, { name: id, path }];
+		return [
+			home,
+			{ name: CRUMB_LABELS.stops[locale], path: '/stops' },
+			{ name: name?.trim() ? name : id, path },
+		];
 	}
 	return [];
 }
@@ -225,8 +237,9 @@ export function breadcrumbItemsForHead(
 	locale: Locale,
 	siteOrigin: string,
 	provider?: string,
+	name?: string | null,
 ): { name: string; url: string }[] {
-	return resolveBreadcrumbTrail(pathname, locale).map((crumb) => ({
+	return resolveBreadcrumbTrail(pathname, locale, name).map((crumb) => ({
 		name: crumb.name,
 		url: `${siteOrigin}${localizeHref(crumb.path, locale, provider)}`,
 	}));
