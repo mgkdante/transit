@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal, NamedTuple
 
 # A vehicle capture is evidence for a reading at most this far from it.
@@ -32,21 +32,28 @@ class VehicleDescriptor(NamedTuple):
     start_time: str  # 'HH:MM:SS' as the feed gave it; '' when it gave none
 
 
-def _validate(captured_at_utc: datetime, instances: Sequence[TripInstance]) -> None:
+def _validate(
+    captured_at_utc: datetime, instances: Sequence[TripInstance]
+) -> tuple[datetime, list[tuple[TripInstance, datetime, datetime]]]:
     if captured_at_utc.utcoffset() is None:
         raise ValueError("captured_at_utc must have a time zone")
     dates: set[date] = set()
+    normalized: list[tuple[TripInstance, datetime, datetime]] = []
     for instance in instances:
         for name, value in (("start_utc", instance.start_utc), ("end_utc", instance.end_utc)):
             if value.utcoffset() is None:
                 raise ValueError(f"{name} must have a time zone")
-        if instance.end_utc < instance.start_utc:
+        start_utc = instance.start_utc.astimezone(UTC)
+        end_utc = instance.end_utc.astimezone(UTC)
+        if end_utc < start_utc:
             raise ValueError("end_utc must not be before start_utc")
         if instance.trip_id != instances[0].trip_id:
             raise ValueError("instances must have one trip_id")
         if instance.service_date in dates:
             raise ValueError("instances must have distinct service_date values")
         dates.add(instance.service_date)
+        normalized.append((instance, start_utc, end_utc))
+    return captured_at_utc.astimezone(UTC), normalized
 
 
 def _start_seconds(start_time: str) -> int | None:
@@ -68,14 +75,18 @@ def resolve_vehicle_capture(
 
     The caller has already removed unlisted trips, including duplicated trips;
     this function takes no relationship argument. A descriptor never expands a window.
+    The caller must supply the complete set of dated candidates for the trip id,
+    derive each instance's start, end and first departure seconds from that service
+    date's own list and anchor, and remove trips the list does not hold and
+    frequency-based trips.
     """
-    _validate(captured_at_utc, instances)
+    captured_at_utc, normalized = _validate(captured_at_utc, instances)
     holding = [
         instance
-        for instance in instances
-        if instance.start_utc - timedelta(seconds=EARLY_START_MAX_LEAD_SECONDS)
+        for instance, start_utc, end_utc in normalized
+        if start_utc - timedelta(seconds=EARLY_START_MAX_LEAD_SECONDS)
         <= captured_at_utc
-        <= instance.end_utc + timedelta(seconds=SANITY_DELAY_SECONDS)
+        <= end_utc + timedelta(seconds=SANITY_DELAY_SECONDS)
     ]
     if not holding:
         return {}

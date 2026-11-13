@@ -1,7 +1,9 @@
 import ast
 import sys
 from datetime import UTC, date, datetime, timedelta
+from itertools import permutations
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -96,6 +98,75 @@ def test_descriptor_that_names_no_holding_instance_is_ambiguous(descriptor):
         A: "ambiguous_instance",
         B: "ambiguous_instance",
     }
+
+
+def test_crossed_descriptor_does_not_combine_two_instances():
+    resolved = resolve_vehicle_capture(
+        CAPTURE, [A, B], VehicleDescriptor(A.service_date, "00:10:00")
+    )
+    assert resolved == {A: "ambiguous_instance", B: "ambiguous_instance"}
+    assert accepted_instance(resolved) is None
+
+
+@pytest.mark.parametrize("chosen", [None, 0, 1, 2])
+def test_three_holding_instances_resolve_in_every_order(chosen):
+    runs = [A, B, instance(D - timedelta(days=1), 172800, 174000)]
+    times = ["23:50:00", "00:10:00", "48:00:00"]
+    descriptor = (
+        None if chosen is None else VehicleDescriptor(runs[chosen].service_date, times[chosen])
+    )
+    expected = {
+        run: "ambiguous_instance"
+        if chosen is None
+        else ("descriptor" if run == runs[chosen] else "other_instance")
+        for run in runs
+    }
+    for order in permutations(runs):
+        resolved = resolve_vehicle_capture(CAPTURE, order, descriptor)
+        assert resolved == expected
+        assert accepted_instance(resolved) == (None if chosen is None else runs[chosen])
+
+
+@pytest.mark.parametrize(
+    "day,hour,minute,held",
+    [
+        (date(2026, 11, 1), 9, 0, False),
+        (date(2026, 11, 1), 8, 30, True),
+        (date(2026, 3, 8), 9, 0, True),
+    ],
+)
+def test_dst_windows_use_elapsed_seconds_and_preserve_original_instances(day, hour, minute, held):
+    zone = ZoneInfo("America/Toronto")
+    endpoint = datetime(day.year, day.month, day.day, 1, 30, tzinfo=zone, fold=0)
+    run = TripInstance("trip", day, endpoint, endpoint, 1800)
+    capture = datetime(day.year, day.month, day.day, hour, minute, tzinfo=UTC)
+    utc_run = run._replace(start_utc=endpoint.astimezone(UTC), end_utc=endpoint.astimezone(UTC))
+    local_result = resolve_vehicle_capture(capture.astimezone(zone), [run])
+    utc_result = resolve_vehicle_capture(capture, [utc_run])
+    assert local_result == ({run: "single_window"} if held else {})
+    assert utc_result == ({utc_run: "single_window"} if held else {})
+    local_accepted = accepted_instance(local_result)
+    assert local_accepted is (run if held else None)
+    if local_accepted is not None:
+        assert local_accepted._replace(
+            start_utc=local_accepted.start_utc.astimezone(UTC),
+            end_utc=local_accepted.end_utc.astimezone(UTC),
+        ) == accepted_instance(utc_result)
+    else:
+        assert accepted_instance(utc_result) is None
+
+
+def test_autumn_repeated_hour_is_not_a_reversed_interval():
+    zone = ZoneInfo("America/Toronto")
+    start = datetime(2026, 11, 1, 1, 50, tzinfo=zone, fold=0)
+    end = datetime(2026, 11, 1, 1, 10, tzinfo=zone, fold=1)
+    run = TripInstance("trip", date(2026, 11, 1), start, end, 6600)
+    capture = datetime(2026, 11, 1, 6, tzinfo=UTC)
+    resolved = resolve_vehicle_capture(capture, [run])
+    assert resolved == {run: "single_window"}
+    assert accepted_instance(resolved) is run
+    utc_run = run._replace(start_utc=start.astimezone(UTC), end_utc=end.astimezone(UTC))
+    assert accepted_instance(resolve_vehicle_capture(capture, [utc_run])) is utc_run
 
 
 def test_yesterdays_vehicle_belongs_to_yesterday():
