@@ -340,6 +340,8 @@ def _seed_feed_endpoints(connection, manifest: ProviderManifest, settings: Setti
 
 @app.callback()
 def main(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand == "history-probe-pack":
+        return  # This command validates input before reading settings and redacts failures.
     try:
         settings = get_settings()
     except ValueError:
@@ -1937,6 +1939,41 @@ def history_close_runs_command(
     with engine.begin() as connection:
         count = close_unfinished_runs(connection, provider_id=provider)
     typer.echo(f"Closed {count} unfinished capture run(s) for provider {provider}.")
+
+
+@app.command("history-probe-pack")
+def history_probe_pack_command(
+    provider: str = typer.Option(..., "--provider"),
+    feed: str = typer.Option(..., "--feed"),
+    day: str = typer.Option(..., "--date"),
+) -> None:
+    """Measure one closed UTC capture day using only reads and temporary local files."""
+    from contextlib import ExitStack
+
+    from transit_ops.history.probe import probe_capture_day, validate_selection
+    from transit_ops.history.storage import history_storage
+
+    try:
+        selected = date.fromisoformat(day)
+        if selected.isoformat() != day:
+            raise ValueError
+        validate_selection(provider, feed, selected)
+    except (ValueError, KeyError):
+        raise typer.BadParameter("Supply provider, capture feed and YYYY-MM-DD date") from None
+    try:
+        with ExitStack() as resources:
+            settings = get_settings()
+            engine = make_engine(settings)
+            resources.callback(engine.dispose)
+            scope = history_storage(settings)
+            resources.callback(scope.close)
+            connection = resources.enter_context(engine.connect())
+            report = probe_capture_day(connection, scope.resolve, provider_id=provider,
+                                       endpoint_key=feed, utc_date=selected)
+        typer.echo(json.dumps(asdict(report)))
+    except Exception:
+        typer.echo(f"History probe failed for UTC day {selected.isoformat()}.", err=True)
+        raise typer.Exit(1) from None
 
 
 @app.command("history-seal")
