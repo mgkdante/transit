@@ -29,6 +29,64 @@ _PREDICATE = """
     AND r.run_kind <> 'silver_load'
     AND r.started_at_utc >= :day_start AND r.started_at_utc < :day_end
 """
+_FINGERPRINT_INDEX_COLUMNS = {
+    "realtime_snapshot": """
+        i.realtime_snapshot_id, i.ingestion_run_id, i.ingestion_object_id,
+        i.feed_timestamp_utc AT TIME ZONE 'UTC', i.entity_count,
+        i.captured_at_utc AT TIME ZONE 'UTC'
+    """,
+    "alert_snapshot": """
+        i.i3_alert_snapshot_id, i.ingestion_run_id, i.ingestion_object_id, i.source_url,
+        i.http_status_code, i.captured_at_utc AT TIME ZONE 'UTC', i.storage_backend,
+        i.storage_path, i.checksum_sha256, i.byte_size, i.api_version, i.alert_count
+    """,
+}
+_ROWS_FINGERPRINT = r"""
+WITH runs AS (
+    SELECT * FROM raw.ingestion_runs
+    WHERE provider_id = :provider_id AND feed_endpoint_id = :feed_endpoint_id
+      AND started_at_utc >= :day_start AND started_at_utc < :day_end
+), lines AS (
+    SELECT 'r' AS part, r.ingestion_run_id AS id, jsonb_build_array(
+        r.ingestion_run_id, r.run_kind, r.status, r.requested_at_utc AT TIME ZONE 'UTC',
+        r.started_at_utc AT TIME ZONE 'UTC', r.completed_at_utc AT TIME ZONE 'UTC',
+        r.feed_timestamp_utc AT TIME ZONE 'UTC', r.http_status_code, r.entity_count,
+        r.error_message)::text AS line
+    FROM runs r
+    UNION ALL
+    SELECT 'o', o.ingestion_object_id, jsonb_build_array(
+        o.ingestion_object_id, o.ingestion_run_id, o.object_kind, o.storage_backend,
+        o.storage_path, o.source_url, o.checksum_sha256, o.byte_size,
+        o.created_at_utc AT TIME ZONE 'UTC')::text
+    FROM raw.ingestion_objects o JOIN runs r ON r.ingestion_run_id = o.ingestion_run_id
+    UNION ALL
+    SELECT 'i', i.{key}, jsonb_build_array({index_columns})::text
+    FROM {table} i JOIN runs r ON r.ingestion_run_id = i.ingestion_run_id
+)
+SELECT encode(sha256(convert_to(
+    COALESCE(string_agg(part || ' ' || line, E'\n' ORDER BY part, id), ''), 'UTF8')), 'hex')
+FROM lines
+"""
+
+
+def rows_fingerprint(
+    connection: Connection, *, provider_id: str, endpoint_key: str, utc_date: date
+) -> str:
+    """Hash the raw rows of a feed-day inside the caller's transaction."""
+    day = _feed_day(provider_id, endpoint_key, utc_date, None)
+    params: dict[str, Any] = dict(provider_id=provider_id, endpoint_key=endpoint_key)
+    feed = _feed(connection, params)
+    start = datetime.combine(utc_date, time(), UTC)
+    params.update(
+        feed_endpoint_id=feed["feed_endpoint_id"],
+        day_start=start,
+        day_end=start + timedelta(days=1),
+    )
+    table, key = _INDEX[day.index_family]
+    statement = _ROWS_FINGERPRINT.format(
+        table=table, key=key, index_columns=_FINGERPRINT_INDEX_COLUMNS[day.index_family]
+    )
+    return str(connection.execute(text(statement), params).scalar_one())
 
 
 def _poll(row: dict[str, Any], family: str) -> PollEntry:
