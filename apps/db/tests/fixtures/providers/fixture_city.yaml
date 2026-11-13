@@ -1,0 +1,21 @@
+declaration: 2
+id: fixture_city
+name: Exampleville Transit
+labels:
+  en: {city: Exampleville, operator: EVT}
+  fr: {city: Exampleville, operator: EVT}
+timezone: America/Winnipeg
+default_locale: en
+feed_languages: [en]
+stage: candidate
+licence:
+  name: Open Government Licence, Exampleville
+  terms_url: https://example.org/open-data/licence
+  review: pending
+attribution:
+  en: Contains information licensed under the Open Government Licence of Exampleville.
+feeds:
+  - {family: schedule, url: "https://example.org/gtfs/google_transit.zip"}
+  - {family: trip_updates, url: "https://example.org/gtfs-rt/trip-updates.pb", auth: {query: key, secret_env: FIXTURE_CITY_API_KEY}}
+  - {family: vehicle_positions, url: "https://example.org/gtfs-rt/vehicle-positions.pb", auth: {query: key, secret_env: FIXTURE_CITY_API_KEY}}
+  - {family: alerts, url: "https://example.org/gtfs-rt/alerts.pb", auth: {query: key, secret_env: FIXTURE_CITY_API_KEY}}
