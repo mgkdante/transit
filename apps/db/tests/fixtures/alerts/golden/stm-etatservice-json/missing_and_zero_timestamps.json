@@ -1,0 +1,55 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": "1970-01-01T00:00:00+00:00",
+      "alert_header_text": "Synthetic epoch notice",
+      "alert_header_text_en": null,
+      "alert_id": "epoch-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "70c56c3f19383f170e220b023ce30119",
+      "description_text": null,
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": "1970-01-01T00:00:00+00:00",
+      "raw_alert_json": {
+        "activePeriod": {
+          "end": "",
+          "start": "0"
+        },
+        "header": "Synthetic epoch notice",
+        "id": "epoch-fixture",
+        "publishedAt": 0
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "entity_rows": [],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:epoch-fixture",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    }
+  ],
+  "period_rows": [
+    {
+      "alert_index": 0,
+      "end_utc": null,
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "1970-01-01T00:00:00+00:00"
+    }
+  ]
+}

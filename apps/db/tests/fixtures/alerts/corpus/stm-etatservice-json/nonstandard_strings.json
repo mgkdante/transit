@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {
+      "id": "strings-fixture",
+      "header": "Synthetic equipment delay",
+      "severity": "warning",
+      "cause": "technical_problem",
+      "effect": "delay"
+    },
+    {
+      "id": "priority-fixture",
+      "header": "Synthetic priority notice",
+      "priority": "urgent"
+    }
+  ]
+}

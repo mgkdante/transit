@@ -1,0 +1,27 @@
+{
+  "messages": [
+    {
+      "id": "region-fixture",
+      "header_texts": [
+        {
+          "language": "en-CA",
+          "text": "Imaginary route detour"
+        },
+        {
+          "language": "fr-CA",
+          "text": "Detour de ligne imaginaire"
+        }
+      ],
+      "description_texts": [
+        {
+          "language": "en-CA",
+          "text": "Fictional works"
+        },
+        {
+          "language": "fr-CA",
+          "text": "Travaux fictifs"
+        }
+      ]
+    }
+  ]
+}

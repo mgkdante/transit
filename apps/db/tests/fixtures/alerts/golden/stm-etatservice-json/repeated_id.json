@@ -1,0 +1,133 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": "2026-05-25T05:00:00+00:00",
+      "active_period_start_utc": "2026-05-25T04:00:00+00:00",
+      "alert_header_text": "First occurrence",
+      "alert_header_text_en": null,
+      "alert_id": "shared-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "bbc9aba0ee0897f7e32f4afb66d4b10d",
+      "description_text": "Imaginary service notice",
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriod": {
+          "end": "2026-05-25T05:00:00Z",
+          "start": "2026-05-25T04:00:00Z"
+        },
+        "description": "Imaginary service notice",
+        "header": "First occurrence",
+        "id": "shared-fixture",
+        "informedEntities": [
+          {
+            "routeId": "First occurrence-route",
+            "stopId": "First occurrence-stop"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    },
+    {
+      "active_period_end_utc": "2026-05-25T05:00:00+00:00",
+      "active_period_start_utc": "2026-05-25T04:00:00+00:00",
+      "alert_header_text": "Second occurrence",
+      "alert_header_text_en": null,
+      "alert_id": "shared-fixture",
+      "alert_index": 1,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "e33357cee7ed02d6b93e4469b1c113d3",
+      "description_text": "Imaginary service notice",
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriod": {
+          "end": "2026-05-25T05:00:00Z",
+          "start": "2026-05-25T04:00:00Z"
+        },
+        "description": "Imaginary service notice",
+        "header": "Second occurrence",
+        "id": "shared-fixture",
+        "informedEntities": [
+          {
+            "routeId": "Second occurrence-route",
+            "stopId": "Second occurrence-stop"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "entity_rows": [
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "routeId": "First occurrence-route",
+        "stopId": "First occurrence-stop"
+      },
+      "route_id": "First occurrence-route",
+      "stop_id": "First occurrence-stop",
+      "trip_id": null
+    },
+    {
+      "alert_index": 1,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "routeId": "Second occurrence-route",
+        "stopId": "Second occurrence-stop"
+      },
+      "route_id": "Second occurrence-route",
+      "stop_id": "Second occurrence-stop",
+      "trip_id": null
+    }
+  ],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:shared-fixture",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    }
+  ],
+  "period_rows": [
+    {
+      "alert_index": 0,
+      "end_utc": "2026-05-25T05:00:00+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "2026-05-25T04:00:00+00:00"
+    },
+    {
+      "alert_index": 1,
+      "end_utc": "2026-05-25T05:00:00+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "2026-05-25T04:00:00+00:00"
+    }
+  ]
+}

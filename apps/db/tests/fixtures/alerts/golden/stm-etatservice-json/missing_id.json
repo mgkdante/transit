@@ -1,0 +1,141 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": "2026-05-25T05:00:00+00:00",
+      "active_period_start_utc": "2026-05-25T04:00:00+00:00",
+      "alert_header_text": "Without identity",
+      "alert_header_text_en": null,
+      "alert_id": null,
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "7317e153f43aa372fc46a5db125c533e",
+      "description_text": "Imaginary service notice",
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriod": {
+          "end": "2026-05-25T05:00:00Z",
+          "start": "2026-05-25T04:00:00Z"
+        },
+        "description": "Imaginary service notice",
+        "header": "Without identity",
+        "informedEntities": [
+          {
+            "routeId": "Without identity-route",
+            "stopId": "Without identity-stop"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    },
+    {
+      "active_period_end_utc": "2026-05-25T05:00:00+00:00",
+      "active_period_start_utc": "2026-05-25T04:00:00+00:00",
+      "alert_header_text": "With identity",
+      "alert_header_text_en": null,
+      "alert_id": "present-fixture",
+      "alert_index": 1,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "a60201dcf142fb54e758d0d95455d0fd",
+      "description_text": "Imaginary service notice",
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "activePeriod": {
+          "end": "2026-05-25T05:00:00Z",
+          "start": "2026-05-25T04:00:00Z"
+        },
+        "description": "Imaginary service notice",
+        "header": "With identity",
+        "id": "present-fixture",
+        "informedEntities": [
+          {
+            "routeId": "With identity-route",
+            "stopId": "With identity-stop"
+          }
+        ]
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "entity_rows": [
+    {
+      "alert_index": 0,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "routeId": "Without identity-route",
+        "stopId": "Without identity-stop"
+      },
+      "route_id": "Without identity-route",
+      "stop_id": "Without identity-stop",
+      "trip_id": null
+    },
+    {
+      "alert_index": 1,
+      "area_id": null,
+      "entity_index": 0,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "raw_entity_json": {
+        "routeId": "With identity-route",
+        "stopId": "With identity-stop"
+      },
+      "route_id": "With identity-route",
+      "stop_id": "With identity-stop",
+      "trip_id": null
+    }
+  ],
+  "language_observations": [
+    {
+      "alert_logical_id": "content:43b7d8a9be9f28844d97d6243acddfa7f297e502f631e916056ffb39a4cf664d",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    },
+    {
+      "alert_logical_id": "id:present-fixture",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    }
+  ],
+  "period_rows": [
+    {
+      "alert_index": 0,
+      "end_utc": "2026-05-25T05:00:00+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "2026-05-25T04:00:00+00:00"
+    },
+    {
+      "alert_index": 1,
+      "end_utc": "2026-05-25T05:00:00+00:00",
+      "i3_alert_snapshot_id": 1,
+      "period_index": 0,
+      "start_utc": "2026-05-25T04:00:00+00:00"
+    }
+  ]
+}
