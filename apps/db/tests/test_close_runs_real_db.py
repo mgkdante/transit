@@ -295,7 +295,9 @@ def _capture_first(case, engine, monkeypatch):
     def success(*args, **kwargs):
         real_success(*args, **kwargs)
         case.paused.set()
-        assert case.go.wait(10), "success was not released"
+        # Longer than the coordinator's two bounded waits (10 s each), so a slow runner
+        # cannot roll the capture back while the coordinator is still inside them.
+        assert case.go.wait(25), "success was not released"
 
     def close():
         with engine.connect() as b:
