@@ -1,3 +1,4 @@
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 import type { Receipt } from '#lib/v1/schemas/index.ts';
 
 export interface WorstRowVM {
@@ -14,7 +15,7 @@ export interface WorstOfDayVM {
 }
 
 export interface WorstOfDayLabels {
-	readonly routeName: (id: string, fallbackName: string | null | undefined) => string;
+	readonly directory: LineDirectory;
 	readonly stopName: (id: string, fallbackName: string | null | undefined) => string;
 	readonly routeLabel: string;
 	readonly stopLabel: string;
@@ -33,8 +34,8 @@ export function selectWorstOfDay(
 	const route: WorstRowVM | null = wr?.id
 		? {
 				id: wr.id,
-				title: labels.routeName(wr.id, wr.name),
-				subtitle: `${labels.routeLabel} · ${wr.id}`,
+				title: labels.directory.name(wr.id, wr.name).label,
+				subtitle: labels.routeLabel,
 				meta: `${labels.routeDeltaLabel} ${labels.fmtDelta(wr.otp_delta_pts)}`,
 			}
 		: null;

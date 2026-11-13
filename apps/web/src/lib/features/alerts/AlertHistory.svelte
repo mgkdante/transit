@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
@@ -60,6 +61,8 @@
 		resolveAlertHistoryRange,
 		sameHistoryWindow,
 	} from './data/historySelection';
+
+	const display = transitDisplay();
 
 	const localizeHref = getLocalizeHref();
 
@@ -364,7 +367,7 @@
 		visibleEntries.map((e) => buildAlertRow(e, { locale, headline, windowTime })),
 	);
 
-	const lineOptions = $derived(buildLineOptions(sorted, foldSearchText));
+	const lineOptions = $derived(buildLineOptions(sorted, foldSearchText, display.directory));
 	const stopOptions = $derived(buildStopOptions(sorted, foldSearchText));
 
 	const filtersActive = $derived(

@@ -1,3 +1,4 @@
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 import type { SeverityCode, NonRespondingRoute } from '#lib/v1/schemas/index.ts';
 
 export const NON_RESPONDING_DOMAIN: readonly [number, number] = [0, 10];
@@ -11,15 +12,14 @@ export interface SilentRow {
 	readonly value: number;
 	readonly display: string;
 	readonly href: string;
-	readonly ariaLabel: string;
+	readonly ariaLabel?: string;
 }
 
 export interface SilentRowLabels {
-	routeName: (routeId: string) => string;
+	readonly directory: LineDirectory;
 	rowLabel: string;
 	display: (routeId: string, count: number) => string;
 	href: (routeId: string) => string;
-	viewDetail: (routeId: string) => string;
 }
 
 export function selectSilentByRoute(
@@ -30,12 +30,11 @@ export function selectSilentByRoute(
 	return rows.map((r, i) => ({
 		key: r.route_id,
 		rank: i + 1,
-		title: labels.routeName(r.route_id),
+		title: labels.directory.name(r.route_id).label,
 		subtitle: labels.rowLabel,
 		severity: 'critical' as SeverityCode,
 		value: r.count,
 		display: labels.display(r.route_id, r.count),
 		href: labels.href(r.route_id),
-		ariaLabel: labels.viewDetail(r.route_id),
 	}));
 }

@@ -23,7 +23,6 @@ export const stopReliabilityCopy = defineCopy({
 		},
 		byRoute: 'Retard moyen par ligne',
 		noRouteBreakdown: 'Aucun détail par ligne pour cet arrêt.',
-		viewLine: (routeId: string) => `Voir la ligne ${routeId}`,
 		paneHeading: 'Prévisions de retard',
 		metrics: {
 			otp: 'Prévisions sans retard grave',
@@ -189,7 +188,6 @@ export const stopReliabilityCopy = defineCopy({
 		},
 		byRoute: 'Avg delay by route',
 		noRouteBreakdown: 'No per-route breakdown for this stop.',
-		viewLine: (routeId) => `View line ${routeId}`,
 		paneHeading: 'Predicted delays',
 		metrics: {
 			otp: 'Not-severe predictions',

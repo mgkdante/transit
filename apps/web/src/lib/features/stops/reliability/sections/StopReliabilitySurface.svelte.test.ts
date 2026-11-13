@@ -285,7 +285,7 @@ describe('StopReliabilitySurface — responsive left-rail structure (P5.4)', () 
 
 		expect(
 			view.getByRole('link', {
-				name: (name) => name.includes('View line 51') && name.includes('6.0 min'),
+				name: (name) => name.includes('Line 51') && name.includes('6.0 min'),
 			}),
 		).toHaveAttribute('href', '/lines/51');
 	});

@@ -27,7 +27,13 @@
 </script>
 
 <div class="observation-copy" data-slot="observation-copy">
-	<Button variant="outline" size="sm" disabled={copyState === 'copying'} onclick={copyObservation}>
+	<Button
+		variant="outline"
+		size="sm"
+		class="min-h-11"
+		disabled={copyState === 'copying'}
+		onclick={copyObservation}
+	>
 		{copyState === 'copying' ? t.copying : t.copy}
 	</Button>
 	<p role="status" aria-live="polite" aria-atomic="true">

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NetworkFile } from '#lib/v1/schemas/network.ts';
 import type { Hotspots } from '#lib/v1/schemas/generated/historic_hotspots.ts';
 import { selectLivePulse, selectWorst } from './homePulse';
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 
 function network(overrides: Partial<NetworkFile> = {}): NetworkFile {
 	return {
@@ -51,10 +52,13 @@ describe('selectLivePulse', () => {
 });
 
 describe('selectWorst', () => {
-	const routes = [
-		{ id: '7-354', short: '7' },
-		{ id: '11', short: '11' },
-	];
+	const routes = createLineDirectory(
+		[
+			{ id: '7-354', short: '7', type: 3 },
+			{ id: '11', short: '11', type: 3 },
+		],
+		{ line: (id) => `Line ${id}` },
+	);
 	const hotspots = {
 		generated_utc: '2026-11-11T00:00:00Z',
 		by_grain: [
@@ -76,9 +80,9 @@ describe('selectWorst', () => {
 	it('ranks the published week: lines by number first, stops by readable name', () => {
 		const worst = selectWorst(hotspots, routes);
 		expect(worst?.through).toBe('2026-11-10');
-		expect(worst?.lines.map((line) => [line.label, line.detail])).toEqual([
-			['7', 'Carleton <> St-Laurent'],
-			['11', 'Waller <> Bayshore'],
+		expect(worst?.lines.map((line) => line.label)).toEqual([
+			'7 · Carleton <> St-Laurent',
+			'11 · Waller <> Bayshore',
 		]);
 		expect(worst?.stops.map((stop) => [stop.id, stop.label, stop.severePct])).toEqual([
 			['S9', 'Rideau / Sussex', 21.5],

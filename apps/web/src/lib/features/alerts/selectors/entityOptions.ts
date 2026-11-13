@@ -1,4 +1,5 @@
 import { intl } from '#lib/i18n/index.ts';
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 import type { AlertHistoryEntry } from '#lib/v1/schemas/index.ts';
 import type { ComboboxOption } from '@yesid/ui/combobox';
 
@@ -33,8 +34,12 @@ function buildEntityOptions(
 export function buildLineOptions(
 	entries: readonly AlertHistoryEntry[],
 	fold: (raw: string) => string,
+	directory: LineDirectory,
 ): ComboboxOption[] {
-	return buildEntityOptions(entries, 'routes', fold);
+	return distinctIds(entries, 'routes').map((id) => {
+		const label = directory.name(id).label;
+		return { value: id, label, search: fold(`${id} ${label}`) };
+	});
 }
 
 export function buildStopOptions(

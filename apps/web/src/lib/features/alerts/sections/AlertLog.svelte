@@ -1,10 +1,13 @@
 <script lang="ts">
 	import '#lib/components/surface/alert-item.css';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { alertLanguageNotice } from '#lib/v1/alertDisplay.ts';
 	import type { AlertHistoryCopy } from '../alerts.copy';
 	import type { AlertRowVM } from '../selectors/alertLog';
 	import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 	import type { Locale } from '#lib/i18n/index.ts';
+
+	const { line } = transitDisplay();
 
 	interface Props {
 		rows: readonly AlertRowVM[];
@@ -86,7 +89,7 @@
 				{#if row.routes.length > 0}
 					<div>
 						<dt>{copy.meta.routes}</dt>
-						<dd>{row.routes.join(' · ')}</dd>
+						<dd>{row.routes.map(line).join(' · ')}</dd>
 					</div>
 				{/if}
 				{#if row.stops.length > 0}

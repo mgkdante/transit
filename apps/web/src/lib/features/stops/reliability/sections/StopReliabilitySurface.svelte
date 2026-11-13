@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
+	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { fmtDelayMin } from '#lib/utils/index.ts';
 	import type { DateWindow } from '#lib/filters/index.ts';
@@ -49,6 +50,8 @@
 	import SectionHabits from './SectionHabits.svelte';
 	import SectionCrowding from './SectionCrowding.svelte';
 	import SectionDailyTrend from './SectionDailyTrend.svelte';
+
+	const display = transitDisplay();
 
 	const localizeHref = getLocalizeHref();
 
@@ -137,10 +140,14 @@
 	const fmtMin = (v: number | null): string =>
 		fmtDelayMin(v, { rounding: 'fixed1', noData: noObservationLabel });
 	const rankedRoutes = $derived(
-		selectRankedRoutes(data.by_route, fmtMin, {
-			href: (routeId) => localizeHref(routeFor({ kind: 'line', id: routeId }), locale),
-			ariaLabel: copy.viewLine,
-		}),
+		selectRankedRoutes(
+			data.by_route,
+			fmtMin,
+			{
+				href: (routeId) => localizeHref(routeFor({ kind: 'line', id: routeId }), locale),
+			},
+			display.directory,
+		),
 	);
 	const hasByRouteAssoc = $derived((data.by_route?.length ?? 0) > 0);
 
