@@ -70,3 +70,19 @@ export function closedTrendPoints(
 		return isClosedDay(end.toISOString().slice(0, 10), closedThrough);
 	});
 }
+
+export function trendClosedThrough(
+	index: HistoricAvailabilityIndex | null,
+	series: readonly TrendPoint[],
+): string | null {
+	const anchor = recordClosedThrough(index);
+	if (anchor) return anchor;
+	const newest = series
+		.map((p) => p.date)
+		.sort()
+		.at(-1);
+	if (!newest) return null;
+	const day = new Date(newest + 'T00:00:00Z');
+	day.setUTCDate(day.getUTCDate() - 1);
+	return day.toISOString().slice(0, 10);
+}

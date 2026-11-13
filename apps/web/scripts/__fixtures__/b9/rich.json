@@ -299,6 +299,25 @@
 						"standing": 0.2,
 						"full": 0.1
 					}
+				},
+				{
+					"date": "2026-08-30",
+					"otp_pct": null,
+					"avg_delay_min": 1.5,
+					"p90_min": 6,
+					"vehicles": 9,
+					"cancellation_rate": 9.5,
+					"service_completeness_rate": 41,
+					"observation_count": null,
+					"wilson_lo": null,
+					"wilson_hi": null,
+					"occupancy_mix": {
+						"empty": 0.1,
+						"many_seats": 0.2,
+						"few_seats": 0.3,
+						"standing": 0.25,
+						"full": 0.15
+					}
 				}
 			],
 			"weekly": [

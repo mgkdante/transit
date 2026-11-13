@@ -10,7 +10,6 @@ import type {
 } from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
-
 const harness = vi.hoisted(() => {
 	const page = {
 		url: new URL('http://localhost/network'),
@@ -24,7 +23,6 @@ const harness = vi.hoisted(() => {
 		}
 		page.url = next;
 	});
-
 	return {
 		page,
 		mirrorSearchParams,
@@ -35,7 +33,6 @@ const harness = vi.hoisted(() => {
 });
 const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
-
 const currentNetwork = {
 	generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
 	vehicles_in_service: 10,
@@ -274,6 +271,7 @@ vi.mock('#lib/v1/live/store.svelte.ts', () => ({
 }));
 vi.mock('#lib/v1/repositories/historic.ts', () => ({
 	getNetworkTrend: vi.fn(),
+	getHistoricAvailability: vi.fn(),
 	getNetworkHistoryIndex: harness.getNetworkHistoryIndex,
 	loadNetworkHistoryRange: harness.loadNetworkHistoryRange,
 }));
@@ -284,15 +282,17 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 		const source = loader.toString();
 		const isProvenance = /Provenance|provenance/.test(source);
 		return {
-			data: isProvenance
-				? { conformance: null }
-				: {
-						series: currentDaily,
-						weekly: currentWeekly,
-						monthly: currentMonthly,
-						by_shift: currentByShift,
-						by_daytype: currentByDaytype,
-					},
+			data: /HistoricAvailability/.test(source)
+				? { families: [{ family: 'network', last_available_date: currentDaily.at(-1)?.date }] }
+				: isProvenance
+					? { conformance: null }
+					: {
+							series: currentDaily,
+							weekly: currentWeekly,
+							monthly: currentMonthly,
+							by_shift: currentByShift,
+							by_daytype: currentByDaytype,
+						},
 			error: null,
 			loading: false,
 			settled: true,

@@ -6,6 +6,10 @@
 </script>
 
 <NetworkSurface
+	historicAvailabilitySeed={data.historicAvailabilitySeed ?? {
+		key: 'historic-availability',
+		data: null,
+	}}
 	networkSeed={data.networkSeed ?? undefined}
 	trendSeed={data.trendSeed ?? undefined}
 	provenanceSeed={data.provenanceSeed ?? undefined}

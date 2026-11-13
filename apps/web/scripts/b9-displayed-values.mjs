@@ -1,3 +1,4 @@
+import { trendClosedThrough } from '../src/lib/v1/closedWindow.ts';
 import runnerCases from './__fixtures__/b9/runner-cases.json' with { type: 'json' };
 import { spawn } from 'node:child_process';
 import {
@@ -860,6 +861,7 @@ function verifyLedger(cell, fixture, ledger) {
 			['ssr', 'manifest.json', 200, 1],
 			['ssr', 'live/network.json', 200, 1],
 			['ssr', 'historic/network_trend.json', 200, 1],
+			['ssr', 'historic/history/index.json', historyStatus, 1],
 			['ssr', 'provenance.json', 200, 1],
 			['ssr', labelPath, 200, 1],
 			['browser', 'historic/history/index.json', historyStatus, 1],
@@ -1163,7 +1165,13 @@ function expectedSurfaceState(cell, fixture) {
 			(row) => row.grain === 'day',
 		),
 		stop: fixture.files['historic/stop_reliability/52095.json']?.daily,
-		network: fixture.files['historic/network_trend.json']?.series,
+		network: (fixture.files['historic/network_trend.json']?.series ?? []).filter((row) => {
+			const anchor = trendClosedThrough(
+				fixture.files['historic/history/index.json'] ?? null,
+				fixture.files['historic/network_trend.json']?.series ?? [],
+			);
+			return anchor != null && row.date <= anchor;
+		}),
 	}[cell.surface];
 	const latest = latestDatedRow(rows ?? []);
 	const terminalSelector =

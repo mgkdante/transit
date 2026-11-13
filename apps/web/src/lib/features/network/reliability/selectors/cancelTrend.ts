@@ -13,6 +13,7 @@ export interface CancelTrendOptions {
 export interface CancelTrendVM {
 	readonly hasCancel: boolean;
 	readonly latest: number | null;
+	readonly latestDate: string | null;
 	readonly spec: ChartSpec;
 }
 
@@ -22,10 +23,12 @@ export function selectCancelTrend(
 ): CancelTrendVM {
 	const series = points.map((p) => p.cancellation_rate ?? null);
 	let latest: number | null = null;
+	let latestDate: string | null = null;
 	for (let i = series.length - 1; i >= 0; i--) {
 		const v = series[i];
 		if (v != null) {
 			latest = v;
+			latestDate = points[i].date;
 			break;
 		}
 	}
@@ -65,6 +68,7 @@ export function selectCancelTrend(
 	return {
 		hasCancel: series.some((v) => v != null),
 		latest,
+		latestDate,
 		spec,
 	};
 }
