@@ -1,18 +1,73 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
-from test_bronze_prune_real_db import NOW, PROVIDER, REALTIME_ROWS, TU_OLD_A, TU_OLD_B, TU_OLD_C
+from test_bronze_prune_real_db import (
+    NOW,
+    PROVIDER,
+    REALTIME_ROWS,
+    STATIC_RUN_UNREFERENCED,
+    TU_OLD_A,
+    TU_OLD_B,
+    TU_OLD_C,
+    FakeBronzeStorage,
+    _seed_static_runs,
+)
 from test_bronze_prune_real_db import conn as conn
 
 from transit_ops.maintenance import (
     bronze,
 )
 from transit_ops.settings import Settings
+
+
+@pytest.mark.parametrize("age_days,selected", [(399, False), (401, True)])
+def test_static_prune_uses_default_retention_boundary(conn, age_days, selected):
+    _seed_static_runs(conn)
+    conn.execute(
+        text("UPDATE raw.ingestion_runs SET started_at_utc=:started WHERE ingestion_run_id=:r"),
+        {"started": NOW - timedelta(days=age_days), "r": STATIC_RUN_UNREFERENCED},
+    )
+    storage = FakeBronzeStorage()
+    _, counts, _, failed = bronze.prune_bronze_static_objects(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=Settings.model_fields["BRONZE_STATIC_RETENTION_DAYS"].default,
+        bronze_storage=storage,
+        now_utc=NOW,
+    )
+    assert counts == {"static": int(selected)}
+    assert failed == set()
+    assert storage.deleted == (["bronze-prune-test/static/unreferenced.zip"] if selected else [])
+
+
+@pytest.mark.parametrize("age_days,selected", [(399, False), (401, True)])
+def test_realtime_prune_uses_default_retention_boundary(conn, age_days, selected):
+    captured = NOW - timedelta(days=age_days)
+    conn.execute(
+        text("UPDATE raw.ingestion_runs SET started_at_utc=:captured WHERE ingestion_run_id=:r"),
+        {"captured": captured, "r": TU_OLD_A[0]},
+    )
+    conn.execute(
+        text("UPDATE raw.realtime_snapshot_index SET captured_at_utc=:captured "
+             "WHERE realtime_snapshot_id=:s"),
+        {"captured": captured, "s": TU_OLD_A[2]},
+    )
+    storage = FakeBronzeStorage()
+    _, counts, _, failed = bronze.prune_bronze_realtime_objects(
+        conn,
+        provider_id=PROVIDER,
+        retention_days=Settings.model_fields["BRONZE_REALTIME_RETENTION_DAYS"].default,
+        bronze_storage=storage,
+        now_utc=NOW,
+    )
+    assert counts == {"realtime": int(selected)}
+    assert failed == set()
+    assert storage.deleted == ([TU_OLD_A[5]] if selected else [])
 
 
 class TransactionEngine:

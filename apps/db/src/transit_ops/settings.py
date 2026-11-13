@@ -153,8 +153,9 @@ class Settings(BaseSettings):
     GOLD_REALTIME_ANALYZE_MIN_INTERVAL_SECONDS: int = 3600
     GOLD_REPORTING_OPEN_WINDOW_DAYS: int = 10
     # Bronze raw objects are the replay source and remain in object storage.
-    BRONZE_REALTIME_RETENTION_DAYS: int = 30
-    BRONZE_STATIC_RETENTION_DAYS: int = 30
+    BRONZE_REALTIME_RETENTION_DAYS: int = 400
+    # A replaced edition's archive is the only source for rebuilding its service days.
+    BRONZE_STATIC_RETENTION_DAYS: int = 400
     GOLD_WARM_ROLLUP_RETENTION_DAYS: int = 730
     BRONZE_I3_RETENTION_DAYS: int = 30
     SILVER_I3_CLOSED_RETENTION_DAYS: int = 90
