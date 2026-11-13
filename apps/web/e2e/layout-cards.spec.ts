@@ -123,11 +123,14 @@ async function holdReliability(page: Page, path: string) {
 					gate.releases.push(resolve);
 				});
 			if (state === 'empty') {
+				const headers = response.headers();
+				delete headers['transfer-encoding'];
+				headers['content-length'] = '0';
 				await route.fulfill({
 					response,
 					status: 404,
 					body: '',
-					headers: { ...response.headers(), 'cache-control': 'no-store' },
+					headers: { ...headers, 'cache-control': 'no-store' },
 				});
 				return;
 			}
@@ -162,7 +165,14 @@ for (const locale of ['en', 'fr'] as const)
 						await page.goto(localizeHref(path === '/stops' ? '/stops?route=24' : path, locale), {
 							waitUntil: 'domcontentloaded',
 						});
-						const row = page.locator('[data-slot="entity-result-row"]').first();
+						const entityPath = localizeHref(
+							path === '/lines' ? '/lines/24' : '/stop/52095',
+							locale,
+						);
+						const row = page
+							.locator('[data-slot="entity-result-row"]')
+							.filter({ has: page.locator(`a[href^="${entityPath}?"]`) })
+							.first();
 						await row.scrollIntoViewIfNeeded();
 						const request = await pending;
 						const delivered = page.waitForResponse((response) => response.request() === request);

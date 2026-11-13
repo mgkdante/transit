@@ -777,7 +777,9 @@ function lineOracle(fixture, locale, view) {
 			return [
 				iso,
 				finite(
-					(breakdown.day_of_week ?? []).find((row) => row.day_of_week_iso === iso)?.avg_delay_min,
+					(breakdown.day_of_week ?? raw.day_of_week ?? []).find(
+						(row) => row.day_of_week_iso === iso,
+					)?.avg_delay_min,
 				),
 			];
 		}),
@@ -1506,6 +1508,17 @@ function proveNegativeControl(family) {
 }
 
 export function runOracleSelfCheck() {
+	for (const value of [0, null, undefined]) {
+		const fixture = structuredClone(FIXTURES.sparse);
+		routeFile(fixture).day_of_week[0].avg_delay_min = value;
+		expectLiteral(
+			expectedDomainObservationsFromFixture(fixture, 'line').find(
+				(row) => row.id === 'line.time.rows',
+			)?.value.weekday.rows[0][1],
+			{ text: value === 0 ? '0' : '·', value: value ?? null },
+			'explicit zero and absent weekday averages stay distinct',
+		);
+	}
 	expectLiteral(
 		verdictCount(87, 120, null, 80, 92),
 		null,
