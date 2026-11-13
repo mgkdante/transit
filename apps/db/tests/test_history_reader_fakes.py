@@ -150,3 +150,24 @@ def test_fake_open_window_returns_its_windows_in_order():
             connection=None,
             storage=None,
         )
+
+
+def test_fake_open_day_polls_has_the_signature_and_filters_by_feed_and_time():
+    from history_reader_fakes import fake_open_day_polls
+
+    from transit_ops.history.reader import open_day_polls
+
+    since = datetime(2026, 1, 2, tzinfo=UTC)
+    polls = [
+        fake_poll(ingestion_run_id=3, time_utc=datetime(2026, 1, 3, tzinfo=UTC)),
+        fake_poll(ingestion_run_id=2, endpoint_key="vehicle_positions", time_utc=since),
+        fake_poll(ingestion_run_id=1, time_utc=since),
+        fake_poll(ingestion_run_id=4, time_utc=datetime(2026, 1, 1, tzinfo=UTC)),
+    ]
+    opener = fake_open_day_polls(iter(polls))
+    assert signature(opener).parameters == signature(open_day_polls).parameters
+    result = opener("provider", ["trip_updates"], since, connection=None)
+    assert opener.calls == [("provider", ("trip_updates",), since)]
+    assert list(result) == [polls[0], polls[2]]
+    assert list(opener("other", ["vehicle_positions"], since, connection=None)) == [polls[1]]
+    assert opener.calls[-1] == ("other", ("vehicle_positions",), since)
