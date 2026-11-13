@@ -18,78 +18,109 @@
 </script>
 
 {#if lead}<p class="mf-legend-lead" data-slot="map-legend-lead">{t.headingLead}</p>{/if}
-<!-- Entries flow in wrapping rows; each status keeps its marker, glyph and label together. -->
+
 <ul class="mf-legend" aria-label={t.legend.title} data-slot="map-legend">
-	{#each STATUS_CODES as code (code)}
-		<li class="mf-legend-entry" data-legend-entry="status" data-status={code}>
-			<span class="mf-legend-mark" style="color:{statusVar(code)}" aria-hidden="true">
-				<MarkerGlyph kind="bus" />
-			</span>
-			<StatusBadge status={code} mode="legend" size="sm" label={STATUS_LABELS[locale][code]} />
-		</li>
-	{/each}
-	<li class="mf-legend-entry mf-legend-explain" data-legend-entry="heading">
-		<span class="mf-legend-mark" aria-hidden="true">
-			<svg viewBox="0 0 26 26" role="presentation">
-				<path d="M13 5 19 13.5 13 10.6 7 13.5Z" fill="currentColor" />
-				<circle cx="13" cy="19" r="2.5" fill="currentColor" opacity="0.45" />
-			</svg>
-		</span>
-		<span class="mf-legend-text">{t.legend.heading}</span>
+	<li data-legend-group="status">
+		<ul class="mf-legend-rows">
+			{#each STATUS_CODES as code (code)}
+				<li class="mf-legend-entry" data-legend-entry="status" data-status={code}>
+					<span class="mf-legend-mark" style="color:{statusVar(code)}" aria-hidden="true">
+						<MarkerGlyph kind="bus" />
+					</span>
+					<StatusBadge status={code} mode="legend" size="md" label={STATUS_LABELS[locale][code]} />
+				</li>
+			{/each}
+		</ul>
 	</li>
-	<li class="mf-legend-entry mf-legend-explain" data-legend-entry="stop">
-		<span class="mf-legend-mark mf-legend-stop" aria-hidden="true">
-			<MarkerGlyph kind="stop" />
-		</span>
-		<span class="mf-legend-text">{t.legend.stop}</span>
-	</li>
-	<li class="mf-legend-entry mf-legend-explain" data-legend-entry="not-reporting">
-		<span class="mf-legend-mark mf-legend-silent" aria-hidden="true">!</span>
-		<span class="mf-legend-text">{t.legend.notReporting}</span>
+	<li data-legend-group="symbols">
+		<ul class="mf-legend-rows mf-legend-symbols">
+			<li class="mf-legend-entry mf-legend-explain" data-legend-entry="heading">
+				<span class="mf-legend-mark" aria-hidden="true">
+					<svg viewBox="0 0 26 26" role="presentation">
+						<path d="M13 5 19 13.5 13 10.6 7 13.5Z" fill="currentColor" />
+						<circle cx="13" cy="19" r="2.5" fill="currentColor" opacity="0.45" />
+					</svg>
+				</span>
+				<span class="mf-legend-text">{t.legend.heading}</span>
+			</li>
+			<li class="mf-legend-entry mf-legend-explain" data-legend-entry="not-reporting">
+				<span class="mf-legend-mark mf-legend-silent" aria-hidden="true">!</span>
+				<span class="mf-legend-text">{t.legend.notReporting}</span>
+			</li>
+			<li class="mf-legend-entry mf-legend-explain" data-legend-entry="stop">
+				<span class="mf-legend-mark mf-legend-stop" aria-hidden="true">
+					<MarkerGlyph kind="stop" />
+				</span>
+				<span class="mf-legend-text">{t.legend.stop}</span>
+			</li>
+		</ul>
 	</li>
 </ul>
 <p class="mf-legend-note">{t.legend.zoomBadges}</p>
 
 <style>
 	.mf-legend-lead {
-		margin: 0 0 0.5rem;
+		margin: 0 0 calc(var(--spacing) * 2);
 		font-size: var(--text-caption);
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	.mf-legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.125rem 0.5rem;
+	.mf-legend,
+	.mf-legend-rows {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
+	.mf-legend-rows {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0 calc(var(--spacing) * 2);
+	}
+	.mf-legend-symbols {
+		grid-template-columns: minmax(0, 1fr) max-content;
+		margin-top: calc(var(--spacing) / 2);
+		padding-top: calc(var(--spacing) / 2);
+		border-top: 1px solid var(--border);
+	}
 	.mf-legend-entry {
-		display: flex;
-		flex: none;
-		align-items: flex-start;
-		gap: 0.25rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		line-height: 1.3;
+		display: grid;
+		grid-template-columns: calc(var(--spacing) * 8) minmax(0, 1fr);
+		align-items: center;
+		gap: var(--spacing);
+		min-width: 0;
+		font-family: var(--font-body);
+		font-size: var(--text-caption);
+		line-height: 1.25;
 		color: var(--foreground);
 	}
 	.mf-legend-entry :global([data-slot='status-badge']) {
-		gap: 0.1875rem;
-		line-height: 1.3;
+		display: contents;
+		line-height: inherit;
 	}
-	.mf-legend-explain {
-		flex: 0 1 auto;
-		min-width: 0;
+	.mf-legend-entry :global([data-slot='status-badge'] > span:first-child) {
+		grid-column: 1;
+		grid-row: 1;
+		justify-self: end;
+	}
+	.mf-legend-entry :global([data-slot='status-badge'] > span:last-child) {
+		grid-column: 2;
+		grid-row: 1;
+		font-family: var(--font-body);
+	}
+	.mf-legend-entry[data-legend-entry='not-reporting'] {
+		grid-column: 1 / -1;
+	}
+	.mf-legend-entry[data-legend-entry='stop'] {
+		grid-column: 2;
+		grid-row: 1;
 	}
 	.mf-legend-mark {
+		grid-column: 1;
+		grid-row: 1;
 		display: inline-grid;
 		place-items: center;
-		width: 0.75rem;
-		height: 0.75rem;
-		margin-block: 0.09375rem;
-		flex: none;
+		width: calc(var(--spacing) * 4);
+		height: calc(var(--spacing) * 4);
 		color: var(--foreground);
 		--marker-glyph-cut: var(--card);
 	}
@@ -99,13 +130,11 @@
 		height: 100%;
 	}
 	.mf-legend-silent {
-		font-family: var(--font-body);
-		font-size: 0.5625rem;
 		font-weight: 800;
 		line-height: 1;
 		color: var(--background);
 		background: var(--foreground);
-		border-radius: 0.2rem;
+		border-radius: var(--radius-sm);
 	}
 	.mf-legend-stop {
 		color: var(--map-stop-fill);
@@ -114,10 +143,10 @@
 		min-width: 0;
 	}
 	.mf-legend-note {
-		margin: 0.125rem 0 0;
+		margin: calc(var(--spacing) / 2) 0 0;
 		font-family: var(--font-body);
 		font-size: var(--text-micro);
-		line-height: 1.3;
+		line-height: 1.25;
 		color: var(--muted-foreground);
 	}
 </style>
