@@ -45,7 +45,13 @@
 	import MapDetailOverlay from './MapDetailOverlay.svelte';
 	import MapMobileDetailSheet from './MapMobileDetailSheet.svelte';
 	import { zoomForNearMePrecision } from './mapGeo';
-	import { focusCoordinate, fitRouteBounds, initialCamera, createMapCamera } from './mapCamera';
+	import {
+		focusCoordinate,
+		fitRouteBounds,
+		initialCamera,
+		createMapCamera,
+		resetNorth,
+	} from './mapCamera';
 	import {
 		buildNearTargetSearch,
 		clearNearTargetSearch,
@@ -122,6 +128,24 @@
 		},
 	});
 	let recovering = $state(false);
+	let orientation = $state({ bearing: 0, pitch: 0 });
+	let northPending = false;
+	let northStatus = $state('');
+	function onMapOrientation(next: { bearing: number; pitch: number }): void {
+		orientation = next;
+		if (next.bearing !== 0 || next.pitch !== 0) northStatus = '';
+		if (northPending && next.bearing === 0 && next.pitch === 0) {
+			northPending = false;
+			northStatus = t.northStatus;
+		}
+	}
+	function turnNorth(): void {
+		if (!map || recovering) return;
+		northStatus = '';
+		northPending = true;
+		resetNorth(map);
+		map.getCanvas().focus({ preventScroll: true });
+	}
 	const camera = createMapCamera<MapSelection>();
 	const cameraIntents = camera.intents;
 	let recoveryFocusTarget: HTMLElement | null = null;
@@ -469,6 +493,7 @@
 		maxBounds={framing.maxBounds}
 		fitPadding={framing.fitPadding}
 		onready={onMapReady}
+		onorientation={onMapOrientation}
 		onrecovering={onMapRecovering}
 		onidle={onMapIdle}
 		onstyleload={runtime.styleLoad}
@@ -597,6 +622,9 @@
 			</div>
 		{:else}
 			<MapOverlayChrome
+				{orientation}
+				{northStatus}
+				onnorth={turnNorth}
 				{locale}
 				{t}
 				{presentation}
@@ -691,6 +719,9 @@
 		--app-right-detail-offset: var(--size-detail-panel);
 		--map-detail-offset: 0rem;
 		--map-mobile-control-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+		--map-north-clearance: calc(
+			var(--map-mobile-control-bottom) + 2.75rem + 0.75rem + 1.75rem + 0.75rem + 2.75rem + 0.75rem
+		);
 		--z-map-behind: -1;
 		--z-map-canvas: 1;
 		--z-map-popover-behind: 2;

@@ -15,6 +15,30 @@ import { deferMapFocusInset } from './mapFocusInset';
 
 const FOCUS_EVENT_DATA = { cameraIntent: 'focus' } as const;
 
+export function resetNorth(map: CameraMap | null): void {
+	map?.easeTo(
+		{ bearing: 0, pitch: 0, roll: 0, duration: shouldAnimate('motion-gated') ? 300 : 0 },
+		{ cameraIntent: 'north' },
+	);
+}
+
+/** Called only inside MapStage's development/e2e build gate. */
+export function exposeCameraProbe(instance: MapLibreMap): () => void {
+	const inspectMap = () => ({
+		project: (coord: [number, number]) => instance.project(coord),
+		moving: instance.isMoving(),
+		loaded: instance.loaded(),
+		bearing: instance.getBearing(),
+		pitch: instance.getPitch(),
+		setOrientation: (bearing: number, pitch: number) => instance.jumpTo({ bearing, pitch }),
+	});
+	Object.defineProperty(window, '__transitMap', { configurable: true, get: inspectMap });
+	return () => {
+		if (Object.getOwnPropertyDescriptor(window, '__transitMap')?.get === inspectMap)
+			Reflect.deleteProperty(window, '__transitMap');
+	};
+}
+
 function easeOut(t: number): number {
 	if (t <= 0) return 0;
 	if (t >= 1) return 1;

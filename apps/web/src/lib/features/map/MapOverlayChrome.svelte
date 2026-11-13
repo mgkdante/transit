@@ -11,6 +11,7 @@
 	import type { MapSelection } from './selectionSession/mapSelection';
 	import MapHeadTitle from './MapHeadTitle.svelte';
 	import MapNearMeControl from './MapNearMeControl.svelte';
+	import MapNorthControl from './MapNorthControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
 	import MapFreshness from './MapFreshness.svelte';
 	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
@@ -19,6 +20,9 @@
 	type NearMeOrigin = LatLon & { label: string; precision?: GeocodePrecision };
 
 	interface Props {
+		orientation: { bearing: number; pitch: number };
+		northStatus: string;
+		onnorth: () => void;
 		locale: Locale;
 		t: MapCopy;
 		presentation: LivePresentation;
@@ -43,6 +47,9 @@
 	}
 
 	let {
+		orientation,
+		northStatus,
+		onnorth,
 		locale,
 		t,
 		presentation,
@@ -81,6 +88,8 @@
 	<MapHeadTitle {locale} heading={t.heading} presentation={presentation.stamp} />
 	<MapFreshness placement="floating" presentation={presentation.stamp} {locale} />
 </div>
+
+<MapNorthControl copy={t} {...orientation} status={northStatus} onreset={onnorth} />
 
 <MapNearMeControl
 	bind:open={nearMeOpen}

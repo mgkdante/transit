@@ -37,9 +37,11 @@ const DOM_MEASUREMENT: MapFocusMeasurementAdapter = {
 			return r && r.width > 0 && r.height > 0 ? r : null;
 		};
 		const panel = rect('.map-filter-panel');
-		const controls = [rect('.map-filter-pill-container'), rect('.map-near')].filter(
-			(r) => r !== null,
-		);
+		const controls = [
+			rect('.map-filter-pill-container'),
+			rect('.map-near'),
+			rect('[data-slot="map-north"]'),
+		].filter((r) => r !== null);
 		return {
 			left: panel ? panel.right - box.left : 0,
 			// The narrow controls rail leaves the provider framing viewport-centered.

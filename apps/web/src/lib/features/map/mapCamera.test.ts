@@ -88,6 +88,23 @@ afterEach(() => {
 	vi.clearAllMocks();
 });
 
+it('resetNorth eases to north and flat with the north intent', async () => {
+	const { resetNorth } = await loadModule();
+	const { map, easeTo } = stubMap();
+	resetNorth(null);
+	resetNorth(map);
+	expect(easeTo).toHaveBeenLastCalledWith(
+		{ bearing: 0, pitch: 0, roll: 0, duration: 300 },
+		{ cameraIntent: 'north' },
+	);
+	mocks.animate = false;
+	resetNorth(map);
+	expect(easeTo).toHaveBeenLastCalledWith(
+		{ bearing: 0, pitch: 0, roll: 0, duration: 0 },
+		{ cameraIntent: 'north' },
+	);
+});
+
 describe('panTo', () => {
 	it('defers one inset sample then tags an offset flyTo without persistent padding', async () => {
 		const { panTo } = await loadModule();

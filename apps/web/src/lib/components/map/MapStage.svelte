@@ -76,6 +76,7 @@
 	import { type MapFitPadding } from './viewport';
 	import {
 		createMapCamera,
+		exposeCameraProbe,
 		type CameraRecoveryView,
 		type CameraLifecycle,
 	} from '#lib/features/map/mapCamera.ts';
@@ -94,6 +95,7 @@
 		fitPadding?: MapFitPadding;
 		label?: string;
 		onready?: (map: MapLibreMap, reportSetupFailure: () => void) => void;
+		onorientation?: (orientation: { bearing: number; pitch: number }) => void;
 		onrecovering?: () => void;
 		onidle?: (map: MapLibreMap) => void;
 		onstyleload?: (map: MapLibreMap) => void;
@@ -119,6 +121,7 @@
 		fitPadding = 40,
 		label = 'Transit map',
 		onready,
+		onorientation,
 		onrecovering,
 		onidle,
 		onstyleload,
@@ -566,23 +569,20 @@
 				throw error;
 			}
 			attempt.map = instance;
-			// Read-only geometry inspection, omitted from production builds.
+			// Geometry and camera test access, omitted from production builds.
 			if (dev || import.meta.env.MODE === 'e2e') {
-				const inspectMap = () => ({
-					project: (coord: [number, number]) => instance.project(coord),
-					moving: instance.isMoving(),
-					loaded: instance.loaded(),
-				});
-				Object.defineProperty(window, '__transitMap', {
-					configurable: true,
-					get: inspectMap,
-				});
-				attempt.disposers.push(() => {
-					if (Object.getOwnPropertyDescriptor(window, '__transitMap')?.get === inspectMap)
-						Reflect.deleteProperty(window, '__transitMap');
-				});
+				attempt.disposers.push(exposeCameraProbe(instance));
 			}
 			camera.attach(instance, cameraInputs(), recoveryView);
+			const reportOrientation = () => {
+				if (isCurrentAttempt(attempt))
+					onorientation?.({ bearing: instance.getBearing(), pitch: instance.getPitch() });
+			};
+			if (onorientation) {
+				ownMapListener(attempt, instance, 'rotate', reportOrientation);
+				ownMapListener(attempt, instance, 'pitch', reportOrientation);
+				reportOrientation();
+			}
 			ownMapControl(
 				attempt,
 				instance,
