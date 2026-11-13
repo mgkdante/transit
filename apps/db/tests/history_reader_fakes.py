@@ -1,7 +1,7 @@
 """Real reader values with explicit defaults for offline consumer tests."""
 
 import hashlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
@@ -101,6 +101,21 @@ def fake_open_window(windows):
 
     open_window.calls = calls
     return open_window
+
+
+def fake_open_day_polls(polls: Iterable[Poll]):
+    polls = tuple(polls)
+    calls = []
+
+    def open_day_polls(
+        provider: str, feeds: Sequence[str], since_utc: datetime, *, connection: Connection
+    ) -> Iterator[Poll]:
+        feeds = tuple(feeds)
+        calls.append((provider, feeds, since_utc))
+        return iter(p for p in polls if p.endpoint_key in feeds and p.time_utc >= since_utc)
+
+    open_day_polls.calls = calls
+    return open_day_polls
 
 
 class _Unset:

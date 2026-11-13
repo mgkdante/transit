@@ -89,7 +89,7 @@ def rows_fingerprint(
     return str(connection.execute(text(statement), params).scalar_one())
 
 
-def _poll(row: dict[str, Any], family: str) -> PollEntry:
+def poll_entry(row: dict[str, Any], family: str) -> PollEntry:
     captured = row["capture_row_id"] is not None
     raw = row.pop("status")
     if captured and raw != "succeeded":
@@ -450,7 +450,7 @@ def read_working_day(
     """),
         params,
     ).mappings()
-    polls = tuple(_poll(dict(row), day.index_family) for row in rows)
+    polls = tuple(poll_entry(dict(row), day.index_family) for row in rows)
     captures = _captures(connection, day.index_family, params)
     declared = current.declared_interval_seconds if current else feed["refresh_interval_seconds"]
     return _validated(

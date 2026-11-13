@@ -12,8 +12,13 @@ from sqlalchemy import Connection, text
 from transit_ops.history import ledger
 from transit_ops.history.datasets import CaptureSource, IndexFamily, get_dataset, utc_day_closes_at
 from transit_ops.history.manifest import Manifest, read_copy_manifest
-from transit_ops.history.poll_record import PollRecord, poll_record_sha256
-from transit_ops.history.working_captures import _INDEX, read_working_day, rows_fingerprint
+from transit_ops.history.poll_record import PollEntry, PollRecord, poll_record_sha256
+from transit_ops.history.working_captures import (
+    _INDEX,
+    poll_entry,
+    read_working_day,
+    rows_fingerprint,
+)
 from transit_ops.ingestion.storage import BronzeStorageResolver
 
 NotAvailableReason = Literal["never_collected", "pruned_before_archive", "no_polls", "still_open"]
@@ -170,12 +175,7 @@ class CaptureWindow:
     def _day_polls(self, day: FeedDay) -> Iterator[Poll]:
         for entry in self._day_record(day).polls:
             if self.start_utc <= entry.time_utc < self.end_utc:
-                values = {
-                    f.name: getattr(entry, f.name)
-                    for f in fields(Poll)
-                    if f.name not in ("provider_id", "endpoint_key")
-                }
-                yield Poll(provider_id=self.provider_id, endpoint_key=day.endpoint_key, **values)
+                yield _reader_poll(entry, self.provider_id, day.endpoint_key)
 
     def captures(self, *, with_bytes: bool = True) -> Iterator[Capture]:
         if with_bytes:
@@ -205,6 +205,80 @@ class CaptureWindow:
 
     def processing(self) -> Iterator[ProcessingRecord]:
         raise NotImplementedError("H06b implements processing")
+
+
+def _reader_poll(entry: PollEntry, provider: str, feed: str) -> Poll:
+    values = {
+        f.name: getattr(entry, f.name)
+        for f in fields(Poll)
+        if f.name not in ("provider_id", "endpoint_key")
+    }
+    return Poll(provider_id=provider, endpoint_key=feed, **values)
+
+
+def _open_feed_polls(
+    connection: Connection, provider: str, feed: str, since: datetime, source: CaptureSource
+) -> list[Poll]:
+    params: dict[str, Any] = dict(provider_id=provider, endpoint_key=feed, since_utc=since)
+    endpoint = connection.execute(
+        text(
+            "SELECT feed_endpoint_id FROM core.feed_endpoints "
+            "WHERE provider_id = :provider_id AND endpoint_key = :endpoint_key"
+        ),
+        params,
+    ).scalar_one_or_none()
+    if endpoint is None:
+        return []
+    params["feed_endpoint_id"] = endpoint
+    table, key = _INDEX[source.index_family]
+    rows = connection.execute(
+        text(f"""
+        SELECT r.ingestion_run_id, r.run_kind, r.status, r.requested_at_utc, r.started_at_utc,
+               r.completed_at_utc, r.http_status_code, r.error_message, r.feed_timestamp_utc,
+               r.entity_count, i.{key} AS capture_row_id, i.captured_at_utc
+        FROM raw.ingestion_runs r LEFT JOIN {table} i ON i.ingestion_run_id = r.ingestion_run_id
+        WHERE r.provider_id = :provider_id AND r.feed_endpoint_id = :feed_endpoint_id
+          AND r.run_kind <> 'silver_load'
+          AND r.started_at_utc >= :since_utc - interval '1 hour'
+          AND COALESCE(i.captured_at_utc, r.completed_at_utc, r.started_at_utc) >= :since_utc
+        """),
+        params,
+    ).mappings()
+    return [
+        _reader_poll(poll_entry(dict(row), source.index_family), provider, feed) for row in rows
+    ]
+
+
+def open_day_polls(
+    provider: str, feeds: Sequence[str], since_utc: datetime, *, connection: Connection
+) -> Iterator[Poll]:
+    """Read recent working polls eagerly inside the caller's transaction.
+
+    The one-hour start bound misses runs closed by the sealer later than one hour
+    after their start whose time is their closing time, accepted because they have
+    no result and are never usable polls.
+    """
+    feeds = tuple(feeds)
+    if not provider or not feeds or len(feeds) != len(set(feeds)):
+        raise ValueError("provider and distinct feeds are required")
+    if since_utc.utcoffset() is None:
+        raise ValueError("since_utc must be timezone-aware")
+    sources = []
+    for feed in feeds:
+        source = get_dataset("capture." + feed).source
+        if not isinstance(source, CaptureSource):
+            raise ValueError(f"{feed}: dataset is not a capture source")
+        sources.append(source)
+    since_utc = since_utc.astimezone(UTC)
+    now = connection.execute(text("SELECT now()")).scalar_one()
+    if since_utc < now - timedelta(hours=30):
+        raise ValueError("older polls are read through open_window")
+    polls = [
+        poll
+        for feed, source in zip(feeds, sources, strict=True)
+        for poll in _open_feed_polls(connection, provider, feed, since_utc, source)
+    ]
+    return iter(sorted(polls, key=lambda p: (p.time_utc, p.endpoint_key, p.ingestion_run_id)))
 
 
 def _unavailable(provider: str, feed: str, day: date, reason: NotAvailableReason) -> FeedDay:
