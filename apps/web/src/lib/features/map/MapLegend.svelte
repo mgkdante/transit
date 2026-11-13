@@ -20,40 +20,37 @@
 {#if lead}<p class="mf-legend-lead" data-slot="map-legend-lead">{t.headingLead}</p>{/if}
 
 <ul class="mf-legend" aria-label={t.legend.title} data-slot="map-legend">
-	<li data-legend-group="status">
-		<ul class="mf-legend-rows">
-			{#each STATUS_CODES as code (code)}
-				<li class="mf-legend-entry" data-legend-entry="status" data-status={code}>
-					<span class="mf-legend-mark" style="color:{statusVar(code)}" aria-hidden="true">
-						<MarkerGlyph kind="bus" />
-					</span>
-					<StatusBadge status={code} mode="legend" size="md" label={STATUS_LABELS[locale][code]} />
-				</li>
-			{/each}
-		</ul>
+	{#each STATUS_CODES as code (code)}
+		<li
+			class="mf-legend-entry"
+			data-legend-group="status"
+			data-legend-entry="status"
+			data-status={code}
+		>
+			<span class="mf-legend-mark" style="color:{statusVar(code)}" aria-hidden="true">
+				<MarkerGlyph kind="bus" />
+			</span>
+			<StatusBadge status={code} mode="legend" size="md" label={STATUS_LABELS[locale][code]} />
+		</li>
+	{/each}
+	<li class="mf-legend-entry" data-legend-group="symbols" data-legend-entry="heading">
+		<span class="mf-legend-mark" aria-hidden="true">
+			<svg viewBox="0 0 26 26" role="presentation">
+				<path d="M13 5 19 13.5 13 10.6 7 13.5Z" fill="currentColor" />
+				<circle cx="13" cy="19" r="2.5" fill="currentColor" opacity="0.45" />
+			</svg>
+		</span>
+		<span class="mf-legend-text">{t.legend.heading}</span>
 	</li>
-	<li data-legend-group="symbols">
-		<ul class="mf-legend-rows mf-legend-symbols">
-			<li class="mf-legend-entry mf-legend-explain" data-legend-entry="heading">
-				<span class="mf-legend-mark" aria-hidden="true">
-					<svg viewBox="0 0 26 26" role="presentation">
-						<path d="M13 5 19 13.5 13 10.6 7 13.5Z" fill="currentColor" />
-						<circle cx="13" cy="19" r="2.5" fill="currentColor" opacity="0.45" />
-					</svg>
-				</span>
-				<span class="mf-legend-text">{t.legend.heading}</span>
-			</li>
-			<li class="mf-legend-entry mf-legend-explain" data-legend-entry="not-reporting">
-				<span class="mf-legend-mark mf-legend-silent" aria-hidden="true">!</span>
-				<span class="mf-legend-text">{t.legend.notReporting}</span>
-			</li>
-			<li class="mf-legend-entry mf-legend-explain" data-legend-entry="stop">
-				<span class="mf-legend-mark mf-legend-stop" aria-hidden="true">
-					<MarkerGlyph kind="stop" />
-				</span>
-				<span class="mf-legend-text">{t.legend.stop}</span>
-			</li>
-		</ul>
+	<li class="mf-legend-entry" data-legend-group="symbols" data-legend-entry="stop">
+		<span class="mf-legend-mark mf-legend-stop" aria-hidden="true">
+			<MarkerGlyph kind="stop" />
+		</span>
+		<span class="mf-legend-text">{t.legend.stop}</span>
+	</li>
+	<li class="mf-legend-entry" data-legend-group="symbols" data-legend-entry="not-reporting">
+		<span class="mf-legend-mark mf-legend-silent" aria-hidden="true">!</span>
+		<span class="mf-legend-text">{t.legend.notReporting}</span>
 	</li>
 </ul>
 <p class="mf-legend-note">{t.legend.zoomBadges}</p>
@@ -65,19 +62,15 @@
 		line-height: 1.4;
 		color: var(--muted-foreground);
 	}
-	.mf-legend,
-	.mf-legend-rows {
+	.mf-legend {
 		margin: 0;
 		padding: 0;
 		list-style: none;
-	}
-	.mf-legend-rows {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0 calc(var(--spacing) * 2);
 	}
-	.mf-legend-symbols {
-		grid-template-columns: minmax(0, 1fr) max-content;
+	.mf-legend-entry[data-legend-group='symbols']:not([data-legend-entry='not-reporting']) {
 		margin-top: calc(var(--spacing) / 2);
 		padding-top: calc(var(--spacing) / 2);
 		border-top: 1px solid var(--border);
@@ -110,9 +103,8 @@
 	.mf-legend-entry[data-legend-entry='not-reporting'] {
 		grid-column: 1 / -1;
 	}
-	.mf-legend-entry[data-legend-entry='stop'] {
-		grid-column: 2;
-		grid-row: 1;
+	.mf-legend-entry[data-legend-entry='heading'] {
+		grid-column-start: 1;
 	}
 	.mf-legend-mark {
 		grid-column: 1;
