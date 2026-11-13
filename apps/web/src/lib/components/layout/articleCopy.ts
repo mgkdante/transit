@@ -2,11 +2,11 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 
 const chrome = defineCopy({
 	fr: {
-		back: '← Retour au tableau de bord',
+		back: '← Retour à l’aperçu',
 		tagsAria: 'Mots-clés de la page',
 	},
 	en: {
-		back: '← Back to the dashboard',
+		back: '← Back to overview',
 		tagsAria: 'Page keywords',
 	},
 });

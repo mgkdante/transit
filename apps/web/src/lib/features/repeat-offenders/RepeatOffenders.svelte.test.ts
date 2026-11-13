@@ -498,14 +498,14 @@ describe('RepeatOffenders — approved analytical article', () => {
 	it('keeps the exact approved bilingual article, rail, and card copy', () => {
 		expect(repeatCopy.en.article).toEqual({
 			watermark: 'Repeat',
-			back: '← Back to the dashboard',
+			back: '← Back to overview',
 			tagsAria: 'Page keywords',
 			tags: ['offenders', 'trips', 'vehicles', 'recurrence'],
 			sections: expect.any(Function),
 		});
 		expect(repeatCopy.fr.article).toEqual({
 			watermark: 'Récidive',
-			back: '← Retour au tableau de bord',
+			back: '← Retour à l’aperçu',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['récidivistes', 'trajets', 'véhicules', 'récurrence'],
 			sections: expect.any(Function),

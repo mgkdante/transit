@@ -353,7 +353,7 @@ def test_ghost_trip_excluded_from_repeat_offender(conn) -> None:  # noqa: ANN001
     assert _decimal(late["avg_delay_seconds"]) == Decimal("400.0")
 
 
-@pytest.mark.parametrize("retention_days", [11, 14, 21])
+@pytest.mark.parametrize("retention_days", [22, 14, 21])
 def test_repeat_offender_window_matches_retained_facts_and_public_snapshot(
     conn, retention_days: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:

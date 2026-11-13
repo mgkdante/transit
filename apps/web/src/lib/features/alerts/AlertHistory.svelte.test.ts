@@ -350,10 +350,7 @@ describe('AlertHistory article shell', () => {
 		expect(screen.getAllByRole('heading', { level: 1, name: 'Alerts' })).toHaveLength(1);
 		expect(container.querySelector('[data-slot="detail-shell"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="article-header"]')).not.toBeNull();
-		expect(screen.getByRole('link', { name: '← Back to the dashboard' })).toHaveAttribute(
-			'href',
-			'/',
-		);
+		expect(screen.getByRole('link', { name: '← Back to overview' })).toHaveAttribute('href', '/');
 		expect(screen.getByText('2 matches')).toBeInTheDocument();
 		expect(screen.getByText('3 sections')).toBeInTheDocument();
 
@@ -365,7 +362,7 @@ describe('AlertHistory article shell', () => {
 	it('keeps the exact bilingual article, rail, and card copy', () => {
 		expect(copyEn.article).toEqual({
 			watermark: 'Alerts',
-			back: '← Back to the dashboard',
+			back: '← Back to overview',
 			tagsAria: 'Page keywords',
 			tags: ['alerts', 'archive', 'duration', 'reach'],
 			sections: expect.any(Function),
@@ -403,7 +400,7 @@ describe('AlertHistory article shell', () => {
 		const copyFr = alertHistoryCopy.fr;
 		expect(copyFr.article).toEqual({
 			watermark: 'Avis',
-			back: '← Retour au tableau de bord',
+			back: '← Retour à l’aperçu',
 			tagsAria: 'Mots-clés de la page',
 			tags: ['avis', 'archive', 'durée', 'portée'],
 			sections: expect.any(Function),

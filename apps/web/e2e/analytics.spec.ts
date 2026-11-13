@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { navPillCopy } from '../src/lib/i18n/messages';
-import { SURFACE_NAV } from '../src/lib/content/nav';
+import { SURFACE_NAV, YESID_HOUSE_LINK } from '../src/lib/content/nav';
 
 const { PUBLIC_PLAUSIBLE_DOMAIN: domain, PUBLIC_CF_BEACON_TOKEN: beaconToken } = JSON.parse(
 	readFileSync(new URL('./wrangler.json', import.meta.url), 'utf8'),
@@ -126,7 +126,12 @@ test('a portfolio link click is a custom event', async ({ page, context }) => {
 	await expect.poll(() => payloads.filter(({ n }) => n === 'pageview').length).toBe(1);
 	const menu = await openMenu(page);
 	const popup = context.waitForEvent('page');
-	await menu.getByRole('link', { name: /^Yesid/ }).click();
+	await menu
+		.getByRole('link', {
+			name: `${YESID_HOUSE_LINK.label.en} ${navPillCopy.en.newTab}`,
+			exact: true,
+		})
+		.click();
 	await popup;
 	await expect
 		.poll(() => payloads.find(({ n }) => n === 'Portfolio Click')?.p)

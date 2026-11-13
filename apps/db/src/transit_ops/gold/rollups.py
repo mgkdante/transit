@@ -39,6 +39,9 @@ from transit_ops.sql_registry import named_query
 
 logger = logging.getLogger(__name__)
 
+# A method window: retaining more facts must not widen the published percentiles.
+PERCENTILE_LOOKBACK_DAYS = 13
+
 SET_ROLLUP_WORK_MEM = named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'")
 
 
@@ -2245,6 +2248,11 @@ def build_warm_rollups(
         settings = get_settings()
     open_window_days = getattr(settings, "GOLD_REPORTING_OPEN_WINDOW_DAYS", 10)
     fact_retention_days = getattr(settings, "GOLD_FACT_RETENTION_DAYS", 14)
+    if fact_retention_days < PERCENTILE_LOOKBACK_DAYS + 1:
+        raise ValueError(
+            f"GOLD_FACT_RETENTION_DAYS must be at least {PERCENTILE_LOOKBACK_DAYS + 1} "
+            "to cover the percentile lookback"
+        )
     if not (0 < open_window_days < fact_retention_days):
         raise ValueError(
             "GOLD_REPORTING_OPEN_WINDOW_DAYS must be greater than 0 and less than "
@@ -2272,7 +2280,7 @@ def build_warm_rollups(
     now = utc_now()
 
     # Check UTC capture cutoffs as well as local dates near DST retention boundaries.
-    percentile_lookback_days = fact_retention_days - 1
+    percentile_lookback_days = PERCENTILE_LOOKBACK_DAYS
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
         today_local = conn.execute(

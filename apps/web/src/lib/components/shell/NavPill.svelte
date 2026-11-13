@@ -4,6 +4,7 @@
 	import type { NavigationLifecycle } from '@yesid/ui/brand';
 	import type { Component } from 'svelte';
 	import { trackEvent } from '#lib/site/analytics.ts';
+	import HouseIcon from '@lucide/svelte/icons/house';
 	import MapIcon from '@lucide/svelte/icons/map';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import MapPinIcon from '@lucide/svelte/icons/map-pin';
@@ -32,17 +33,16 @@
 		type SearchScopeKey,
 	} from '#lib/components/surface/SearchControls.svelte';
 	import {
-		type SurfaceNavItem,
-		type AuditNavItem,
-		SURFACE_NAV,
-		AUDIT_NAV,
+		type NavItem,
+		NAV_ITEMS,
+		visibleNav,
 		YESID_HOUSE_LINK,
 		isSurfaceActive,
 	} from '#lib/content/nav.ts';
 	import { navPillCopy } from '#lib/i18n/messages.ts';
 	import { SiteHeader } from '@yesid/ui/layout';
 	import RefreshButton from './RefreshButton.svelte';
-	import { providerHref, type PublicProvider } from '#lib/v1/providers.ts';
+	import { providerHref, providerHasAlerts, type PublicProvider } from '#lib/v1/providers.ts';
 	import { v1Provider } from '#lib/v1/config.ts';
 
 	interface NavPillProps {
@@ -99,15 +99,13 @@
 	const transmitsSearches = $derived(searchScope === 'map' || searchScope === 'all');
 	const blendIsMixed = $derived(searchScope === 'map' || searchScope === 'all');
 
-	const toItem = (item: (typeof SURFACE_NAV)[number] | (typeof AUDIT_NAV)[number]) => ({
+	const toItem = (item: NavItem) => ({
 		href: localizeHref(item.href, locale, providerId),
 		label: item.label[locale],
 		current: isSurfaceActive(item, currentPath),
 	});
-	const MENU_ICONS: Record<
-		SurfaceNavItem['key'] | AuditNavItem['key'],
-		Component<{ class?: string }>
-	> = {
+	const MENU_ICONS: Record<NavItem['key'], Component<{ class?: string }>> = {
+		overview: HouseIcon,
 		map: MapIcon,
 		lines: RouteIcon,
 		stops: MapPinIcon,
@@ -119,12 +117,21 @@
 		repeatOffenders: RepeatIcon,
 		alerts: TriangleAlertIcon,
 	};
-	const links = $derived(SURFACE_NAV.map((item) => ({ ...toItem(item), priority: 3 as const })));
-	const menuItems = $derived([
-		...[...SURFACE_NAV, ...AUDIT_NAV].map((item) => ({
+	const links = $derived(
+		NAV_ITEMS.filter((item) => item.barLabel).map((item) => ({
 			...toItem(item),
-			icon: MENU_ICONS[item.key],
+			label: item.barLabel![locale],
+			priority: 3 as const,
 		})),
+	);
+	const selectedProvider = $derived(providers.find((provider) => provider.id === providerId));
+	const menuItems = $derived([
+		...visibleNav({ alerts: selectedProvider ? providerHasAlerts(selectedProvider) : null }).map(
+			(item) => ({
+				...toItem(item),
+				icon: MENU_ICONS[item.key],
+			}),
+		),
 		{
 			href: YESID_HOUSE_LINK.href,
 			label: YESID_HOUSE_LINK.label[locale],
