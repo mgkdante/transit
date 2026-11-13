@@ -28,7 +28,13 @@
 	const t = $derived(copy[locale]);
 	const storageKey = 'transit:legend-collapsed';
 	let expanded = $state(true);
-	let title = $state<HTMLElement | null>(null);
+	let sheet = $state<HTMLElement | null>(null);
+	let viewport = $state<HTMLElement | null>(null);
+	$effect(() => {
+		sheet?.setAttribute('tabindex', '0');
+		viewport?.setAttribute('role', 'region');
+		viewport?.setAttribute('aria-label', t.legend.title);
+	});
 	let trigger = $state<HTMLButtonElement | null>(null);
 	onMount(() => {
 		try {
@@ -48,9 +54,9 @@
 	$effect(() => {
 		if (hidden || desktop.current) open = false;
 	});
-	function focusTitle(event: Event) {
+	function focusSheet(event: Event) {
 		event.preventDefault();
-		title?.focus();
+		sheet?.focus();
 	}
 	function restoreFocus(event: Event) {
 		event.preventDefault();
@@ -71,7 +77,7 @@
 				{/snippet}
 			</Collapsible.Trigger>
 			<Collapsible.Content>
-				<ScrollArea class="map-legend-scroll">
+				<ScrollArea class="map-legend-scroll" bind:viewportRef={viewport}>
 					<div class="map-legend-body"><MapLegend {locale} /></div>
 				</ScrollArea>
 			</Collapsible.Content>
@@ -101,18 +107,17 @@
 			</div>
 		{/if}
 		<Sheet.Content
+			bind:ref={sheet}
 			side="bottom"
 			modal={false}
 			interactOutsideBehavior="close"
 			showCloseButton={false}
 			class="map-legend-sheet"
 			data-slot="map-legend-sheet"
-			onOpenAutoFocus={focusTitle}
+			onOpenAutoFocus={focusSheet}
 			onCloseAutoFocus={restoreFocus}
 		>
-			<Sheet.Title bind:ref={title} tabindex={-1} class="map-legend-sheet-title"
-				>{t.legend.title}</Sheet.Title
-			>
+			<Sheet.Title class="map-legend-sheet-title">{t.legend.title}</Sheet.Title>
 			<MapLegend {locale} lead />
 		</Sheet.Content>
 	</Sheet.Root>
@@ -192,6 +197,10 @@
 		font-family: var(--font-body);
 		font-size: var(--text-caption);
 		font-weight: 600;
+	}
+	:global(.map-legend-sheet:focus-visible) {
+		outline: calc(var(--spacing) / 2) solid var(--ring);
+		outline-offset: calc(var(--spacing) / -2);
 	}
 	:global(.map-legend-sheet[data-state='open']) {
 		animation: transit-sheet-in var(--duration-slow) var(--ease-out) both;

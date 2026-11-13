@@ -16,6 +16,8 @@ describe('MapLegendControl', () => {
 			expect(button).toHaveAttribute('aria-expanded', 'false');
 			await fireEvent.click(button);
 			const dialog = screen.getByRole('dialog', { name: copy[locale].legend.title });
+			expect(dialog).toHaveAttribute('tabindex', '0');
+			await waitFor(() => expect(dialog).toHaveFocus());
 			expect(button).toHaveAttribute('aria-expanded', 'true');
 			expect(button).toHaveAttribute('aria-controls', dialog.id);
 			expect(screen.getByText(copy[locale].headingLead)).toBeVisible();
@@ -30,6 +32,10 @@ describe('MapLegendControl', () => {
 	it('starts expanded on desktop and remembers collapse across mounts', async () => {
 		const view = render(MapLegendControl, { locale: 'en', presentation: 'desktop' });
 		const header = view.getByRole('button', { name: 'Legend' });
+		const viewport = view.getByRole('region', { name: 'Legend' });
+		expect(viewport).toHaveAttribute('tabindex', '0');
+		viewport.focus();
+		expect(viewport).toHaveFocus();
 		expect(header).toHaveAttribute('aria-expanded', 'true');
 		await fireEvent.click(header);
 		expect(header).toHaveAttribute('aria-expanded', 'false');
