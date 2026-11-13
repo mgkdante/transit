@@ -216,13 +216,14 @@ export function availabilityFromPointCollectionIndex(
 export function resolveHistoryDate(
 	rawDate: unknown,
 	availability: HistoryAvailability,
+	defaultDate?: string,
 ): ResolvedHistoryDate {
 	const dates = datesForAvailability(availability);
 	if (dates.length === 0) {
 		return { selection: null, canonicalDate: null, correction: null };
 	}
 
-	const latest = dates[dates.length - 1];
+	const latest = defaultDate && dates.includes(defaultDate) ? defaultDate : dates[dates.length - 1];
 	if (isAbsent(rawDate)) {
 		return { selection: latest, canonicalDate: null, correction: null };
 	}
@@ -296,6 +297,14 @@ export function previousAvailableDate(
 ): string | null {
 	if (!strictIsoDate(date)) return null;
 	return datesForAvailability(availability).findLast((candidate) => candidate < date) ?? null;
+}
+
+export function latestAvailableDateThrough(
+	availability: HistoryAvailability,
+	through: string | null,
+): string | null {
+	if (through === null) return null;
+	return datesForAvailability(availability).findLast((date) => date <= through) ?? null;
 }
 
 export function nextAvailableDate(date: string, availability: HistoryAvailability): string | null {

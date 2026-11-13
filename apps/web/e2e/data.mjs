@@ -129,6 +129,19 @@ layoutFiles['/v1/stm/historic/receipts/2026-08-29.json'] = JSON.stringify({
 	worst_route: { id: '24', name: 'Sherbrooke', otp_delta_pts: -8 },
 	worst_stop: { id: 'S1', name: 'Fixture stop', avg_delay_min: 6.1 },
 });
+const layoutReceipts = structuredClone(b9['historic/receipts/index.json']);
+layoutReceipts.dates.push('2026-08-30');
+layoutReceipts.available.push({ date: '2026-08-30', has_data: true, has_schedule: false });
+layoutFiles['/v1/stm/historic/receipts/index.json'] = JSON.stringify(layoutReceipts);
+layoutFiles['/v1/stm/historic/receipts/2026-08-30.json'] = JSON.stringify({
+	generated_utc: generated,
+	date: '2026-08-30',
+	otp_pct: null,
+	avg_delay_min: null,
+	severe_pct: null,
+	worst_route: null,
+	worst_stop: null,
+});
 layoutFiles['/v1/stm/live/vehicles.json'] = JSON.stringify({
 	generated_utc: generated,
 	vehicles: [
