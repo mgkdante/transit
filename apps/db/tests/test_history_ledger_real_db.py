@@ -1,8 +1,13 @@
+from datetime import date
 from importlib import import_module
 
 import pytest
+from history_ledger_fixtures import pipeline_role
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError, ProgrammingError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
+
+from transit_ops.history import ledger
+from transit_ops.history.datasets import UndeclaredDataset
 
 migration = import_module("transit_ops.db.migrations.versions.0097_history_ledger")
 TABLES = ("history_window", "history_archive_copy", "history_event", "pipeline_switches")
@@ -238,3 +243,189 @@ def _pipeline_statements(conn):
         with pytest.raises(ProgrammingError) as error, conn.begin_nested():
             conn.exec_driver_sql(sql)
         assert error.value.orig.sqlstate == "42501"
+
+
+IDENTITY = dict(dataset_id="capture.trip_updates", provider_id="network", window_key="2026-11-01")
+
+
+def _ledger_row(conn):
+    return (
+        conn.execute(
+            text(
+                "SELECT * FROM core.history_window WHERE dataset_id=:dataset_id "
+                "AND provider_id=:provider_id AND revision=0 AND window_key=:window_key"
+            ),
+            IDENTITY,
+        )
+        .mappings()
+        .one()
+    )
+
+
+def test_versions_are_allocated_one_at_a_time_by_two_sessions(real_db_engine):
+    with real_db_engine.connect() as a, real_db_engine.connect() as b:
+        try:
+            assert ledger.allocate_version(a, **IDENTITY) == 1
+            b.exec_driver_sql("SET LOCAL lock_timeout = '100ms'")
+            with pytest.raises(OperationalError) as error:
+                ledger.allocate_version(b, **IDENTITY)
+            assert error.value.orig.sqlstate == "55P03"
+            b.rollback()
+            other = {**IDENTITY, "window_key": "2026-11-02"}
+            assert ledger.allocate_version(b, **other) == 1
+            b.exec_driver_sql("SET LOCAL lock_timeout = '100ms'")
+            with pytest.raises(OperationalError) as error:
+                ledger.lock_window(b, **IDENTITY)
+            assert error.value.orig.sqlstate == "55P03"
+            b.rollback()
+            assert ledger.allocate_version(a, **IDENTITY) == 2
+            a.rollback()
+            assert ledger.allocate_version(b, **IDENTITY) == 1
+        finally:
+            a.rollback()
+            b.rollback()
+
+
+def test_lock_window_marks_the_working_copy_changed(conn):
+    ledger.lock_window(conn, **IDENTITY)
+    row = _ledger_row(conn)
+    assert row["working_state"] == "present"
+    assert row["window_start"] == date(2026, 11, 1)
+    assert conn.exec_driver_sql("SELECT kind FROM core.history_event").scalars().all() == [
+        "changed"
+    ]
+    conn.exec_driver_sql(
+        "UPDATE core.history_window SET working_state='trimmed', next_version=9, "
+        "current_version=7, trimmed_at_utc=clock_timestamp(), "
+        "working_changed_at_utc=clock_timestamp()-interval '1 day', "
+        "hold_until_utc=clock_timestamp()+interval '1 day', hold_reason='test'"
+    )
+    before = _ledger_row(conn)
+    ledger.lock_window(conn, **IDENTITY)
+    after = _ledger_row(conn)
+    assert after["working_state"] == "present"
+    assert after["working_changed_at_utc"] > before["working_changed_at_utc"]
+    assert after["working_changed_at_utc"] > row["working_changed_at_utc"]
+    for field in (
+        "next_version",
+        "current_version",
+        "trimmed_at_utc",
+        "hold_until_utc",
+        "hold_reason",
+    ):
+        assert after[field] == before[field]
+    assert conn.exec_driver_sql("SELECT kind FROM core.history_event").scalars().all() == [
+        "changed",
+        "changed",
+    ]
+
+
+def _ledger_counts(conn):
+    return [conn.exec_driver_sql(f"SELECT count(*) FROM core.{t}").scalar_one() for t in TABLES[:3]]
+
+
+def test_undeclared_dataset_is_refused(conn):
+    before = _ledger_counts(conn)
+    identity = {**IDENTITY, "dataset_id": "capture.unknown"}
+    for function, extra in (
+        (ledger.lock_window, {}),
+        (ledger.allocate_version, {}),
+        (ledger.record_event, {"kind": "seal", "revision": 0}),
+    ):
+        with pytest.raises(UndeclaredDataset):
+            function(conn, **identity, **extra)
+    assert _ledger_counts(conn) == before
+
+
+@pytest.mark.parametrize("invalid", [{"window_key": "2026-11"}, {"revision": 1}, {"revision": -1}])
+def test_window_key_and_revision_must_fit_the_declaration(conn, invalid):
+    before = _ledger_counts(conn)
+    for function in (ledger.lock_window, ledger.allocate_version):
+        with pytest.raises(ValueError):
+            function(conn, **{**IDENTITY, **invalid})
+    assert _ledger_counts(conn) == before
+
+
+def test_allocation_starts_above_every_listed_version(conn):
+    before = _ledger_counts(conn)
+    with pytest.raises(ValueError):
+        ledger.allocate_version(conn, **IDENTITY, above_version=-1)
+    assert _ledger_counts(conn) == before
+    for above, expected in ((5, 6), (2, 7), (0, 8)):
+        assert ledger.allocate_version(conn, **IDENTITY, above_version=above) == expected
+    row = _ledger_row(conn)
+    assert (row["next_version"], row["working_state"]) == (9, "present")
+    assert row["window_start"] == date(2026, 11, 1)
+    assert _ledger_counts(conn)[1:] == before[1:]
+    conn.exec_driver_sql("UPDATE core.history_window SET working_state='empty', hold_reason='keep'")
+    before_row = dict(_ledger_row(conn))
+    assert ledger.allocate_version(conn, **IDENTITY) == 9
+    assert dict(_ledger_row(conn)) == {**before_row, "next_version": 10}
+
+
+def test_events_carry_their_kind_details_and_actor(conn):
+    conn.exec_driver_sql("SET LOCAL application_name = 'ledger-test'")
+    for actor, expected in ((None, "ledger-test"), ("owner-command", "owner-command")):
+        event_id = ledger.record_event(
+            conn,
+            **{**IDENTITY, "window_key": "2026-11"},
+            revision=0,
+            kind="fold_published",
+            content_version=2,
+            reason="checked",
+            details={"rows": 3, "missing": None},
+            actor=actor,
+        )
+        row = (
+            conn.execute(
+                text("SELECT * FROM core.history_event WHERE event_id=:id"), {"id": event_id}
+            )
+            .mappings()
+            .one()
+        )
+        assert (row["kind"], row["content_version"], row["reason"], row["actor"]) == (
+            "fold_published",
+            2,
+            "checked",
+            expected,
+        )
+        assert row["details"] == {"rows": 3, "missing": None}
+    conn.exec_driver_sql("SET LOCAL application_name = ''")
+    event_id = ledger.record_event(conn, **IDENTITY, revision=0, kind="seal")
+    assert (
+        conn.execute(
+            text("SELECT actor FROM core.history_event WHERE event_id=:id"), {"id": event_id}
+        ).scalar_one()
+        == conn.exec_driver_sql("SELECT current_user").scalar_one()
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"kind": "unknown"},
+        {"content_version": 0},
+        {"reason": ""},
+        {"actor": ""},
+        {"details": {"bad": object()}},
+    ],
+)
+def test_event_invalid_values_are_refused_before_sql(conn, invalid):
+    before = _ledger_counts(conn)
+    with pytest.raises(TypeError if "details" in invalid else ValueError):
+        ledger.record_event(conn, **{**IDENTITY, "revision": 0, "kind": "seal", **invalid})
+    assert _ledger_counts(conn) == before
+
+
+def test_ledger_calls_run_as_the_pipeline_role(conn, monkeypatch):
+    with pipeline_role(conn, monkeypatch):
+        assert conn.exec_driver_sql("SELECT current_user").scalar_one() == "transit_app"
+        ledger.lock_window(conn, **IDENTITY)
+        assert ledger.allocate_version(conn, **IDENTITY) == 1
+        event_id = ledger.record_event(conn, **IDENTITY, revision=0, kind="seal")
+        assert (
+            conn.execute(
+                text("SELECT kind FROM core.history_event WHERE event_id=:id"), {"id": event_id}
+            ).scalar_one()
+            == "seal"
+        )
