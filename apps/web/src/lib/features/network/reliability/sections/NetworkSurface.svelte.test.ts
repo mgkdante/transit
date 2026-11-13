@@ -611,7 +611,8 @@ describe('NetworkSurface reporting row (S9C vehicles-reporting own row)', () => 
 		const links = within(list).getAllByRole('link');
 		expect(links).toHaveLength(2);
 		expect(links[0]).toHaveAttribute('href', '/lines/51');
-		expect(links[0]).toHaveAttribute('aria-label', 'View line 51');
+		expect(links[0]).not.toHaveAttribute('aria-label');
+		expect(links[0]).toHaveAccessibleName(expect.stringContaining('Line 51'));
 		expect(links[1]).toHaveAttribute('href', '/lines/105');
 		expect(within(list).getByText('2 trips')).toBeInTheDocument();
 		expect(within(list).getByText('1 trip')).toBeInTheDocument();

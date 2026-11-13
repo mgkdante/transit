@@ -649,7 +649,7 @@ describe('AccountabilityReceipt S13 re-granulated cuts', () => {
 		expect(document.querySelector('[data-slot="receipt-time-of-day"]')).not.toBeNull();
 		expect(document.querySelector('[data-slot="receipt-state-cuts"]')).not.toBeNull();
 		expect(document.querySelector('[data-slot="receipt-not-reported"]')).not.toBeNull();
-		expect(screen.getByRole('link', { name: /View line 51/i })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /Édouard-Montpetit/ })).toHaveAttribute(
 			'href',
 			'/lines/51',
 		);

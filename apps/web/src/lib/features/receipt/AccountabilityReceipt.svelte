@@ -2,11 +2,10 @@
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { stopDisplayName } from '#lib/site/transitDisplay.ts';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
-	const { line } = transitDisplay();
 	import { createArticleNavigation } from '#lib/site/articleNavigation.svelte.ts';
 	import { page } from '$app/state';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
-	import { absenceShort, routeNameFallback, stopNameFallback } from '#lib/site/absence.ts';
+	import { absenceShort, stopNameFallback } from '#lib/site/absence.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { mirrorSearchParam } from '#lib/site/urlMirror.ts';
 	import { formatDateKey, formatUtc } from '#lib/utils/time.ts';
@@ -58,6 +57,8 @@
 	import SectionTimeOfDay from './sections/SectionTimeOfDay.svelte';
 	import SectionStateCuts from './sections/SectionStateCuts.svelte';
 	import SectionNotReported from './sections/SectionNotReported.svelte';
+
+	const display = transitDisplay();
 
 	const localizeHref = getLocalizeHref();
 
@@ -186,7 +187,7 @@
 	);
 	const worst = $derived(
 		selectWorstOfDay(currentReceipt ?? { worst_route: null, worst_stop: null }, {
-			routeName: (id, name) => name ?? routeNameFallback(line(id), locale),
+			directory: display.directory,
 			stopName: (id, name) => (name ? stopDisplayName(name) : stopNameFallback(id, locale)),
 			routeLabel: t.worst.routeLabel,
 			stopLabel: t.worst.stopLabel,
@@ -213,8 +214,10 @@
 		if (r.otp_pct == null) return t.dayVerdict.none;
 		const clauses: string[] = [t.dayVerdict.otp(`${r.otp_pct}${t.units.pct}`)];
 		const wr = r.worst_route;
-		if (wr?.name != null && wr.otp_delta_pts != null) {
-			clauses.push(t.dayVerdict.worst(wr.name, fmtDelta(wr.otp_delta_pts)));
+		if (wr?.id && wr.otp_delta_pts != null) {
+			clauses.push(
+				t.dayVerdict.worst(display.lineName(wr.id, wr.name).label, fmtDelta(wr.otp_delta_pts)),
+			);
 		}
 		if (r.affected_routes != null) clauses.push(t.dayVerdict.affected(r.affected_routes));
 		const comp = r.service_states?.service_completeness_pct ?? null;
@@ -228,10 +231,9 @@
 
 	const notReported = $derived(
 		selectNotReportedLines(currentReceipt?.service_states, {
-			routeName: (id, name) => name ?? routeNameFallback(line(id), locale),
+			directory: display.directory,
 			rowLabel: t.notReported.rowLabel,
 			href: (id) => localizeHref(routeFor({ kind: 'line', id }), locale),
-			viewDetail: (id) => t.notReported.viewDetail(id),
 			fmtScheduled: (v) => (v == null ? null : t.notReported.scheduled(v)),
 		}),
 	);

@@ -1,3 +1,4 @@
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 import type {
 	ReceiptNotReportedRoute,
 	ReceiptServiceStates,
@@ -16,7 +17,7 @@ export interface NotReportedRow {
 	readonly domain: readonly [number, number];
 	readonly display: string | null;
 	readonly href: string;
-	readonly ariaLabel: string;
+	readonly ariaLabel?: string;
 }
 
 export interface NotReportedVM {
@@ -27,10 +28,9 @@ export interface NotReportedVM {
 }
 
 export interface NotReportedLabels {
-	readonly routeName: (id: string, fallbackName: string | null | undefined) => string;
+	readonly directory: LineDirectory;
 	readonly rowLabel: string;
 	readonly href: (id: string) => string;
-	readonly viewDetail: (id: string) => string;
 	readonly fmtScheduled: (v: number | null | undefined) => string | null;
 }
 
@@ -42,14 +42,13 @@ export function selectNotReportedLines(
 	const rows: NotReportedRow[] = list.map((r, i) => ({
 		key: r.id,
 		rank: i + 1,
-		title: labels.routeName(r.id, r.name),
+		title: labels.directory.name(r.id, r.name).label,
 		subtitle: labels.rowLabel,
 		severity: 'critical' as SeverityCode,
 		value: r.scheduled_trip_days ?? null,
 		domain: NOT_REPORTED_DOMAIN,
 		display: labels.fmtScheduled(r.scheduled_trip_days),
 		href: labels.href(r.id),
-		ariaLabel: labels.viewDetail(r.id),
 	}));
 	return {
 		rows,

@@ -1793,50 +1793,25 @@ def verify_backup_freshness_command(
 
 @app.command("db-storage-report")
 def db_storage_report_command(
-    limit: int = typer.Option(
-        15,
-        "--limit",
-        help="Number of largest tables to report per schema.",
+    limit: int = typer.Option(15, "--limit", help="Number of largest tables per schema."),
+    editions: bool = typer.Option(
+        False, "--editions", help="Count editions: scans all rows of three large static tables."
+    ),
+    statement_timeout_seconds: int = typer.Option(
+        300, "--statement-timeout-seconds", min=1, help="Read-only transaction statement timeout."
     ),
 ) -> None:
-    """Report pg_total_relation_size for the largest silver.* / gold.* tables (READ-ONLY).
+    """Report database storage, table health and capture cadence (READ-ONLY)."""
+    from transit_ops.maintenance.storage_report import build_storage_report
 
-    Pure SELECT against pg_catalog — no writes, no DDL. Lets the operator measure
-    storage before/after the thin-silver live prune. Sizes are pg_size_pretty'd.
-    """
-
-    settings = get_settings()
-    engine = make_engine(settings)
-    report: dict[str, object] = {}
-    table_sql = text(
-        """
-        SELECT n.nspname AS schema,
-               c.relname AS table,
-               pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size,
-               pg_total_relation_size(c.oid) AS total_bytes
-        FROM pg_class AS c
-        JOIN pg_namespace AS n ON n.oid = c.relnamespace
-        WHERE c.relkind = 'r'
-          AND n.nspname = :schema
-        ORDER BY pg_total_relation_size(c.oid) DESC
-        LIMIT :limit
-        """
-    )
-    with engine.connect() as conn:
-        for schema in ("silver", "gold"):
-            rows = conn.execute(table_sql, {"schema": schema, "limit": limit}).mappings()
-            report[schema] = [
-                {
-                    "table": f"{r['schema']}.{r['table']}",
-                    "total_size": r["total_size"],
-                    "total_bytes": int(r["total_bytes"]),
-                }
-                for r in rows
-            ]
-        grand = conn.execute(
-            text("SELECT pg_size_pretty(pg_database_size(current_database())) AS pretty")
-        ).scalar_one()
-    report["database_total"] = grand
+    engine = make_engine(get_settings())
+    with engine.connect() as conn, conn.begin():
+        conn.execute(text("SET TRANSACTION READ ONLY"))
+        conn.execute(
+            text("SELECT set_config('statement_timeout', :timeout, true)"),
+            {"timeout": f"{statement_timeout_seconds}s"},
+        )
+        report = build_storage_report(conn, limit=limit, editions=editions)
     typer.echo(json.dumps(report, indent=2))
 
 

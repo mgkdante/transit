@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import HomePulse from './HomePulse.svelte';
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 
 const { state, createLiveStoreSpy } = vi.hoisted(() => ({
 	state: {
@@ -179,11 +180,29 @@ describe('Home accountability strip', () => {
 	it('names the worst lines by route number and links each ranking to its page', () => {
 		state.network = liveNetwork;
 		state.hotspots = dayRanking;
-		render(HomePulse, { props: { locale: 'en', city: 'Ottawa', manifest } });
+		render(HomePulse, {
+			props: { locale: 'en', city: 'Ottawa', manifest },
+			context: new Map([
+				[
+					Symbol.for('transit.line-directory'),
+					() =>
+						createLineDirectory([{ id: '7-354', short: '7', type: 3 }], {
+							line: (id) => `Line ${id}`,
+						}),
+				],
+			]),
+		});
 		const lines = screen.getByRole('region', { name: 'Most delayed lines' });
 		const line = within(lines).getByRole('link');
 		expect(line).toHaveAttribute('href', '/lines/7-354');
-		expect(within(line).getByText('7')).toBeInTheDocument();
+		expect(within(line).getByTitle('7 · Carleton <> St-Laurent')).toHaveTextContent(
+			'7 · Carleton <> St-Laurent',
+		);
+		expect(line).not.toHaveAttribute('aria-label');
+		expect(line).toHaveAccessibleName(
+			expect.stringContaining('24% of readings more than 5 min late'),
+		);
+		expect(within(line).getByText('7 · Carleton <> St-Laurent')).toBeInTheDocument();
 		expect(line).toHaveTextContent('Carleton <> St-Laurent');
 		expect(line).toHaveTextContent('24% of readings more than 5 min late');
 		const stops = screen.getByRole('region', { name: 'Most delayed stops' });

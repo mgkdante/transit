@@ -1,13 +1,13 @@
+import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import { describe, it, expect } from 'vitest';
 import { selectSilentByRoute, NON_RESPONDING_DOMAIN } from './silentByRoute';
 import type { NonRespondingRoute } from '#lib/v1/schemas/index.ts';
 
 const labels = {
-	routeName: (r: string) => `Route ${r}`,
+	directory: createLineDirectory(null, { line: (id) => `Line ${id}` }),
 	rowLabel: 'Line',
 	display: (_r: string, count: number) => `${count} ${count === 1 ? 'trip' : 'trips'}`,
 	href: (r: string) => `/lines/${r}`,
-	viewDetail: (r: string) => `View line ${r}`,
 };
 
 describe('selectSilentByRoute', () => {
@@ -29,4 +29,16 @@ describe('selectSilentByRoute', () => {
 		expect(selectSilentByRoute(null, labels)).toEqual([]);
 		expect(selectSilentByRoute([], labels)).toEqual([]);
 	});
+});
+it('ladder rows lead with the line number', () => {
+	const directory = createLineDirectory(
+		[{ id: '1-373', short: '1', long: 'Confederation', type: 1 }],
+		{ line: (id) => `Line ${id}` },
+	);
+	expect(
+		selectSilentByRoute([{ route_id: '1-373', count: 2 }], { ...labels, directory })[0].title,
+	).toBe('1 · Confederation');
+	expect(
+		selectSilentByRoute([{ route_id: '1-373', count: 2 }], { ...labels, directory })[0].ariaLabel,
+	).toBeUndefined();
 });

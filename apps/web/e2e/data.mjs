@@ -34,6 +34,13 @@ files['/v1/octranspo/manifest.json'] = JSON.stringify({
 });
 // The b9 bundle's line, its stop and their reliability back the line page.
 const { files: b9 } = JSON.parse(read('../scripts/__fixtures__/b9/rich.json'));
+files['/v1/stm/historic/receipts/index.json'] = JSON.stringify(b9['historic/receipts/index.json']);
+files['/v1/stm/historic/receipts/2026-08-29.json'] = JSON.stringify({
+	generated_utc: '2026-06-15T12:00:00Z',
+	date: '2026-08-29',
+	otp_pct: 80,
+	worst_route: { id: '1-373', name: 'Confederation', otp_delta_pts: -8 },
+});
 for (const [key, body] of Object.entries(b9)) {
 	if (/^(static\/(routes|stops)|historic\/(route|stop)_reliability)\//.test(key))
 		files[`/v1/stm/${key}`] ??= JSON.stringify(body);

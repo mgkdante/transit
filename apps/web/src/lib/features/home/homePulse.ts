@@ -1,6 +1,7 @@
 import type { NetworkFile } from '#lib/v1/schemas/network.ts';
 import type { HotspotEntry, Hotspots } from '#lib/v1/schemas/generated/historic_hotspots.ts';
-import { lineLabel, stopDisplayName } from '#lib/site/transitDisplay.ts';
+import { stopDisplayName } from '#lib/site/transitDisplay.ts';
+import type { LineDirectory } from '#lib/site/lineDirectory.ts';
 
 /** What the network is doing right now, read from the live network snapshot. */
 export interface LivePulse {
@@ -31,10 +32,9 @@ export function selectLivePulse(net: NetworkFile | null): LivePulse | null {
 export interface PulseRank {
 	readonly kind: 'line' | 'stop';
 	readonly id: string;
-	/** Route number for a line; the stop's name for a stop. */
+	/** Complete visible line label, or the stop's name. */
 	readonly label: string;
-	/** The route's origin and destination, shown after its number. */
-	readonly detail: string | null;
+	readonly spoken?: string;
 	readonly severePct: number | null;
 }
 
@@ -45,8 +45,6 @@ export interface WorstPulse {
 	readonly stops: readonly PulseRank[];
 }
 
-type RouteRef = { readonly id: string; readonly short: string };
-
 function kindOf(type: string): PulseRank['kind'] | null {
 	const kind = type.toLowerCase();
 	if (kind === 'route' || kind === 'line') return 'line';
@@ -54,21 +52,21 @@ function kindOf(type: string): PulseRank['kind'] | null {
 	return null;
 }
 
-function toRank(entry: HotspotEntry, kind: PulseRank['kind'], routes: readonly RouteRef[]) {
+function toRank(entry: HotspotEntry, kind: PulseRank['kind'], directory: LineDirectory) {
 	const name = entry.name ?? null;
-	return kind === 'line'
+	const line = kind === 'line' ? directory.name(entry.id, name) : null;
+	return line
 		? {
 				kind,
 				id: entry.id,
-				label: lineLabel(entry.id, routes),
-				detail: name,
+				label: line.label,
+				spoken: line.spoken,
 				severePct: entry.severe_pct ?? null,
 			}
 		: {
 				kind,
 				id: entry.id,
 				label: name ? stopDisplayName(name) : entry.id,
-				detail: null,
 				severePct: entry.severe_pct ?? null,
 			};
 }
@@ -79,7 +77,7 @@ function toRank(entry: HotspotEntry, kind: PulseRank['kind'], routes: readonly R
  */
 export function selectWorst(
 	hotspots: Hotspots | null,
-	routes: readonly RouteRef[],
+	directory: LineDirectory,
 	{ grain = 'week', limit = 5 }: { grain?: string; limit?: number } = {},
 ): WorstPulse | null {
 	const window = hotspots?.by_grain?.find((entry) => entry.grain === grain);
@@ -93,7 +91,7 @@ export function selectWorst(
 		return ranked
 			.filter((entry) => kindOf(entry.type) === kind && !seen.has(entry.id) && seen.add(entry.id))
 			.slice(0, limit)
-			.map((entry) => toRank(entry, kind, routes));
+			.map((entry) => toRank(entry, kind, directory));
 	};
 	return {
 		through: window.window_end ?? window.date ?? null,

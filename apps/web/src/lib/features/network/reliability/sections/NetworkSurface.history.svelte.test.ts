@@ -695,7 +695,7 @@ describe('NetworkSurface retained-history integration', () => {
 		)) {
 			expect(link.href).not.toMatch(/[?&](?:from|to)=/);
 		}
-		expect(view.getByRole('link', { name: 'View line 51' })).toHaveAttribute('href', '/lines/51');
+		expect(view.getByRole('link', { name: /Line 51/ })).toHaveAttribute('href', '/lines/51');
 	});
 
 	it('aborts a superseded range and ignores its late result', async () => {
