@@ -1,5 +1,6 @@
 """Build and verify a local pack from a working poll record."""
 
+import gzip
 import hashlib
 import json
 import re
@@ -23,10 +24,11 @@ from transit_ops.history.poll_record import (
     CaptureEntry,
     PollRecord,
     PollRecordInvalid,
+    canonical_json,
     ordered_record,
 )
 from transit_ops.history.working_captures import read_working_day, rows_fingerprint
-from transit_ops.ingestion.storage import BronzeStorage, BronzeStorageResolver
+from transit_ops.ingestion.storage import BronzeStorage, BronzeStorageResolver, ObjectAlreadyExists
 
 OBJECT_ABSENT = "object_absent"
 OBJECT_MISMATCH = "object_mismatch"
@@ -288,18 +290,29 @@ def _allocate(
     return manifest, data
 
 
-def _mark_sealed(connection: Connection, manifest: Manifest, actor: str | None) -> None:
-    identity = dict(
-        dataset_id="capture." + manifest.endpoint_key,
-        provider_id=manifest.provider_id,
-        window_key=manifest.utc_date.isoformat(),
-        content_version=manifest.content_version,
+def _copy_identity(copy: ledger.ArchiveCopy) -> dict[str, str | int]:
+    return dict(
+        dataset_id=copy.dataset_id,
+        provider_id=copy.provider_id,
+        revision=copy.revision,
+        window_key=copy.window_key,
+        content_version=copy.content_version,
     )
+
+
+def _mark_sealed(connection: Connection, copy: ledger.ArchiveCopy, actor: str | None) -> None:
+    identity = _copy_identity(copy)
     with connection.begin():
+        ledger.acquire_window_lock(
+            connection,
+            dataset_id=copy.dataset_id,
+            provider_id=copy.provider_id,
+            window_key=copy.window_key,
+        )
         result = connection.execute(
             text("""
             UPDATE core.history_archive_copy SET sealed_at_utc=clock_timestamp()
-            WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=0
+            WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=:revision
               AND window_key=:window_key AND content_version=:content_version
               AND sealed_at_utc IS NULL AND rejected_at_utc IS NULL
         """),
@@ -310,13 +323,154 @@ def _mark_sealed(connection: Connection, manifest: Manifest, actor: str | None) 
         ledger.record_event(
             connection,
             kind="seal",
-            revision=0,
             actor=actor,
-            dataset_id="capture." + manifest.endpoint_key,
-            provider_id=manifest.provider_id,
-            window_key=manifest.utc_date.isoformat(),
-            content_version=manifest.content_version,
+            dataset_id=copy.dataset_id,
+            provider_id=copy.provider_id,
+            window_key=copy.window_key,
+            revision=copy.revision,
+            content_version=copy.content_version,
         )
+
+
+def _write_rejection_marker(
+    storage: BronzeStorageResolver,
+    copy: ledger.ArchiveCopy,
+    data: bytes,
+) -> None:
+    prefix = _prefix(
+        copy.provider_id,
+        copy.dataset_id.removeprefix("capture."),
+        date.fromisoformat(copy.window_key),
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "rejected.json.gz"
+        path.write_bytes(data)
+        try:
+            storage(copy.storage_backend).put_if_absent(
+                path, prefix + f"{copy.content_version}.rejected.json.gz"
+            )
+        except ObjectAlreadyExists:
+            pass
+
+
+def reject_capture_copy(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    copy: ledger.ArchiveCopy,
+    *,
+    reason: str,
+    actor: str | None = None,
+) -> None:
+    identity = _copy_identity(copy)
+    with connection.begin():
+        rejected_at = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
+    data = gzip.compress(
+        canonical_json(dict(identity, reason=reason, rejected_at_utc=rejected_at)),
+        compresslevel=9,
+        mtime=0,
+    )
+    _write_rejection_marker(storage, copy, data)
+    with connection.begin():
+        ledger.acquire_window_lock(
+            connection,
+            dataset_id=copy.dataset_id,
+            provider_id=copy.provider_id,
+            window_key=copy.window_key,
+        )
+        result = connection.execute(
+            text("""
+            UPDATE core.history_archive_copy SET rejected_at_utc=:rejected_at, reject_reason=:reason
+            WHERE dataset_id=:dataset_id AND provider_id=:provider_id AND revision=:revision
+              AND window_key=:window_key AND content_version=:content_version
+              AND rejected_at_utc IS NULL AND verified_at_utc IS NULL
+        """),
+            dict(identity, rejected_at=rejected_at, reason=reason),
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(f"could not reject copy {identity}")
+        ledger.record_event(
+            connection,
+            kind="reject",
+            reason=reason,
+            actor=actor,
+            dataset_id=copy.dataset_id,
+            provider_id=copy.provider_id,
+            window_key=copy.window_key,
+            revision=copy.revision,
+            content_version=copy.content_version,
+        )
+
+
+def _object_matches(
+    archive: BronzeStorage,
+    key: str | None,
+    size: int | None,
+    sha256: str | None,
+) -> bool:
+    if key is None:
+        return False
+    digest, length = hashlib.sha256(), 0
+    try:
+        with archive.open_stream(key) as source:
+            while chunk := source.read(64 * 1024):
+                length += len(chunk)
+                digest.update(chunk)
+    except Exception:
+        if not archive.exists(key):
+            return False
+        raise
+    return (size is None or length == size) and digest.hexdigest() == sha256
+
+
+def _day_copies(
+    connection: Connection, provider: str, endpoint: str, day: date
+) -> list[ledger.ArchiveCopy]:
+    with connection.begin():
+        return ledger.find_copies(
+            connection, dataset_id="capture." + endpoint, provider_id=provider, start=day, end=day
+        )
+
+
+def _repair_allocated(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    provider: str,
+    endpoint: str,
+    day: date,
+    actor: str | None,
+) -> None:
+    for copy in _day_copies(connection, provider, endpoint, day):
+        if copy.state != "allocated":
+            continue
+        archive = storage(copy.storage_backend)
+        manifest_ok = _object_matches(archive, copy.manifest_path, None, copy.manifest_sha256)
+        pack_ok = copy.manifest_path is not None and (
+            copy.storage_path is None
+            or _object_matches(archive, copy.storage_path, copy.byte_size, copy.sha256)
+        )
+        if manifest_ok and pack_ok:
+            _mark_sealed(connection, copy, actor)
+        else:
+            reject_capture_copy(connection, storage, copy, reason="incomplete_write", actor=actor)
+
+
+def _put_checked(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    copy: ledger.ArchiveCopy,
+    path: Path,
+    key: str,
+    size: int,
+    sha256: str,
+    actor: str | None,
+) -> None:
+    archive = storage(copy.storage_backend)
+    try:
+        archive.put_if_absent(path, key)
+    except ObjectAlreadyExists:
+        if not _object_matches(archive, key, size, sha256):
+            reject_capture_copy(connection, storage, copy, reason="key_taken", actor=actor)
+            raise
 
 
 def _highest_version(archive: BronzeStorage, prefix: str) -> int:
@@ -324,6 +478,42 @@ def _highest_version(archive: BronzeStorage, prefix: str) -> int:
     return max(
         (int(match[1]) for key in archive.list_keys(prefix) if (match := pattern.fullmatch(key))),
         default=0,
+    )
+
+
+def _write_objects(
+    connection: Connection,
+    storage: BronzeStorageResolver,
+    copy: ledger.ArchiveCopy,
+    local: "LocalPack",
+    directory: Path,
+    data: bytes,
+    actor: str | None,
+) -> None:
+    if copy.storage_path is not None:
+        assert local.path is not None and copy.byte_size is not None and copy.sha256 is not None
+        _put_checked(
+            connection,
+            storage,
+            copy,
+            local.path,
+            copy.storage_path,
+            copy.byte_size,
+            copy.sha256,
+            actor,
+        )
+    path = directory / "manifest.json.gz"
+    path.write_bytes(data)
+    assert copy.manifest_path is not None
+    _put_checked(
+        connection,
+        storage,
+        copy,
+        path,
+        copy.manifest_path,
+        len(data),
+        hashlib.sha256(data).hexdigest(),
+        actor,
     )
 
 
@@ -342,6 +532,7 @@ def seal_capture_day(
         raise ValueError("invalid sealed_by, actor or archive_backend")
     if connection.in_transaction():
         raise ValueError("seal requires a connection without a transaction")
+    _repair_allocated(connection, storage, provider_id, endpoint_key, utc_date, actor)
     day = _read_day(connection, storage, provider_id, endpoint_key, utc_date)
     if isinstance(day, ledger.ArchiveCopy):
         return day
@@ -355,25 +546,18 @@ def seal_capture_day(
         manifest, data = _allocate(
             connection, local, feed_id, feed_kind, highest, archive_backend, sealed_by, fingerprint
         )
-        if manifest.pack is not None:
-            assert local.path is not None
-            archive.put_if_absent(local.path, manifest.pack.path)
-        path = directory / "manifest.json.gz"
-        path.write_bytes(data)
-        archive.put_if_absent(path, prefix + f"{manifest.content_version}.manifest.json.gz")
-        _mark_sealed(connection, manifest, actor)
-    with connection.begin():
-        return next(
-            copy
-            for copy in ledger.find_copies(
-                connection,
-                dataset_id="capture." + endpoint_key,
-                provider_id=provider_id,
-                start=utc_date,
-                end=utc_date,
-            )
-            if copy.content_version == manifest.content_version
+        copy = next(
+            c
+            for c in _day_copies(connection, provider_id, endpoint_key, utc_date)
+            if c.content_version == manifest.content_version
         )
+        _write_objects(connection, storage, copy, local, directory, data, actor)
+        _mark_sealed(connection, copy, actor)
+    return next(
+        c
+        for c in _day_copies(connection, provider_id, endpoint_key, utc_date)
+        if c.content_version == manifest.content_version
+    )
 
 
 @dataclass(frozen=True)

@@ -1830,5 +1830,48 @@ def history_close_runs_command(
     typer.echo(f"Closed {count} unfinished capture run(s) for provider {provider}.")
 
 
+@app.command("history-seal")
+def history_seal_command(
+    provider: str = typer.Option(..., "--provider", help="Provider id."),
+    feed: str = typer.Option(..., "--feed", help="Endpoint key of the capture feed."),
+    day: str = typer.Option(..., "--date", help="Closed UTC day to seal, YYYY-MM-DD."),
+    sealed_by: str = typer.Option(..., "--sealed-by", help="Commit of the code that seals."),
+) -> None:
+    """Seal one closed UTC day of one capture feed into the archive,
+    after closing unfinished runs.
+    """
+    from transit_ops.history.close_runs import close_unfinished_runs
+    from transit_ops.history.seal_captures import CopyContentMissing
+    from transit_ops.history.storage import history_storage
+    from transit_ops.history.store import seal
+
+    settings = get_settings()
+    engine = make_engine(settings)
+    with engine.begin() as connection:
+        count = close_unfinished_runs(connection, provider_id=provider)
+    typer.echo(f"Closed {count} unfinished capture run(s) for provider {provider}.")
+    scope = history_storage(settings)
+    try:
+        with engine.connect() as connection:
+            copy = seal(
+                connection,
+                scope.resolve,
+                dataset_id="capture." + feed,
+                provider_id=provider,
+                window_key=day,
+                archive_backend=settings.BRONZE_STORAGE_BACKEND,
+                sealed_by=sealed_by,
+            )
+    except CopyContentMissing as error:
+        typer.echo(f"Not sealed capture.{feed} {day} for provider {provider}: {error}", err=True)
+        raise typer.Exit(code=1) from None
+    finally:
+        scope.close()
+    typer.echo(
+        f"Sealed capture.{feed} {day} for provider {provider}: "
+        f"version {copy.content_version}, {copy.state}."
+    )
+
+
 if __name__ == "__main__":
     app()
