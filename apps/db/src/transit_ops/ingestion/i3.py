@@ -368,6 +368,7 @@ def _run_alert_capture(
     artifact: DownloadedArtifact | None = None
     storage_path: str | None = None
     persisted = False
+    result_may_be_recorded = False
     try:
         artifact = download_to_tempfile(
             source_url=config.request_url,
@@ -425,6 +426,7 @@ def _run_alert_capture(
                 entity_count=metadata.alert_count,
                 feed_timestamp_utc=completed_at_utc,
             )
+            result_may_be_recorded = True
 
         return I3IngestionResult(
             provider_id=config.provider_id,
@@ -454,6 +456,7 @@ def _run_alert_capture(
             artifact=artifact,
             bronze_storage=bronze_storage,
             orphan_storage_path=storage_path if persisted else None,
+            result_may_be_recorded=result_may_be_recorded,
         )
         raise
 

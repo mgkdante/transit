@@ -135,3 +135,27 @@ def test_cleanup_attempts_survive_database_and_filesystem_failures(caplog):
     assert all("101" in record.message for record in caplog.records)
     assert "capture.pb" in caplog.text
     assert "secret" not in caplog.text
+
+
+def test_uncertain_recorded_result_keeps_object_when_reporting_fails(tmp_path, caplog):
+    engine = Mock()
+    engine.begin.side_effect = ConnectionError("database?token=connection-secret")
+    temp_path = tmp_path / "download.pb"
+    temp_path.write_bytes(b"capture")
+    storage = Mock()
+    artifact = DownloadedArtifact(temp_path, 7, "a" * 64, 200, "https://fixture.test")
+    finish_failed_capture(
+        engine=engine,
+        ingestion_run_id=101,
+        error=RuntimeError("original failure"),
+        artifact=artifact,
+        bronze_storage=storage,
+        orphan_storage_path="capture.pb",
+        result_may_be_recorded=True,
+    )
+    assert not temp_path.exists()
+    storage.delete_object.assert_not_called()
+    assert "Keeping uploaded object" in caplog.text
+    assert "101" in caplog.text
+    assert "secret" not in caplog.text
+    assert "original failure" not in caplog.text

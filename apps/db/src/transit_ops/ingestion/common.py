@@ -202,13 +202,17 @@ def check_capture_deadline(deadline: float) -> None:
 
 
 def lock_running_capture_run(connection: Connection, *, ingestion_run_id: int) -> None:
-    run = connection.execute(
-        text(
-            "SELECT status, started_at_utc FROM raw.ingestion_runs "
-            "WHERE ingestion_run_id = :ingestion_run_id FOR UPDATE"
-        ),
-        {"ingestion_run_id": ingestion_run_id},
-    ).mappings().one_or_none()
+    run = (
+        connection.execute(
+            text(
+                "SELECT status, started_at_utc FROM raw.ingestion_runs "
+                "WHERE ingestion_run_id = :ingestion_run_id FOR UPDATE"
+            ),
+            {"ingestion_run_id": ingestion_run_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
     # Read the database clock only after any wait for the row lock.
     database_now = connection.execute(text("SELECT clock_timestamp()"), {}).scalar_one()
     if run is None or run["status"] != "running":
@@ -403,11 +407,15 @@ def finish_failed_capture(
     artifact: DownloadedArtifact | None,
     bronze_storage: BronzeStorage,
     orphan_storage_path: str | None,
+    result_may_be_recorded: bool = False,
 ) -> None:
-    http_status = error.code if isinstance(error, HTTPError) else (
-        artifact.http_status_code if artifact else None
+    http_status = (
+        error.code
+        if isinstance(error, HTTPError)
+        else (artifact.http_status_code if artifact else None)
     )
     message = f"HTTP {error.code}: {error.reason}" if isinstance(error, HTTPError) else str(error)
+    keep_object = False
     try:
         with engine.begin() as connection:
             updated = mark_ingestion_run_failed(
@@ -418,14 +426,24 @@ def finish_failed_capture(
                 error_message=message,
             )
             if not updated:
+                status = connection.execute(
+                    text(
+                        "SELECT status FROM raw.ingestion_runs "
+                        "WHERE ingestion_run_id = :ingestion_run_id"
+                    ),
+                    {"ingestion_run_id": ingestion_run_id},
+                ).scalar_one_or_none()
+                keep_object = result_may_be_recorded and status == "succeeded"
                 logger.info(
                     "Ingestion run %s is no longer running; leaving its recorded result intact.",
                     ingestion_run_id,
                 )
     except Exception as reporting_error:
+        keep_object = result_may_be_recorded
         logger.warning(
             "Cannot record failed ingestion run %s (%s)",
-            ingestion_run_id, type(reporting_error).__name__,
+            ingestion_run_id,
+            type(reporting_error).__name__,
         )
     if artifact is not None:
         try:
@@ -433,15 +451,23 @@ def finish_failed_capture(
         except OSError as cleanup_error:
             logger.warning(
                 "Cannot remove temporary download for ingestion run %s (%s)",
-                ingestion_run_id, type(cleanup_error).__name__,
+                ingestion_run_id,
+                type(cleanup_error).__name__,
             )
-    if orphan_storage_path is not None:
+    if keep_object:
+        logger.warning(
+            "Keeping uploaded object for ingestion run %s; its result may be recorded.",
+            ingestion_run_id,
+        )
+    if orphan_storage_path is not None and not keep_object:
         try:
             bronze_storage.delete_object(orphan_storage_path)
         except Exception as cleanup_error:
             logger.warning(
                 "Cannot delete orphaned Bronze object %s for ingestion run %s (%s)",
-                orphan_storage_path, ingestion_run_id, type(cleanup_error).__name__,
+                orphan_storage_path,
+                ingestion_run_id,
+                type(cleanup_error).__name__,
             )
 
 

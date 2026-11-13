@@ -317,6 +317,7 @@ def _capture_realtime_feed(
     artifact: DownloadedArtifact | None = None
     storage_path: str | None = None
     persisted = False
+    result_may_be_recorded = False
     try:
         artifact = _download_to_tempfile(config, bronze_root / ".tmp")
         payload = artifact.temp_path.read_bytes()
@@ -368,6 +369,7 @@ def _capture_realtime_feed(
                 entity_count=metadata.entity_count,
                 feed_timestamp_utc=feed_timestamp_utc,
             )
+            result_may_be_recorded = True
 
         result = RealtimeIngestionResult(
             provider_id=config.provider_id,
@@ -398,6 +400,7 @@ def _capture_realtime_feed(
             artifact=artifact,
             bronze_storage=bronze_storage,
             orphan_storage_path=storage_path if persisted else None,
+            result_may_be_recorded=result_may_be_recorded,
         )
         raise
 

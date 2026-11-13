@@ -8,7 +8,7 @@ from realtime_replay_fixtures import PROVIDER
 from realtime_replay_fixtures import bronze_root as bronze_root
 from realtime_replay_fixtures import engine as engine
 from realtime_replay_fixtures import settings as settings
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from transit_ops.ingestion import common, gis, i3, realtime_gtfs, static_gtfs
 from transit_ops.ingestion.storage import LocalBronzeStorage
@@ -60,7 +60,7 @@ def _replace_downloads(monkeypatch, config, root):
 
 
 def _storage(engine, root, store):
-    local = LocalBronzeStorage(root)
+    local = LocalBronzeStorage("local", root)
 
     def persist(path, key):
         location = local.persist_temp_file(path, key)
@@ -119,12 +119,19 @@ def capture_case(request, engine, settings, bronze_root, seed_provider, monkeypa
     downloads = _replace_downloads(monkeypatch, config, bronze_root)
     store = SimpleNamespace(keys=[], closed=None, mutation=None)
     storage = _storage(engine, bronze_root, store)
-    return SimpleNamespace(
+    case = SimpleNamespace(
         capture=lambda: _capture(config, settings, engine, storage),
         store=store,
         downloads=downloads,
         root=bronze_root,
     )
+    try:
+        yield case
+    finally:
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM raw.i3_alert_snapshots WHERE provider_id=:p"), {"p": PROVIDER}
+            )
 
 
 def _state(engine):
@@ -269,3 +276,45 @@ def test_static_download_has_no_total_limit(tmp_path, monkeypatch):
             tmp_path,
         )
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("capture_case", ["trip_updates", "i3_alerts"], indirect=True)
+def test_recorded_success_keeps_its_object_when_the_failure_path_runs(
+    capture_case, engine, monkeypatch
+):
+    def fail_after_commit(**kwargs):
+        raise RuntimeError("result construction failed")
+
+    monkeypatch.setattr(realtime_gtfs, "RealtimeIngestionResult", fail_after_commit)
+    monkeypatch.setattr(i3, "I3IngestionResult", fail_after_commit)
+    with pytest.raises(RuntimeError, match="result construction failed"):
+        capture_case.capture()
+    run, rows = _state(engine)
+    assert run["status"] == "succeeded"
+    assert rows["ingestion_objects"] == [run["ingestion_run_id"]]
+    assert (rows["realtime_snapshot_index"] or rows["i3_alert_snapshots"]) == [
+        run["ingestion_run_id"]
+    ]
+    assert capture_case.store.keys
+    assert all((capture_case.root / key).exists() for key in capture_case.store.keys)
+    assert all(not path.exists() for path in capture_case.downloads)
+
+
+def test_failed_commit_still_removes_the_uploaded_object(capture_case, engine):
+    def fail_commit(connection):
+        status = connection.execute(
+            text("SELECT status FROM raw.ingestion_runs WHERE provider_id=:p"), {"p": PROVIDER}
+        ).scalar_one_or_none()
+        if status == "succeeded":
+            raise RuntimeError("commit failed before database commit")
+
+    event.listen(engine, "commit", fail_commit)
+    try:
+        with pytest.raises(RuntimeError, match="commit failed before database commit"):
+            capture_case.capture()
+    finally:
+        event.remove(engine, "commit", fail_commit)
+    run = _assert_discarded(capture_case, engine)
+    assert run["status"] == "failed"
+    assert run["error_message"] == "commit failed before database commit"
+    assert capture_case.store.keys
