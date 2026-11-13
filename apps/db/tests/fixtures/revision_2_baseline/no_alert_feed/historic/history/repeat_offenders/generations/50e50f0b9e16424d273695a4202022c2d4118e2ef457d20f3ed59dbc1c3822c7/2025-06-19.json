@@ -1,0 +1,56 @@
+{
+ "schema_version": 1,
+ "methodology_version": "reliability-2",
+ "publish_generation_id": null,
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "offenders": [],
+ "by_grain": [
+  {
+   "grain": "month",
+   "window_days": 30,
+   "entries": [],
+   "tray": [
+    {
+     "rank": null,
+     "type": "trip",
+     "id": "T4",
+     "route": "B10",
+     "route_name": null,
+     "severity": "watch",
+     "observation_count": 2,
+     "severe_count": 2,
+     "severe_pct": 100.0,
+     "wilson_lo": null,
+     "wilson_hi": null,
+     "recurrence_days": 2,
+     "observed_days": 2,
+     "window_days": 30,
+     "avg_delay_min": 10.0
+    },
+    {
+     "rank": null,
+     "type": "vehicle",
+     "id": "V4",
+     "route": "B10",
+     "route_name": null,
+     "severity": "watch",
+     "observation_count": 2,
+     "severe_count": 2,
+     "severe_pct": 100.0,
+     "wilson_lo": null,
+     "wilson_hi": null,
+     "recurrence_days": 2,
+     "observed_days": 2,
+     "window_days": 30,
+     "avg_delay_min": 10.0
+    }
+   ],
+   "total_ranked_trips": 0,
+   "total_ranked_vehicles": 0,
+   "tray_total": 2,
+   "date": "2025-05-21",
+   "window_end": "2025-06-19"
+  }
+ ],
+ "date": "2025-06-19"
+}

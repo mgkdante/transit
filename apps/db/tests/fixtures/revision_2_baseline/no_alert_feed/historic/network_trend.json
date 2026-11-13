@@ -1,0 +1,328 @@
+{
+ "schema_version": 1,
+ "methodology_version": "reliability-2",
+ "publish_generation_id": "r2guard_plain@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "series": [
+  {
+   "date": "2025-06-03",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": 7.9,
+   "vehicles": 4,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-06-19",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": 7.9,
+   "vehicles": 4,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-07-03",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": 7.9,
+   "vehicles": 4,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-07-19",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": 7.9,
+   "vehicles": 4,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-08-03",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": 7.9,
+   "vehicles": 4,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-08-19",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": 7.9,
+   "vehicles": 4,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  }
+ ],
+ "weekly": [
+  {
+   "date": "2025-06-02",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-06-16",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-06-30",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-07-14",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-07-28",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-08-18",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  }
+ ],
+ "monthly": [
+  {
+   "date": "2025-06-01",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-07-01",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  },
+  {
+   "date": "2025-08-01",
+   "otp_pct": null,
+   "avg_delay_min": null,
+   "p90_min": null,
+   "vehicles": null,
+   "cancellation_rate": 16.67,
+   "occupancy_mix": {
+    "empty": 0.3333333333333333,
+    "many_seats": 0.16666666666666666,
+    "few_seats": 0.16666666666666666,
+    "standing": 0.3333333333333333,
+    "full": 0.0
+   },
+   "service_completeness_rate": 83.33,
+   "observation_count": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  }
+ ],
+ "by_shift": [
+  {
+   "grain": "midday",
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
+   "severe_pct": 25.0,
+   "observation_count": 24,
+   "wilson_lo": 31.4,
+   "wilson_hi": 68.6
+  }
+ ],
+ "by_daytype": [
+  {
+   "grain": "weekday",
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
+   "severe_pct": 25.0,
+   "observation_count": 16,
+   "wilson_lo": 28.0,
+   "wilson_hi": 72.0
+  },
+  {
+   "grain": "weekend",
+   "otp_pct": 50,
+   "avg_delay_min": 2.9,
+   "severe_pct": 25.0,
+   "observation_count": 8,
+   "wilson_lo": 21.5,
+   "wilson_hi": 78.5
+  }
+ ]
+}

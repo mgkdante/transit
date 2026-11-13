@@ -1,0 +1,2181 @@
+{
+ "schema_version": 1,
+ "methodology_version": "reliability-2",
+ "publish_generation_id": "r2guard_alerts@2025-09-02T00:00:00Z",
+ "generated_utc": "2025-09-02T00:00:00Z",
+ "id": "B10",
+ "name": "Ligne 10",
+ "periods": [
+  {
+   "grain": "day",
+   "date": "2025-08-19",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": null,
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "day",
+   "date": "2025-08-03",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": null,
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "day",
+   "date": "2025-07-19",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": null,
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "day",
+   "date": "2025-07-03",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": null,
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "day",
+   "date": "2025-06-19",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": null,
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "day",
+   "date": "2025-06-03",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 6.5,
+   "p90_min": 9.3,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": null,
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "week",
+   "date": "2025-06-02",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 1
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 1
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "week",
+   "date": "2025-06-16",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 1
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 1
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "week",
+   "date": "2025-06-30",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 1
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 1
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "week",
+   "date": "2025-07-14",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 1
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 1
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "week",
+   "date": "2025-07-28",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 1
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 1
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "week",
+   "date": "2025-08-18",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 2,
+   "wilson_lo": 9.5,
+   "wilson_hi": 90.5,
+   "on_time": 1,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 1
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 1
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "month",
+   "date": "2025-06-01",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0,
+   "on_time": 2,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 2
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 2
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "month",
+   "date": "2025-07-01",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0,
+   "on_time": 2,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 2
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 2
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "month",
+   "date": "2025-08-01",
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0,
+   "on_time": 2,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 2
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 2
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "midday",
+   "date": null,
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 12,
+   "wilson_lo": 25.4,
+   "wilson_hi": 74.6,
+   "on_time": 6,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 6
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 6
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "weekday",
+   "date": null,
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 8,
+   "wilson_lo": 21.5,
+   "wilson_hi": 78.5,
+   "on_time": 4,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 4
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 4
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  },
+  {
+   "grain": "weekend",
+   "date": null,
+   "otp_pct": 50,
+   "avg_delay_min": 6.5,
+   "p50_min": 4.0,
+   "p90_min": 14.0,
+   "severe_pct": 50.0,
+   "observation_count": 4,
+   "wilson_lo": 15.0,
+   "wilson_hi": 85.0,
+   "on_time": 2,
+   "delay_histogram": [
+    {
+     "lo_sec": -3600,
+     "hi_sec": -300,
+     "count": 0
+    },
+    {
+     "lo_sec": -300,
+     "hi_sec": -180,
+     "count": 0
+    },
+    {
+     "lo_sec": -180,
+     "hi_sec": -120,
+     "count": 0
+    },
+    {
+     "lo_sec": -120,
+     "hi_sec": -90,
+     "count": 0
+    },
+    {
+     "lo_sec": -90,
+     "hi_sec": -60,
+     "count": 0
+    },
+    {
+     "lo_sec": -60,
+     "hi_sec": -30,
+     "count": 0
+    },
+    {
+     "lo_sec": -30,
+     "hi_sec": 0,
+     "count": 0
+    },
+    {
+     "lo_sec": 0,
+     "hi_sec": 30,
+     "count": 0
+    },
+    {
+     "lo_sec": 30,
+     "hi_sec": 60,
+     "count": 0
+    },
+    {
+     "lo_sec": 60,
+     "hi_sec": 90,
+     "count": 0
+    },
+    {
+     "lo_sec": 90,
+     "hi_sec": 120,
+     "count": 0
+    },
+    {
+     "lo_sec": 120,
+     "hi_sec": 150,
+     "count": 0
+    },
+    {
+     "lo_sec": 150,
+     "hi_sec": 180,
+     "count": 0
+    },
+    {
+     "lo_sec": 180,
+     "hi_sec": 240,
+     "count": 2
+    },
+    {
+     "lo_sec": 240,
+     "hi_sec": 300,
+     "count": 0
+    },
+    {
+     "lo_sec": 300,
+     "hi_sec": 420,
+     "count": 0
+    },
+    {
+     "lo_sec": 420,
+     "hi_sec": 600,
+     "count": 0
+    },
+    {
+     "lo_sec": 600,
+     "hi_sec": 900,
+     "count": 2
+    },
+    {
+     "lo_sec": 900,
+     "hi_sec": 1800,
+     "count": 0
+    },
+    {
+     "lo_sec": 1800,
+     "hi_sec": 3600,
+     "count": 0
+    },
+    {
+     "lo_sec": 3600,
+     "hi_sec": null,
+     "count": 0
+    }
+   ],
+   "prior_observation_count": null,
+   "prior_otp_pct": null,
+   "prior_on_time": null
+  }
+ ],
+ "headway": [],
+ "habits": {
+  "scale": "repeat_problem_relative",
+  "matrix": [
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    1.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    1.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.6226,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.6226,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  ]
+ },
+ "day_of_week": [
+  {
+   "day_of_week_iso": 2,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 4
+  },
+  {
+   "day_of_week_iso": 4,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 4
+  },
+  {
+   "day_of_week_iso": 6,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 2
+  },
+  {
+   "day_of_week_iso": 7,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 2
+  }
+ ],
+ "weak_stops": [
+  {
+   "id": "S3",
+   "name": "Arret S3",
+   "avg_delay_min": 6.5,
+   "observation_count": null,
+   "severe_pct": null,
+   "wilson_lo": null,
+   "wilson_hi": null
+  }
+ ],
+ "cancellations": [
+  {
+   "grain": "day",
+   "date": "2025-06-03",
+   "cancellation_rate_pct": 0.0,
+   "canceled_trip_days": 0,
+   "total_trip_days": 2,
+   "scheduled_trip_days": 2,
+   "delivered_trip_days": 2,
+   "silent_trip_days": 0,
+   "service_completeness_pct": 100.0
+  },
+  {
+   "grain": "day",
+   "date": "2025-06-19",
+   "cancellation_rate_pct": 0.0,
+   "canceled_trip_days": 0,
+   "total_trip_days": 2,
+   "scheduled_trip_days": 2,
+   "delivered_trip_days": 2,
+   "silent_trip_days": 0,
+   "service_completeness_pct": 100.0
+  },
+  {
+   "grain": "day",
+   "date": "2025-07-03",
+   "cancellation_rate_pct": 0.0,
+   "canceled_trip_days": 0,
+   "total_trip_days": 2,
+   "scheduled_trip_days": 2,
+   "delivered_trip_days": 2,
+   "silent_trip_days": 0,
+   "service_completeness_pct": 100.0
+  },
+  {
+   "grain": "day",
+   "date": "2025-07-19",
+   "cancellation_rate_pct": 0.0,
+   "canceled_trip_days": 0,
+   "total_trip_days": 2,
+   "scheduled_trip_days": 2,
+   "delivered_trip_days": 2,
+   "silent_trip_days": 0,
+   "service_completeness_pct": 100.0
+  },
+  {
+   "grain": "day",
+   "date": "2025-08-03",
+   "cancellation_rate_pct": 0.0,
+   "canceled_trip_days": 0,
+   "total_trip_days": 2,
+   "scheduled_trip_days": 2,
+   "delivered_trip_days": 2,
+   "silent_trip_days": 0,
+   "service_completeness_pct": 100.0
+  },
+  {
+   "grain": "day",
+   "date": "2025-08-19",
+   "cancellation_rate_pct": 0.0,
+   "canceled_trip_days": 0,
+   "total_trip_days": 2,
+   "scheduled_trip_days": 2,
+   "delivered_trip_days": 2,
+   "silent_trip_days": 0,
+   "service_completeness_pct": 100.0
+  }
+ ],
+ "occupancy_mix": null,
+ "service_spans": [],
+ "skipped_stops": [
+  {
+   "date": "2025-06-03",
+   "skipped_stop_rate_pct": 0.0,
+   "skipped_stop_count": 0,
+   "stop_time_update_count": 6
+  },
+  {
+   "date": "2025-06-19",
+   "skipped_stop_rate_pct": 0.0,
+   "skipped_stop_count": 0,
+   "stop_time_update_count": 6
+  },
+  {
+   "date": "2025-07-03",
+   "skipped_stop_rate_pct": 0.0,
+   "skipped_stop_count": 0,
+   "stop_time_update_count": 6
+  },
+  {
+   "date": "2025-07-19",
+   "skipped_stop_rate_pct": 0.0,
+   "skipped_stop_count": 0,
+   "stop_time_update_count": 6
+  },
+  {
+   "date": "2025-08-03",
+   "skipped_stop_rate_pct": 0.0,
+   "skipped_stop_count": 0,
+   "stop_time_update_count": 6
+  },
+  {
+   "date": "2025-08-19",
+   "skipped_stop_rate_pct": 0.0,
+   "skipped_stop_count": 0,
+   "stop_time_update_count": 6
+  }
+ ],
+ "delay_by_crowding": [],
+ "by_shift_daytype": [
+  {
+   "shift": "midday",
+   "day_type": "weekday",
+   "otp_pct": 50.0,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 8
+  },
+  {
+   "shift": "midday",
+   "day_type": "weekend",
+   "otp_pct": 50.0,
+   "avg_delay_min": 6.5,
+   "severe_pct": 50.0,
+   "observation_count": 4
+  }
+ ],
+ "occupancy_by_grain": [],
+ "occupancy_by_dow": [],
+ "occupancy_by_hour": [],
+ "periods_by_grain": [
+  {
+   "grain": "day",
+   "date": "2025-08-19",
+   "by_shift": [
+    {
+     "grain": "midday",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 2,
+     "wilson_lo": 9.5,
+     "wilson_hi": 90.5,
+     "on_time": 1,
+     "delay_histogram": null,
+     "prior_observation_count": null,
+     "prior_otp_pct": null,
+     "prior_on_time": null
+    }
+   ],
+   "by_daytype": [
+    {
+     "grain": "weekday",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 2,
+     "wilson_lo": 9.5,
+     "wilson_hi": 90.5,
+     "on_time": 1,
+     "delay_histogram": null,
+     "prior_observation_count": null,
+     "prior_otp_pct": null,
+     "prior_on_time": null
+    }
+   ],
+   "day_of_week": [
+    {
+     "day_of_week_iso": 2,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    }
+   ],
+   "by_shift_daytype": [
+    {
+     "shift": "midday",
+     "day_type": "weekday",
+     "otp_pct": 50.0,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    }
+   ]
+  },
+  {
+   "grain": "week",
+   "date": "2025-08-13",
+   "by_shift": [
+    {
+     "grain": "midday",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 2,
+     "wilson_lo": 9.5,
+     "wilson_hi": 90.5,
+     "on_time": 1,
+     "delay_histogram": null,
+     "prior_observation_count": null,
+     "prior_otp_pct": null,
+     "prior_on_time": null
+    }
+   ],
+   "by_daytype": [
+    {
+     "grain": "weekday",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 2,
+     "wilson_lo": 9.5,
+     "wilson_hi": 90.5,
+     "on_time": 1,
+     "delay_histogram": null,
+     "prior_observation_count": null,
+     "prior_otp_pct": null,
+     "prior_on_time": null
+    }
+   ],
+   "day_of_week": [
+    {
+     "day_of_week_iso": 2,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    }
+   ],
+   "by_shift_daytype": [
+    {
+     "shift": "midday",
+     "day_type": "weekday",
+     "otp_pct": 50.0,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    }
+   ]
+  },
+  {
+   "grain": "month",
+   "date": "2025-07-21",
+   "by_shift": [
+    {
+     "grain": "midday",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 4,
+     "wilson_lo": 15.0,
+     "wilson_hi": 85.0,
+     "on_time": 2,
+     "delay_histogram": null,
+     "prior_observation_count": 4,
+     "prior_otp_pct": 50,
+     "prior_on_time": 2
+    }
+   ],
+   "by_daytype": [
+    {
+     "grain": "weekday",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 2,
+     "wilson_lo": 9.5,
+     "wilson_hi": 90.5,
+     "on_time": 1,
+     "delay_histogram": null,
+     "prior_observation_count": 2,
+     "prior_otp_pct": 50,
+     "prior_on_time": 1
+    },
+    {
+     "grain": "weekend",
+     "date": null,
+     "otp_pct": 50,
+     "avg_delay_min": 6.5,
+     "p50_min": 4.0,
+     "p90_min": 14.0,
+     "severe_pct": 50.0,
+     "observation_count": 2,
+     "wilson_lo": 9.5,
+     "wilson_hi": 90.5,
+     "on_time": 1,
+     "delay_histogram": null,
+     "prior_observation_count": 2,
+     "prior_otp_pct": 50,
+     "prior_on_time": 1
+    }
+   ],
+   "day_of_week": [
+    {
+     "day_of_week_iso": 2,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    },
+    {
+     "day_of_week_iso": 7,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    }
+   ],
+   "by_shift_daytype": [
+    {
+     "shift": "midday",
+     "day_type": "weekday",
+     "otp_pct": 50.0,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    },
+    {
+     "shift": "midday",
+     "day_type": "weekend",
+     "otp_pct": 50.0,
+     "avg_delay_min": 6.5,
+     "severe_pct": 50.0,
+     "observation_count": 2
+    }
+   ]
+  }
+ ],
+ "habits_by_grain": [
+  {
+   "grain": "day",
+   "date": "2025-08-19",
+   "habits": null,
+   "cells_observed": 0,
+   "cells_suppressed": 1
+  },
+  {
+   "grain": "week",
+   "date": "2025-08-13",
+   "habits": null,
+   "cells_observed": 0,
+   "cells_suppressed": 1
+  },
+  {
+   "grain": "month",
+   "date": "2025-07-21",
+   "habits": null,
+   "cells_observed": 0,
+   "cells_suppressed": 2
+  }
+ ],
+ "headway_by_grain": [],
+ "weak_stops_by_grain": []
+}

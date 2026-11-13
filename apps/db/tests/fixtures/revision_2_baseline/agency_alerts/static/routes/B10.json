@@ -1,0 +1,19 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_alerts@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "id": "B10",
+ "long": "Ligne 10",
+ "type": 3,
+ "directions": [],
+ "service_periods": [
+  {
+   "shift": "midday",
+   "window": "09:00–15:00",
+   "headway_min": null
+  }
+ ],
+ "first_departure": "12:00",
+ "last_departure": "12:00"
+}

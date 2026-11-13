@@ -1,0 +1,33 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_alerts@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "labels": {
+  "status.early": "Early",
+  "status.on_time": "On time",
+  "status.late": "Late",
+  "status.severe": "Severe",
+  "status.unknown": "Unknown",
+  "severity.critical": "Critical",
+  "severity.high": "High",
+  "severity.watch": "Watch",
+  "occupancy.empty": "Empty",
+  "occupancy.many_seats": "Many seats available",
+  "occupancy.few_seats": "Few seats available",
+  "occupancy.standing": "Standing room only",
+  "occupancy.full": "Full",
+  "methodology.otp_definition": "On time: from one minute early to under five minutes late. Live OTP uses map-eligible vehicle-position rows with a known status. Route and network history use known-delay observations in the same band. The historical not-severe share at stops is a different measure.",
+  "methodology.delay_unit": "Delays are measured in seconds against the provider's published GTFS schedule, then shown in minutes.",
+  "methodology.percentiles": "Live network p50/p90 summarize current trip-average delays, with each trip weighted equally. Trend p90 uses the configured detailed window (last 14 days by default). Daily route and stop percentiles use observations from their local capture day; repeated updates are not distinct passengers.",
+  "methodology.retention": "Default retention is 14 days for detailed data and 730 days for daily aggregates; provenance reports the configured policy.",
+  "attribution.disclaimer": "Independent site, not affiliated with or endorsed by r2guard_alerts.",
+  "metric.network_health": "Network Health",
+  "metric.operations_map": "Operations Map",
+  "metric.hotspots": "Hotspots",
+  "metric.network_habits": "Network Habits",
+  "metric.history": "History",
+  "metric.data_trust": "Data Trust",
+  "metric.citizen_accountability": "Citizen Accountability"
+ }
+}

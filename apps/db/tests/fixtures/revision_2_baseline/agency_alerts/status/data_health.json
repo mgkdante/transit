@@ -1,0 +1,60 @@
+{
+ "schema_version": 1,
+ "methodology_version": "live-2",
+ "publish_generation_id": "r2guard_alerts@T0+0s",
+ "generated_utc": "T0+0s",
+ "lanes": [
+  {
+   "lane": "static",
+   "last_publish_utc": "2025-05-30T12:00:00Z",
+   "age_s": "<clock>",
+   "files_written": 11,
+   "files_skipped": 0,
+   "files_total": 11,
+   "gate": {
+    "checks_run": 11,
+    "errors": 0,
+    "warnings": 0,
+    "verdict": "pass",
+    "generated_utc": "2025-05-30T12:00:00Z"
+   }
+  },
+  {
+   "lane": "rollup",
+   "last_publish_utc": "2025-09-02T00:00:00Z",
+   "age_s": "<clock>",
+   "files_written": 59,
+   "files_skipped": 0,
+   "files_total": 59,
+   "gate": {
+    "checks_run": 82,
+    "errors": 0,
+    "warnings": 0,
+    "verdict": "pass",
+    "generated_utc": "2025-09-02T00:00:00Z"
+   }
+  }
+ ],
+ "feeds": [
+  {
+   "feed": "i3_alerts",
+   "status": "succeeded",
+   "age_s": "<clock>"
+  },
+  {
+   "feed": "static_schedule",
+   "status": "succeeded",
+   "age_s": "<clock>"
+  },
+  {
+   "feed": "trip_updates",
+   "status": "succeeded",
+   "age_s": "<clock>"
+  },
+  {
+   "feed": "vehicle_positions",
+   "status": "succeeded",
+   "age_s": "<clock>"
+  }
+ ]
+}

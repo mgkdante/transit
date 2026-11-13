@@ -1,0 +1,58 @@
+{
+ "schema_version": 1,
+ "methodology_version": "history-1",
+ "publish_generation_id": null,
+ "generated_utc": "2025-09-01T06:00:00Z",
+ "month": "2025-06",
+ "entity_id": "B20",
+ "days": [
+  {
+   "date": "2025-06-03",
+   "delay": null,
+   "delay_percentiles": null,
+   "cancellation": {
+    "canceled_trip_days": 1,
+    "total_trip_days": 2,
+    "scheduled_trip_days": 2,
+    "delivered_trip_days": 1,
+    "silent_trip_days": 0
+   },
+   "occupancy": {
+    "empty": 1,
+    "many_seats": 0,
+    "few_seats": 0,
+    "standing": 1,
+    "full": 0
+   },
+   "service_span": null,
+   "skipped_stops": {
+    "skipped_stop_count": 0,
+    "stop_time_update_count": 3
+   }
+  },
+  {
+   "date": "2025-06-19",
+   "delay": null,
+   "delay_percentiles": null,
+   "cancellation": {
+    "canceled_trip_days": 1,
+    "total_trip_days": 2,
+    "scheduled_trip_days": 2,
+    "delivered_trip_days": 1,
+    "silent_trip_days": 0
+   },
+   "occupancy": {
+    "empty": 1,
+    "many_seats": 0,
+    "few_seats": 0,
+    "standing": 1,
+    "full": 0
+   },
+   "service_span": null,
+   "skipped_stops": {
+    "skipped_stop_count": 0,
+    "stop_time_update_count": 3
+   }
+  }
+ ]
+}

@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "methodology_version": "static-1",
+ "publish_generation_id": "r2guard_plain@2025-05-30T12:00:00Z",
+ "generated_utc": "2025-05-30T12:00:00Z",
+ "id": "S2",
+ "code": null,
+ "name": "Arret S2",
+ "lat": 45.512,
+ "lon": -73.592,
+ "wheelchair": false,
+ "routes_served": [
+  "B10",
+  "B20",
+  "M1"
+ ],
+ "scheduled": [
+  {
+   "route": "B10",
+   "headsign": "Vers S2",
+   "times": [
+    "13:00"
+   ]
+  },
+  {
+   "route": "B10",
+   "headsign": "Vers S4",
+   "times": [
+    "12:00"
+   ]
+  },
+  {
+   "route": "B20",
+   "headsign": "Vers S1",
+   "times": [
+    "12:30"
+   ]
+  },
+  {
+   "route": "M1",
+   "headsign": "Vers S1",
+   "times": [
+    "12:30"
+   ]
+  },
+  {
+   "route": "M1",
+   "headsign": "Vers S3",
+   "times": [
+    "12:30"
+   ]
+  }
+ ]
+}

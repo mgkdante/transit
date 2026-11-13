@@ -5,6 +5,7 @@ import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,52 @@ FILE_RULES: tuple[FileRule, ...] = (
     FileRule("providers.json"),
 )
 NEW_FILE_FAMILIES: Mapping[str, str] = {"status/capabilities.json": "capabilities-1"}
+
+# Values the database computes from its own now(); masked as "<clock>" in every lane.
+CLOCK_PATHS: Mapping[str, Mapping[str, str]] = {
+    "live/network.json": {"feed_freshness_s": "now() minus the newest capture (live.py:442)"},
+    "status/data_health.json": {
+        "lanes[*].age_s": "now() minus each lane's publication (live.py:667)",
+        "feeds[*].age_s": "now() minus each feed's capture (live.py:691)",
+    },
+    "provenance.json": {"freshness[*].age_s": "now() minus each feed's run (0093 migration:928)"},
+    "historic/alert_history.json": {
+        "window_start": "the database's local date minus the retention (small_surfaces.py:890)",
+        "window_end": "the database's local date (small_surfaces.py:890)",
+    },
+}
+# Live times are seeded within minutes of T0; fixed history stamps lie more than a year away.
+CLOCK_HORIZON = timedelta(days=30)
+_STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
+_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def clock_rewrite(rel_key: str, payload: object, t0: datetime | None = None) -> object:
+    """Mask CLOCK_PATHS; with the live lane's T0, write nearby times as offsets from it."""
+    masked = {_parts(p) for p in CLOCK_PATHS.get(rel_key, {})}
+
+    def stamp(match: re.Match[str]) -> str:
+        assert t0 is not None
+        offset = datetime.fromisoformat(match.group().replace("Z", "+00:00")) - t0
+        return (
+            f"T0{round(offset.total_seconds()):+d}s" if abs(offset) <= CLOCK_HORIZON else match[0]
+        )
+
+    def visit(value, path=()):
+        if path in masked:
+            return "<clock>"
+        if isinstance(value, dict):
+            return {key: visit(child, (*path, key)) for key, child in value.items()}
+        if isinstance(value, list):
+            return [visit(child, (*path, "*")) for child in value]
+        if t0 is None or not isinstance(value, str):
+            return value
+        if _DATE.fullmatch(value):
+            days = (date.fromisoformat(value) - t0.astimezone(UTC).date()).days
+            return f"D0{days:+d}" if abs(days) <= CLOCK_HORIZON.days else value
+        return _STAMP.sub(stamp, value)
+
+    return visit(payload)
 
 
 def _matches(pattern: str, path: str) -> bool:
