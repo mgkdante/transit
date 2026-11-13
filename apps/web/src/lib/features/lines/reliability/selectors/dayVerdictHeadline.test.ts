@@ -69,6 +69,17 @@ it.each(['en', 'fr'] as const)(
 	'returns the shared finished Verdict in %s for the route header',
 	(locale) => {
 		const data = route([{ grain: 'week', otp_pct: 85, observation_count: 4000, on_time: 3400 }]);
-		expect(selectDayVerdictHeadline(data, locale)).toEqual(verdictForWindow(data, {}, locale));
+		expect(selectDayVerdictHeadline(data, locale)).toEqual(
+			verdictForWindow(data, { kind: 'route' }, locale),
+		);
 	},
 );
+
+it('banner, list and pane agree on one window', async () => {
+	const { closedWeek } = await import('../__fixtures__/closedWeek');
+	expect(selectDayVerdictHeadline(closedWeek)).toMatchObject({
+		otpPct: 84,
+		observationCount: 227378,
+	});
+	expect(toReliabilityClusters(closedWeek, { grain: 'week' }).punctuality.headline.otpPct).toBe(84);
+});

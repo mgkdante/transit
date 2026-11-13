@@ -729,3 +729,21 @@ describe('finished Verdict for the selected Window', () => {
 		});
 	});
 });
+
+it('ignores a day period after closed-through', async () => {
+	const { closedWeek } = await import('#lib/features/lines/reliability/__fixtures__/closedWeek.ts');
+	expect(verdictForWindow(closedWeek)).toMatchObject({
+		otpPct: 84,
+		observationCount: 227378,
+		onTime: 190827,
+		grain: 'week',
+	});
+	expect(verdictForWindow(closedWeek, { grain: 'day' })).toMatchObject({
+		otpPct: 85,
+		observationCount: 43815,
+	});
+	expect(verdictForWindow({ ...closedWeek, periods_by_grain: [] }).status).toBe('absent');
+	expect(verdictForWindow({ id: closedWeek.id, periods: closedWeek.periods }).status).toBe(
+		'absent',
+	);
+});

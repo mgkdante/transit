@@ -29,6 +29,7 @@ const utc = (v: string): IsoUtc => v as IsoUtc;
 const data: RouteReliability = {
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	id: '51',
+	periods_by_grain: [{ grain: 'day', date: '2026-06-18' }],
 	periods: [
 		{ grain: 'day', date: '2026-06-18', otp_pct: 82, observation_count: 900, on_time: 738 },
 		{ grain: 'week', otp_pct: 71, observation_count: 5400, on_time: 3834 },
@@ -63,7 +64,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 	it('keeps an unavailable explicitly selected month absent', () => {
 		mockUrl = new URL('http://localhost/lines/51?grain=month');
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
-		expect(caption(container)).toMatch(/month/i);
+		expect(caption(container)).toMatch(/not published/i);
 		expect(container.querySelector('[data-slot="verdict"]')).toHaveAttribute(
 			'data-status',
 			'absent',
@@ -79,14 +80,14 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 		expect(caption(container)).toBe(caption(dflt));
 		const checked = container.querySelectorAll('[role="radio"][aria-checked="true"]');
 		expect(checked.length).toBe(1);
-		expect(checked[0].textContent?.toLowerCase()).toContain('latest day');
+		expect(checked[0].textContent?.toLowerCase()).toContain('latest complete day');
 	});
 
 	it('mirrors explicit grain choices including day', async () => {
 		const { container } = render(RouteReliabilityClusters, { props: { data, locale: 'en' } });
 		expect(replaceState).not.toHaveBeenCalled();
 
-		const week = radioByText(container, 'week');
+		const week = radioByText(container, '7 days');
 		expect(week).toBeDefined();
 		await fireEvent.click(week!);
 		expect(mockUrl.searchParams.get('grain')).toBe('week');
@@ -101,6 +102,7 @@ describe('RouteReliabilityClusters — ?grain seed + availability clamp (S7-B PR
 const rangeData: RouteReliability = {
 	generated_utc: utc('2026-06-19T02:00:00Z'),
 	id: '51',
+	periods_by_grain: [{ grain: 'day', date: '2026-06-18' }],
 	periods: [
 		{ grain: 'day', date: '2026-06-16', otp_pct: 80, observation_count: 900, on_time: 720 },
 		{ grain: 'day', date: '2026-06-17', otp_pct: 82, observation_count: 900, on_time: 738 },
@@ -158,7 +160,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 		expect(caption(container)).toBe(caption(dflt));
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('latest day');
+		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
 	});
 
 	it('bare ?from/?to with one out-of-window bound → reverts to the day view', () => {
@@ -167,7 +169,7 @@ describe('RouteReliabilityClusters — ?from/?to range deep-link (S7-B PR-WEB-4)
 			props: { data: rangeData, locale: 'en' },
 		});
 		const checked = container.querySelector('[role="radio"][aria-checked="true"]');
-		expect(checked?.textContent?.toLowerCase()).toContain('latest day');
+		expect(checked?.textContent?.toLowerCase()).toContain('latest complete day');
 		expect(caption(container).toLowerCase()).not.toContain('pick a start and end date');
 	});
 

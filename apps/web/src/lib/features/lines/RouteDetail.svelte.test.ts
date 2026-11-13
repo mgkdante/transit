@@ -1,3 +1,4 @@
+import { withClosedPeriods } from './reliability/__fixtures__/closedWeek';
 import { clock } from '@yesid/ui/state';
 import {
 	fireEvent,
@@ -209,7 +210,7 @@ const lineHistoryHarness = vi.hoisted(() => ({
 	loadLineHistoryRange: vi.fn(),
 }));
 
-const CURRENT_RELIABILITY = {
+const CURRENT_RELIABILITY = withClosedPeriods({
 	id: '161',
 	generated_utc: '2026-07-13T12:00:00Z',
 	periods: [
@@ -221,9 +222,8 @@ const CURRENT_RELIABILITY = {
 			on_time: 80,
 		},
 	],
-} as RouteReliability;
-
-const SMALL_SAMPLE_RELIABILITY = {
+} as RouteReliability);
+const SMALL_SAMPLE_RELIABILITY = withClosedPeriods({
 	...CURRENT_RELIABILITY,
 	periods: [
 		{
@@ -232,7 +232,7 @@ const SMALL_SAMPLE_RELIABILITY = {
 			on_time: 8,
 		},
 	],
-} as RouteReliability;
+} as RouteReliability);
 
 const HISTORY_INDEX = {
 	generated_utc: '2026-07-13T12:00:00Z',
@@ -850,7 +850,7 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 describe('RouteDetail always-visible verdict history scope', () => {
 	it('keeps no summary gap for an absent verdict', () => {
 		reliabilityResourceState = {
-			data: { ...CURRENT_RELIABILITY, periods: [] },
+			data: { ...CURRENT_RELIABILITY, periods: [], periods_by_grain: [] },
 			error: null,
 			loading: false,
 			settled: true,

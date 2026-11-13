@@ -27,6 +27,10 @@ _Avoid_: mode, resolution
 One specific span at a grain, such as the week of 27 October.
 _Avoid_: period, range
 
+**Closed day**:
+A provider-local day whose figures are final in the published record.
+_Avoid_: finished UTC day, build day
+
 **Feed family**:
 One kind of live data from a provider, such as vehicle positions, trip updates or alerts.
 _Avoid_: feed, tier, source

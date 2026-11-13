@@ -14,6 +14,7 @@ import type {
 } from '#lib/v1/index.ts';
 import { SHIFT_GRAINS, DAY_TYPE_GRAINS } from '#lib/features/reliability/shiftGrains.ts';
 import { roundHalfAwayFromZero } from '#lib/utils/index.ts';
+import { routeClosedThrough, trailingRouteWindow, isClosedDay } from '#lib/v1/closedWindow.ts';
 import type { RetainedLineHistory } from './data/retainedHistory';
 import type { Locale } from '#lib/i18n/index.ts';
 import {
@@ -423,16 +424,9 @@ export function toReliabilityClusters(
 	const selectedDate = opts?.selectedDate;
 	const dateRange = opts?.dateRange;
 	const retained = opts?.retained;
-	const headlineGrain =
-		dateRange || selectedDate
-			? grain
-			: opts?.automaticHeadline === undefined
-				? grain === 'day'
-					? undefined
-					: grain
-				: opts.automaticHeadline
-					? undefined
-					: grain;
+	const headlineGrain = grain;
+	const closedThrough = routeClosedThrough(data);
+	const trailing = grain === 'week' || grain === 'month' ? trailingRouteWindow(data, grain) : null;
 
 	const allPeriods = data.periods ?? [];
 	const allHeadway = data.headway ?? [];
@@ -453,7 +447,9 @@ export function toReliabilityClusters(
 		...partition.calendar.month,
 	];
 
-	const dayTrendAsc = dayTrend(partition.calendar.day);
+	const dayTrendAsc = dayTrend(partition.calendar.day).filter(
+		(p) => dateRange || (p.date != null && isClosedDay(p.date, closedThrough)),
+	);
 	const rangeDays = grain === 'day' && dateRange ? daysInRange(dayTrendAsc, dateRange) : [];
 	const hasRange = rangeDays.length > 0;
 	const TREND_DAYS_DAY = 14;
@@ -541,8 +537,18 @@ export function toReliabilityClusters(
 							end: dateRange.end,
 						};
 		}
+	} else if (grain === 'week' || grain === 'month') {
+		avgDelayMin =
+			trailing?.avgDelayMin == null ? null : roundHalfAwayFromZero(trailing.avgDelayMin, 1);
+		severePct = trailing?.severePct == null ? null : roundHalfAwayFromZero(trailing.severePct, 1);
+		p50Min = p90Min = null;
 	} else {
-		const stripPeriod = selectVerdictWindow(calendarPeriods, headlineGrain, selectedDate);
+		const stripPeriod = selectVerdictWindow(
+			calendarPeriods,
+			headlineGrain,
+			selectedDate,
+			closedThrough,
+		);
 		avgDelayMin = stripPeriod ? num(stripPeriod.avg_delay_min) : null;
 		p50Min = stripPeriod ? num(stripPeriod.p50_min) : null;
 		p90Min = stripPeriod ? num(stripPeriod.p90_min) : null;
@@ -556,6 +562,7 @@ export function toReliabilityClusters(
 		verdictForWindow(
 			data,
 			{
+				kind: 'route',
 				grain: headlineGrain,
 				selectedDate,
 				...(dateRange ? { from: dateRange.start, to: dateRange.end } : {}),

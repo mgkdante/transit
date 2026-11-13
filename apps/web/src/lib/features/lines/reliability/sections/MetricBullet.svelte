@@ -14,6 +14,7 @@
 		size = 'md',
 		info,
 		caption,
+		absenceLabel,
 		class: className,
 		...restProps
 	}: {
@@ -24,6 +25,7 @@
 		size?: 'md' | 'lg';
 		info?: Snippet;
 		caption?: string;
+		absenceLabel?: string;
 		class?: string;
 		[key: `data-${string}`]: string | undefined;
 	} = $props();
@@ -42,6 +44,8 @@
 	<div class="metric-bullet__value" class:metric-bullet__value--empty={valueText == null}>
 		{#if valueText != null}
 			{valueText}
+		{:else if absenceLabel}
+			<span data-slot="absent-value">{absenceLabel}</span>
 		{:else}
 			<MaybeValue variant="compact" value={null} reason="no-observations" {locale} />
 		{/if}
@@ -89,6 +93,7 @@
 		font-size: var(--text-title);
 	}
 	.metric-bullet__value--empty {
+		white-space: normal;
 		font-size: var(--text-subheading);
 		font-weight: 500;
 		color: var(--muted-foreground);

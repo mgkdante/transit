@@ -21,6 +21,7 @@ export const reliabilityCopy = defineCopy({
 			habits: 'Habitudes horaires',
 		},
 		strip: {
+			notPublished: 'Non publié pour cette fenêtre',
 			snapshotLabel: 'Aperçu de la fiabilité',
 			otpPct: 'Ponctualité',
 			target: 'Cible',
@@ -159,14 +160,15 @@ export const reliabilityCopy = defineCopy({
 		controls: {
 			viewLabel: 'Vue',
 			grainLabel: 'Granularité',
-			latestDay: 'Dernier jour',
-			thisWeek: 'Cette semaine',
-			thisMonth: 'Ce mois-ci',
+			latestDay: 'Dernier jour complet',
+			thisWeek: '7 derniers jours',
+			thisMonth: '30 derniers jours',
 			dateRange: 'Plage de dates',
 			clearDates: 'Effacer les dates',
 			rangeStart: 'Du',
 			rangeEnd: 'Au',
 			activeWindow: {
+				unavailable: 'Fenêtre complète non publiée',
 				day: (date: string | null) =>
 					date
 						? `Bilan des retards : jour local de capture ${date}. Les comptes et les plages de service suivent les jours de service GTFS.`
@@ -245,6 +247,7 @@ export const reliabilityCopy = defineCopy({
 			habits: 'Time-of-day habits',
 		},
 		strip: {
+			notPublished: 'Not published for this window',
 			snapshotLabel: 'Reliability snapshot',
 			otpPct: 'On-time',
 			target: 'Target',
@@ -381,14 +384,15 @@ export const reliabilityCopy = defineCopy({
 		controls: {
 			viewLabel: 'View',
 			grainLabel: 'Granularity',
-			latestDay: 'Latest day',
-			thisWeek: 'This week',
-			thisMonth: 'This month',
+			latestDay: 'Latest complete day',
+			thisWeek: 'Last 7 days',
+			thisMonth: 'Last 30 days',
 			dateRange: 'Date range',
 			clearDates: 'Clear dates',
 			rangeStart: 'From',
 			rangeEnd: 'To',
 			activeWindow: {
+				unavailable: 'Complete window not published',
 				day: (date: string | null) =>
 					date
 						? `Delay summary: local capture day ${date}. Service counts and spans follow GTFS service days.`

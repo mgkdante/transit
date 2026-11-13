@@ -192,6 +192,7 @@ const noDelayPartitions = [
 ] as LineHistoryPartition[];
 
 const current: RouteReliability = {
+	periods_by_grain: [{ grain: 'day', date: '2026-07-12' }],
 	id: entityId,
 	generated_utc: generatedUtc,
 	periods: [
@@ -435,7 +436,9 @@ describe('RouteReliabilityClusters retained Line history', () => {
 
 		expect(view.container.querySelectorAll('[data-slot="surface-rail"]')).toHaveLength(1);
 		expect(
-			view.getAllByRole('radio', { name: /Latest day|This week|This month|Date range/ }),
+			view.getAllByRole('radio', {
+				name: /Latest complete day|Last 7 days|Last 30 days|Date range/,
+			}),
 		).toHaveLength(4);
 		await fireEvent.click(view.getByRole('radio', { name: reliabilityCopy.en.controls.dateRange }));
 		const rail = view.container.querySelector('[data-slot="surface-rail"]') as HTMLElement;

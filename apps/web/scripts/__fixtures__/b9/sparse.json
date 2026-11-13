@@ -10,8 +10,14 @@
 				{
 					"id": "stm",
 					"labels": {
-						"en": { "city": "Montréal", "operator": "STM" },
-						"fr": { "city": "Montréal", "operator": "STM" }
+						"en": {
+							"city": "Montréal",
+							"operator": "STM"
+						},
+						"fr": {
+							"city": "Montréal",
+							"operator": "STM"
+						}
 					},
 					"inputs": {},
 					"alert_links": {}
@@ -26,7 +32,10 @@
 			"bbox": [-74.2, 45.2, -73.2, 45.9],
 			"attribution": "B9 sparse synthetic STM fixture",
 			"dataset_version": "b9-sparse-v1",
-			"labels": { "en": "labels/en.json", "fr": "labels/fr.json" },
+			"labels": {
+				"en": "labels/en.json",
+				"fr": "labels/fr.json"
+			},
 			"files": {
 				"live": {
 					"generated_utc": "2026-08-30T15:55:00Z",
@@ -79,7 +88,13 @@
 				{
 					"dir": 0,
 					"headsign": "Sparse East",
-					"stops": [{ "id": "52095", "seq": 1, "name": "Sparse B9 Stop" }]
+					"stops": [
+						{
+							"id": "52095",
+							"seq": 1,
+							"name": "Sparse B9 Stop"
+						}
+					]
 				}
 			],
 			"service_periods": [],
@@ -128,13 +143,25 @@
 			"generated_utc": "2026-08-30T15:55:00Z",
 			"vehicles_in_service": 0,
 			"on_time_pct": null,
-			"status_dist": { "early": 0, "on_time": 0, "late": 0, "severe": 0, "unknown": 0 },
+			"status_dist": {
+				"early": 0,
+				"on_time": 0,
+				"late": 0,
+				"severe": 0,
+				"unknown": 0
+			},
 			"delay_p50_min": 0,
 			"delay_p90_min": null,
 			"non_responding": 0,
 			"feed_freshness_s": null,
 			"coverage_pct": null,
-			"occupancy_mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 },
+			"occupancy_mix": {
+				"empty": 0,
+				"many_seats": 0,
+				"few_seats": 0,
+				"standing": 0,
+				"full": 0
+			},
 			"delay_histogram": null,
 			"non_responding_by_route": null,
 			"schema_version": 1,
@@ -186,7 +213,9 @@
 			"freshness": [],
 			"gaps": ["synthetic_sparse"],
 			"retention": {},
-			"methodology": { "oracle": "b9" },
+			"methodology": {
+				"oracle": "b9"
+			},
 			"conformance": null,
 			"schema_version": 1,
 			"methodology_version": "b9"
@@ -194,7 +223,13 @@
 		"historic/receipts/index.json": {
 			"generated_utc": "2026-08-30T06:00:00Z",
 			"dates": ["2026-08-29"],
-			"available": [{ "date": "2026-08-29", "has_data": true, "has_schedule": false }],
+			"available": [
+				{
+					"date": "2026-08-29",
+					"has_data": true,
+					"has_schedule": false
+				}
+			],
 			"schema_version": 1,
 			"methodology_version": "b9"
 		},
@@ -231,7 +266,12 @@
 			],
 			"habits": null,
 			"day_of_week": [
-				{ "day_of_week_iso": 1, "avg_delay_min": 0, "severe_pct": 0, "observation_count": 0 }
+				{
+					"day_of_week_iso": 1,
+					"avg_delay_min": 0,
+					"severe_pct": 0,
+					"observation_count": 0
+				}
 			],
 			"weak_stops": [],
 			"cancellations": [
@@ -247,7 +287,13 @@
 					"service_completeness_pct": null
 				}
 			],
-			"occupancy_mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 },
+			"occupancy_mix": {
+				"empty": 0,
+				"many_seats": 0,
+				"few_seats": 0,
+				"standing": 0,
+				"full": 0
+			},
 			"service_spans": [
 				{
 					"date": "2026-08-29",
@@ -280,12 +326,24 @@
 			"occupancy_by_grain": [
 				{
 					"grain": "day",
-					"mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 }
+					"mix": {
+						"empty": 0,
+						"many_seats": 0,
+						"few_seats": 0,
+						"standing": 0,
+						"full": 0
+					}
 				}
 			],
 			"occupancy_by_dow": [],
 			"schema_version": 1,
-			"methodology_version": "b9"
+			"methodology_version": "b9",
+			"periods_by_grain": [
+				{
+					"grain": "day",
+					"date": "2026-08-29"
+				}
+			]
 		},
 		"historic/stop_reliability/52095.json": {
 			"generated_utc": "2026-08-30T06:00:00Z",
@@ -304,15 +362,35 @@
 					"wilson_hi": null
 				}
 			],
-			"habits": { "scale": "severe_relative", "matrix": [[null]] },
+			"habits": {
+				"scale": "severe_relative",
+				"matrix": [[null]]
+			},
 			"day_of_week": [
-				{ "day_of_week_iso": 1, "avg_delay_min": 0, "severe_pct": 0, "observation_count": 29 }
+				{
+					"day_of_week_iso": 1,
+					"avg_delay_min": 0,
+					"severe_pct": 0,
+					"observation_count": 29
+				}
 			],
 			"by_route": [
-				{ "route": "null-route", "avg_delay_min": null },
-				{ "route": "0", "avg_delay_min": 0 }
+				{
+					"route": "null-route",
+					"avg_delay_min": null
+				},
+				{
+					"route": "0",
+					"avg_delay_min": 0
+				}
 			],
-			"occupancy_mix": { "empty": 0, "many_seats": 0, "few_seats": 0, "standing": 0, "full": 0 },
+			"occupancy_mix": {
+				"empty": 0,
+				"many_seats": 0,
+				"few_seats": 0,
+				"standing": 0,
+				"full": 0
+			},
 			"daily": [
 				{
 					"date": "2026-08-29",

@@ -1,3 +1,4 @@
+import { reliabilityBadgeCopy } from '#lib/v1/verdict.copy.ts';
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { intl } from '#lib/i18n/index.ts';
@@ -10,8 +11,8 @@ function snap(partial: Partial<ReliabilitySnapshot>): ReliabilitySnapshot {
 
 describe('ReliabilityBadge', () => {
 	it.each([
-		['en', 'on time in the latest summary'],
-		['fr', 'à l’heure dans le dernier bilan'],
+		['en', 'on time, last 7 days'],
+		['fr', 'à l’heure, 7 derniers jours'],
 	] as const)(
 		'reports the daily percentage once without a competing verdict in %s',
 		(locale, description) => {
@@ -59,18 +60,25 @@ for (const locale of ['en', 'fr'] as const)
 						locale,
 					},
 				});
-				const badge = screen.getByRole('img', { name: hedge ?? fallback });
-				expect(badge).toHaveAttribute('title', hedge ?? fallback);
+				const badge = screen.getByRole('img', {
+					name: `${hedge ?? fallback}, ${reliabilityBadgeCopy[locale].week}`,
+				});
+				expect(badge).toHaveAttribute(
+					'title',
+					`${hedge ?? fallback}, ${reliabilityBadgeCopy[locale].week}`,
+				);
 				expect(badge).toHaveAttribute('data-slot', 'reliability-hedge');
 				expect(badge).toHaveAttribute('data-status', verdict);
 				expect(badge.textContent?.trim()).toBe(
-					verdict === 'tentative'
+					(verdict === 'tentative'
 						? locale === 'en'
 							? 'Uncertain'
 							: 'Incertaine'
 						: locale === 'en'
 							? 'Not enough data'
-							: 'Données insuffisantes',
+							: 'Données insuffisantes') +
+						' ' +
+						reliabilityBadgeCopy[locale].week,
 				);
 				expect(container.querySelector('[data-slot="reliability-badge"]')).toBeNull();
 			},

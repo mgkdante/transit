@@ -68,6 +68,7 @@ interface ViewOptions<
 	};
 	readonly apply?: (snapshot: S, retained: R | null) => D;
 	readonly verdict?: {
+		readonly kind?: 'route' | 'stop';
 		readonly file: (data: S | D) => ReliabilityVerdictFile | null | undefined;
 		readonly headline?: (retained: R) => VerdictHeadline | undefined;
 		readonly copy?: () => VerdictCopy;
@@ -337,7 +338,8 @@ export function createReliabilityViewState<
 	});
 
 	const verdictWindow = $derived<VerdictWindow>({
-		grain: selected ? grain : undefined,
+		kind: options.verdict?.kind,
+		grain: selected || options.verdict?.kind === 'route' ? grain : undefined,
 		...(window ? { from: window.from, to: window.to } : {}),
 		...(active && retainedValue != null && window
 			? { aggregate: options.verdict?.headline?.(retainedValue) }

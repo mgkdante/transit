@@ -8,6 +8,7 @@ import { getRoutesIndex } from './repositories/static';
 import type { RouteReliability } from './schemas/route_reliability';
 import type { StopReliability } from './schemas/stop_reliability';
 import { reliabilityVerdict, type VerdictCopy, type VerdictStatus } from './verdict';
+import { routeClosedThrough, stopClosedThrough, isClosedDay } from './closedWindow';
 
 export type ReliabilityKind = 'route' | 'stop';
 
@@ -20,6 +21,8 @@ export interface ReliabilitySnapshot {
 	readonly series: Array<number | null>;
 	readonly observationCount?: number | null;
 	readonly hedge?: string;
+	readonly closedThrough?: string | null;
+	readonly kind?: ReliabilityKind;
 }
 
 const MAX_IN_FLIGHT = 4;
@@ -43,10 +46,21 @@ const NO_DATA_SNAPSHOT: ReliabilitySnapshot = {
 function summarize(
 	file: RouteReliability | StopReliability | null,
 	copy?: VerdictCopy,
+	kind: ReliabilityKind = 'route',
 ): ReliabilitySnapshot {
 	if (!file) return NO_DATA_SNAPSHOT;
-	const result = reliabilityVerdict(file, {}, copy);
-	const days = (file.periods ?? []).filter((p) => p.grain === 'day');
+	const closedThrough =
+		kind === 'route'
+			? routeClosedThrough(file as RouteReliability)
+			: stopClosedThrough(file as StopReliability);
+	const result = reliabilityVerdict(file, { kind }, copy);
+	const days = (file.periods ?? []).filter(
+		(p) =>
+			p.grain === 'day' &&
+			'date' in p &&
+			typeof p.date === 'string' &&
+			isClosedDay(p.date, closedThrough),
+	);
 	const ordered = [...days].sort((a, b) =>
 		String('date' in a ? (a.date ?? '') : '').localeCompare(
 			String('date' in b ? (b.date ?? '') : ''),
@@ -60,6 +74,8 @@ function summarize(
 		observationCount: result.observationCount,
 		hedge: result.hedge,
 		series,
+		closedThrough,
+		kind,
 	};
 }
 
@@ -93,7 +109,8 @@ export function createReliabilityLoader(
 	const started = new SvelteSet<string>();
 
 	const fetcher = kind === 'route' ? getRouteReliability : getStopReliability;
-	const summarizeFor = (file: RouteReliability | StopReliability | null) => summarize(file, copy);
+	const summarizeFor = (file: RouteReliability | StopReliability | null) =>
+		summarize(file, copy, kind);
 
 	const usesIndex = kind === 'route';
 	let indexFlags: SvelteMap<string, boolean> | null = null;
