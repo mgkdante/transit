@@ -235,3 +235,33 @@ def test_processing_null_time_sorts_before_the_earliest_instant():
         absent,
         earliest,
     )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [dict(status="failed"), dict(rows=3), dict(completed_at_utc=datetime(2026, 1, 4, tzinfo=UTC))],
+)
+def test_tied_processing_outcomes_have_a_total_order(changes):
+    from transit_ops.history.poll_record import ordered_record
+
+    r, _, _, _ = archive()
+    first = r.processing[1]
+    second = replace(first, **changes)
+    forward = replace(r, processing=(first, second))
+    backward = replace(r, processing=(second, first))
+    assert poll_record_sha256(forward) == poll_record_sha256(backward)
+    assert ordered_record(forward).processing == ordered_record(backward).processing
+
+
+@pytest.mark.parametrize("section", ["polls", "captures", "processing"])
+def test_entries_must_carry_the_feed_day_index_family(section):
+    from transit_ops.history.poll_record import PollRecordInvalid
+
+    r, p, _, _ = archive()
+    entries = getattr(r, section)
+    other = replace(entries[0], index_family="alert_snapshot")
+    changed = replace(r, **{section: (other, *entries[1:])})
+    with pytest.raises(PollRecordInvalid):
+        poll_record_sha256(changed)
+    with pytest.raises(ManifestInvalid):
+        manifest(changed, p)

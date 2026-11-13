@@ -150,6 +150,7 @@ def ordered_record(record: PollRecord) -> PollRecord:
                     (p.started_at_utc.astimezone(UTC) if p.started_at_utc else floor),
                     (p.capture_row_id is not None, p.capture_row_id),
                     (p.ingestion_run_id is not None, p.ingestion_run_id),
+                    canonical_json(asdict(p)),
                 ),
             )
         ),
@@ -176,8 +177,8 @@ def validate_record(record: PollRecord) -> None:
         *record.processing,
     )
     for entry in entries:
-        if entry.index_family not in families:
-            raise PollRecordInvalid("invalid entry family")
+        if entry.index_family != record.feed_day.index_family:
+            raise PollRecordInvalid("entry family differs from feed-day")
         if isinstance(entry, ProcessingEntry):
             valid = (
                 entry.stage in ("silver_load", "gold_facts")
