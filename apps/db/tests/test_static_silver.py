@@ -1145,10 +1145,12 @@ def test_load_latest_static_to_silver_reads_s3_backed_archive(
     assert fake_storage.read_calls == [lookup_row["storage_path"]]
     analyze_calls = [sql for sql, _ in engine.begin_connection.calls if sql.startswith("ANALYZE ")]
     assert analyze_calls == [
-        f"ANALYZE {table}" for table in static_silver_module._POST_LOAD_ANALYZE_TABLES
+        "ANALYZE silver.trips", "ANALYZE silver.stop_times",
+        *[f"ANALYZE {table}" for table in static_silver_module._POST_LOAD_ANALYZE_TABLES],
     ]
-    tail = [sql for sql, _ in engine.begin_connection.calls][-len(analyze_calls) :]
-    assert tail == analyze_calls, "the ANALYZE batch must be the final statements after the seed"
+    post_load_calls = analyze_calls[2:]
+    tail = [sql for sql, _ in engine.begin_connection.calls][-len(post_load_calls) :]
+    assert tail == post_load_calls, "the post-load ANALYZE batch must be the final statements"
 
 
 def test_load_latest_static_to_silver_accepts_live_current_static_without_beta_members(
