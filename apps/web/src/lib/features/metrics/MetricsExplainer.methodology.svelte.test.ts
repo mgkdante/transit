@@ -115,7 +115,7 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		).toHaveAttribute('data-verdict', 'conformant');
 		expect(container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
 			'datetime',
-			richProvenance.generated_utc,
+			richProvenance.generated_utc.slice(0, 10),
 		);
 		expect(screen.getByText(liveMethodology.otp_definition)).toBeInTheDocument();
 	});
@@ -131,12 +131,12 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 			expect(rail.querySelector('[data-slot="stat-provenance"]')).toBeInTheDocument(),
 		);
 		const provenance = within(rail).getByRole('button', { name: 'Provenance' });
-		const freshness = within(rail).getByRole('button', { name: 'Freshness' });
+		const coverage = within(rail).getByRole('button', { name: 'Coverage' });
 		expect(provenance).toHaveAttribute('aria-expanded', 'false');
-		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		expect(coverage).toHaveAttribute('aria-expanded', 'false');
 		await fireEvent.click(provenance);
 		expect(provenance).toHaveAttribute('aria-expanded', 'true');
-		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		expect(coverage).toHaveAttribute('aria-expanded', 'false');
 		const originalBody = rail.querySelector('[data-slot="stat-provenance"]');
 
 		viewport.happyDOM.setInnerWidth(390);
@@ -146,7 +146,7 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		await tick();
 		expect(within(rail).getByRole('button', { name: 'Provenance' })).toBe(provenance);
 		expect(provenance).toHaveAttribute('aria-expanded', 'true');
-		expect(freshness).toHaveAttribute('aria-expanded', 'false');
+		expect(coverage).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('retains the ToC, Coverage and complete definitions in actual unseeded SSR', async () => {
@@ -177,7 +177,7 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		}
 	}, 20_000);
 
-	it('renders the Provenance, Coverage, and Freshness SectionIcons in the shared rail', () => {
+	it('renders the Provenance and Coverage SectionIcons without the removed Freshness icon', () => {
 		provState.data = richProvenance;
 		const { container } = render(MetricsExplainer);
 
@@ -186,7 +186,7 @@ describe('MetricsExplainer — responsive stat rail icons', () => {
 		for (const rail of rails) {
 			expect(within(rail as HTMLElement).getByTestId('section-layers-icon')).toBeInTheDocument();
 			expect(within(rail as HTMLElement).getByTestId('section-chart-icon')).toBeInTheDocument();
-			expect(within(rail as HTMLElement).getByTestId('section-eye-icon')).toBeInTheDocument();
+			expect(within(rail as HTMLElement).queryByTestId('section-eye-icon')).toBeNull();
 		}
 	});
 });

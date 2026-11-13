@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getV1Context } from '#lib/v1/boot.ts';
+	import type { Manifest } from '#lib/v1/schemas/index.ts';
 	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { desktop } from '@yesid/ui/state';
@@ -33,7 +33,8 @@
 
 	const localizeHref = getLocalizeHref();
 
-	let { sqlHtml }: { sqlHtml?: MetricSqlHtml } = $props();
+	let { sqlHtml, manifest = null }: { sqlHtml?: MetricSqlHtml; manifest?: Manifest | null } =
+		$props();
 
 	const locale: Locale = getLocale();
 	const t = $derived(metricsCopy[locale]);
@@ -77,7 +78,7 @@
 	const orderedMetrics = $derived(groups.flatMap((g) => g.entries));
 
 	const record = createRecordStamp(
-		getV1Context().manifest,
+		() => manifest,
 		() => provenance.data?.generated_utc ?? null,
 	);
 	const articleMeta = $derived(

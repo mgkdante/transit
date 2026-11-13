@@ -363,7 +363,7 @@ describe('RepeatOffenders retained date history', () => {
 		expect(screen.getAllByText(/Available retained observations ending/)[0]).toHaveTextContent(
 			'Jun 22',
 		);
-		expect(container.querySelector('time[datetime="2026-06-22T23:59:59Z"]')).not.toBeNull();
+		expect(container.querySelector('time[datetime="2026-06-22"]')).not.toBeNull();
 		const link = screen.getAllByRole('link', { name: /Retained 22 trip/ })[0];
 		expect(link).toHaveAttribute('href', '/lines/11');
 		expect(link.getAttribute('href')).not.toContain('date=');
@@ -527,10 +527,7 @@ describe('RepeatOffenders retained date history', () => {
 		render(RepeatOffendersBoard);
 		await screen.findAllByText('Current trip');
 
-		expect(document.querySelector('.header__meta time')).toHaveAttribute(
-			'datetime',
-			'2026-06-25T12:00:00Z',
-		);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute('datetime', '2026-06-25');
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getRepeatOffenders).toHaveBeenCalledTimes(2));
 		expect(harness.getRepeatOffendersHistoryIndex).toHaveBeenCalledTimes(2);
@@ -543,10 +540,7 @@ describe('RepeatOffenders retained date history', () => {
 		render(RepeatOffendersBoard);
 		await screen.findAllByText('Retained 22 trip');
 
-		expect(document.querySelector('.header__meta time')).toHaveAttribute(
-			'datetime',
-			'2026-06-22T23:59:59Z',
-		);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute('datetime', '2026-06-22');
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getRepeatOffendersHistoryDay).toHaveBeenCalledTimes(2));
 		expect(harness.getRepeatOffenders).not.toHaveBeenCalled();

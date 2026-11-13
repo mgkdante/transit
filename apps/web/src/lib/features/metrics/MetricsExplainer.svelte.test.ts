@@ -1,6 +1,3 @@
-vi.mock('#lib/v1/boot.ts', () => ({
-	getV1Context: () => ({ manifest: { tz: 'America/Toronto', files: {} } }),
-}));
 import { stampCopy } from '#lib/v1/stamp.copy.ts';
 import { formatDateKey } from '#lib/utils/time.ts';
 vi.mock('$app/navigation', () => ({ afterNavigate: () => {} }));
@@ -585,7 +582,7 @@ it('shows the record stamp and no publication time', async () => {
 	const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 	const expected = stampCopy.en.record(
 		null,
-		formatDateKey('2026-07-11T04:00:00Z'.slice(0, 10), 'en'),
+		formatDateKey('2026-07-11T04:00:00Z'.slice(0, 10), 'en', true),
 		'window',
 	);
 	await waitFor(() => expect(header).toHaveTextContent(expected));

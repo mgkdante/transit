@@ -16,7 +16,7 @@ export interface RecordStamp {
 	readonly warning: boolean;
 }
 export function recordStamp(input: {
-	readonly manifest: Manifest;
+	readonly manifest: Manifest | null;
 	readonly historyIndex: HistoricAvailabilityIndex | null;
 	readonly fileGeneratedUtc?: string | null;
 	readonly day?: string;
@@ -26,7 +26,7 @@ export function recordStamp(input: {
 		scope: input.day ? 'day' : 'window',
 		dataThrough: input.day ?? recordClosedThrough(input.historyIndex),
 		publishedOn:
-			(input.fileGeneratedUtc ?? input.manifest.files.historic?.generated_utc)?.slice(0, 10) ??
+			(input.fileGeneratedUtc ?? input.manifest?.files.historic?.generated_utc)?.slice(0, 10) ??
 			null,
 		nextUpdateUtc: null,
 		warning: false,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getV1Context } from '#lib/v1/boot.ts';
+	import type { Manifest } from '#lib/v1/schemas/index.ts';
 	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
@@ -60,6 +60,7 @@
 	import HotspotSection from './sections/HotspotSection.svelte';
 	import { copy as COPY } from './hotspots.copy';
 
+	let { manifest = null }: { manifest?: Manifest | null } = $props();
 	const display = transitDisplay();
 	const localizeHref = getLocalizeHref();
 
@@ -317,7 +318,10 @@
 	});
 	const tocEntries = $derived(navigation.entries);
 	const { navigate } = navigation;
-	const record = createRecordStamp(getV1Context().manifest, () => generatedUtc);
+	const record = createRecordStamp(
+		() => manifest,
+		() => generatedUtc,
+	);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		const stamp = record.meta(locale);

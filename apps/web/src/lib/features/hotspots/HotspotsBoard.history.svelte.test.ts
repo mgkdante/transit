@@ -284,7 +284,7 @@ describe('HotspotsBoard retained date history', () => {
 		for (const caption of screen.getAllByText(/Available retained observations ending/)) {
 			expect(caption).toHaveTextContent('Jun 22');
 		}
-		expect(container.querySelector('time[datetime="2026-06-22T23:59:59Z"]')).not.toBeNull();
+		expect(container.querySelector('time[datetime="2026-06-22"]')).not.toBeNull();
 		const retainedLink = screen.getAllByRole('link', { name: /Retained 22 week line/ })[0];
 		expect(retainedLink).toHaveAttribute('href', '/lines/161');
 		expect(retainedLink.getAttribute('href')).not.toContain('date=');
@@ -541,10 +541,7 @@ describe('HotspotsBoard retained date history', () => {
 		render(HotspotsBoard);
 		await screen.findAllByText('Retained 22 line');
 
-		expect(document.querySelector('.header__meta time')).toHaveAttribute(
-			'datetime',
-			'2026-06-22T23:59:59Z',
-		);
+		expect(document.querySelector('.header__meta time')).toHaveAttribute('datetime', '2026-06-22');
 		dataRefresh.bumpEpoch();
 		await waitFor(() => expect(harness.getHotspotsHistoryDay).toHaveBeenCalledTimes(2));
 		expect(harness.getHotspots).not.toHaveBeenCalled();
