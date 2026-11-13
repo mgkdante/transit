@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
@@ -113,7 +114,8 @@ def test_alert_feed_reads_its_own_index(conn):
             ("v1", 2) if run == 2 else (None, None)
         )
         assert not capture.packed and capture.stream is None and capture.offset is None
-        assert record.processing == ()
+        assert all(p.stage == "gold_facts" for p in record.processing)
+        assert bool(record.processing) == (key == "trip_updates")
 
 
 def test_silver_load_rows_are_not_polls(conn):
@@ -128,7 +130,7 @@ def test_silver_load_rows_are_not_polls(conn):
         status="failed",
         started_at_utc=START + timedelta(seconds=10),
     )
-    assert read(conn) == before
+    assert read(conn).polls == before.polls
     assert before.observed_interval_ms == 30_000
 
 
@@ -209,3 +211,237 @@ def test_undeclared_or_missing_feed_is_refused(conn):
         read(conn, "unknown")
     with pytest.raises(LookupError):
         read(conn)
+
+
+def facts(conn, capture_id, at, count, endpoint="trip_updates"):
+    table = "fact_trip_delay_snapshot" if endpoint == "trip_updates" else "fact_vehicle_snapshot"
+    extra = ", stop_time_update_count" if endpoint == "trip_updates" else ""
+    value = ", 0" if extra else ""
+    conn.execute(
+        text(
+            f"INSERT INTO gold.{table} (provider_id, realtime_snapshot_id, entity_index, "
+            f"snapshot_date_key, snapshot_local_date, feed_timestamp_utc, captured_at_utc{extra}) "
+            f"SELECT :p, :id, n, :key, :day, :at, :at{value} FROM generate_series(1, :n) n"
+        ),
+        dict(
+            p=PROVIDER, id=capture_id, key=int(at.strftime("%Y%m%d")), day=at.date(), at=at, n=count
+        ),
+    )
+
+
+def evidence(conn, day, rows=None, completed=START, **changes):
+    details = dict(
+        command="test",
+        completed_at_utc=completed.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        index_family="realtime_snapshot",
+        rows_by_capture=rows or {"1": 100},
+    )
+    details.update(changes)
+    return conn.execute(
+        text(
+            "INSERT INTO core.history_event "
+            "(kind,dataset_id,provider_id,revision,window_key,actor,details) "
+            "VALUES ('processing_evidence','capture.trip_updates',:p,0,:day,'test',"
+            "CAST(:details AS jsonb)) RETURNING event_id"
+        ),
+        dict(p=PROVIDER, day=day.isoformat(), details=json.dumps(details)),
+    ).scalar_one()
+
+
+def gold(record):
+    return {p.capture_row_id: p for p in record.processing if p.stage == "gold_facts"}
+
+
+def test_failed_silver_load_is_a_processing_record_not_a_poll(conn):
+    endpoint = seed(conn, captured_at_utc=START + timedelta(hours=12))
+    conn.execute(
+        text(
+            "UPDATE core.feed_endpoints SET refresh_interval_seconds=30 WHERE feed_endpoint_id=:e"
+        ),
+        dict(e=endpoint),
+    )
+    for run, seconds in [(2, 10), (3, 300)]:
+        seed(
+            conn,
+            run_id=run,
+            run_kind="silver_load",
+            with_capture=False,
+            status="failed",
+            started_at_utc=START + timedelta(hours=12, seconds=seconds),
+            error_message="broken",
+        )
+    record = read(conn)
+    loads = [p for p in record.processing if p.stage == "silver_load"]
+    assert [p.ingestion_run_id for p in record.polls] == [1]
+    assert [(p.capture_row_id, p.attribution) for p in loads] == [(1, "by_time"), (None, None)]
+    for p, seconds in zip(loads, [10, 300], strict=True):
+        assert p.status == "failed" and p.error_message == "broken" and p.rows is None
+        assert p.started_at_utc == START + timedelta(hours=12, seconds=seconds)
+        assert p.completed_at_utc == p.started_at_utc + timedelta(seconds=4)
+    assert [p.ingestion_run_id for p in loads] == [2, 3]
+
+
+@pytest.mark.parametrize("endpoint", ["trip_updates", "vehicle_positions"])
+def test_fact_rows_are_counted_per_capture_and_null_past_the_fact_retention(conn, endpoint):
+    at = conn.execute(text("SELECT now()")).scalar_one() - timedelta(hours=1)
+    for i in (1, 2):
+        seed(conn, endpoint, run_id=i, capture_id=i, started_at_utc=at)
+    old = at - timedelta(days=14)
+    seed(conn, endpoint, run_id=3, capture_id=3, started_at_utc=old)
+    facts(conn, 1, at, 3, endpoint)
+    facts(conn, 3, old, 2, endpoint)
+    young = gold(read(conn, endpoint, at.date()))
+    assert [(young[i].status, young[i].rows) for i in (1, 2)] == [
+        ("observed", 3),
+        ("none_observed", 0),
+    ]
+    ancient = gold(read(conn, endpoint, old.date()))[3]
+    assert ancient.status == "not_observed" and ancient.rows is None
+    for p in [*young.values(), ancient]:
+        assert (
+            p.attribution,
+            p.started_at_utc,
+            p.completed_at_utc,
+            p.error_message,
+            p.ingestion_run_id,
+        ) == (None,) * 5
+    seed(conn, "i3_alerts", run_id=4, started_at_utc=at)
+    assert read(conn, "i3_alerts", at.date()).processing == ()
+
+
+def test_gold_outcome_is_carried_after_thirteen_days(conn):
+    endpoint = seed(conn)
+    facts(conn, 1, START, 2)
+    record = read(conn)
+    carried = replace(
+        gold(record)[1], status="observed", rows=5, attribution="recorded", completed_at_utc=START
+    )
+    current = manifest(replace(record, processing=(carried,)), endpoint)
+    assert gold(read(conn, current=current))[1] == carried
+    at = conn.execute(text("SELECT now()")).scalar_one() - timedelta(hours=1)
+    seed(conn, run_id=2, capture_id=2, started_at_utc=at)
+    young = read(conn, day=at.date())
+    copy = manifest(young, endpoint)
+    facts(conn, 2, at, 3)
+    assert gold(read(conn, day=at.date(), current=copy))[2] == gold(young)[2]
+    assert gold(young)[2].status == "none_observed"
+
+
+def test_recorded_evidence_wins_over_the_copy_and_the_count(conn):
+    endpoint = seed(conn)
+    facts(conn, 1, START, 2)
+    current = manifest(read(conn), endpoint)
+    evidence(conn, DAY, {"1": 100, "999": 50}, START + timedelta(seconds=20))
+    evidence(conn, DAY, {"1": 70}, START + timedelta(seconds=10))
+    result = gold(read(conn, current=current))
+    assert set(result) == {1}
+    assert (result[1].rows, result[1].attribution, result[1].status) == (
+        100,
+        "recorded",
+        "observed",
+    )
+    assert result[1].completed_at_utc == START + timedelta(seconds=20)
+    assert (result[1].started_at_utc, result[1].error_message, result[1].ingestion_run_id) == (
+        None,
+    ) * 3
+    newer = replace(result[1], rows=200, completed_at_utc=START + timedelta(seconds=30))
+    copy = manifest(replace(read(conn), processing=(newer,)), endpoint)
+    assert gold(read(conn, current=copy))[1] == newer
+    equal = replace(newer, completed_at_utc=result[1].completed_at_utc)
+    copy = manifest(replace(read(conn), processing=(equal,)), endpoint)
+    assert gold(read(conn, current=copy))[1] == equal
+    evidence(conn, DAY, {"1": 0}, START + timedelta(seconds=20))
+    assert gold(read(conn))[1].status == "none_observed"
+
+
+def test_digest_is_equal_before_seal_after_seal_and_after_restore(conn):
+    at = conn.execute(text("SELECT now()")).scalar_one() - timedelta(hours=1)
+    endpoint = seed(conn, started_at_utc=at)
+    facts(conn, 1, at, 3)
+    seed(
+        conn,
+        run_id=2,
+        run_kind="silver_load",
+        with_capture=False,
+        status="failed",
+        started_at_utc=at + timedelta(seconds=10),
+        error_message="broken",
+    )
+    record = read(conn, day=at.date())
+    digest = poll_record_sha256(record)
+    assert poll_record_sha256(read(conn, day=at.date())) == digest
+    current = decode_manifest(encode_manifest(manifest(record, endpoint)))
+    conn.execute(
+        text("DELETE FROM gold.fact_trip_delay_snapshot WHERE provider_id=:p"), dict(p=PROVIDER)
+    )
+    assert poll_record_sha256(read(conn, day=at.date(), current=current)) == digest
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"command": None},
+        {"index_family": "alert_snapshot"},
+        {"completed_at_utc": "2026-01-02T00:00:00"},
+        {"rows_by_capture": {"1": -1}},
+        {"rows_by_capture": {"1": True}},
+        {"rows_by_capture": {"0": 1}},
+        {"rows_by_capture": {"-1": 1}},
+        {"rows_by_capture": {"1.0": 1}},
+        {"extra": "key"},
+    ],
+)
+def test_malformed_evidence_is_refused(conn, change):
+    seed(conn)
+    event = evidence(conn, DAY, **change)
+    with pytest.raises(PollRecordInvalid, match=f"event {event}"):
+        read(conn)
+
+
+def test_evidence_missing_key_is_refused(conn):
+    seed(conn)
+    event = conn.execute(
+        text(
+            "INSERT INTO core.history_event "
+            "(kind,dataset_id,provider_id,revision,window_key,actor) "
+            "VALUES ('processing_evidence','capture.trip_updates',:p,0,:day,'test') "
+            "RETURNING event_id"
+        ),
+        dict(p=PROVIDER, day=DAY.isoformat()),
+    ).scalar_one()
+    with pytest.raises(PollRecordInvalid, match=f"event {event}"):
+        read(conn)
+
+
+@pytest.mark.parametrize("status", ["succeeded", "pending", "running"])
+def test_nonfailed_silver_load_is_refused(conn, status):
+    seed(conn, run_kind="silver_load", status=status, with_capture=False)
+    with pytest.raises(PollRecordInvalid, match="run 1"):
+        read(conn)
+
+
+def test_silver_attribution_can_name_previous_day_and_uses_latest_capture(conn):
+    endpoint = seed(conn, started_at_utc=START - timedelta(seconds=20), captured_at_utc=START)
+    seed(
+        conn,
+        run_id=2,
+        capture_id=2,
+        started_at_utc=START - timedelta(seconds=15),
+        captured_at_utc=START,
+    )
+    conn.execute(
+        text(
+            "UPDATE core.feed_endpoints SET refresh_interval_seconds=30 WHERE feed_endpoint_id=:e"
+        ),
+        dict(e=endpoint),
+    )
+    seed(
+        conn,
+        run_id=3,
+        run_kind="silver_load",
+        with_capture=False,
+        status="failed",
+        started_at_utc=START + timedelta(seconds=30),
+    )
+    (load,) = read(conn).processing
+    assert (load.capture_row_id, load.attribution) == (2, "by_time")
