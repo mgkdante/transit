@@ -1,8 +1,9 @@
 """Window coordination and audit writes in the caller's transaction."""
 
 import json
-from collections.abc import Mapping
-from dataclasses import dataclass
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, fields
 from datetime import UTC, date, datetime
 from typing import Final, Literal, get_args
 
@@ -94,6 +95,11 @@ class ArchiveCopy:
 
 def _window_start(dataset: datasets.HistoryDataset, key: str, revision: int) -> date | None:
     start = datasets.window_start(dataset, key)
+    _check_revision(dataset, revision)
+    return start
+
+
+def _check_revision(dataset: datasets.HistoryDataset, revision: int) -> None:
     source = dataset.source
     if isinstance(source, datasets.TableSource):
         valid = (
@@ -105,7 +111,6 @@ def _window_start(dataset: datasets.HistoryDataset, key: str, revision: int) -> 
         valid = revision == 0
     if not valid:
         raise ValueError("revision does not fit the dataset declaration")
-    return start
 
 
 def _lock(connection: Connection, identity: Mapping[str, object]) -> None:
@@ -115,6 +120,23 @@ def _lock(connection: Connection, identity: Mapping[str, object]) -> None:
     connection.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:lock_key AS text), 0))"),
         {"lock_key": json.dumps(key, separators=(",", ":"))},
+    )
+
+
+def acquire_window_lock(
+    connection: Connection,
+    *,
+    dataset_id: str,
+    provider_id: str,
+    window_key: str,
+    revision: int = 0,
+) -> None:
+    _window_start(datasets.get_dataset(dataset_id), window_key, revision)
+    _lock(
+        connection,
+        dict(
+            dataset_id=dataset_id, provider_id=provider_id, revision=revision, window_key=window_key
+        ),
     )
 
 
@@ -374,14 +396,15 @@ def find_copies(
     dataset = datasets.get_dataset(dataset_id)
     if start > end:
         raise ValueError("start must not be after end")
-    # Reuse declaration checks even for edition datasets, which have no dated windows.
-    key = "0" * 64 if dataset.archive_grain == "edition" else start.isoformat()
-    if dataset.archive_grain == "month":
-        key = f"{start.year:04d}-{start.month:02d}"
-    _window_start(dataset, key, revision)
+    _check_revision(dataset, revision)
+    columns = ", ".join(
+        f"c.{field.name}"
+        for field in fields(ArchiveCopy)
+        if field.name not in {"window_start", "is_current"}
+    )
     rows = connection.execute(
-        text("""
-        SELECT c.*, w.window_start,
+        text(f"""
+        SELECT {columns}, w.window_start,
                COALESCE(w.current_version = c.content_version, false) AS is_current
         FROM core.history_archive_copy c
         JOIN core.history_window w USING (dataset_id, provider_id, revision, window_key)
@@ -394,3 +417,144 @@ def find_copies(
         ),
     ).mappings()
     return [ArchiveCopy(**row) for row in rows]
+
+
+def fold_sources(
+    connection: Connection,
+    *,
+    dataset_id: str,
+    provider_id: str,
+    revision: int,
+    window_keys: Sequence[str],
+) -> dict[str, str | None]:
+    dataset = datasets.get_dataset(dataset_id)
+    _check_revision(dataset, revision)
+    for key in window_keys:
+        datasets.window_start(dataset, key)
+    rows = connection.execute(
+        text("""
+        SELECT w.window_key, c.content_sha256
+        FROM core.history_window w
+        JOIN core.history_archive_copy c
+          USING (dataset_id, provider_id, revision, window_key)
+        WHERE w.dataset_id=:dataset_id AND w.provider_id=:provider_id
+          AND w.revision=:revision AND w.window_key=ANY(:keys)
+          AND c.content_version=w.current_version
+          AND c.verified_at_utc IS NOT NULL AND c.rejected_at_utc IS NULL
+          AND w.working_changed_at_utc <= c.verified_at_utc
+    """),
+        dict(
+            dataset_id=dataset_id,
+            provider_id=provider_id,
+            revision=revision,
+            keys=list(window_keys),
+        ),
+    ).all()
+    digests: dict[str, str | None] = {key: digest for key, digest in rows}
+    return {key: digests.get(key) for key in window_keys}
+
+
+def _fold_period(dataset: datasets.HistoryDataset, fold: str, period_key: str) -> str:
+    declaration = next((item for item in dataset.folds if item.name == fold), None)
+    if declaration is None:
+        raise ValueError(f"undeclared fold: {fold!r}")
+    pattern = r"[0-9]{4}-[0-9]{2}" if declaration.period == "month" else r"[0-9]{4}"
+    suffix = "-01" if declaration.period == "month" else "-01-01"
+    try:
+        if not re.fullmatch(pattern, period_key):
+            raise ValueError
+        date.fromisoformat(period_key + suffix)
+    except ValueError:
+        raise ValueError(f"invalid period_key: {period_key!r}") from None
+    return period_key
+
+
+def record_fold_published(
+    connection: Connection,
+    *,
+    dataset_id: str,
+    provider_id: str,
+    revision: int,
+    fold: str,
+    period_key: str,
+    object_key: str,
+    sources: Mapping[str, str | None],
+    actor: str | None = None,
+) -> None:
+    dataset = datasets.get_dataset(dataset_id)
+    _check_revision(dataset, revision)
+    period = _fold_period(dataset, fold, period_key)
+    if not object_key:
+        raise ValueError(f"empty object_key: {object_key!r}")
+    if not sources:
+        raise ValueError(f"empty sources: {sources!r}")
+    for key, digest in sources.items():
+        start = datasets.window_start(dataset, key)
+        if start is None or not start.isoformat().startswith(period + "-"):
+            raise ValueError(f"source key outside period: {key!r}")
+        if digest is not None and re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise ValueError(f"invalid source digest: {digest!r}")
+    record_event(
+        connection,
+        kind="fold_published",
+        dataset_id=dataset_id,
+        provider_id=provider_id,
+        revision=revision,
+        window_key=period_key,
+        actor=actor,
+        details={
+            "fold": fold,
+            "period_key": period_key,
+            "object_key": object_key,
+            "sources": dict(sources),
+        },
+    )
+
+
+def record_processing_evidence(
+    connection: Connection,
+    *,
+    dataset_id: str,
+    provider_id: str,
+    window_key: str,
+    command: str,
+    completed_at_utc: datetime,
+    rows_by_capture: Mapping[int, int],
+    actor: str | None = None,
+) -> None:
+    dataset = datasets.get_dataset(dataset_id)
+    source = dataset.source
+    if not isinstance(source, datasets.CaptureSource) or source.fact_table is None:
+        raise ValueError(f"dataset has no capture fact table: {dataset_id!r}")
+    _window_start(dataset, window_key, 0)
+    if not command:
+        raise ValueError(f"empty command: {command!r}")
+    if completed_at_utc.utcoffset() is None:
+        raise ValueError(f"completed_at_utc must be aware: {completed_at_utc!r}")
+    for capture, rows in rows_by_capture.items():
+        if type(capture) is not int or capture <= 0 or type(rows) is not int or rows < 0:
+            raise ValueError(f"invalid capture outcome: {capture!r}: {rows!r}")
+    lock_window(
+        connection,
+        dataset_id=dataset_id,
+        provider_id=provider_id,
+        window_key=window_key,
+        actor=actor,
+    )
+    record_event(
+        connection,
+        kind="processing_evidence",
+        dataset_id=dataset_id,
+        provider_id=provider_id,
+        revision=0,
+        window_key=window_key,
+        actor=actor,
+        details={
+            "command": command,
+            "completed_at_utc": completed_at_utc.astimezone(UTC)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z"),
+            "index_family": source.index_family,
+            "rows_by_capture": {str(capture): rows for capture, rows in rows_by_capture.items()},
+        },
+    )
