@@ -11,7 +11,7 @@ from transit_ops.settings import Settings, get_settings
 
 from .bronze import RAW_BRONZE_METADATA_TABLES
 from .gold import (
-    ALERT_ARCHIVE_RETENTION_TABLE,
+    ALERT_ARCHIVE_TABLE,
     GOLD_AGGREGATE_TABLES,
     GOLD_FACT_TABLES,
 )
@@ -27,7 +27,7 @@ VACUUM_TABLES = (
     "gold.latest_trip_delay_snapshot",
     "gold.latest_vehicle_snapshot",
     *GOLD_AGGREGATE_TABLES,
-    ALERT_ARCHIVE_RETENTION_TABLE,
+    ALERT_ARCHIVE_TABLE,
     *RAW_BRONZE_METADATA_TABLES,
     *I3_RETENTION_TABLES,
 )
