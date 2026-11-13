@@ -41,7 +41,7 @@ describe('MapFilterPill', () => {
 		await fireEvent.click(trigger);
 
 		const dialog = screen.getByRole('dialog', { name: 'Controls' });
-		expect(dialog).toHaveAttribute('aria-modal', 'true');
+		expect(dialog).toHaveAttribute('aria-modal', 'false');
 		await waitFor(() => expect(screen.getByTestId('map-filter-drawer-title')).toHaveFocus());
 
 		for (const name of ['Stop', 'Has alert Show markers with alerts', 'Late', 'Standing']) {
@@ -99,14 +99,14 @@ describe('MapFilterPill', () => {
 		expect(dialog).toBeInTheDocument();
 	});
 
-	it('uses Sheet dismissal for Escape and the overlay, restoring the surviving trigger', async () => {
+	it('uses Sheet dismissal for Escape and outside taps, restoring the surviving trigger', async () => {
 		const store = createFilterStore(emptyFilterState());
 		render(MapFilterPillHarness, { props: { store, locale: 'en' } });
 		const trigger = screen.getByRole('button', { name: 'Controls 0' });
 
 		trigger.focus();
 		await fireEvent.click(trigger);
-		await fireEvent.keyDown(document, { key: 'Escape' });
+		await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		expect(trigger).toHaveFocus();
 
@@ -121,17 +121,14 @@ describe('MapFilterPill', () => {
 			>;
 			expect([...layers.keys()].some((layer) => layer.opts.ref.current === dialog)).toBe(true);
 		});
-		const overlay = document.querySelector<HTMLElement>(
-			'[data-slot="sheet-overlay"]:has(+ [data-m6b-controls-drawer])',
-		);
-		expect(overlay).toBeInTheDocument();
-		await fireEvent.pointerDown(overlay!, {
+		const outside = document.body;
+		await fireEvent.pointerDown(outside, {
 			button: 0,
 			clientX: 1,
 			clientY: 1,
 			pointerType: 'mouse',
 		});
-		await fireEvent.click(overlay!);
+		await fireEvent.click(outside);
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		expect(trigger).toHaveFocus();
 	});

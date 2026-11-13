@@ -470,7 +470,7 @@
 		void tick().then(() => {
 			if (disposed) return;
 			for (const el of document.querySelectorAll(
-				'[data-slot="map-detail-overlay"], .map-head, .map-filter-panel, .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
+				'[data-slot="map-detail-overlay"], .map-head, .map-filter-panel, [data-slot="map-legend-card"], [data-slot="map-legend-fab"], .map-filter-pill-container, .map-near, [data-slot="bottom-sheet"]',
 			))
 				observer.observe(el);
 			update();

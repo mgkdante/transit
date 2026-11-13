@@ -92,6 +92,26 @@ afterEach(() => {
 });
 
 describe('MapOverlayChrome', () => {
+	it('keeps phone legend and controls mutually exclusive and hides both triggers for detail', async () => {
+		installViewportMatchMedia(390);
+		const view = render(MapOverlayChromeHarness, {
+			store: createFilterStore(emptyFilterState()),
+			locale: 'en',
+			isDesktop: false,
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Legend' }));
+		expect(screen.getByRole('dialog', { name: 'Legend' })).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Controls 0' }));
+		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Legend' })).toBeNull());
+		expect(screen.getByRole('dialog', { name: 'Controls' })).toBeInTheDocument();
+		await fireEvent.click(screen.getByTestId('map-legend-button'));
+		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Controls' })).toBeNull());
+		expect(screen.getByRole('dialog', { name: 'Legend' })).toBeInTheDocument();
+		await view.rerender({ detailOpen: true });
+		expect(screen.queryByTestId('map-legend-button')).toBeNull();
+		expect(screen.queryByTestId('map-filter-pill')).toBeNull();
+	});
+
 	it('does not mount hidden desktop controls on an initial mobile visit', () => {
 		installViewportMatchMedia(390);
 		const store = createFilterStore(emptyFilterState());

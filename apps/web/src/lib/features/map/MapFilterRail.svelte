@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@yesid/ui/button';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
-	import InfoIcon from '@lucide/svelte/icons/info';
 	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
 	import PanelLeftOpenIcon from '@lucide/svelte/icons/panel-left-open';
 	import RouteIcon from '@lucide/svelte/icons/route';
@@ -63,17 +62,6 @@
 	>
 		<WavesIcon size={16} strokeWidth={2.25} aria-hidden="true" />
 		<span class="mf-rail-abbr">{copy.rail.motion}</span>
-	</Button>
-	<Button
-		variant="ghost"
-		size="sm"
-		type="button"
-		class="mf-rail-glyph"
-		aria-label={copy.legend.title}
-		onclick={() => onactivate('legend')}
-	>
-		<InfoIcon size={16} strokeWidth={2.25} aria-hidden="true" />
-		<span class="mf-rail-abbr">{copy.rail.legend}</span>
 	</Button>
 	<Button
 		variant="ghost"

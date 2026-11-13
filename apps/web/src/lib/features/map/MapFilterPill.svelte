@@ -12,14 +12,22 @@
 		store: FilterStore;
 		locale: Locale;
 		hidden?: boolean;
+		open?: boolean;
+		onopenchange?: (open: boolean) => void;
 		controls: Snippet<[{ collapsible?: boolean } | undefined]>;
 	}
 
-	let { store, locale, hidden = false, controls }: Props = $props();
+	let {
+		store,
+		locale,
+		hidden = false,
+		controls,
+		open: drawerOpen = $bindable(false),
+		onopenchange,
+	}: Props = $props();
 	const t = $derived(MAP_COPY[locale]);
 	const activeCount = $derived(store.chips.length + (store.state.showOutOfService ? 1 : 0));
 
-	let drawerOpen = $state(false);
 	let desktopHandoff = false;
 	let pillBtn = $state<HTMLButtonElement | null>(null);
 	let drawerTitle = $state<HTMLElement | null>(null);
@@ -36,6 +44,10 @@
 	}
 
 	function focusDesktopControls(event: Event): void {
+		if (document.querySelector('[data-slot="map-legend-sheet"][data-state="open"]')) {
+			event.preventDefault();
+			return;
+		}
 		if (!desktopHandoff) return;
 		event.preventDefault();
 		desktopHandoff = false;
@@ -50,7 +62,7 @@
 	});
 </script>
 
-<Sheet.Root bind:open={drawerOpen}>
+<Sheet.Root bind:open={drawerOpen} onOpenChange={onopenchange}>
 	{#if !hidden}
 		<div class="map-filter-pill-container" data-testid="map-filter-pill">
 			<Sheet.Trigger
@@ -71,6 +83,8 @@
 
 	<Sheet.Content
 		side="bottom"
+		modal={false}
+		interactOutsideBehavior="close"
 		showCloseButton={false}
 		class="m6b-controls-drawer inset-x-auto top-auto h-auto w-auto max-w-none gap-0 overflow-y-auto rounded-lg border p-0"
 		data-m6b-controls-drawer=""
@@ -184,7 +198,7 @@
 			1rem + env(safe-area-inset-top, 0px) + var(--pill-h) + var(--map-controls-drawer-gap)
 		);
 		--map-controls-drawer-bottom: calc(
-			1rem + env(safe-area-inset-bottom, 0px) + 44px + var(--map-controls-drawer-gap)
+			1rem + env(safe-area-inset-bottom, 0px) + 88px + var(--map-controls-drawer-gap) * 2
 		);
 		top: auto;
 		left: 0.75rem;
