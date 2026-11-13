@@ -15,6 +15,13 @@ _Avoid_: grain (the reporting span: day, week, month)
 The record of what is kept, in which form, and whether it was checked.
 _Avoid_: archive (the stored copies themselves)
 
+**Archive copy**:
+The compressed, write-once form of one window of one dataset, in object storage under `archive/`.
+_Avoid_: the alert archive (a published list of alerts)
+
+**Hold**:
+A mark on a window that stops trim from removing its working copy again, until a set time or with no end.
+
 **Window key**:
 The key of one window: `YYYY-MM-DD`, `YYYY-MM`, or a checksum for a schedule edition.
 _Avoid_: window (the span identified by the key)
