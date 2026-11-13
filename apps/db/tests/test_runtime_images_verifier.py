@@ -71,7 +71,7 @@ elif "--entrypoint" in argv:
     output = {
         "python": "Python 3.12.14",
         "uv": "uv 0.13.4 (fake-build)",
-        "postgres": "postgres (PostgreSQL) 16.15 (Debian fake)",
+        "postgres": "postgres (PostgreSQL) 16.16 (Debian fake)",
         "pg_repack": "pg_repack 1.5.2",
         "dpkg-query": "fake-package=1.0",
         "caddy": "v2.11.4 h1:fake",
