@@ -280,47 +280,19 @@ def prune_warm_rollup_storage(
     dry_run: bool = False,
 ) -> WarmRollupStoragePruneResult:
     settings = settings or get_settings()
-    engine = engine or make_engine(settings)
 
+    # Keep the configured window for readers; age alone never removes warm rows.
     retention_days = settings.GOLD_WARM_ROLLUP_RETENTION_DAYS
-    if retention_days <= 0:
-        return WarmRollupStoragePruneResult(
-            provider_id=provider_id,
-            dry_run=dry_run,
-            retention_days=retention_days,
-            cutoff_utc=None,
-            deleted_row_counts={table_name: 0 for table_name in GOLD_AGGREGATE_TABLES},
-            completed_at_utc=utc_now(),
-        )
-
-    now_utc = utc_now()
-    cutoff_utc = now_utc - timedelta(days=retention_days)
-    params = {"provider_id": provider_id, "cutoff_utc": cutoff_utc}
-
-    with engine.begin() as connection:
-        set_daily_warm_transaction_timeouts(connection)
-        counter = _safe_scalar_count if dry_run else _safe_rowcount
-        deleted_row_counts = {
-            table_name: counter(
-                connection.execute(
-                    _gold_aggregate_retention_statement(
-                        table_name,
-                        retention_column,
-                        date_only=date_only,
-                        dry_run=dry_run,
-                    ),
-                    params,
-                )
-            )
-            for table_name, retention_column, date_only in GOLD_AGGREGATE_RETENTION_COLUMNS
-        }
-        completed_at_utc = utc_now()
-
+    tables = (
+        tuple(target[0] for target in GOLD_AGGREGATE_RETENTION_COLUMNS)
+        if retention_days > 0
+        else GOLD_AGGREGATE_TABLES
+    )
     return WarmRollupStoragePruneResult(
         provider_id=provider_id,
         dry_run=dry_run,
         retention_days=retention_days,
-        cutoff_utc=cutoff_utc,
-        deleted_row_counts=deleted_row_counts,
-        completed_at_utc=completed_at_utc,
+        cutoff_utc=None,
+        deleted_row_counts=dict.fromkeys(tables, 0),
+        completed_at_utc=utc_now(),
     )

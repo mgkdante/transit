@@ -1638,65 +1638,30 @@ def test_reporting_stage_failure_logs_error_reraises_and_keeps_prior_commits(
     assert error.get("rows") is None
 
 
-def test_prune_warm_rollup_storage_deletes_old_periods() -> None:
+def test_prune_warm_rollup_storage_keeps_old_periods() -> None:
     conn = FakeConnection()
-    engine = FakeEngine(conn)
-    settings = _fake_settings()
-
-    result = prune_warm_rollup_storage("stm", settings=settings, engine=engine)
-
+    result = prune_warm_rollup_storage("stm", settings=_fake_settings(), engine=FakeEngine(conn))
     assert isinstance(result, WarmRollupStoragePruneResult)
     assert result.provider_id == "stm"
     assert result.retention_days == 90
-    assert result.cutoff_utc is not None
-
-    delay_deletes = [s for s in conn.executed if "DELETE FROM gold.trip_delay_summary_5m" in s]
-    assert len(delay_deletes) == 1
-
-    period_deletes = [s for s in conn.executed if "DELETE FROM gold.warm_rollup_periods" in s]
-    assert len(period_deletes) == 1
-
-    assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
-    assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
-    assert "gold.alert_archive_entry" not in result.deleted_row_counts
-    assert all("gold.alert_archive_entry" not in sql for sql in conn.executed)
+    assert result.cutoff_utc is None
+    assert result.deleted_row_counts == dict.fromkeys(
+        (target[0] for target in GOLD_AGGREGATE_RETENTION_COLUMNS), 0
+    )
+    assert conn.executed == []
 
 
-def test_prune_warm_rollup_storage_dry_run_counts_without_deletes() -> None:
+def test_prune_warm_rollup_storage_dry_run_reports_zero_deletions() -> None:
     conn = FakeConnection()
-    engine = FakeEngine(conn)
-    settings = _fake_settings()
-
-    result = prune_warm_rollup_storage("stm", settings=settings, engine=engine, dry_run=True)
-
+    result = prune_warm_rollup_storage(
+        "stm", settings=_fake_settings(), engine=FakeEngine(conn), dry_run=True
+    )
     assert result.dry_run is True
-    assert result.deleted_row_counts["gold.trip_delay_summary_5m"] == 3
-    assert result.deleted_row_counts["gold.warm_rollup_periods"] == 8
-    for table_name, expected_count in REPORTING_AGGREGATE_ROWCOUNTS.items():
-        assert result.deleted_row_counts[f"gold.{table_name}"] == expected_count
-
-    deletes = [s for s in conn.executed if "DELETE FROM gold." in s]
-    assert deletes == []
-
-    assert result.deleted_row_counts["gold.route_delay_percentile_daily"] == 7
-    assert result.deleted_row_counts["gold.stop_delay_percentile_daily"] == 11
-    assert result.deleted_row_counts["gold.route_cancellation_daily"] == 9
-    assert result.deleted_row_counts["gold.route_occupancy_band_daily"] == 10
-    assert result.deleted_row_counts["gold.route_occupancy_band_hourly"] == 17
-    assert result.deleted_row_counts["gold.stop_occupancy_band_daily"] == 15
-    assert result.deleted_row_counts["gold.route_service_span_daily"] == 12
-    assert result.deleted_row_counts["gold.route_skipped_stop_daily"] == 14
-    assert result.deleted_row_counts["gold.route_delay_spine"] == 16
-    assert result.deleted_row_counts["gold.route_headway_shift_daily"] == 9
-    assert result.deleted_row_counts["gold.stop_delay_spine"] == 4
-    assert result.deleted_row_counts["gold.stop_delay_shift_daily"] == 5
-    assert result.deleted_row_counts["gold.route_scheduled_trips_daily"] == 17
-    assert result.deleted_row_counts["gold.repeat_offender_daily_spine"] == 6
-    assert "gold.alert_archive_entry" not in result.deleted_row_counts
-    assert all("gold.alert_archive_entry" not in sql for sql in conn.executed)
-
-    count_queries = [s for s in conn.executed if "SELECT COUNT(*)" in s or "SELECT count(*)" in s]
-    assert len(count_queries) == 21
+    assert result.cutoff_utc is None
+    assert result.deleted_row_counts == dict.fromkeys(
+        (target[0] for target in GOLD_AGGREGATE_RETENTION_COLUMNS), 0
+    )
+    assert conn.executed == []
 
 
 def test_prune_warm_rollup_storage_display_dict_includes_dry_run() -> None:

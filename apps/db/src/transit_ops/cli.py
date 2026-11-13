@@ -1672,7 +1672,7 @@ def prune_warm_rollup_storage_command(
         help="Print what would be deleted without executing any deletions.",
     ),
 ) -> None:
-    """Prune warm rollup rows older than GOLD_WARM_ROLLUP_RETENTION_DAYS (default 730 days)."""
+    """Age-based warm-rollup deletion is disabled; return a zero-deletion receipt."""
 
     settings = get_settings()
     if _skip_if_unseeded(settings, provider_id, step="prune-warm-rollup-storage"):

@@ -396,14 +396,7 @@ def test_alert_archive_entry_older_than_the_rollup_cutoff_is_kept(
     assert "gold.alert_archive_entry" not in result.deleted_row_counts
 
 
-def test_rollup_tables_are_pruned_as_before(conn, retention, monkeypatch):
-    from transit_ops.maintenance import gold
-
-    settings, engine, _ = retention
-    monkeypatch.setattr(gold, "utc_now", lambda: NOW)
-    cutoff = NOW - timedelta(days=settings.GOLD_WARM_ROLLUP_RETENTION_DAYS)
-    old = cutoff - timedelta(days=2)
-    recent = cutoff + timedelta(days=2)
+def _seed_warm_rollups(conn, old, recent):
     for captured in (old, recent):
         conn.execute(
             text("""
@@ -422,16 +415,85 @@ def test_rollup_tables_are_pruned_as_before(conn, retention, monkeypatch):
             {"p": PROVIDER, "day": captured.date()},
         )
 
-    result = gold.prune_warm_rollup_storage(PROVIDER, settings=settings, engine=engine)
+    conn.execute(
+        text("""
+            INSERT INTO gold.route_delay_spine
+                (provider_id, route_id, provider_local_date, hour_of_day_local, direction_id)
+            VALUES (:p, 'test-route', :day, 0, 0)
+        """),
+        {"p": PROVIDER, "day": old.date()},
+    )
 
-    assert result.deleted_row_counts["gold.warm_rollup_periods"] == 1
-    assert result.deleted_row_counts["gold.citizen_accountability_daily"] == 1
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("switch_enabled", [None, False, True])
+def test_rollup_rows_older_than_the_setting_are_kept_while_the_switch_is_off(
+    conn, retention, monkeypatch, dry_run, switch_enabled
+):
+    from transit_ops.maintenance import gold
+
+    settings, engine, _ = retention
+    monkeypatch.setattr(gold, "utc_now", lambda: NOW)
+    cutoff = NOW - timedelta(days=settings.GOLD_WARM_ROLLUP_RETENTION_DAYS)
+    old = cutoff - timedelta(days=2)
+    recent = cutoff + timedelta(days=2)
+    _seed_warm_rollups(conn, old, recent)
+    conn.execute(text("DELETE FROM core.pipeline_switches WHERE switch_key LIKE 'history_trim:%'"))
+    if switch_enabled is not None:
+        conn.execute(
+            text("""
+                INSERT INTO core.pipeline_switches
+                    (switch_key, enabled, updated_at_utc, updated_by, reason)
+                VALUES ('history_trim:gold.route_delay_spine', :enabled, :now,
+                        'test', 'retention regression')
+            """),
+            {"enabled": switch_enabled, "now": NOW},
+        )
+    configured_days = settings.GOLD_WARM_ROLLUP_RETENTION_DAYS
+    result = gold.prune_warm_rollup_storage(
+        PROVIDER, settings=settings, engine=engine, dry_run=dry_run
+    )
+    assert result.cutoff_utc is None
+    assert all(count == 0 for count in result.deleted_row_counts.values())
+    assert result.retention_days == settings.GOLD_WARM_ROLLUP_RETENTION_DAYS == configured_days
     assert list(conn.execute(
+        text("SELECT provider_local_date FROM gold.route_delay_spine WHERE provider_id=:p"),
+        {"p": PROVIDER},
+    ).scalars()) == [old.date()]
+    assert set(conn.execute(
         text("SELECT period_start_utc FROM gold.warm_rollup_periods WHERE provider_id=:p"),
         {"p": PROVIDER},
-    ).scalars()) == [recent]
-    assert list(conn.execute(
+    ).scalars()) == {old, recent}
+    assert set(conn.execute(
         text("SELECT provider_local_date FROM gold.citizen_accountability_daily "
              "WHERE provider_id=:p"),
         {"p": PROVIDER},
-    ).scalars()) == [recent.date()]
+    ).scalars()) == {old.date(), recent.date()}
+
+
+@pytest.mark.parametrize("retention_days", [730, 365])
+def test_setting_and_provenance_values_are_unchanged(conn, retention, monkeypatch, retention_days):
+    from transit_ops.maintenance import prune_warm_rollup_storage
+    from transit_ops.snapshots.builders.historic import provenance
+    from transit_ops.snapshots.contract import Provenance
+
+    settings, engine, _ = retention
+    assert Settings.model_fields["GOLD_WARM_ROLLUP_RETENTION_DAYS"].default == 730
+    settings = settings.model_copy(update={"GOLD_WARM_ROLLUP_RETENTION_DAYS": retention_days})
+    monkeypatch.setattr(provenance, "get_settings", lambda: settings)
+
+    def serialized():
+        return provenance.build_provenance(
+            conn, provider_id=PROVIDER, generated_utc=NOW.isoformat()
+        ).model_dump_json()
+
+    before = serialized()
+    prune_warm_rollup_storage(PROVIDER, settings=settings, engine=engine)
+    assert serialized() == before
+    parsed = Provenance.model_validate_json(before)
+    assert parsed.retention == {
+        "detail_days": settings.GOLD_FACT_RETENTION_DAYS,
+        "aggregate_days": retention_days,
+    }
+    assert type(parsed.retention["aggregate_days"]) is int
+    assert settings.GOLD_WARM_ROLLUP_RETENTION_DAYS == retention_days

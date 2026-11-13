@@ -955,7 +955,7 @@ def test_prune_warm_rollup_storage_help() -> None:
     result = runner.invoke(app, ["prune-warm-rollup-storage", "--help"])
 
     assert result.exit_code == 0
-    assert "GOLD_WARM_ROLLUP_RETENTION_DAYS" in result.stdout
+    assert "Age-based warm-rollup deletion is disabled" in " ".join(result.stdout.split())
     assert "--dry-run" in result.stdout
 
 
