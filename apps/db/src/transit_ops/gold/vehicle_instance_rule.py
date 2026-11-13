@@ -1,0 +1,97 @@
+"""Resolve vehicle captures against listed, dated instances without database access."""
+
+import re
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, timedelta
+from typing import Literal, NamedTuple
+
+VEHICLE_EVIDENCE_WINDOW_SECONDS = 120
+EARLY_START_MAX_LEAD_SECONDS = 900
+SANITY_DELAY_SECONDS = 10_800
+
+Resolution = Literal["single_window", "descriptor", "other_instance", "ambiguous_instance"]
+
+
+class TripInstance(NamedTuple):
+    trip_id: str
+    service_date: date
+    start_utc: datetime
+    end_utc: datetime
+    first_departure_seconds: int
+
+
+class VehicleDescriptor(NamedTuple):
+    start_date: date | None
+    start_time: str
+
+
+def _validate(captured_at_utc: datetime, instances: Sequence[TripInstance]) -> None:
+    if captured_at_utc.utcoffset() is None:
+        raise ValueError("captured_at_utc must have a time zone")
+    dates: set[date] = set()
+    for instance in instances:
+        for name, value in (("start_utc", instance.start_utc), ("end_utc", instance.end_utc)):
+            if value.utcoffset() is None:
+                raise ValueError(f"{name} must have a time zone")
+        if instance.end_utc < instance.start_utc:
+            raise ValueError("end_utc must not be before start_utc")
+        if instance.trip_id != instances[0].trip_id:
+            raise ValueError("instances must have one trip_id")
+        if instance.service_date in dates:
+            raise ValueError("instances must have distinct service_date values")
+        dates.add(instance.service_date)
+
+
+def _start_seconds(start_time: str) -> int | None:
+    if re.fullmatch(r"[0-9]+:[0-5][0-9]:[0-5][0-9]", start_time) is None:
+        return None
+    try:
+        hours, minutes, seconds = map(int, start_time.split(":"))
+    except ValueError:
+        return None
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def resolve_vehicle_capture(
+    captured_at_utc: datetime,
+    instances: Sequence[TripInstance],
+    descriptor: VehicleDescriptor | None = None,
+) -> dict[TripInstance, Resolution]:
+    """Resolve listed instances of one trip from each candidate service date's own list.
+
+    The caller has already removed unlisted trips, including duplicated trips;
+    this function takes no relationship argument. A descriptor never expands a window.
+    """
+    _validate(captured_at_utc, instances)
+    holding = [
+        instance
+        for instance in instances
+        if instance.start_utc - timedelta(seconds=EARLY_START_MAX_LEAD_SECONDS)
+        <= captured_at_utc
+        <= instance.end_utc + timedelta(seconds=SANITY_DELAY_SECONDS)
+    ]
+    if not holding:
+        return {}
+    if len(holding) == 1:
+        return {holding[0]: "single_window"}
+    seconds = _start_seconds(descriptor.start_time) if descriptor else None
+    named = [
+        instance
+        for instance in holding
+        if descriptor is not None
+        and descriptor.start_date == instance.service_date
+        and seconds == instance.first_departure_seconds
+    ]
+    if len(named) == 1:
+        return {i: "descriptor" if i == named[0] else "other_instance" for i in holding}
+    return {i: "ambiguous_instance" for i in holding}
+
+
+def accepted_instance(resolved: Mapping[TripInstance, Resolution]) -> TripInstance | None:
+    """Return the accepted instance, refusing inconsistent multiple acceptances."""
+    accepted = [
+        i for i, resolution in resolved.items() if resolution in ("single_window", "descriptor")
+    ]
+    if len(accepted) > 1:
+        raise ValueError("more than one accepted instance")
+    return accepted[0] if accepted else None

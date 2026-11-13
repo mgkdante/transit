@@ -87,6 +87,7 @@ files = [
     "src/transit_ops/gold/delay_days.py",
     "src/transit_ops/gold/transactions.py",
     "src/transit_ops/gold/realtime.py",
+    "src/transit_ops/gold/vehicle_instance_rule.py",
     "src/transit_ops/gold/match_guard.py",
     "src/transit_ops/capture_coverage",
     "src/transit_ops/maintenance/_helpers.py",
