@@ -1873,5 +1873,76 @@ def history_seal_command(
     )
 
 
+@app.command("history-verify")
+def history_verify_command(
+    provider: str = typer.Option(..., "--provider", help="Provider id."),
+    feed: str = typer.Option(..., "--feed", help="Endpoint key of the capture feed."),
+    day: str = typer.Option(
+        ..., "--date", help="UTC day whose sealed copies are verified, YYYY-MM-DD."
+    ),
+    version: int | None = typer.Option(
+        None, "--version", min=1, help="Verify only this content version."
+    ),
+) -> None:
+    """Read sealed archive copies of one feed-day back from storage and make them current."""
+    from transit_ops.history import ledger, store
+    from transit_ops.history.seal_captures import CopyContentMissing
+    from transit_ops.history.storage import history_storage
+
+    settings = get_settings()
+    try:
+        utc_date = date.fromisoformat(day)
+        if day != utc_date.isoformat():
+            raise ValueError("Expected YYYY-MM-DD")
+    except ValueError:
+        raise typer.BadParameter("Expected a UTC day, YYYY-MM-DD.", param_hint="--date") from None
+    engine = make_engine(settings)
+    dataset_id = "capture." + feed
+    label = f"{dataset_id} {day} for provider {provider}"
+    with engine.begin() as connection:
+        window = ledger.window_state(
+            connection, dataset_id=dataset_id, provider_id=provider, window_key=day
+        )
+        copies = ledger.find_copies(
+            connection, dataset_id=dataset_id, provider_id=provider, start=utc_date, end=utc_date
+        )
+    if version is not None:
+        copies = [c for c in copies if c.content_version == version]
+        if not copies:
+            typer.echo(f"No copy {version} of {label}.")
+            raise typer.Exit(code=2)
+    else:
+        current = window.current_version if window else None
+        copies = [
+            c for c in copies
+            if c.state == "sealed" and (current is None or c.content_version > current)
+        ]
+    if not copies:
+        typer.echo(f"Nothing to verify for {dataset_id} {day} of provider {provider}.")
+        return
+    scope = history_storage(settings)
+    rejected = False
+    try:
+        with engine.connect() as connection:
+            for copy in copies:
+                result = store.verify(connection, scope.resolve, copy)
+                if result.outcome == "rejected":
+                    rejected = True
+                    typer.echo(
+                        f"Rejected {label}: version {copy.content_version}, "
+                        f"{result.reason}: {result.difference}."
+                    )
+                else:
+                    status = "current" if result.became_current else "not current"
+                    typer.echo(f"Verified {label}: version {copy.content_version}, {status}.")
+    except CopyContentMissing as error:
+        typer.echo(f"Not verified {label}: {error}", err=True)
+        raise typer.Exit(code=1) from None
+    finally:
+        scope.close()
+    if rejected:
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()
