@@ -14,6 +14,8 @@ from transit_ops.ingestion.common import (
 class _RecordingConnection:
 
     class _ScalarResult:
+        rowcount = 1
+
         def __init__(self, value: int) -> None:
             self._value = value
 

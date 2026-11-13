@@ -1,6 +1,8 @@
 from dataclasses import replace
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 from urllib.error import HTTPError
 
@@ -55,6 +57,7 @@ def test_capture_preserves_original_error_and_cleans_resources(
     storage = Mock()
     storage.persist_temp_file.return_value = "memory://capture"
     result = MagicMock()
+    result.rowcount = 1
     result.scalar_one.return_value = 101
     result.scalar_one_or_none.return_value = 12
     result.mappings.return_value.one_or_none.return_value = None
@@ -62,6 +65,12 @@ def test_capture_preserves_original_error_and_cleans_resources(
 
     def execute(statement, params):
         sql = str(statement)
+        if "FOR UPDATE" in sql:
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(one_or_none=lambda: {
+                "status": "running", "started_at_utc": datetime.now(UTC),
+            }))
+        if "clock_timestamp()" in sql:
+            return SimpleNamespace(scalar_one=lambda: datetime.now(UTC))
         if "INSERT INTO raw.ingestion_objects" in sql:
             raise original
         if "SET status = 'failed'" in sql:

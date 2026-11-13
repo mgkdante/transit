@@ -6,8 +6,9 @@ import os
 import re
 import ssl
 import tempfile
+import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from urllib.error import HTTPError
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlsplit, urlunsplit
@@ -20,6 +21,7 @@ from transit_ops.core.models import AuthConfig, AuthType, SignatureScheme
 from transit_ops.ingestion.storage import BronzeStorage
 from transit_ops.settings import Settings
 
+CAPTURE_TOTAL_TIMEOUT_SECONDS = 300
 CHUNK_SIZE_BYTES = 1024 * 1024
 logger = logging.getLogger(__name__)
 
@@ -176,6 +178,47 @@ def build_request_details(
     raise ValueError(f"Unsupported auth type '{auth.auth_type}'.")
 
 
+class CaptureTimeLimitExceeded(RuntimeError):
+    pass
+
+
+class CaptureRunRefused(RuntimeError):
+    pass
+
+
+def capture_deadline() -> float:
+    return time.monotonic() + CAPTURE_TOTAL_TIMEOUT_SECONDS
+
+
+def _capture_time_limit_error() -> CaptureTimeLimitExceeded:
+    return CaptureTimeLimitExceeded(
+        f"Capture exceeded its total time limit of {CAPTURE_TOTAL_TIMEOUT_SECONDS} s."
+    )
+
+
+def check_capture_deadline(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise _capture_time_limit_error()
+
+
+def lock_running_capture_run(connection: Connection, *, ingestion_run_id: int) -> None:
+    run = connection.execute(
+        text(
+            "SELECT status, started_at_utc FROM raw.ingestion_runs "
+            "WHERE ingestion_run_id = :ingestion_run_id FOR UPDATE"
+        ),
+        {"ingestion_run_id": ingestion_run_id},
+    ).mappings().one_or_none()
+    # Read the database clock only after any wait for the row lock.
+    database_now = connection.execute(text("SELECT clock_timestamp()"), {}).scalar_one()
+    if run is None or run["status"] != "running":
+        raise CaptureRunRefused(
+            f"Ingestion run {ingestion_run_id} is no longer running; its capture is discarded."
+        )
+    if database_now >= run["started_at_utc"] + timedelta(seconds=CAPTURE_TOTAL_TIMEOUT_SECONDS):
+        raise _capture_time_limit_error()
+
+
 def download_to_tempfile(
     *,
     source_url: str,
@@ -183,6 +226,7 @@ def download_to_tempfile(
     headers: dict[str, str] | None = None,
     default_filename: str,
     ssl_context: ssl.SSLContext | None = None,
+    deadline: float | None = None,
 ) -> DownloadedArtifact:
     temp_dir.mkdir(parents=True, exist_ok=True)
     suffix = Path(safe_filename(source_url, default_filename=default_filename)).suffix or ".bin"
@@ -203,6 +247,8 @@ def download_to_tempfile(
                 handle.write(chunk)
                 hasher.update(chunk)
                 byte_size += len(chunk)
+                if deadline is not None:
+                    check_capture_deadline(deadline)
         return DownloadedArtifact(
             temp_path=temp_path,
             byte_size=byte_size,
@@ -326,8 +372,8 @@ def mark_ingestion_run_failed(
     completed_at_utc: datetime,
     http_status_code: int | None,
     error_message: str,
-) -> None:
-    connection.execute(
+) -> bool:
+    result = connection.execute(
         text(
             """
             UPDATE raw.ingestion_runs
@@ -336,6 +382,7 @@ def mark_ingestion_run_failed(
                 http_status_code = :http_status_code,
                 error_message = :error_message
             WHERE ingestion_run_id = :ingestion_run_id
+              AND status = 'running'
             """
         ),
         {
@@ -345,6 +392,7 @@ def mark_ingestion_run_failed(
             "error_message": redact_error_message(error_message)[:2000],
         },
     )
+    return result.rowcount > 0
 
 
 def finish_failed_capture(
@@ -362,13 +410,18 @@ def finish_failed_capture(
     message = f"HTTP {error.code}: {error.reason}" if isinstance(error, HTTPError) else str(error)
     try:
         with engine.begin() as connection:
-            mark_ingestion_run_failed(
+            updated = mark_ingestion_run_failed(
                 connection,
                 ingestion_run_id=ingestion_run_id,
                 completed_at_utc=utc_now(),
                 http_status_code=http_status,
                 error_message=message,
             )
+            if not updated:
+                logger.info(
+                    "Ingestion run %s is no longer running; leaving its recorded result intact.",
+                    ingestion_run_id,
+                )
     except Exception as reporting_error:
         logger.warning(
             "Cannot record failed ingestion run %s (%s)",

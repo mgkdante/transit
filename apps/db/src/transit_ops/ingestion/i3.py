@@ -16,11 +16,14 @@ from transit_ops.ingestion.common import (
     DownloadedArtifact,
     build_bronze_object_storage_path,
     build_request_details,
+    capture_deadline,
+    check_capture_deadline,
     download_to_tempfile,
     finish_failed_capture,
     get_feed_endpoint_id,
     insert_ingestion_object,
     insert_ingestion_run,
+    lock_running_capture_run,
     mark_ingestion_run_succeeded,
     project_root,
     utc_now,
@@ -344,6 +347,7 @@ def _run_alert_capture(
     bronze_root = resolve_local_bronze_root(settings, project_root=_project_root())
     bronze_storage = bronze_storage_resolver(config.storage_backend)
     started_at_utc = utc_now()
+    deadline = capture_deadline()
 
     with engine.begin() as connection:
         feed_endpoint_id = get_feed_endpoint_id(
@@ -370,6 +374,7 @@ def _run_alert_capture(
             temp_dir=bronze_root / ".tmp",
             headers=config.request_headers,
             default_filename=default_filename,
+            deadline=capture_deadline(),
         )
         metadata = extract_metadata(artifact.temp_path.read_bytes(), config.provider_id)
         storage_path = build_storage_path(
@@ -377,11 +382,13 @@ def _run_alert_capture(
             captured_at_utc=started_at_utc,
             checksum_sha256=artifact.checksum_sha256,
         )
+        check_capture_deadline(deadline)
         archive_reference = bronze_storage.persist_temp_file(artifact.temp_path, storage_path)
         persisted = True
         completed_at_utc = utc_now()
 
         with engine.begin() as connection:
+            lock_running_capture_run(connection, ingestion_run_id=ingestion_run_id)
             ingestion_object_id = insert_ingestion_object(
                 connection,
                 ingestion_run_id=ingestion_run_id,
