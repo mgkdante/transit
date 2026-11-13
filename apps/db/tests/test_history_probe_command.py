@@ -18,6 +18,19 @@ def test_probe_command_requires_one_provider_feed_and_date(args):
     assert CliRunner().invoke(cli.app, args).exit_code == 2
 
 
+@pytest.mark.parametrize(
+    "option,value",
+    [("--provider", "network"), ("--feed", "trip_updates"), ("--date", "2026-01-02")],
+)
+def test_probe_command_rejects_duplicate_selectors_before_setup(monkeypatch, option, value):
+    setup = Mock(side_effect=AssertionError("setup must not run"))
+    monkeypatch.setattr(cli, "get_settings", setup)
+    monkeypatch.setattr(cli, "make_engine", setup)
+    result = CliRunner().invoke(cli.app, [*ARGS, option, value])
+    assert result.exit_code == 2
+    setup.assert_not_called()
+
+
 @pytest.mark.parametrize("failure", [False, True])
 def test_probe_command_emits_report_and_closes_resources(monkeypatch, failure):
     closed = []

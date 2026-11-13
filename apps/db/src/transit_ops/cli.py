@@ -1943,9 +1943,9 @@ def history_close_runs_command(
 
 @app.command("history-probe-pack")
 def history_probe_pack_command(
-    provider: str = typer.Option(..., "--provider"),
-    feed: str = typer.Option(..., "--feed"),
-    day: str = typer.Option(..., "--date"),
+    providers: Annotated[list[str], typer.Option("--provider")],
+    feeds: Annotated[list[str], typer.Option("--feed")],
+    days: Annotated[list[str], typer.Option("--date")],
 ) -> None:
     """Measure one closed UTC capture day using only reads and temporary local files."""
     from contextlib import ExitStack
@@ -1953,6 +1953,9 @@ def history_probe_pack_command(
     from transit_ops.history.probe import probe_capture_day, validate_selection
     from transit_ops.history.storage import history_storage
 
+    if any(len(values) != 1 for values in (providers, feeds, days)):
+        raise typer.BadParameter("Supply --provider, --feed and --date exactly once each")
+    provider, feed, day = providers[0], feeds[0], days[0]
     try:
         selected = date.fromisoformat(day)
         if selected.isoformat() != day:

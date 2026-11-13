@@ -110,7 +110,7 @@ def _report(
     durations = [
         (p.completed_at_utc.astimezone(UTC) - p.started_at_utc.astimezone(UTC)).total_seconds()
         for p in record.polls
-        if p.completed_at_utc is not None
+        if p.status != "unfinished" and p.completed_at_utc is not None
     ]
     return ProbeReport(
         record.feed_day.provider_id,
@@ -132,7 +132,7 @@ def _report(
         "tracemalloc peak bytes; excludes native allocations; existing tracing peak retained",
         *rss,
         max(durations, default=None),
-        sum(p.completed_at_utc is None for p in record.polls),
+        sum(p.status == "unfinished" for p in record.polls),
         duckdb,
     )
 

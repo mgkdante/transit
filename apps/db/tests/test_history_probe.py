@@ -1,7 +1,7 @@
 import sys
 import tracemalloc
 from contextlib import nullcontext
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, timedelta
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
@@ -13,6 +13,7 @@ from test_seal_local_pack import working_day as working_day
 
 from transit_ops.history import probe
 from transit_ops.history.datasets import utc_day_closes_at
+from transit_ops.history.working_captures import CLOSED_UNFINISHED, poll_entry
 from transit_ops.ingestion.storage import BronzeStorageError, LocalBronzeStorage
 
 
@@ -104,6 +105,26 @@ def test_probe_reports_timing_and_memory_basis(day, monkeypatch):
     assert report.python_traced_peak_bytes >= 0 and "native" in report.memory_method
     assert report.process_peak_rss_bytes is None and report.process_peak_rss_reason
     assert report.unfinished_attempts == 1 and report.longest_completed_poll_seconds == 0
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_administrative_closure_is_not_a_completed_poll(day, completed):
+    poll = day.record.polls[4]
+    derived = """status run_status index_family time_utc feed_timestamp_source
+                 duplicate_of_row_id missing_reason""".split()
+    row = {k: v for k, v in asdict(poll).items() if k not in derived}
+    row.update(
+        status="failed",
+        error_message=CLOSED_UNFINISHED,
+        captured_at_utc=None,
+        completed_at_utc=poll.started_at_utc + timedelta(days=2),
+    )
+    closed = poll_entry(row, poll.index_family)
+    polls = (closed, *day.record.polls[3:4]) if completed else (closed,)
+    day.record = replace(day.record, polls=polls, captures=())
+    report = day.run()
+    assert report.poll_counts["unfinished"] == report.unfinished_attempts == 1
+    assert report.longest_completed_poll_seconds == (0 if completed else None)
 
 
 def test_probe_defers_duckdb_when_unavailable(day):
