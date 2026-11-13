@@ -1,6 +1,7 @@
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import date, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime, timedelta
+from fractions import Fraction
 from itertools import groupby
 from typing import Literal, NamedTuple
 
@@ -111,12 +112,18 @@ class PollVerdict(NamedTuple):
     reason: PollFailure | None
 
 
+def _utc(time: datetime) -> datetime:
+    if time.utcoffset() is None:
+        raise ValueError("times must have a time zone")
+    return time.astimezone(UTC)
+
+
 def _validate_times(polls: Sequence[PollFacts], spans: Sequence[tuple[datetime, datetime]]) -> None:
     times = [time for p in polls for time in (p.time_utc, p.feed_timestamp_utc) if time is not None]
     times.extend(time for span in spans for time in span)
-    if any(time.utcoffset() is None for time in times):
-        raise ValueError("poll and service span times must have a time zone")
-    if any(end < start for start, end in spans):
+    for time in times:
+        _utc(time)
+    if any(_utc(end) < _utc(start) for start, end in spans):
         raise ValueError("service span ends before it starts")
 
 
@@ -134,19 +141,19 @@ def _poll_failure(
         return "unusable_not_processed"
     exempt = poll.feed == "alerts" and poll.feed_timestamp_source == "capture_time"
     if not exempt:
-        timestamp = poll.feed_timestamp_utc
+        timestamp = _utc(poll.feed_timestamp_utc) if poll.feed_timestamp_utc is not None else None
         if (
             poll.feed_timestamp_source != "header"
             or timestamp is None
             or (previous is not None and timestamp <= previous)
         ):
             return "unusable_not_advanced"
-        if (poll.time_utc - timestamp).total_seconds() > FRESH_FEED_AGE_SECONDS + lag:
+        if (_utc(poll.time_utc) - timestamp).total_seconds() > FRESH_FEED_AGE_SECONDS + lag:
             return "unusable_stale"
     if poll.entity_count is None or (
         poll.entity_count == 0
         and poll.feed != "alerts"
-        and any(start <= poll.time_utc <= end for start, end in spans)
+        and any(start <= _utc(poll.time_utc) <= end for start, end in spans)
     ):
         return "unusable_empty"
     return None
@@ -171,9 +178,12 @@ def judge_polls(
     if source_lag_seconds < 0:
         raise ValueError("source_lag_seconds must not be negative")
     _validate_times(polls, service_spans)
+    service_spans = [(_utc(start), _utc(end)) for start, end in service_spans]
     newest: dict[Feed, datetime] = {}
     verdicts: list[PollVerdict] = []
-    for _, group in groupby(sorted(polls, key=lambda p: p.time_utc), key=lambda p: p.time_utc):
+    for _, group in groupby(
+        sorted(polls, key=lambda p: _utc(p.time_utc)), key=lambda p: _utc(p.time_utc)
+    ):
         batch = list(group)
         verdicts.extend(
             PollVerdict(
@@ -191,6 +201,7 @@ def judge_polls(
         for poll in batch:
             timestamp = poll.feed_timestamp_utc
             if timestamp is not None:
+                timestamp = _utc(timestamp)
                 newest[poll.feed] = max(timestamp, newest.get(poll.feed, timestamp))
     return verdicts
 
@@ -226,16 +237,92 @@ def covered_intervals(usable: Sequence[PollFacts]) -> list[CoveredInterval]:
     if len({poll.feed for poll in usable}) > 1:
         raise ValueError("covered_intervals requires a single feed")
     intervals: list[CoveredInterval] = []
-    for poll in sorted(usable, key=lambda p: p.time_utc):
+    for poll in sorted(usable, key=lambda p: _utc(p.time_utc)):
+        time = _utc(poll.time_utc)
         if (
             intervals
-            and (poll.time_utc - intervals[-1].end_utc).total_seconds()
-            <= USABLE_SPACING_MAX_SECONDS
+            and (time - intervals[-1].end_utc).total_seconds() <= USABLE_SPACING_MAX_SECONDS
         ):
             last = intervals[-1]
-            intervals[-1] = CoveredInterval(
-                last.start_utc, poll.time_utc, last.usable_poll_count + 1
-            )
+            intervals[-1] = CoveredInterval(last.start_utc, time, last.usable_poll_count + 1)
         else:
-            intervals.append(CoveredInterval(poll.time_utc, poll.time_utc, 1))
+            intervals.append(CoveredInterval(time, time, 1))
     return intervals
+
+
+def _window_lengths(
+    intervals: Sequence[CoveredInterval], start: datetime, end: datetime
+) -> tuple[timedelta, timedelta, timedelta, int]:
+    if end < start:
+        raise ValueError("window ends before it starts")
+    spans = sorted((_utc(i.start_utc), _utc(i.end_utc)) for i in intervals)
+    previous = None
+    covered, gap, cursor, count = timedelta(), timedelta(), start, 0
+    for left, right in spans:
+        if right < left or (previous is not None and left < previous):
+            raise ValueError("intervals must be ordered at their ends and must not overlap")
+        previous = right
+        left, right = max(start, left), min(end, right)
+        if left > right:
+            continue
+        covered += right - left
+        count += (right - left) // timedelta(seconds=USABLE_SPACING_MAX_SECONDS)
+        gap = max(gap, left - cursor)
+        cursor = right
+    return end - start, covered, max(gap, end - cursor), count
+
+
+def judge_window(
+    intervals: Sequence[CoveredInterval],
+    start_utc: datetime,
+    end_utc: datetime,
+    *,
+    floor: CoverageFloor,
+    basis: Literal["polls", "summary_5m"] = "polls",
+) -> WindowCoverage:
+    """Judge exact elapsed coverage, reporting durations rounded down to seconds."""
+    duration, covered, gap, count = _window_lengths(intervals, _utc(start_utc), _utc(end_utc))
+    if not duration:
+        return WindowCoverage(0, 0, None, None, count, "no_window", basis)
+    unit = timedelta(microseconds=1)
+    share = Fraction(covered // unit, duration // unit)
+    # Decimal floors keep the exact 80% boundary free of binary float rounding.
+    passes = share >= Fraction(str(floor.min_share)) and (
+        floor.max_gap_seconds is None or gap <= timedelta(seconds=floor.max_gap_seconds)
+    )
+    return WindowCoverage(
+        duration // timedelta(seconds=1),
+        covered // timedelta(seconds=1),
+        float(share),
+        gap // timedelta(seconds=1),
+        count,
+        "covered" if passes else "not_covered",
+        basis,
+    )
+
+
+def judge_absence(
+    intervals: Sequence[CoveredInterval],
+    start_utc: datetime,
+    end_utc: datetime,
+    *,
+    declared_interval_seconds: int,
+    usable_times: Sequence[datetime] | None = None,
+) -> WindowCoverage:
+    """Require the absence floor and enough usable looks within an eligible window."""
+    start, end = _utc(start_utc), _utc(end_utc)
+    times = None if usable_times is None else [_utc(time) for time in usable_times]
+    result = judge_window(intervals, start, end, floor=ABSENCE_FLOOR)
+    count = (
+        result.usable_poll_count if times is None else sum(start <= time <= end for time in times)
+    )
+    result = replace(result, usable_poll_count=count)
+    if result.verdict == "no_window":
+        return result
+    if declared_interval_seconds <= 0:
+        raise ValueError("declared_interval_seconds must be positive")
+    if end - start < timedelta(seconds=ABSENCE_MIN_USABLE_POLLS * declared_interval_seconds):
+        return replace(result, verdict="too_short")
+    if count is None or count < ABSENCE_MIN_USABLE_POLLS:
+        return replace(result, verdict="not_covered")
+    return result

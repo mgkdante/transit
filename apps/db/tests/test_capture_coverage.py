@@ -2,6 +2,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from coverage_fixtures import (
@@ -424,3 +425,216 @@ def test_newest_timestamp_history_is_per_feed_and_header_alerts_are_tested():
         "unusable_not_advanced",
         "unusable_not_advanced",
     ]
+
+
+def window(spans, start=0, end=600, floor=rules.ABSENCE_FLOOR, **kwargs):
+    return rules.judge_window(
+        make_intervals(*[(at(a), at(b)) for a, b in spans]),
+        at(start),
+        at(end),
+        floor=floor,
+        **kwargs,
+    )
+
+
+def test_window_of_zero_length_is_no_window_with_null_share():
+    for result in (
+        window([], end=0),
+        rules.judge_absence([], START, START, declared_interval_seconds=30),
+    ):
+        assert result == rules.WindowCoverage(0, 0, None, None, 0, "no_window", "polls")
+
+
+def test_trip_between_two_usable_polls_is_not_judged_missing():
+    polls = make_polls("trip_updates", START, at(120), outages=[(at(30), at(90))])
+    result = rules.judge_absence(
+        rules.covered_intervals(usable(polls)), at(20), at(100), declared_interval_seconds=30
+    )
+    assert result.verdict == "too_short"
+    assert (result.covered_share, result.usable_poll_count) == (1, 0)
+
+
+def test_absence_needs_four_usable_polls_inside_the_window():
+    for times, expected in [
+        ([-1, 0, 300, 600, 601], "not_covered"),
+        ([0, 120, 300, 600], "covered"),
+    ]:
+        result = rules.judge_absence(
+            make_intervals((at(-60), at(660))),
+            START,
+            at(600),
+            declared_interval_seconds=30,
+            usable_times=[at(t) for t in times],
+        )
+        assert result.verdict == expected
+        assert result.usable_poll_count == (3 if expected == "not_covered" else 4)
+
+
+def test_twenty_minute_trip_with_a_four_minute_outage_is_still_judged():
+    polls = usable(make_polls("trip_updates", START, at(1200), outages=[(at(510), at(690))]))
+    result = rules.judge_absence(
+        rules.covered_intervals(polls),
+        START,
+        at(1200),
+        declared_interval_seconds=30,
+        usable_times=[p.time_utc for p in polls],
+    )
+    assert result == rules.WindowCoverage(
+        1200, 960, 0.8, 240, sum(START <= p.time_utc <= at(1200) for p in polls), "covered", "polls"
+    )
+
+
+def test_share_of_exactly_eighty_percent_passes():
+    assert window([(0, 480)]).verdict == "covered"
+    assert window([(0, 479.999999)]).verdict == "not_covered"
+
+
+def test_gap_of_exactly_three_hundred_seconds_passes():
+    assert window([(0, 600), (900, 1800)], end=1800).verdict == "covered"
+    assert window([(0, 600), (900.000001, 1800)], end=1800).verdict == "not_covered"
+    assert window([(0, 600), (901, 1800)], end=1800).verdict == "not_covered"
+
+
+def test_rate_floor_has_no_gap_limit():
+    spans = [(0, 3000), (4200, 7200)]
+    assert window(spans, end=7200, floor=rules.RATE_FLOOR).verdict == "covered"
+    assert window(spans, end=7200).verdict == "not_covered"
+
+
+def test_window_exactly_four_intervals_long_is_judged():
+    for seconds, expected in [(120, "covered"), (119, "too_short"), (119.999999, "too_short")]:
+        result = rules.judge_absence(
+            make_intervals((START, at(seconds))),
+            START,
+            at(seconds),
+            declared_interval_seconds=30,
+            usable_times=[START] * 4,
+        )
+        assert result.verdict == expected
+        assert result.covered_seconds == int(seconds)
+
+
+def test_guaranteed_count_from_intervals_only():
+    assert window([(0, 600)]).usable_poll_count == 5
+    assert window([(0, 119), (200, 319)]).usable_poll_count == 0
+    result = rules.judge_absence(
+        make_intervals((START, at(600))), START, at(600), declared_interval_seconds=30
+    )
+    assert (result.usable_poll_count, result.verdict) == (5, "covered")
+
+
+def test_longest_gap_counts_the_window_edges():
+    assert window([(60, 480)]).longest_gap_seconds == 120
+    assert window([(120, 540)]).longest_gap_seconds == 120
+    assert window([]).longest_gap_seconds == 600
+    assert window([(-100, -1), (601, 700)]).covered_seconds == 0
+
+
+def test_intervals_past_the_window_are_clipped():
+    assert window([(500, 800), (-100, 300)], basis="summary_5m") == rules.WindowCoverage(
+        600, 400, 2 / 3, 200, 2, "not_covered", "summary_5m"
+    )
+
+
+def test_coverage_cases_give_their_expected_verdicts():
+    from coverage_fixtures import CASES
+
+    assert set(CASES) == {
+        "ten_minute_gap_holds_a_short_line",
+        "trip_between_two_usable_polls",
+        "cancel_flag_then_outage",
+        "fully_covered_day",
+    }
+    for case in CASES.values():
+        polls = rules.usable_polls(
+            case.polls,
+            read_source=case.read_source,
+            consumed_captures=case.consumed_captures,
+            service_spans=case.service_spans,
+            source_lag_seconds=case.source_lag_seconds,
+        )
+        intervals = rules.covered_intervals(polls)
+        result = (
+            rules.judge_window(intervals, case.start_utc, case.end_utc, floor=case.floor)
+            if case.judge == "window"
+            else rules.judge_absence(
+                intervals,
+                case.start_utc,
+                case.end_utc,
+                declared_interval_seconds=case.declared_interval_seconds,
+                usable_times=[p.time_utc for p in polls],
+            )
+        )
+        assert result.verdict == case.expected_verdict
+
+
+def test_judge_input_checks():
+    bad_inputs = [
+        ([], at(1), START),
+        ([CoveredInterval(START, at(60), 3), CoveredInterval(at(30), at(90), 3)], at(100), at(200)),
+        ([CoveredInterval(at(1), START, 1)], START, at(600)),
+        ([], START.replace(tzinfo=None), at(600)),
+        ([CoveredInterval(START, at(60).replace(tzinfo=None), 3)], START, at(600)),
+    ]
+    for intervals, start, end in bad_inputs:
+        with pytest.raises(ValueError):
+            rules.judge_window(intervals, start, end, floor=rules.RATE_FLOOR)
+        with pytest.raises(ValueError):
+            rules.judge_absence(intervals, start, end, declared_interval_seconds=30)
+    with pytest.raises(ValueError):
+        rules.judge_absence([], START, at(600), declared_interval_seconds=0)
+    with pytest.raises(ValueError):
+        rules.judge_absence(
+            [],
+            START,
+            at(600),
+            declared_interval_seconds=30,
+            usable_times=[START.replace(tzinfo=None)],
+        )
+
+
+def test_repeated_hour_polls_are_judged_as_instants():
+    start = datetime(2026, 11, 1, 5, 59, tzinfo=UTC)
+    polls = make_polls("trip_updates", start, start + timedelta(seconds=180))
+    zone = ZoneInfo("America/Toronto")
+    local = [
+        replace(
+            p,
+            time_utc=p.time_utc.astimezone(zone),
+            feed_timestamp_utc=p.feed_timestamp_utc.astimezone(zone),
+        )
+        for p in polls
+    ]
+    result = usable(list(reversed(local)))
+    assert all(a is b for a, b in zip(result, local, strict=True))
+    assert all(v.reason is None for v in judge(local))
+    assert rules.covered_intervals(result) == rules.covered_intervals(polls)
+    assert rules.covered_intervals(result) == [CoveredInterval(start, polls[-1].time_utc, 7)]
+    empty = [replace(p, entity_count=0) for p in local]
+    assert usable(empty, service_spans=[(local[0].time_utc, local[-1].time_utc)]) == []
+
+
+def test_spring_window_measures_elapsed_seconds():
+    zone = ZoneInfo("America/Toronto")
+    result = rules.judge_window(
+        [],
+        datetime(2026, 3, 8, 1, 30, tzinfo=zone),
+        datetime(2026, 3, 8, 3, 30, tzinfo=zone),
+        floor=rules.RATE_FLOOR,
+    )
+    assert result.window_seconds == 3600
+
+
+def test_window_judgments_match_for_local_and_utc_instants():
+    zone = ZoneInfo("America/Toronto")
+    start = datetime(2026, 11, 1, 5, 58, tzinfo=UTC)
+    end = start + timedelta(seconds=600)
+    for tz in (UTC, zone):
+        a, b = start.astimezone(tz), end.astimezone(tz)
+        intervals = [CoveredInterval(a, b, 21)]
+        times = [(start + timedelta(seconds=s)).astimezone(tz) for s in (0, 120, 300, 600)]
+        expected = rules.WindowCoverage(600, 600, 1, 0, 5, "covered", "polls")
+        assert rules.judge_window(intervals, a, b, floor=rules.ABSENCE_FLOOR) == expected
+        assert rules.judge_absence(
+            intervals, a, b, declared_interval_seconds=30, usable_times=times
+        ) == replace(expected, usable_poll_count=4)
