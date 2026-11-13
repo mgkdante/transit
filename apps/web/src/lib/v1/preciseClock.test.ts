@@ -81,6 +81,25 @@ describe('preciseServerClock', () => {
 		expect(clock.serverNow).toBe(102_000);
 	});
 
+	it('believes a fresh server time at once when a replayed response seeded the clock in the past', () => {
+		const { clock } = serverClockFixture();
+		// A browser cache replays an hour-cached file with its original Date and no Age.
+		clock.noteServerEpochMs(10_000);
+		// The live read lands in the same moment, two minutes of server time later.
+		clock.noteServerEpochMs(130_000);
+		expect(clock.serverNow).toBe(130_000);
+		expect(freshnessAgeSeconds(new Date(127_000).toISOString(), clock.serverNow, 20)).toBe(3);
+	});
+
+	it('does not let a replayed response pull a correct clock into the past', () => {
+		const { clock, advance } = serverClockFixture();
+		clock.noteServerEpochMs(130_000);
+		advance(1000);
+		clock.noteServerEpochMs(10_000);
+		clock.noteServerEpochMs(10_000);
+		expect(clock.serverNow).toBe(131_000);
+	});
+
 	it('uses the real time when the tick lags behind, keeping the server offset', () => {
 		const real = Date.parse('2026-11-10T19:01:30Z');
 		// Reduced motion ticks every 30 s; the last tick was 29 s ago and the server is 2 s ahead.
