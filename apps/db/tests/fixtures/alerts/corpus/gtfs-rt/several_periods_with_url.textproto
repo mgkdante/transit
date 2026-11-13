@@ -1,0 +1,11 @@
+header { gtfs_realtime_version: "2.0" }
+entity {
+ id: "multi-fixture"
+ alert {
+  active_period { start: 1774000000 end: 1774100000 }
+  active_period { start: 1774600000 end: 1774700000 }
+  active_period { start: 1775200000 end: 1775300000 }
+  header_text { translation { language: "fr" text: "Fermeture fictive du weekend" } }
+  url { translation { language: "fr" text: "https://example.invalid/fr/multi" } translation { language: "en" text: "https://example.invalid/en/multi" } }
+ }
+}

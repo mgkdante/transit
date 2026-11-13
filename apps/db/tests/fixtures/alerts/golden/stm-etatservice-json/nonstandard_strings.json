@@ -1,0 +1,80 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": null,
+      "alert_header_text": "Synthetic equipment delay",
+      "alert_header_text_en": null,
+      "alert_id": "strings-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": "technical_problem",
+      "content_hash": "cfe84491983c5dfb79b6cf42f8431017",
+      "description_text": null,
+      "description_text_en": null,
+      "effect": "delay",
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "cause": "technical_problem",
+        "effect": "delay",
+        "header": "Synthetic equipment delay",
+        "id": "strings-fixture",
+        "severity": "warning"
+      },
+      "severity": "warning",
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    },
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": null,
+      "alert_header_text": "Synthetic priority notice",
+      "alert_header_text_en": null,
+      "alert_id": "priority-fixture",
+      "alert_index": 1,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "1c99bf09a940c01b3870be4560465941",
+      "description_text": null,
+      "description_text_en": null,
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "header": "Synthetic priority notice",
+        "id": "priority-fixture",
+        "priority": "urgent"
+      },
+      "severity": "urgent",
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "entity_rows": [],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:priority-fixture",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    },
+    {
+      "alert_logical_id": "id:strings-fixture",
+      "has_explicit_en": false,
+      "has_explicit_fr": false,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": true
+    }
+  ],
+  "period_rows": []
+}

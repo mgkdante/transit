@@ -1,0 +1,61 @@
+{
+  "alert_rows": [
+    {
+      "active_period_end_utc": null,
+      "active_period_start_utc": null,
+      "alert_header_text": "Detour de ligne imaginaire",
+      "alert_header_text_en": "Imaginary route detour",
+      "alert_id": "region-fixture",
+      "alert_index": 0,
+      "captured_at_utc": "2026-11-12T12:00:00+00:00",
+      "cause": null,
+      "content_hash": "854f07ced841a15e32d6973cffb360cb",
+      "description_text": "Travaux fictifs",
+      "description_text_en": "Fictional works",
+      "effect": null,
+      "i3_alert_snapshot_id": 1,
+      "provider_id": "fixture_city",
+      "published_at_utc": null,
+      "raw_alert_json": {
+        "description_texts": [
+          {
+            "language": "en-CA",
+            "text": "Fictional works"
+          },
+          {
+            "language": "fr-CA",
+            "text": "Travaux fictifs"
+          }
+        ],
+        "header_texts": [
+          {
+            "language": "en-CA",
+            "text": "Imaginary route detour"
+          },
+          {
+            "language": "fr-CA",
+            "text": "Detour de ligne imaginaire"
+          }
+        ],
+        "id": "region-fixture"
+      },
+      "severity": null,
+      "updated_at_utc": null,
+      "url": null,
+      "url_en": null
+    }
+  ],
+  "entity_rows": [],
+  "language_observations": [
+    {
+      "alert_logical_id": "id:region-fixture",
+      "has_explicit_en": true,
+      "has_explicit_fr": true,
+      "observation_date": "2026-11-12",
+      "observed_at_utc": "2026-11-12T12:00:00+00:00",
+      "provider_id": "fixture_city",
+      "undetermined": false
+    }
+  ],
+  "period_rows": []
+}
