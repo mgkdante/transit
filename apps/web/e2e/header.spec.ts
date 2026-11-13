@@ -1,11 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { navPillCopy } from '../src/lib/i18n/messages';
-import { AUDIT_NAV, SURFACE_NAV } from '../src/lib/content/nav';
+import {
+	AUDIT_NAV,
+	SURFACE_NAV,
+	NAV_ITEMS,
+	LEGAL_NAV,
+	YESID_HOUSE_LINK,
+} from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';
 
 const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const destinations = [...SURFACE_NAV, ...AUDIT_NAV];
+const destinations = NAV_ITEMS;
 // Transit prefixes every locale but the default.
 const localized = (href: string, locale: Locale) =>
 	locale === DEFAULT_LOCALE ? href : `/${locale}${href}`;
@@ -68,6 +74,36 @@ for (const redirected of [false, true]) {
 
 for (const locale of PUBLISHED_LOCALES) {
 	const copy = navPillCopy[locale];
+	test(`${locale}: the menu lists its destinations in four groups`, async ({ page }) => {
+		await page.goto(start(locale));
+		const menu = await openMenu(page, locale);
+		for (const [index, item] of NAV_ITEMS.entries()) {
+			await expect(menu.getByRole('link').nth(index)).toHaveAccessibleName(item.label[locale]);
+		}
+		await expect(menu.getByRole('link').nth(NAV_ITEMS.length)).toHaveAccessibleName(
+			`${YESID_HOUSE_LINK.label[locale]} ${copy.newTab}`,
+		);
+	});
+	test(`${locale}: every earlier URL still answers`, async ({ page }) => {
+		for (const item of [...SURFACE_NAV, ...AUDIT_NAV, ...LEGAL_NAV]) {
+			await page.goto(start(locale));
+			await page
+				.getByTestId('footer')
+				.getByRole('link', { name: item.label[locale], exact: true })
+				.click();
+			await expect(page).toHaveURL(samePath(localized(item.href, locale)));
+			await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+		}
+	});
+	test(`${locale}: a network with no alert feed has no Service alerts`, async ({ page }) => {
+		await page.goto(`${start(locale)}?provider=octranspo`);
+		const menu = await openMenu(page, locale);
+		const name = NAV_ITEMS.find((item) => item.key === 'alerts')!.label[locale];
+		await expect(menu.getByRole('link', { name, exact: true })).toHaveCount(0);
+		await expect(page.getByTestId('footer').getByRole('link', { name, exact: true })).toHaveCount(
+			0,
+		);
+	});
 
 	test(`${locale}: the language switch round-trips from home`, async ({ page }) => {
 		await page.goto(home(locale));
@@ -88,7 +124,7 @@ for (const locale of PUBLISHED_LOCALES) {
 		for (const item of destinations) {
 			const icon = menu.getByRole('link', { name: item.label[locale], exact: true }).locator('svg');
 			await expect(icon).toBeVisible();
-			if (item === AUDIT_NAV[0]) await expect(icon).not.toHaveCSS('fill', 'none');
+			if (item.key === AUDIT_NAV[0].key) await expect(icon).not.toHaveCSS('fill', 'none');
 			else await expect(icon).toHaveCSS('fill', 'none');
 		}
 	});

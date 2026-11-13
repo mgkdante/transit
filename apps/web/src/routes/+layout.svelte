@@ -14,6 +14,7 @@
 	import { setLineDirectory } from '#lib/site/transitDisplayContext.ts';
 	import { routeNameFallback } from '#lib/site/absence.ts';
 	import { navPillCopy } from '#lib/i18n/messages.ts';
+	import { providerHasAlerts } from '#lib/v1/providers.ts';
 	import '@yesid/tokens/fonts.css';
 	import '@yesid/motion/ripple.css';
 	import '../app.css';
@@ -76,7 +77,7 @@
 	import { SiteFooter, SiteRoot } from '@yesid/ui/layout';
 	import { ConstructionProps } from '@yesid/ui/brand';
 	import { desktop } from '@yesid/ui/state';
-	import { AUDIT_NAV, mainLandmarkLabel, SURFACE_NAV } from '#lib/content/nav.ts';
+	import { NAV_GROUPS, visibleNav, YESID_HOUSE_LINK, mainLandmarkLabel } from '#lib/content/nav.ts';
 	import { legalCopy } from '#lib/features/legal/legal.copy.ts';
 	import {
 		chromeSearchResultHref,
@@ -138,14 +139,24 @@
 	const footerAgency = $derived(footerProviderName ?? footer.providerFallback);
 	const footerGroups = $derived(
 		[
-			{ label: footer.exploreLabel, links: SURFACE_NAV },
-			{ label: footer.auditLabel, links: AUDIT_NAV },
+			...NAV_GROUPS.map((group) => ({
+				label: group.label[locale],
+				links: visibleNav({
+					alerts: data.provider ? providerHasAlerts(data.provider) : null,
+				}).filter((item) => item.group === group.key),
+			})),
 			{ label: footer.legalLabel, links: LEGAL_NAV, testId: 'footer-legal' },
 		].map((group) => ({
 			...group,
-			links: group.links.map((link) => ({
+			links: [
+				...group.links,
+				...(group.label === NAV_GROUPS[3].label[locale] ? [YESID_HOUSE_LINK] : []),
+			].map((link) => ({
 				href: localizeHref(link.href, locale, data.providerId),
 				label: link.label[locale],
+				...(link === YESID_HOUSE_LINK
+					? { external: true, ariaLabel: `${link.label[locale]} ${navPillCopy[locale].newTab}` }
+					: {}),
 			})),
 		})),
 	);
@@ -501,7 +512,7 @@
 					<main
 						id="main"
 						tabindex="-1"
-						aria-label={mainLabel?.[locale] ?? navPillCopy[locale].mapLabel}
+						aria-label={mainLabel?.[locale]}
 						class={isFullBleed
 							? 'min-h-0 grow'
 							: 'grow shrink-0 basis-auto pt-[var(--chrome-offset)]'}

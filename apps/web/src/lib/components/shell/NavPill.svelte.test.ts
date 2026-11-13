@@ -13,6 +13,26 @@ import NavPill from './__fixtures__/NavPillHarness.svelte';
 import { createNavigationRouter } from './__fixtures__/navigationRouter';
 import catalog from '../../../../e2e/providers.json';
 import { PublicProviderCatalogSchema } from '#lib/v1/providers.ts';
+import { NAV_ITEMS } from '#lib/content/nav.ts';
+import { navPillCopy } from '#lib/i18n/messages.ts';
+
+it.each(['en', 'fr'] as const)('gates alert navigation by capability in %s', async (locale) => {
+	const base = PublicProviderCatalogSchema.parse(catalog).providers[0];
+	const provider = {
+		...base,
+		id: 'made-up',
+		inputs: { ...base.inputs, i3_alerts: false, service_alerts: false },
+	};
+	for (const providers of [[provider], []]) {
+		const view = render(NavPill, { props: { locale, providerId: provider.id, providers } });
+		await fireEvent.click(view.getByRole('button', { name: navPillCopy[locale].openMenu }));
+		const alert = within(view.getByRole('dialog')).queryByRole('link', {
+			name: (name) => name === NAV_ITEMS.find((item) => item.key === 'alerts')!.label[locale],
+		});
+		expect(Boolean(alert)).toBe(providers.length === 0);
+		view.unmount();
+	}
+});
 
 vi.mock('$app/env/public', async () => ({
 	...(await import('./../../../tests/publicEnv.ts')).PUBLIC_ENV,

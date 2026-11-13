@@ -28,80 +28,147 @@ export interface AuditNavItem {
 	readonly activePrefixes: readonly string[];
 }
 
-export const SURFACE_NAV: readonly SurfaceNavItem[] = [
+export type NavGroupKey = 'now' | 'explore' | 'reports' | 'about';
+export interface NavItem {
+	readonly key:
+		| 'overview'
+		| 'map'
+		| 'network'
+		| 'lines'
+		| 'stops'
+		| 'hotspots'
+		| 'repeatOffenders'
+		| 'receipt'
+		| 'alerts'
+		| 'metrics'
+		| 'status';
+	readonly group: NavGroupKey;
+	readonly href: string;
+	readonly label: BilingualLabel;
+	readonly barLabel?: BilingualLabel;
+	readonly activePrefixes: readonly string[];
+	readonly exact?: boolean;
+	readonly requires?: 'alerts';
+}
+export const NAV_GROUPS: readonly { readonly key: NavGroupKey; readonly label: BilingualLabel }[] =
+	[
+		{ key: 'now', label: { en: 'Now', fr: 'En ce moment' } },
+		{ key: 'explore', label: { en: 'Explore', fr: 'Explorer' } },
+		{ key: 'reports', label: { en: 'Rankings and reports', fr: 'Classements et rapports' } },
+		{ key: 'about', label: { en: 'About the data', fr: 'À propos des données' } },
+	];
+export const NAV_ITEMS: readonly NavItem[] = [
+	{
+		key: 'overview',
+		group: 'now',
+		href: '/',
+		label: { en: 'Overview', fr: 'Aperçu' },
+		barLabel: { en: 'Overview', fr: 'Aperçu' },
+		activePrefixes: ['/'],
+		exact: true,
+	},
 	{
 		key: 'map',
+		group: 'now',
 		href: '/map',
-		label: { en: 'Map', fr: 'Carte' },
-		description: { en: 'live network', fr: 'réseau en direct' },
+		label: { en: 'Live map', fr: 'Carte en direct' },
+		barLabel: { en: 'Map', fr: 'Carte' },
 		activePrefixes: ['/map'],
 	},
 	{
+		key: 'network',
+		group: 'now',
+		href: '/network',
+		label: { en: 'Network health', fr: 'Santé du réseau' },
+		activePrefixes: ['/network'],
+	},
+	{
 		key: 'lines',
+		group: 'explore',
 		href: '/lines',
 		label: { en: 'Lines', fr: 'Lignes' },
-		description: { en: 'routes and directions', fr: 'itinéraires et directions' },
+		barLabel: { en: 'Lines', fr: 'Lignes' },
 		activePrefixes: ['/lines'],
 	},
 	{
 		key: 'stops',
+		group: 'explore',
 		href: '/stops',
 		label: { en: 'Stops', fr: 'Arrêts' },
-		description: { en: 'departures and schedules', fr: 'départs et horaires' },
+		barLabel: { en: 'Stops', fr: 'Arrêts' },
 		activePrefixes: ['/stops', '/stop/'],
 	},
 	{
-		key: 'network',
-		href: '/network',
-		label: { en: 'Network', fr: 'Réseau' },
-		description: { en: 'reliability and health', fr: 'fiabilité et santé' },
-		activePrefixes: ['/network'],
+		key: 'hotspots',
+		group: 'reports',
+		href: '/hotspots',
+		label: { en: 'Worst lines and stops', fr: 'Pires lignes et arrêts' },
+		activePrefixes: ['/hotspots'],
 	},
-] as const;
-
-export const YESID_HOUSE_LINK: ExternalNavLink = {
-	href: 'https://yesid.dev',
-	label: { en: 'Yesid', fr: 'Yesid' },
-} as const;
-
-export const AUDIT_NAV: readonly AuditNavItem[] = [
+	{
+		key: 'repeatOffenders',
+		group: 'reports',
+		href: '/repeat-offenders',
+		label: { en: 'Worst trips and buses', fr: 'Pires trajets et bus' },
+		activePrefixes: ['/repeat-offenders'],
+	},
+	{
+		key: 'receipt',
+		group: 'reports',
+		href: '/receipt',
+		label: { en: 'Daily report', fr: 'Rapport quotidien' },
+		activePrefixes: ['/receipt'],
+	},
+	{
+		key: 'alerts',
+		group: 'reports',
+		href: '/alerts',
+		label: { en: 'Service alerts', fr: 'Avis de service' },
+		activePrefixes: ['/alerts'],
+		requires: 'alerts',
+	},
 	{
 		key: 'metrics',
+		group: 'about',
 		href: '/metrics',
 		label: { en: 'How we measure', fr: 'Comment on mesure' },
 		activePrefixes: ['/metrics'],
 	},
 	{
 		key: 'status',
+		group: 'about',
 		href: '/status',
 		label: { en: 'Data health', fr: 'Santé des données' },
 		activePrefixes: ['/status'],
 	},
-	{
-		key: 'hotspots',
-		href: '/hotspots',
-		label: { en: 'Hotspots', fr: 'Points chauds' },
-		activePrefixes: ['/hotspots'],
-	},
-	{
-		key: 'receipt',
-		href: '/receipt',
-		label: { en: 'Daily receipt', fr: 'Reçu quotidien' },
-		activePrefixes: ['/receipt'],
-	},
-	{
-		key: 'repeatOffenders',
-		href: '/repeat-offenders',
-		label: { en: 'Repeat offenders', fr: 'Récidivistes' },
-		activePrefixes: ['/repeat-offenders'],
-	},
-	{
-		key: 'alerts',
-		href: '/alerts',
-		label: { en: 'Alerts', fr: 'Avis' },
-		activePrefixes: ['/alerts'],
-	},
-] as const;
+];
+/** Hides an item only when its capability is known to be false. */
+export function visibleNav(capabilities: { readonly alerts: boolean | null }): readonly NavItem[] {
+	return NAV_ITEMS.filter((item) => item.requires !== 'alerts' || capabilities.alerts !== false);
+}
+
+const surfaceDescriptions = {
+	map: { en: 'live network', fr: 'réseau en direct' },
+	lines: { en: 'routes and directions', fr: 'itinéraires et directions' },
+	stops: { en: 'departures and schedules', fr: 'départs et horaires' },
+	network: { en: 'reliability and health', fr: 'fiabilité et santé' },
+};
+export const SURFACE_NAV: readonly SurfaceNavItem[] = (
+	['map', 'lines', 'stops', 'network'] as const
+).map((key) => ({
+	...NAV_ITEMS.find((item) => item.key === key)!,
+	key,
+	description: surfaceDescriptions[key],
+}));
+
+export const YESID_HOUSE_LINK: ExternalNavLink = {
+	href: 'https://yesid.dev',
+	label: { en: 'About Yesid', fr: 'À propos de Yesid' },
+};
+
+export const AUDIT_NAV: readonly AuditNavItem[] = (
+	['metrics', 'status', 'hotspots', 'receipt', 'repeatOffenders', 'alerts'] as const
+).map((key) => ({ ...NAV_ITEMS.find((item) => item.key === key)!, key }));
 
 export const LEGAL_NAV: readonly SecondaryNavLink[] = [
 	{
@@ -126,22 +193,22 @@ export const SECONDARY_NAV: readonly SecondaryNavLink[] = [...AUDIT_NAV, ...LEGA
 );
 
 export function isSurfaceActive(
-	item: { readonly activePrefixes: readonly string[] },
+	item: { readonly activePrefixes: readonly string[]; readonly exact?: boolean },
 	currentPath: string,
 ): boolean {
+	if (item.exact) return item.activePrefixes.includes(currentPath);
 	return item.activePrefixes.some((prefix) => {
 		const base = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
 		return currentPath === base || currentPath.startsWith(`${base}/`);
 	});
 }
 
-export function mainLandmarkLabel(currentPath: string): BilingualLabel {
-	const surface = SURFACE_NAV.find((item) => isSurfaceActive(item, currentPath));
-	if (surface) return surface.label;
-	const secondary = SECONDARY_NAV.find((link) => {
-		const base = link.href.endsWith('/') ? link.href.slice(0, -1) : link.href;
-		return currentPath === base || currentPath.startsWith(`${base}/`);
-	});
-	if (secondary) return secondary.label;
-	return SURFACE_NAV[0].label;
+export const SEARCH_LABEL: BilingualLabel = { en: 'Search', fr: 'Recherche' };
+export function mainLandmarkLabel(currentPath: string): BilingualLabel | null {
+	if (currentPath === '/search') return SEARCH_LABEL;
+	return (
+		NAV_ITEMS.find((item) => isSurfaceActive(item, currentPath))?.label ??
+		LEGAL_NAV.find((item) => item.href === currentPath)?.label ??
+		null
+	);
 }
