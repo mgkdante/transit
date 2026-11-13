@@ -123,6 +123,15 @@ beforeEach(() => {
 
 describe.each(['en', 'fr'] as const)('TripDetail summary in %s', (locale) => {
 	const context = new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]);
+	it('shows the trip identifier once when no line is reported', async () => {
+		const { container } = await render(TripDetail, { props: { id: 'tBlank' }, context });
+		expect(
+			screen.getByRole('heading', { level: 1, name: tripCopy[locale].heading('tBlank') }),
+		).toBeInTheDocument();
+		const visible = container.cloneNode(true) as HTMLElement;
+		visible.querySelectorAll('.sr-only,[aria-hidden="true"]').forEach((node) => node.remove());
+		expect(visible.textContent?.match(/tBlank/g)).toHaveLength(1);
+	});
 	it('keeps a prediction caveat without inventing its source', async () => {
 		const { container } = await render(TripDetail, { props: { id: 't161' }, context });
 		expect(container.querySelector('.trip-prediction-caveat')).toHaveTextContent(

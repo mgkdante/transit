@@ -145,7 +145,7 @@
 					subtitle={t.subheading}
 					backHref={trip?.route ? routeHref(trip.route) : localizeHref('/', locale)}
 					backLabel={trip?.route ? t.backLine(directory.spoken(line(trip.route))) : t.back}
-					meta={trip ? [t.heading(id), shortName] : [shortName]}
+					meta={trip?.route ? [t.heading(id), shortName] : [shortName]}
 					titleId="trip-title"
 				>
 					{#snippet actions()}

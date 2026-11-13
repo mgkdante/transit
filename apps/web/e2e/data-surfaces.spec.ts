@@ -5,7 +5,7 @@ import { copy as healthCopy } from '../src/lib/features/health/health.copy';
 import { stopReliabilityCopy } from '../src/lib/features/stops/reliability/stops-reliability.copy';
 import { detailCopy } from '../src/lib/features/stops/stops.copy';
 import { createLineDirectory } from '../src/lib/site/lineDirectory';
-import { routeNameFallback } from '../src/lib/site/absence';
+import { routeNameFallback } from '../src/lib/site/nameFallback';
 import { tripCopy } from '../src/lib/features/trips/trips.copy';
 import { DEFAULT_LOCALE as locale, PUBLISHED_LOCALES } from '../src/lib/i18n/config';
 import { localizeHref } from '../src/lib/i18n/routing';
