@@ -1,0 +1,442 @@
+{
+  "$defs": {
+    "ReceiptNotReportedRoute": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "scheduled_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scheduled Trip Days"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ReceiptNotReportedRoute",
+      "type": "object"
+    },
+    "ReceiptServiceStates": {
+      "properties": {
+        "cancelled_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancelled Trip Days"
+        },
+        "delivered_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delivered Trip Days"
+        },
+        "not_reported_route_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Not Reported Route Count"
+        },
+        "not_reported_routes": {
+          "items": {
+            "$ref": "#/$defs/ReceiptNotReportedRoute"
+          },
+          "title": "Not Reported Routes",
+          "type": "array"
+        },
+        "scheduled_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scheduled Trip Days"
+        },
+        "service_completeness_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Completeness Pct"
+        },
+        "silent_trip_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Silent Trip Days"
+        }
+      },
+      "title": "ReceiptServiceStates",
+      "type": "object"
+    },
+    "ReceiptShiftCut": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "severe_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        },
+        "shift": {
+          "title": "Shift",
+          "type": "string"
+        }
+      },
+      "required": [
+        "shift"
+      ],
+      "title": "ReceiptShiftCut",
+      "type": "object"
+    },
+    "ReceiptWorstRoute": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "otp_delta_pts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Delta Pts"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ReceiptWorstRoute",
+      "type": "object"
+    },
+    "ReceiptWorstStop": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ReceiptWorstStop",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "affected_routes": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Affected Routes"
+    },
+    "affected_stops": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Affected Stops"
+    },
+    "alerts": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alerts"
+    },
+    "avg_delay_min": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Avg Delay Min"
+    },
+    "by_shift": {
+      "items": {
+        "$ref": "#/$defs/ReceiptShiftCut"
+      },
+      "title": "By Shift",
+      "type": "array"
+    },
+    "date": {
+      "title": "Date",
+      "type": "string"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "otp_pct": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Otp Pct"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "rider_impact_score": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Rider Impact Score"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "service_states": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReceiptServiceStates"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "severe_pct": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Severe Pct"
+    },
+    "vehicles": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vehicles"
+    },
+    "worst_route": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReceiptWorstRoute"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "worst_stop": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReceiptWorstStop"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "generated_utc",
+    "date"
+  ],
+  "title": "Receipt",
+  "type": "object"
+}

@@ -1,0 +1,341 @@
+{
+  "$defs": {
+    "Alert": {
+      "properties": {
+        "active_periods": {
+          "items": {
+            "$ref": "#/$defs/AlertActivePeriod"
+          },
+          "title": "Active Periods",
+          "type": "array"
+        },
+        "cause": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cause"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "description_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description En"
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effect"
+        },
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "header_key": {
+          "title": "Header Key",
+          "type": "string"
+        },
+        "header_text": {
+          "default": "",
+          "title": "Header Text",
+          "type": "string"
+        },
+        "header_text_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Text En"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlertMessageProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "routes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "severity_level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity Level"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        },
+        "stops": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stops",
+          "type": "array"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "url_en": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url En"
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "header_key"
+      ],
+      "title": "Alert",
+      "type": "object"
+    },
+    "AlertActivePeriod": {
+      "properties": {
+        "end_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Utc"
+        },
+        "start_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Utc"
+        }
+      },
+      "title": "AlertActivePeriod",
+      "type": "object"
+    },
+    "AlertMessageProvenance": {
+      "properties": {
+        "alert_index": {
+          "title": "Alert Index",
+          "type": "integer"
+        },
+        "captured_utc": {
+          "title": "Captured Utc",
+          "type": "string"
+        },
+        "description_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description Language"
+        },
+        "header_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Language"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "url_language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url Language"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "alert_index",
+        "captured_utc"
+      ],
+      "title": "AlertMessageProvenance",
+      "type": "object"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "high",
+        "watch"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "alerts": {
+      "items": {
+        "$ref": "#/$defs/Alert"
+      },
+      "title": "Alerts",
+      "type": "array"
+    },
+    "feed_captured_utc": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Feed Captured Utc"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "alerts"
+  ],
+  "title": "AlertsFile",
+  "type": "object"
+}

@@ -1,0 +1,402 @@
+{
+  "$defs": {
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
+      "type": "object"
+    },
+    "RouteDayOfWeek": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "day_of_week_iso": {
+          "title": "Day Of Week Iso",
+          "type": "integer"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "day_of_week_iso"
+      ],
+      "title": "RouteDayOfWeek",
+      "type": "object"
+    },
+    "RouteHabits": {
+      "properties": {
+        "matrix": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "array"
+        },
+        "scale": {
+          "title": "Scale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scale"
+      ],
+      "title": "RouteHabits",
+      "type": "object"
+    },
+    "StopByRoute": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "route": {
+          "title": "Route",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "StopByRoute",
+      "type": "object"
+    },
+    "StopDailyPoint": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "observation_count": {
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "severe_count": {
+          "title": "Severe Count",
+          "type": "integer"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        }
+      },
+      "required": [
+        "date",
+        "observation_count",
+        "severe_count"
+      ],
+      "title": "StopDailyPoint",
+      "type": "object"
+    },
+    "StopReliabilityPeriod": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "p50_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P50 Min"
+        },
+        "p90_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Min"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        },
+        "wilson_hi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Hi"
+        },
+        "wilson_lo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lo"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "StopReliabilityPeriod",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "by_route": {
+      "items": {
+        "$ref": "#/$defs/StopByRoute"
+      },
+      "title": "By Route",
+      "type": "array"
+    },
+    "daily": {
+      "items": {
+        "$ref": "#/$defs/StopDailyPoint"
+      },
+      "title": "Daily",
+      "type": "array"
+    },
+    "day_of_week": {
+      "items": {
+        "$ref": "#/$defs/RouteDayOfWeek"
+      },
+      "title": "Day Of Week",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "habits": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RouteHabits"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
+    "occupancy_mix": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OccupancyMix"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "periods": {
+      "items": {
+        "$ref": "#/$defs/StopReliabilityPeriod"
+      },
+      "title": "Periods",
+      "type": "array"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "id"
+  ],
+  "title": "StopReliability",
+  "type": "object"
+}

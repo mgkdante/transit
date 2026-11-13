@@ -1,0 +1,327 @@
+{
+  "$defs": {
+    "NetworkShift": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "severe_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severe Pct"
+        },
+        "wilson_hi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Hi"
+        },
+        "wilson_lo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lo"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "NetworkShift",
+      "type": "object"
+    },
+    "OccupancyMix": {
+      "properties": {
+        "empty": {
+          "default": 0.0,
+          "title": "Empty",
+          "type": "number"
+        },
+        "few_seats": {
+          "default": 0.0,
+          "title": "Few Seats",
+          "type": "number"
+        },
+        "full": {
+          "default": 0.0,
+          "title": "Full",
+          "type": "number"
+        },
+        "many_seats": {
+          "default": 0.0,
+          "title": "Many Seats",
+          "type": "number"
+        },
+        "standing": {
+          "default": 0.0,
+          "title": "Standing",
+          "type": "number"
+        }
+      },
+      "title": "OccupancyMix",
+      "type": "object"
+    },
+    "TrendPoint": {
+      "properties": {
+        "avg_delay_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Avg Delay Min"
+        },
+        "cancellation_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cancellation Rate"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "observation_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Count"
+        },
+        "occupancy_mix": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccupancyMix"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "otp_pct": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Otp Pct"
+        },
+        "p90_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Min"
+        },
+        "service_completeness_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Completeness Rate"
+        },
+        "vehicles": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicles"
+        },
+        "wilson_hi": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Hi"
+        },
+        "wilson_lo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wilson Lo"
+        }
+      },
+      "required": [
+        "date"
+      ],
+      "title": "TrendPoint",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "by_daytype": {
+      "items": {
+        "$ref": "#/$defs/NetworkShift"
+      },
+      "title": "By Daytype",
+      "type": "array"
+    },
+    "by_shift": {
+      "items": {
+        "$ref": "#/$defs/NetworkShift"
+      },
+      "title": "By Shift",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "monthly": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Monthly",
+      "type": "array"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "series": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Series",
+      "type": "array"
+    },
+    "weekly": {
+      "items": {
+        "$ref": "#/$defs/TrendPoint"
+      },
+      "title": "Weekly",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "NetworkTrend",
+  "type": "object"
+}

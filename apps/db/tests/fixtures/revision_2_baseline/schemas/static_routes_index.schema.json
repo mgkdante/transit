@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "RouteIndexEntry": {
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "long": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Long"
+        },
+        "reliability": {
+          "default": false,
+          "description": "True when historic/route_reliability/{id}.json is published for this route (route has weekly/monthly reliability history); the client skips fetching it when False.",
+          "title": "Reliability",
+          "type": "boolean"
+        },
+        "short": {
+          "title": "Short",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "short",
+        "type"
+      ],
+      "title": "RouteIndexEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "routes": {
+      "items": {
+        "$ref": "#/$defs/RouteIndexEntry"
+      },
+      "title": "Routes",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "routes"
+  ],
+  "title": "RoutesIndex",
+  "type": "object"
+}

@@ -1,0 +1,80 @@
+{
+  "description": "static/basemap.json \u2014 a provider-configured pointer to the hosted PMTiles archive.\n\nPublished only when the provider's public.basemap_url is configured; until then\nManifest.basemap is null and no basemap.json object exists.",
+  "properties": {
+    "attribution": {
+      "title": "Attribution",
+      "type": "string"
+    },
+    "format": {
+      "default": "pmtiles",
+      "title": "Format",
+      "type": "string"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "max_zoom": {
+      "default": 15,
+      "title": "Max Zoom",
+      "type": "integer"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "min_zoom": {
+      "default": 0,
+      "title": "Min Zoom",
+      "type": "integer"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "style_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Style Url"
+    },
+    "url": {
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "url",
+    "attribution",
+    "generated_utc"
+  ],
+  "title": "BasemapFile",
+  "type": "object"
+}

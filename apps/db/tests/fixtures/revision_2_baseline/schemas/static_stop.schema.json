@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "ScheduledRoute": {
+      "properties": {
+        "headsign": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headsign"
+        },
+        "route": {
+          "title": "Route",
+          "type": "string"
+        },
+        "times": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Times",
+          "type": "array"
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "ScheduledRoute",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Code"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "lat": {
+      "title": "Lat",
+      "type": "number"
+    },
+    "lon": {
+      "title": "Lon",
+      "type": "number"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "routes_served": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Routes Served",
+      "type": "array"
+    },
+    "scheduled": {
+      "items": {
+        "$ref": "#/$defs/ScheduledRoute"
+      },
+      "title": "Scheduled",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "wheelchair": {
+      "default": false,
+      "title": "Wheelchair",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "id",
+    "name",
+    "lat",
+    "lon"
+  ],
+  "title": "StopFile",
+  "type": "object"
+}
