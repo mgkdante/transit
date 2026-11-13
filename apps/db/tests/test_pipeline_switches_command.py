@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from typer.testing import CliRunner
 
 from transit_ops import cli
@@ -87,6 +87,7 @@ def test_missing_switch_is_shown_as_off(database, monkeypatch):
         switches.SchemaNotReady("schema not ready"),
         switches.ReservedSwitch("use set-stop-time-diet for this key"),
         SQLAlchemyError("private detail"),
+        OperationalError("private statement", {}, RuntimeError("private detail")),
     ],
 )
 def test_switch_command_reports_refusals(database, monkeypatch, error):
@@ -99,9 +100,11 @@ def test_switch_command_reports_refusals(database, monkeypatch, error):
     )
     assert result.exit_code == 1
     assert len(result.stderr.splitlines()) == 1
-    assert "private detail" not in result.stderr
+    assert "private" not in result.stdout + result.stderr
     if isinstance(error, (switches.GuardRefused, switches.SchemaNotReady, switches.ReservedSwitch)):
         assert result.stderr == f"{error}\n"
+    elif isinstance(error, OperationalError):
+        assert result.stderr == "Pipeline switch database operation failed.\n"
     assert database[-1] == "dispose"
 
 

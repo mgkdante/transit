@@ -1913,7 +1913,10 @@ def set_pipeline_switch_command(
     except (switches.GuardRefused, switches.SchemaNotReady, switches.ReservedSwitch) as error:
         typer.echo(" ".join(str(error).splitlines()), err=True)
         raise typer.Exit(1) from None
-    except (SQLAlchemyError, ValueError):
+    except SQLAlchemyError:
+        typer.echo("Pipeline switch database operation failed.", err=True)
+        raise typer.Exit(1) from None
+    except ValueError:
         typer.echo("Database settings could not be read; check DATABASE_URL", err=True)
         raise typer.Exit(1) from None
     finally:
