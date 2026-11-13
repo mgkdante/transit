@@ -1,5 +1,6 @@
 """Read the raw portion of one working feed-day inside the caller's transaction."""
 
+import re
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
@@ -13,6 +14,7 @@ from transit_ops.history.poll_record import (
     PollEntry,
     PollRecord,
     PollRecordInvalid,
+    ProcessingEntry,
     observed_interval_ms,
     ordered_record,
 )
@@ -164,6 +166,204 @@ def _feed(connection: Connection, params: dict[str, Any]) -> Any:
     return feed
 
 
+def _silver_loads(
+    connection: Connection, family: str, params: dict[str, Any], interval: int | None
+) -> tuple[ProcessingEntry, ...]:
+    rows = connection.execute(
+        text("""
+        SELECT ingestion_run_id, status, started_at_utc, completed_at_utc, error_message
+        FROM raw.ingestion_runs
+        WHERE provider_id = :provider_id AND feed_endpoint_id = :feed_endpoint_id
+          AND run_kind = 'silver_load'
+          AND started_at_utc >= :day_start AND started_at_utc < :day_end
+        """),
+        params,
+    ).mappings()
+    table, key = _INDEX[family]
+    entries = []
+    for row in rows:
+        if row["status"] != "failed":
+            raise PollRecordInvalid(f"run {row['ingestion_run_id']}: nonfailed silver_load")
+        capture = (
+            connection.execute(
+                text(f"""
+            SELECT {key}, captured_at_utc FROM {table}
+            WHERE feed_endpoint_id = :feed_endpoint_id AND captured_at_utc <= :load_started_at
+            ORDER BY captured_at_utc DESC, {key} DESC LIMIT 1
+            """),
+                dict(params, load_started_at=row["started_at_utc"]),
+            )
+            .mappings()
+            .one_or_none()
+        )
+        attributed = (
+            capture is not None
+            and interval is not None
+            and row["started_at_utc"] - capture["captured_at_utc"] <= timedelta(seconds=interval)
+        )
+        entries.append(
+            ProcessingEntry(
+                "silver_load",
+                family,
+                capture[key] if attributed and capture is not None else None,
+                "by_time" if attributed else None,
+                rows=None,
+                **row,
+            )
+        )
+    return tuple(entries)
+
+
+def _evidence_details(details: Any, family: str, event_id: int) -> tuple[datetime, dict[int, int]]:
+    try:
+        if not isinstance(details, dict) or set(details) != {
+            "command",
+            "completed_at_utc",
+            "index_family",
+            "rows_by_capture",
+        }:
+            raise ValueError("invalid keys")
+        stamp, counts = details["completed_at_utc"], details["rows_by_capture"]
+        if (
+            not isinstance(details["command"], str)
+            or details["index_family"] != family
+            or not isinstance(stamp, str)
+            or not re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z", stamp
+            )
+            or not isinstance(counts, dict)
+        ):
+            raise ValueError("invalid evidence fields")
+        if any(
+            not isinstance(key, str)
+            or not re.fullmatch(r"[0-9]+", key)
+            or int(key) <= 0
+            or type(value) is not int
+            or value < 0
+            for key, value in counts.items()
+        ):
+            raise ValueError("invalid capture counts")
+        return datetime.fromisoformat(stamp), {int(k): v for k, v in counts.items()}
+    except (ValueError, TypeError, KeyError) as exc:
+        raise PollRecordInvalid(f"event {event_id}: {exc}") from exc
+
+
+def _recorded_evidence(connection: Connection, day: FeedDay) -> dict[int, ProcessingEntry]:
+    events = connection.execute(
+        text("""
+        SELECT event_id, details FROM core.history_event
+        WHERE kind = 'processing_evidence' AND dataset_id = :dataset_id
+          AND provider_id = :provider_id AND revision = 0 AND window_key = :window_key
+        ORDER BY event_id
+        """),
+        dict(
+            dataset_id="capture." + day.endpoint_key,
+            provider_id=day.provider_id,
+            window_key=day.utc_date.isoformat(),
+        ),
+    ).mappings()
+    result: dict[int, ProcessingEntry] = {}
+    for event in events:
+        completed, counts = _evidence_details(event["details"], day.index_family, event["event_id"])
+        for capture_id, count in counts.items():
+            previous = result.get(capture_id)
+            # Events arrive in id order, so equal completion times prefer the later id.
+            if previous and previous.completed_at_utc and previous.completed_at_utc > completed:
+                continue
+            result[capture_id] = ProcessingEntry(
+                "gold_facts",
+                day.index_family,
+                capture_id,
+                "recorded",
+                "observed" if count else "none_observed",
+                None,
+                completed,
+                None,
+                count,
+                None,
+            )
+    return result
+
+
+def _fact_counts(
+    connection: Connection, table: str, captures: tuple[CaptureEntry, ...]
+) -> dict[int, int]:
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*", table):
+        raise ValueError("invalid fact table")
+    cutoff = connection.execute(text("SELECT now()")).scalar_one() - timedelta(days=13)
+    young = [c.capture_row_id for c in captures if c.captured_at_utc > cutoff]
+    if not young:
+        return {}
+    rows = connection.execute(
+        text(f"""
+        SELECT realtime_snapshot_id, count(*) AS rows FROM {table}
+        WHERE realtime_snapshot_id = ANY(:capture_row_ids) GROUP BY realtime_snapshot_id
+        """),
+        dict(capture_row_ids=young),
+    )
+    return dict.fromkeys(young, 0) | {row[0]: row[1] for row in rows}
+
+
+def _prefer_evidence(
+    fresh: ProcessingEntry | None, old: ProcessingEntry | None
+) -> ProcessingEntry | None:
+    if (
+        fresh
+        and old
+        and old.attribution == "recorded"
+        and old.completed_at_utc
+        and fresh.completed_at_utc
+        and old.completed_at_utc >= fresh.completed_at_utc
+    ):
+        return old
+    return fresh or old
+
+
+def _gold_facts(
+    connection: Connection,
+    day: FeedDay,
+    captures: tuple[CaptureEntry, ...],
+    current: Manifest | None,
+) -> tuple[ProcessingEntry, ...]:
+    source = get_dataset("capture." + day.endpoint_key).source
+    assert isinstance(source, CaptureSource)
+    if source.fact_table is None:
+        return ()
+    evidence = _recorded_evidence(connection, day)
+    carried = (
+        {
+            p.capture_row_id: p
+            for p in current.processing
+            if p.stage == "gold_facts" and p.index_family == day.index_family
+        }
+        if current
+        else {}
+    )
+    chosen: dict[int, ProcessingEntry] = {}
+    for capture in captures:
+        selected = _prefer_evidence(
+            evidence.get(capture.capture_row_id), carried.get(capture.capture_row_id)
+        )
+        if selected is not None:
+            chosen[capture.capture_row_id] = selected
+    counts = _fact_counts(
+        connection, source.fact_table, tuple(c for c in captures if c.capture_row_id not in chosen)
+    )
+    return tuple(
+        chosen[c.capture_row_id]
+        if c.capture_row_id in chosen
+        else _counted_outcome(day.index_family, c.capture_row_id, counts.get(c.capture_row_id))
+        for c in captures
+    )
+
+
+def _counted_outcome(family: str, capture_id: int, rows: int | None) -> ProcessingEntry:
+    status = "not_observed" if rows is None else "observed" if rows else "none_observed"
+    return ProcessingEntry(
+        "gold_facts", family, capture_id, None, status, None, None, None, rows, None
+    )
+
+
 def read_working_day(
     connection: Connection,
     *,
@@ -200,7 +400,8 @@ def read_working_day(
             day,
             polls,
             captures,
-            (),
+            _silver_loads(connection, day.index_family, params, declared)
+            + _gold_facts(connection, day, captures, current),
             declared,
             observed_interval_ms(p.started_at_utc for p in polls),
         )
