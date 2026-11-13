@@ -134,10 +134,5 @@
 			flex: none;
 			width: min(36rem, 55%);
 		}
-		.pulse-body {
-			grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-			gap: 2.5rem;
-			align-items: start;
-		}
 	}
 </style>

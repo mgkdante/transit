@@ -2,7 +2,6 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 
 type PulseKey =
 	| 'title'
-	| 'liveLabel'
 	| 'inService'
 	| 'onTime'
 	| 'onTimeNote'
@@ -28,7 +27,6 @@ type PulseKey =
 export const homePulseCopy = defineCopy({
 	fr: {
 		title: 'En ce moment à {city}',
-		liveLabel: 'En direct',
 		inService: 'Bus en service',
 		onTime: 'À l’heure',
 		onTimeNote: 'de 1 min d’avance à 5 min de retard, parmi les bus mesurés',
@@ -55,7 +53,6 @@ export const homePulseCopy = defineCopy({
 	},
 	en: {
 		title: 'Right now in {city}',
-		liveLabel: 'Live',
 		inService: 'Buses in service',
 		onTime: 'On time',
 		onTimeNote: '1 min early to 5 min late, among buses with a delay reading',

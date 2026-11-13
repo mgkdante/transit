@@ -82,10 +82,7 @@
 </script>
 
 <div class="pulse-live" data-slot="home-pulse-live">
-	<div class="pulse-live-head">
-		<span class="pulse-live-label">{t.liveLabel}</span>
-		<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
-	</div>
+	<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 	{#if pulse}
 		<dl class="pulse-tiles">
 			{#each tiles as tile (tile.key)}
@@ -158,19 +155,6 @@
 		gap: 0.75rem;
 		min-width: 0;
 	}
-	.pulse-live-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem 1rem;
-	}
-	.pulse-live-label {
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--accent-text);
-	}
 	.pulse-tiles {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -184,7 +168,7 @@
 		flex-direction: column;
 		gap: 0.375rem;
 		min-width: 0;
-		min-height: 6.5rem;
+		min-height: 5.5rem;
 		padding: 0.875rem 1rem;
 		background: var(--card);
 	}
