@@ -185,6 +185,7 @@
 	const record = createRecordStamp(
 		() => manifest,
 		() => reliability.data?.generated_utc ?? null,
+		() => lineHistory,
 	);
 	const articleEdgeLeft = $derived([t.kicker, titleName.number].filter(Boolean).join(' '));
 	const articleGeneratedUtc = $derived(

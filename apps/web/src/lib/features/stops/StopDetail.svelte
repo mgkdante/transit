@@ -157,6 +157,7 @@
 	const record = createRecordStamp(
 		() => manifest,
 		() => reliability.data?.generated_utc ?? null,
+		() => stopHistory,
 	);
 	const articleEdgeLeft = $derived([t.kicker, stop.data?.code].filter(Boolean).join(' '));
 	const articleMeta = $derived.by<ArticleMetaEntry[]>(() => {

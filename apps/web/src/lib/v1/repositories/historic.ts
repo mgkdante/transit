@@ -167,8 +167,10 @@ interface FamilyDirectoryDiscovery {
 async function getFamilyDirectoryDiscovery(
 	family: 'lines' | 'stops',
 	ctx?: AdapterCtx,
+	onRoot?: (root: HistoricAvailabilityIndex | null) => void,
 ): Promise<FamilyDirectoryDiscovery | null> {
 	const root = await adapter.historic.historyIndex(ctx);
+	onRoot?.(root);
 	if (root === null) return null;
 	const edge = rootEdge(root, family);
 	if (edge === null) return null;
@@ -276,8 +278,9 @@ async function getEntityHistoryIndex(
 	family: 'lines' | 'stops',
 	entityId: string,
 	ctx?: AdapterCtx,
+	onRoot?: (root: HistoricAvailabilityIndex | null) => void,
 ): Promise<HistoricCollectionIndex | null> {
-	const discovery = await getFamilyDirectoryDiscovery(family, ctx);
+	const discovery = await getFamilyDirectoryDiscovery(family, ctx, onRoot);
 	if (discovery === null) return null;
 	const { directory, indexPath: directoryPath } = discovery;
 	const edge = (directory.entities ?? []).find((entity) => entity.entity_id === entityId);
@@ -393,15 +396,17 @@ async function getEntityHistoryIndex(
 export function getLineHistoryIndex(
 	entityId: string,
 	ctx?: AdapterCtx,
+	onRoot?: (root: HistoricAvailabilityIndex | null) => void,
 ): Promise<HistoricCollectionIndex | null> {
-	return getEntityHistoryIndex('lines', entityId, ctx);
+	return getEntityHistoryIndex('lines', entityId, ctx, onRoot);
 }
 
 export function getStopHistoryIndex(
 	entityId: string,
 	ctx?: AdapterCtx,
+	onRoot?: (root: HistoricAvailabilityIndex | null) => void,
 ): Promise<HistoricCollectionIndex | null> {
-	return getEntityHistoryIndex('stops', entityId, ctx);
+	return getEntityHistoryIndex('stops', entityId, ctx, onRoot);
 }
 
 export async function loadNetworkHistoryRange(
