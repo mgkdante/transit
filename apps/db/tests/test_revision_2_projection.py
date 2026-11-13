@@ -22,6 +22,7 @@ from snapshot_storage_fixtures import MemorySnapshotStore
 from sqlalchemy import Engine, text
 
 from transit_ops import settings as settings_module
+from transit_ops.gold import rollups
 from transit_ops.settings import Settings
 from transit_ops.snapshots import historic_tier, publish
 from transit_ops.snapshots.builders.historic import (
@@ -259,6 +260,9 @@ def published(real_db_engine, tmp_path_factory):
         assert zone in ("UTC", "Etc/UTC"), f"TimeZone must be UTC or Etc/UTC; got {zone}"
     seed.delete_rows(engine)
     with pytest.MonkeyPatch.context() as monkeypatch, ExitStack() as stack:
+        # The baseline was generated when the percentile lookback followed retention.
+        # Production keeps 13 days because its fact retention is 14 days.
+        monkeypatch.setattr(rollups, "PERCENTILE_LOOKBACK_DAYS", seed.RETENTION_DAYS - 1)
         # These builders read the process settings, not the ones passed to publish.
         for module in (line_history, network_history, network_trend, provenance, stop_history):
             monkeypatch.setattr(module, "get_settings", lambda: settings)
