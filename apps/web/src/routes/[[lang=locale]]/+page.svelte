@@ -34,7 +34,7 @@
 	<HomeExplore {locale} {copy} alertsAvailable={providerHasAlerts(data.provider)}>
 		{#snippet pulse()}
 			<HomePulse {locale} {city} manifest={data.v1?.manifest ?? null} />
-			<HomeSearch {locale} provider={data.provider?.id} />
+			<HomeSearch {locale} />
 		{/snippet}
 	</HomeExplore>
 	<HomeInvite {locale} />

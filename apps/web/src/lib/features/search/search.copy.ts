@@ -78,19 +78,8 @@ export const copy = defineCopy({
 export type SearchCopy = (typeof copy)[Locale];
 export type VehicleResultCopy = SearchCopy['vehicle'];
 
-/** Real queries for a network, or null when only generic hints exist. */
-export function searchExampleQueries(
-	provider: string | undefined,
-	locale: Locale,
-): readonly string[] | null {
+export function searchExamples(provider: string | undefined, locale: Locale): readonly string[] {
 	if (provider === 'stm') return copy[locale].census.examples;
 	if (provider === 'octranspo') return ['1', 'Rideau', "Tunney's Pasture"];
-	return null;
-}
-
-export function searchExamples(provider: string | undefined, locale: Locale): readonly string[] {
-	return (
-		searchExampleQueries(provider, locale) ??
-		(locale === 'fr' ? ['Numéro de ligne', 'Nom d’arrêt'] : ['Line number', 'Stop name'])
-	);
+	return locale === 'fr' ? ['Numéro de ligne', 'Nom d’arrêt'] : ['Line number', 'Stop name'];
 }

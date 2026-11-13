@@ -111,20 +111,10 @@ export const homeInviteCopy = defineCopy({
 	},
 } satisfies Readonly<Record<Locale, Readonly<Record<InviteKey, string>>>>);
 
-type SearchKey = 'label' | 'submit' | 'examplesLead';
-
 export const homeSearchCopy = defineCopy({
-	fr: {
-		label: 'Cherchez votre ligne, votre arrêt ou votre adresse',
-		submit: 'Rechercher',
-		examplesLead: 'Par exemple :',
-	},
-	en: {
-		label: 'Look up your line, stop or address',
-		submit: 'Search',
-		examplesLead: 'For example:',
-	},
-} satisfies Readonly<Record<Locale, Readonly<Record<SearchKey, string>>>>);
+	fr: { label: 'Cherchez votre ligne ou votre arrêt' },
+	en: { label: 'Search for your line or stop' },
+} satisfies Readonly<Record<Locale, Readonly<Record<'label', string>>>>);
 
 export const HOME_INVITE_LINKS = {
 	contact: { en: 'https://yesid.dev/contact', fr: 'https://yesid.dev/fr/contact' },

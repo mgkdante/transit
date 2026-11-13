@@ -101,9 +101,11 @@ describe('Home civic overview and directory', () => {
 		expect(
 			screen.getByText(/It is not a trip planner, and it is not affiliated with Fixture Transit\./),
 		).toBeInTheDocument();
-		const search = screen.getByRole('search');
-		expect(search).toHaveAttribute('action', '/search');
-		expect(search.querySelector('input[name="provider"]')).toHaveValue('fixture');
+		// The home page leads to the search page; it has no search field of its own.
+		const search = screen.getByRole('link', { name: 'Search for your line or stop' });
+		expect(search).toHaveAttribute('href', '/search');
+		expect(screen.queryByRole('search')).toBeNull();
+		expect(screen.queryByRole('searchbox')).toBeNull();
 		const strip = container.querySelector('[data-slot="home-pulse"]') as HTMLElement;
 		expect(
 			within(strip)
@@ -258,7 +260,7 @@ describe('Home civic overview and directory', () => {
 			const { body } = renderSsr(module.default, { context, props: { data: pageData() } });
 			expect(body).toContain('How Montréal’s');
 			expect(body).toContain('independent public record');
-			expect(body).toContain('action="/search"');
+			expect(body).toContain('Search for your line or stop');
 			for (const [href] of destinations) expect(body).toContain(`href="${href}"`);
 		} finally {
 			await server.close();
