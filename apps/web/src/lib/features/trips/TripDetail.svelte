@@ -104,10 +104,6 @@
 	const stopNameFor = (stopId: string): string => stopDisplayName(stopNameById[stopId] ?? stopId);
 	const reportedPredictions = $derived(trip?.stops ?? []);
 	const predictionCount = $derived(reportedPredictions.length);
-	const lastReportedStopName = $derived.by<string | null>(() => {
-		const last = reportedPredictions[reportedPredictions.length - 1];
-		return last ? stopNameFor(last.stop) : null;
-	});
 
 	const routeHref = (routeId: string): string =>
 		localizeHref(routeFor({ kind: 'line', id: routeId }), locale);
@@ -209,18 +205,6 @@
 								</span>
 							</div>
 
-							{#if lastReportedStopName != null}
-								<div class="trip-summary-cell">
-									<SectionLabel text={t.lastReportedStop} variant="metric" />
-									<span class="trip-last-stop">
-										<span class="trip-last-stop-name" title={lastReportedStopName}
-											>{lastReportedStopName}</span
-										>
-										<span class="trip-prediction-count">{t.predictionCount(predictionCount)}</span>
-									</span>
-								</div>
-							{/if}
-
 							<div class="trip-summary-cell">
 								<SectionLabel text={t.route} variant="metric" />
 								<MaybeValue
@@ -243,6 +227,7 @@
 						<section class="trip-stops-section" aria-label={t.reportedPredictions}>
 							<SectionHeading level={2} overline={t.reportedPredictions} explainer={etaInfo} />
 							{#if reportedPredictions.length > 0}
+								<span class="trip-prediction-count">{t.predictionCount(predictionCount)}</span>
 								<ol class="trip-stops" aria-label={t.stopsListLabel}>
 									{#each reportedPredictions as stop, si (stop.stop + '-' + si)}
 										<li class="trip-stop">
@@ -395,17 +380,6 @@
 		color: var(--muted-foreground);
 	}
 
-	.trip-last-stop {
-		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
-	}
-	.trip-last-stop-name {
-		min-width: 0;
-		font-size: var(--text-body);
-		font-weight: 600;
-		color: var(--foreground);
-	}
 	.trip-prediction-count {
 		font-family: var(--font-mono);
 		font-size: var(--text-micro);
@@ -438,8 +412,7 @@
 		justify-content: start;
 		width: calc(100% + 1rem);
 	}
-	.trip-stop-name,
-	.trip-last-stop-name {
+	.trip-stop-name {
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 2;

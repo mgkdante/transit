@@ -11,7 +11,6 @@ export const tripCopy = defineCopy({
 		subheading: 'Prédictions communiquées pour ce trajet',
 		route: 'Ligne',
 		verdictHeading: 'Verdict',
-		lastReportedStop: 'Dernier arrêt communiqué',
 		predictionCount: (n: number) =>
 			n === 1 ? '1 prédiction communiquée' : `${n} prédictions communiquées`,
 		status: {
@@ -52,7 +51,6 @@ export const tripCopy = defineCopy({
 		subheading: 'Reported predictions for this trip',
 		route: 'Line',
 		verdictHeading: 'Verdict',
-		lastReportedStop: 'Last reported stop',
 		predictionCount: (n) => (n === 1 ? '1 prediction reported' : `${n} predictions reported`),
 		status: {
 			early: 'Early',
