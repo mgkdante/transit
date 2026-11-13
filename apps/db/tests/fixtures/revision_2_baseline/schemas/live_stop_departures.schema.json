@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "StopDeparture": {
+      "properties": {
+        "delay_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Min"
+        },
+        "eta_utc": {
+          "title": "Eta Utc",
+          "type": "string"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "trip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trip"
+        }
+      },
+      "required": [
+        "eta_utc"
+      ],
+      "title": "StopDeparture",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "feed_captured_utc": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Feed Captured Utc"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "stops": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/StopDeparture"
+        },
+        "type": "array"
+      },
+      "title": "Stops",
+      "type": "object"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "StopDeparturesFile",
+  "type": "object"
+}

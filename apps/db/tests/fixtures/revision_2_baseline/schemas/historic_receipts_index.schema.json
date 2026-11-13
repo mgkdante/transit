@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "ReceiptAvailability": {
+      "properties": {
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "has_data": {
+          "title": "Has Data",
+          "type": "boolean"
+        },
+        "has_schedule": {
+          "default": false,
+          "title": "Has Schedule",
+          "type": "boolean"
+        },
+        "publish_generation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publish Generation Id"
+        }
+      },
+      "required": [
+        "date",
+        "has_data"
+      ],
+      "title": "ReceiptAvailability",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "available": {
+      "items": {
+        "$ref": "#/$defs/ReceiptAvailability"
+      },
+      "title": "Available",
+      "type": "array"
+    },
+    "collection_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Collection Generation Id"
+    },
+    "dates": {
+      "description": "Exact ascending dates whose receipts were built and published from retained accountability rows in the current publication.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Dates",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "ReceiptsIndex",
+  "type": "object"
+}

@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "StopIndexEntry": {
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        },
+        "lon": {
+          "title": "Lon",
+          "type": "number"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "highest-priority GTFS mode serving this stop: metro|tram|rail|bus|ferry; null when no route linkage",
+          "title": "Mode"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "routes": {
+          "description": "up to 5 route ids serving this stop, in route natural-sort order",
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "lat",
+        "lon"
+      ],
+      "title": "StopIndexEntry",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "stops": {
+      "items": {
+        "$ref": "#/$defs/StopIndexEntry"
+      },
+      "title": "Stops",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "stops"
+  ],
+  "title": "StopsIndex",
+  "type": "object"
+}

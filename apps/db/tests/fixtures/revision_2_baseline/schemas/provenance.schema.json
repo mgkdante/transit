@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "ProvenanceConformance": {
+      "properties": {
+        "extra_row_count": {
+          "default": 0,
+          "title": "Extra Row Count",
+          "type": "integer"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "unknown_members": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Members",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "ProvenanceConformance",
+      "type": "object"
+    },
+    "ProvenanceFreshness": {
+      "properties": {
+        "age_s": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age S"
+        },
+        "feed": {
+          "title": "Feed",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        }
+      },
+      "required": [
+        "feed"
+      ],
+      "title": "ProvenanceFreshness",
+      "type": "object"
+    },
+    "ProvenanceSource": {
+      "properties": {
+        "chain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chain"
+        },
+        "feed": {
+          "title": "Feed",
+          "type": "string"
+        },
+        "last_loaded_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Loaded Utc"
+        }
+      },
+      "required": [
+        "feed"
+      ],
+      "title": "ProvenanceSource",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "conformance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProvenanceConformance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "freshness": {
+      "items": {
+        "$ref": "#/$defs/ProvenanceFreshness"
+      },
+      "title": "Freshness",
+      "type": "array"
+    },
+    "gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology": {
+      "additionalProperties": true,
+      "title": "Methodology",
+      "type": "object"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "retention": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Retention",
+      "type": "object"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/ProvenanceSource"
+      },
+      "title": "Sources",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_utc"
+  ],
+  "title": "Provenance",
+  "type": "object"
+}

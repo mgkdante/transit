@@ -1,0 +1,148 @@
+{
+  "$defs": {
+    "Status": {
+      "enum": [
+        "early",
+        "on_time",
+        "late",
+        "severe",
+        "unknown"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "StopEta": {
+      "properties": {
+        "delay_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Min"
+        },
+        "eta_utc": {
+          "title": "Eta Utc",
+          "type": "string"
+        },
+        "stop": {
+          "title": "Stop",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stop",
+        "eta_utc"
+      ],
+      "title": "StopEta",
+      "type": "object"
+    },
+    "Trip": {
+      "properties": {
+        "delay_min": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delay Min"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "stops": {
+          "items": {
+            "$ref": "#/$defs/StopEta"
+          },
+          "title": "Stops",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "Trip",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "feed_captured_utc": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Feed Captured Utc"
+    },
+    "generated_utc": {
+      "title": "Generated Utc",
+      "type": "string"
+    },
+    "methodology_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Methodology Version"
+    },
+    "publish_generation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publish Generation Id"
+    },
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "trips": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Trip"
+      },
+      "title": "Trips",
+      "type": "object"
+    }
+  },
+  "required": [
+    "generated_utc",
+    "trips"
+  ],
+  "title": "TripsFile",
+  "type": "object"
+}
