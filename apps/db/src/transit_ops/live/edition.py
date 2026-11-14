@@ -2,8 +2,12 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import cast
 
 import duckdb
+from psycopg import Connection as PsycopgConnection
 from sqlalchemy import Connection, text
 
 EDITION_TABLES: Mapping[str, tuple[tuple[str, str], ...]] = {
@@ -45,6 +49,8 @@ EDITION_TABLES: Mapping[str, tuple[tuple[str, str], ...]] = {
         ("provider_id", "VARCHAR"),
         ("dataset_version_id", "BIGINT"),
         ("source_version", "VARCHAR"),
+        ("routes_dataset_version_id", "BIGINT"),
+        ("stops_dataset_version_id", "BIGINT"),
     ),
 }
 
@@ -64,6 +70,9 @@ def create_edition_tables(duck: duckdb.DuckDBPyConnection) -> None:
     for table, columns in EDITION_TABLES.items():
         definition = ", ".join(f"{column} {kind}" for column, kind in columns)
         duck.execute(f"CREATE TABLE IF NOT EXISTS {table} ({definition})")
+        actual = tuple(row[:2] for row in duck.execute(f"DESCRIBE {table}").fetchall())
+        if actual != columns:
+            raise ValueError(f"Incompatible edition schema for {table}")
 
 
 def current_edition_id(pg: Connection, *, provider_id: str) -> EditionId:
@@ -99,7 +108,6 @@ _EDITION_SOURCES = {
     "edition_routes": ("gold.dim_route", "route_id"),
     "edition_stops": ("gold.dim_stop", "stop_id"),
 }
-_EDITION_BATCH_SIZE = 10_000
 
 
 def _copy_edition_relation(
@@ -108,23 +116,50 @@ def _copy_edition_relation(
     source, key = _EDITION_SOURCES[table]
     columns = EDITION_TABLES[table]
     names = ", ".join(name for name, _ in columns)
-    projections = ", ".join(f"UNNEST(CAST(? AS {kind}[]))" for _, kind in columns)
+    versioned = not source.startswith("gold.dim_")
+    predicate = " AND dataset_version_id = %s" if versioned else ""
+    parameters = (
+        (edition.provider_id, edition.dataset_version_id) if versioned else (edition.provider_id,)
+    )
+    query = f"SELECT {names} FROM {source} WHERE provider_id = %s{predicate} ORDER BY {key}"
     duck.execute(f"DELETE FROM {table}")
-    count = 0
-    with pg.execute(
-        text(
-            f"SELECT {names} FROM {source} "
-            "WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id "
-            f"ORDER BY {key}"
-        ),
+    with TemporaryDirectory(prefix="transit-edition-") as directory:
+        path = Path(directory).resolve() / "relation.csv"
+        if any(character in str(path) for character in "*?[]{}"):
+            raise ValueError("Edition staging path must not contain glob characters")
+        connection = cast(PsycopgConnection[tuple[object, ...]], pg.connection.dbapi_connection)
+        with connection.cursor() as cursor, path.open("wb") as output:
+            with cursor.copy(f"COPY ({query}) TO STDOUT (FORMAT csv)", parameters) as stream:
+                for block in stream:
+                    output.write(block)
+        if not path.stat().st_size:
+            return 0
+        row = duck.execute(
+            f"INSERT INTO {table} ({names}) SELECT * FROM read_csv(?, columns=?, header=false, "
+            "auto_detect=false, delim=',', allow_quoted_nulls=false, hive_partitioning=false)",
+            [str(path), dict(columns)],
+        ).fetchone()
+        assert row is not None
+        return int(row[0])
+
+
+def _edition_metadata(pg: Connection, edition: EditionId) -> list[str | int | None]:
+    row = pg.execute(
+        text("""
+        SELECT dataset_version_id, source_version,
+            (SELECT max(dataset_version_id) FROM gold.dim_route WHERE provider_id = :provider_id),
+            (SELECT max(dataset_version_id) FROM gold.dim_stop WHERE provider_id = :provider_id)
+        FROM core.dataset_versions
+        WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id
+          AND dataset_kind = 'static_schedule'
+    """),
         {"provider_id": edition.provider_id, "dataset_version_id": edition.dataset_version_id},
-        execution_options={"yield_per": _EDITION_BATCH_SIZE},
-    ) as result:
-        while rows := result.fetchmany(_EDITION_BATCH_SIZE):
-            arrays = [[row[index] for row in rows] for index in range(len(columns))]
-            duck.execute(f"INSERT INTO {table} ({names}) SELECT {projections}", arrays)
-            count += len(rows)
-    return count
+    ).one_or_none()
+    if row is None or row[1] != edition.source_version:
+        raise EditionMissing(
+            f"Edition {edition.provider_id}/{edition.dataset_version_id} missing or changed"
+        )
+    return [edition.provider_id, *row]
 
 
 def load_edition_from_postgres(
@@ -140,18 +175,18 @@ def load_edition_from_postgres(
     try:
         with pg.begin():
             pg.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+            metadata = _edition_metadata(pg, edition)
             create_edition_tables(duck)
             counts = {
                 table: _copy_edition_relation(duck, pg, edition, table)
                 for table in _EDITION_SOURCES
             }
+            if not counts["edition_stop_times"] or not counts["edition_trips"]:
+                raise EditionMissing(
+                    f"Empty schedule for {edition.provider_id}/{edition.dataset_version_id}"
+                )
             duck.execute("DELETE FROM edition_meta")
-            duck.execute(
-                "INSERT INTO edition_meta (provider_id, dataset_version_id, source_version) "
-                "SELECT UNNEST(CAST(? AS VARCHAR[])), UNNEST(CAST(? AS BIGINT[])), "
-                "UNNEST(CAST(? AS VARCHAR[]))",
-                [[edition.provider_id], [edition.dataset_version_id], [edition.source_version]],
-            )
+            duck.execute("INSERT INTO edition_meta VALUES (?, ?, ?, ?, ?)", metadata)
             counts["edition_meta"] = 1
         duck.execute("COMMIT")
     except BaseException:
