@@ -54,13 +54,26 @@ def _leaves(expected: object, actual: object, path: str = "") -> Iterator[tuple[
             yield path, _text(expected), _text(actual)
 
 
+def _clock_match(pattern: tuple[str, ...], path: tuple[str | int, ...], token: str) -> bool:
+    if len(pattern) != len(path) or token in ("{", "["):
+        return False
+    for part, key in zip(pattern, path, strict=True):
+        if part == "[]":
+            if not isinstance(key, int):
+                return False
+        elif not isinstance(key, str) or (part != "*" and part != key):
+            return False
+    kind = int if pattern[-1] in ("age_s", "feed_freshness_s") else str
+    return type(json.loads(token)) is kind
+
+
 def _project(text: str, paths: tuple[str, ...]) -> str:
-    patterns = [tuple(p.replace("[]", ".*").split(".")) for p in paths]
+    patterns = [tuple(p.replace("[]", ".[]").split(".")) for p in paths]
     tokens = list(re.finditer(r'"(?:\\.|[^"\\])*"|[{}\[\],:]|[^\s{}\[\],:]+', text))
     replacements: list[tuple[int, int]] = []
     index = 0
 
-    def visit(path: tuple[str, ...]) -> None:
+    def visit(path: tuple[str | int, ...]) -> None:
         nonlocal index
         start = tokens[index].start()
         token = tokens[index].group()
@@ -68,7 +81,7 @@ def _project(text: str, paths: tuple[str, ...]) -> str:
         if token in ("{", "["):
             count = 0
             while tokens[index].group() not in ("}", "]"):
-                key = str(count)
+                key: str | int = count
                 if token == "{":
                     key = json.loads(tokens[index].group())
                     index += 2
@@ -77,15 +90,14 @@ def _project(text: str, paths: tuple[str, ...]) -> str:
                 if tokens[index].group() == ",":
                     index += 1
             index += 1
-        if any(
-            len(p) == len(path) and all(a == "*" or a == b for a, b in zip(p, path, strict=True))
-            for p in patterns
-        ):
+        if any(_clock_match(p, path, token) for p in patterns):
             replacements.append((start, tokens[index - 1].end()))
 
     visit(())
     for start, end in sorted(replacements, reverse=True):
-        text = text[:start] + '"<clock>"' + text[end:]
+        # Keep the replacement's type so an invalid age string cannot impersonate it.
+        replacement = '"<clock>"' if text[start] == '"' else "0"
+        text = text[:start] + replacement + text[end:]
     return text
 
 

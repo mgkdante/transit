@@ -3,6 +3,7 @@ import json
 import pytest
 
 from transit_ops.live.compare import Difference, compare_publications
+from transit_ops.snapshots.contract import DataHealth, DataHealthFeed, LaneHealth, NetworkFile
 
 
 def payload(value: object) -> bytes:
@@ -115,3 +116,76 @@ def test_byte_diagnostics_are_cut_to_200_characters():
     assert compare_publications({"file": before}, {"file": after}) == [
         Difference("file", "<bytes>", before.decode()[:200], after.decode()[:200])
     ]
+
+
+@pytest.mark.parametrize("field", ["lane", "feed", "generation", "network"])
+def test_projection_preserves_unknown_clock_values_in_public_models(field):
+    health = DataHealth(
+        generated_utc="stamp",
+        lanes=[LaneHealth(lane="live")],
+        feeds=[DataHealthFeed(feed="positions")],
+    )
+    before = health.model_dump(mode="json")
+    after = health.model_dump(mode="json")
+    key = "status/data_health.json"
+    if field in ("lane", "feed"):
+        after["lanes" if field == "lane" else "feeds"][0]["age_s"] = 0
+    elif field == "generation":
+        after["publish_generation_id"] = "generation"
+    else:
+        key = "live/network.json"
+        network = NetworkFile(
+            generated_utc="stamp",
+            vehicles_in_service=0,
+            on_time_pct=None,
+            status_dist={},
+            delay_p50_min=None,
+            delay_p90_min=None,
+            non_responding=0,
+            feed_freshness_s=None,
+            coverage_pct=None,
+        )
+        before = network.model_dump(mode="json")
+        after = network.model_copy(update={"feed_freshness_s": 0}).model_dump(mode="json")
+    assert compare_publications({key: payload(before)}, {key: payload(after)}, project_clock=True)
+    assert compare_publications({key: payload(after)}, {key: payload(before)}, project_clock=True)
+
+
+@pytest.mark.parametrize("invalid", [None, True, False, "0", "<clock>", {}, [], 0.0])
+def test_projection_does_not_erase_invalid_age_types(invalid):
+    assert compare_publications(
+        {"live/network.json": payload({"feed_freshness_s": invalid})},
+        {"live/network.json": b'{"feed_freshness_s":0}'},
+        project_clock=True,
+    )
+
+
+@pytest.mark.parametrize("field", ["generated_utc", "publish_generation_id"])
+@pytest.mark.parametrize("invalid", [None, 0, False, {}, []])
+def test_projection_does_not_erase_invalid_stamp_types(field, invalid):
+    assert compare_publications(
+        {"file": payload({field: invalid})}, {"file": payload({field: "stamp"})}, project_clock=True
+    )
+
+
+@pytest.mark.parametrize("field", ["lanes", "feeds"])
+def test_array_clock_wildcards_do_not_match_objects(field):
+    assert compare_publications(
+        {"status/data_health.json": payload({field: {"record": {"age_s": 1}}})},
+        {"status/data_health.json": payload({field: {"record": {"age_s": 2}}})},
+        project_clock=True,
+    )
+
+
+def test_generation_wildcard_requires_object_and_preserves_filename_keys():
+    key = "manifest.json"
+    for before, after, equal in [
+        ({"live/trips.json": "old"}, {"live/trips.json": "new"}, True),
+        (["old"], ["new"], False),
+    ]:
+        result = compare_publications(
+            {key: payload({"files": {"live": {"generations": before}}})},
+            {key: payload({"files": {"live": {"generations": after}}})},
+            project_clock=True,
+        )
+        assert (result == []) is equal
