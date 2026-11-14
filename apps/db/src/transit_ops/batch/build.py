@@ -3,8 +3,9 @@
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol, runtime_checkable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.sql.elements import TextClause
 
@@ -19,6 +20,7 @@ class BuildRequest:
     as_of_utc: datetime
     fact_retention_days: int
     open_window_days: int
+    timezone: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.provider_id, str) or not self.provider_id.strip():
@@ -45,6 +47,32 @@ class BuildRequest:
             for left, right in zip(self.local_dates, self.local_dates[1:], strict=False)
         ):
             raise ValueError("local_dates must be nonempty, ascending and unique")
+        try:
+            zone = ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError, TypeError) as error:
+            raise ValueError(f"invalid IANA timezone: {self.timezone!r}") from error
+        if any(day >= self.as_of_utc.astimezone(zone).date() for day in self.local_dates):
+            raise ValueError("local_dates must be closed at as_of_utc in the provider timezone")
+
+
+def utc_days(
+    request: BuildRequest, *, lookback_days: int = 0, after_days: int = 0
+) -> tuple[str, ...]:
+    """UTC windows intersecting each local day, extended by local calendar-day offsets."""
+    if any(type(n) is not int or n < 0 for n in (lookback_days, after_days)):
+        raise ValueError("day offsets must be nonnegative integers")
+    zone = ZoneInfo(request.timezone)
+    days: set[str] = set()
+    for day in request.local_dates:
+        start = datetime.combine(day - timedelta(days=lookback_days), time(), zone).astimezone(UTC)
+        end = datetime.combine(day + timedelta(days=after_days + 1), time(), zone).astimezone(UTC)
+        if start >= end:
+            continue
+        current = start.date()
+        while current <= (end - timedelta(microseconds=1)).date():
+            days.add(current.isoformat())
+            current += timedelta(days=1)
+    return tuple(sorted(days))
 
 
 @dataclass(frozen=True)
