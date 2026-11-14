@@ -2,11 +2,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from threading import Event, current_thread
+from zoneinfo import ZoneInfo
 
 import pytest
 from google.transit import gtfs_realtime_pb2
 from realtime_replay_fixtures import (
     PROVIDER,
+    PROVIDER_TZ,
     SNAPSHOTS,
     _build_trip_update_bytes,
     _seed_provider_and_static,
@@ -30,12 +32,22 @@ from transit_ops.gold.realtime import (
 from transit_ops.silver.realtime_gtfs import load_realtime_to_silver
 
 
+def _capture_base(now: datetime) -> datetime:
+    base = now.astimezone(UTC).replace(microsecond=0) + timedelta(seconds=10)
+    # Keep all live offsets (0 through 6 minutes) together without predating initialization.
+    for zone in (UTC, ZoneInfo(PROVIDER_TZ)):
+        end = (base + timedelta(minutes=6)).astimezone(zone)
+        if base.astimezone(zone).date() != end.date():
+            base = end.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    return base
+
+
 @pytest.fixture
 def capture(engine, settings, bronze_root, seed_provider):
     with engine.begin() as conn:
         _seed_provider_and_static(conn, seed_provider)
     initialize_realtime_serving(PROVIDER, ["trip_updates"], engine=engine)
-    base = datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=10)
+    base = _capture_base(datetime.now(UTC))
 
     def add(
         index, *, minutes=None, empty=False, historical=False, endpoint="trip_updates",
