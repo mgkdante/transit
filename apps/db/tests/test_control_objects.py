@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 from datetime import UTC, datetime
 
@@ -120,7 +121,7 @@ def test_factories_use_private_bronze_store_without_network(tmp_path, monkeypatc
     local = factory(settings)
     assert not list(tmp_path.iterdir())
     local.create("a", {})
-    assert (tmp_path / prefix / "a").read_bytes() == b"{}"
+    assert local.read("a").body == b"{}"
     client = Client(429)
     monkeypatch.setattr(m, "build_s3_client", lambda settings: client)
     remote = factory(settings.model_copy(update={"BRONZE_STORAGE_BACKEND": "s3"}))
@@ -132,3 +133,67 @@ def test_factories_use_private_bronze_store_without_network(tmp_path, monkeypatc
 
 def test_key_parts_escape_separators_and_colons():
     assert m.key_part("stop_time_diet:a/b") == "stop_time_diet%3Aa%2Fb"
+
+
+@pytest.mark.parametrize("first,second", [("ProviderA", "providera"), ("provider", "provider.")])
+def test_distinct_local_names_keep_logical_identity(objects, first, second):
+    objects.create("windows/" + first, {"owner": first})
+    assert objects.read("windows/" + second) is None
+    objects.create("windows/" + second, {"owner": second})
+    assert sorted(objects.list_keys("windows/")) == sorted(
+        ["windows/" + first, "windows/" + second]
+    )
+    assert json.loads(objects.read("windows/" + first).body) == {"owner": first}
+
+
+@pytest.mark.parametrize("body", [b'{"v":1}', b'{"v":2}'])
+@pytest.mark.parametrize("code", ["ObjectLockedByBucketPolicy", "OtherConflict"])
+def test_locked_create_race_compares_winner_bytes(body, code):
+    client = Client(409)
+
+    def missing(**kw):
+        raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
+
+    def locked(**kw):
+        raise ClientError(
+            {"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": 409}}, "PutObject"
+        )
+
+    client.head_object, client.put_object = missing, locked
+    client.get_object = lambda **kw: {"Body": io.BytesIO(body)}
+    obj = m.SnapshotConditionalObjects(SnapshotStorage(client, bucket="private", base_prefix="x"))
+    with pytest.raises(ClientError):
+        obj.replace("windows/1", {"v": 1}, expected=None)
+    if code != "ObjectLockedByBucketPolicy":
+        with pytest.raises(ClientError):
+            obj.create("events/1", {"v": 1})
+        return
+    if body == b'{"v":1}':
+        assert obj.create("events/1", {"v": 1}) is False
+    else:
+        with pytest.raises(m.ObjectCollision):
+            obj.create("events/1", {"v": 1})
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_listing_requires_a_directory_prefix(objects, remote):
+    if remote:
+        client = Client(429)
+        client.list_objects_v2 = lambda **kw: {
+            "Contents": [
+                {
+                    "Key": kw["Prefix"] + "a",
+                    "ETag": '"one"',
+                    "Size": 2,
+                    "LastModified": datetime(2026, 1, 1, tzinfo=UTC),
+                }
+            ]
+        }
+        objects = m.SnapshotConditionalObjects(
+            SnapshotStorage(client, bucket="private", base_prefix="x")
+        )
+    else:
+        objects.create("events/a", {})
+    with pytest.raises(ValueError):
+        list(objects.list_keys("ev"))
+    assert list(objects.list_keys("events/")) == ["events/a"]

@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 
 from transit_ops.s3 import build_s3_client, validate_s3_bucket_name
 from transit_ops.settings import Settings
+from transit_ops.snapshots.serialization import snapshot_json_bytes
 from transit_ops.snapshots.storage import (
     ImmutableKeyCollisionError,
     LocalSnapshotStorage,
@@ -40,6 +41,8 @@ class ObjectRateLimited(RuntimeError):
 
 
 class ConditionalObjects(Protocol):
+    """List below a directory ending in '/'; keys are relative, with no promised order."""
+
     def read(self, key: str) -> Versioned | None: ...
     def create(self, key: str, payload: Mapping[str, object]) -> bool: ...
     def replace(self, key: str, payload: Mapping[str, object], *, expected: str | None) -> bool: ...
@@ -86,26 +89,47 @@ class SnapshotConditionalObjects:
         self._monotonic, self._sleep = monotonic, sleep
         self._written: dict[str, float] = {}
 
-    def read(self, key: str) -> Versioned | None:
+    def _path(self, key: str) -> str:
         _key(key)
+        # Encode every component so Windows case folding and dot trimming cannot alias keys.
+        return (
+            "/".join("x" + p.encode().hex() for p in key.split("/"))
+            if isinstance(self._store, LocalSnapshotStorage)
+            else key
+        )
 
-        def read() -> Versioned | None:
-            version = self._store.capture_object_version(key)
-            if version is None:
-                return None
-            return Versioned(key, self._store.read_bytes_at_version(key, version), version.etag)
-
-        return _call(read)
+    def read(self, key: str) -> Versioned | None:
+        path = self._path(key)
+        version = _call(lambda: self._store.capture_object_version(path))
+        if version is None:
+            return None
+        body = _call(lambda: self._store.read_bytes_at_version(path, version))
+        return Versioned(key, body, version.etag)
 
     def create(self, key: str, payload: Mapping[str, object]) -> bool:
-        _key(key)
-        result = _call(lambda: self._store.put_immutable_json_outcome(key, dict(payload)).written)
+        path = self._path(key)
+        try:
+            result = _call(
+                lambda: self._store.put_immutable_json_outcome(path, dict(payload)).written
+            )
+        except ClientError as exc:
+            if (
+                exc.response.get("Error", {}).get("Code"),
+                exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode"),
+            ) != ("ObjectLockedByBucketPolicy", 409):
+                raise
+            existing = _call(lambda: self._store.read_bytes(path))
+            if existing is None:
+                raise
+            if existing != snapshot_json_bytes(dict(payload)):
+                raise ObjectCollision(key) from exc
+            return False
         if result:
             self._written[key] = self._monotonic()
         return bool(result)
 
     def replace(self, key: str, payload: Mapping[str, object], *, expected: str | None) -> bool:
-        _key(key)
+        path = self._path(key)
         if key in self._written:
             remainder = self._interval - (self._monotonic() - self._written[key])
             if remainder > 0:
@@ -113,9 +137,9 @@ class SnapshotConditionalObjects:
         result = _call(
             lambda: (
                 self._store.activate_stable_json_outcome(
-                    key,
+                    path,
                     dict(payload),
-                    expected_version=StableObjectVersion(key, expected),
+                    expected_version=StableObjectVersion(path, expected),
                     tier="internal",
                 ).written
             )
@@ -126,9 +150,15 @@ class SnapshotConditionalObjects:
 
     def list_keys(self, prefix: str) -> Iterator[str]:
         _key(prefix)
-        iterator = self._store.iter_object_versions(prefix)
+        if not prefix.endswith("/"):
+            raise ValueError("listing requires a directory prefix ending in '/'")
+        iterator = self._store.iter_object_versions(self._path(prefix.removesuffix("/")))
         while (version := _call(lambda: next(iterator, None))) is not None:
-            yield version.rel_key
+            yield (
+                "/".join(bytes.fromhex(p[1:]).decode() for p in version.rel_key.split("/"))
+                if (isinstance(self._store, LocalSnapshotStorage))
+                else version.rel_key
+            )
 
 
 def _bronze_objects(settings: Settings, prefix: str) -> SnapshotConditionalObjects:
