@@ -171,18 +171,12 @@ def test_rescue_refuses_queued_exclusive_lock_and_cancels_only_itself(tmp_path, 
 
 
 @pytest.fixture
-def fact_source(real_db_engine):
+def fact_source(real_db_engine, seed_provider):
     provider = "rescue-" + uuid4().hex
     start = datetime(2026, 11, 1, tzinfo=UTC)
     end = start + timedelta(days=1)
     with real_db_engine.begin() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO core.providers (provider_id,display_name,timezone,provider_key) "
-                "VALUES (:p,:p,'America/Toronto',:p)"
-            ),
-            {"p": provider},
-        )
+        seed_provider(conn, provider, display_name=provider)
         snapshot = conn.execute(
             text("""
             WITH endpoint AS (
@@ -316,7 +310,6 @@ def test_rescue_partial_upload_resumes_without_receipt_until_both_match(tmp_path
 def test_rescue_closes_source_transaction_before_object_io(
     real_db_engine, fact_source, tmp_path, monkeypatch
 ):
-
     provider, _, _ = fact_source
     connections = []
 
@@ -410,7 +403,6 @@ def rescue_login(real_db_engine):
 def test_rescue_real_queued_lock_releases_only_source(
     real_db_engine, fact_source, tmp_path, monkeypatch, idle, rescue_login
 ):
-
     def connect():
         return rescue.psycopg.connect(
             **rescue_login.translate_connect_args(username="user", database="dbname"),
@@ -525,7 +517,6 @@ def test_rescue_asof_checkpoint_resumes_after_midnight(tmp_path, monkeypatch, ca
 def test_rescue_interrupt_reports_json_and_preserves_completed_spool(
     tmp_path, monkeypatch, capsys, complete
 ):
-
     options = args(
         tmp_path,
         "--not-after",
@@ -976,9 +967,8 @@ os.environ['DATABASE_URL']=os.environ['RESCUE_TEST_URL']
 tempfile.gettempdir=lambda:sys.argv[2]
 r.inventory=lambda c:[dict(table=t,provider='sample',minimum=None) for t in r.SCHEMAS]
 def slow(c,**kw):
- with c.cursor() as cur,cur.copy('COPY (SELECT pg_sleep(60)) TO STDOUT') as blocks:
-  print(c.info.backend_pid,flush=True)
-  list(blocks)
+ print(c.info.backend_pid,flush=True)
+ with c.cursor() as cur,cur.copy('COPY (SELECT pg_sleep(60)) TO STDOUT') as blocks:list(blocks)
 r.copy_fact_table=slow
 sys.exit(r.main(sys.argv[3:]))"""
     options = args(
@@ -1000,6 +990,16 @@ sys.exit(r.main(sys.argv[3:]))"""
     try:
         pid = int(process.stdout.readline())
         with real_db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as observer:
+            ready_by = rescue.time.monotonic() + 5
+            while not observer.execute(
+                text(
+                    "SELECT state='active' AND query LIKE '%pg_sleep%' "
+                    "FROM pg_stat_activity WHERE pid=:p"
+                ),
+                {"p": pid},
+            ).scalar():
+                assert rescue.time.monotonic() < ready_by, "COPY never reached the server"
+                rescue.time.sleep(0.02)
             started = rescue.time.monotonic()
             if mode == "SIGTERM":
                 process.terminate()
