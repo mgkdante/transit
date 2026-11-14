@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 from transit_ops.control.objects import key_part
 from transit_ops.history import datasets, ledger
@@ -82,6 +82,11 @@ def _decode[T: WindowDocument | EventRecord](cls: type[T], raw: dict[str, Any]) 
     if values.get("hold_until_utc") == "infinity":
         values["hold_until_utc"] = ledger.HOLD_NO_END
     result = TypeAdapter(cls).validate_python(values)
+    details = (
+        [result.details] if isinstance(result, EventRecord) else [c.details for c in result.copies]
+    )
+    for item in details:
+        TypeAdapter(JsonValue).validate_python(item, strict=True)
     canonical = json.dumps(asdict(result), default=_json, allow_nan=False, sort_keys=True)
     _require(canonical == json.dumps(values, default=_json, allow_nan=False, sort_keys=True))
     return result

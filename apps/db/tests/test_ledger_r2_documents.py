@@ -35,6 +35,7 @@ def test_round_trip_every_field_and_hold():
         ("content_version", 3),
         ("is_current", False),
         ("window_start", "2026-01-01"),
+        ("details", {"at": NOW}),
     ]:
         raw = m.encode_window(doc)
         raw["copies"][0][field] = invalid
@@ -62,7 +63,10 @@ def test_decode_refuses_invalid_window(field, value):
         m.decode_window({**m.encode_window(DOC), field: value})
 
 
-@pytest.mark.parametrize("field,value", [("kind", "unknown"), ("actor", ""), ("format", 2)])
+@pytest.mark.parametrize(
+    "field,value",
+    [("kind", "unknown"), ("actor", ""), ("format", 2), ("details", {"value": (1, 2)})],
+)
 def test_decode_refuses_invalid_event(field, value):
     with pytest.raises(m.LedgerDocumentInvalid):
         m.decode_event({**m.encode_event(RECORD), field: value})
