@@ -6,6 +6,7 @@ import pytest
 from transit_ops.history import datasets
 from transit_ops.lake.table_export import (
     ExportRefused,
+    SchemaDrift,
     WindowSpec,
     build_copy_statement,
     order_by,
@@ -267,9 +268,19 @@ def test_fact_statement_has_the_rescue_shape():
         ("silver.routes", "a" * 64, 0),
         ("gold.report_labels", "2026-11", -1),
         ("gold.report_labels", "2026-11", 1),
+        ("gold.network_vehicle_day", "2026-11", True),
+        ("gold.network_vehicle_day", "2026-11", 0.0),
+        ("gold.network_vehicle_day", "2026-11", 2.5),
     ],
 )
 def test_invalid_windows_are_refused(dataset, key, revision):
+    schema = TableSchema.from_columns([("service_date", "date", True)], ["service_date"])
     with pytest.raises(ExportRefused) as error:
-        window_predicate(WindowSpec(dataset, "network", key, revision))
+        window_predicate(WindowSpec(dataset, "network", key, revision), schema)
     assert error.value.reason == "window"
+
+
+def test_builder_refuses_a_key_different_from_the_declaration():
+    schema = TableSchema.from_columns([("other", "text", True)], ["other"])
+    with pytest.raises(SchemaDrift):
+        build_copy_statement(WindowSpec("gold.report_labels", "_shared", "2026-11"), schema)

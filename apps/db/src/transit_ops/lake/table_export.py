@@ -2,12 +2,14 @@
 
 import csv
 import hashlib
+import os
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, BinaryIO, Literal
 
 from psycopg import Connection, sql
@@ -21,8 +23,6 @@ from transit_ops.history.datasets import (
     window_start,
 )
 from transit_ops.lake.table_schema import InvalidSchema, TableSchema, UnsupportedColumnType
-
-Row = tuple[Any, ...]
 
 
 class ExportRefused(ValueError):
@@ -165,10 +165,11 @@ def build_copy_statement(
 ) -> tuple[sql.Composed, tuple[object, ...]]:
     """Select every catalog column unchanged, ordered by the full primary key.
 
-    The caller validates catalog/declaration agreement before using this statement.
     No cast changes PostgreSQL's text for numeric, arrays or JSON.
     """
     _, source = _declaration(spec)
+    if schema.primary_key != source.key_columns:
+        raise SchemaDrift(f"Primary key differs for {source.table}")
     has_provider = any(column.name == "provider_id" for column in schema.columns)
     if has_provider == (spec.provider_id == "_shared"):
         raise ExportRefused("window")
@@ -199,7 +200,7 @@ def build_copy_statement(
 
 
 def _catalog(
-    connection: Connection[Row], source: TableSource, expected: TableSchema | None
+    connection: Connection[Any], source: TableSource, expected: TableSchema | None
 ) -> tuple[TableSchema, frozenset[str]]:
     columns = connection.execute(
         "SELECT attname, format_type(atttypid, atttypmod), attnotnull, attcollation <> 0 "
@@ -226,7 +227,7 @@ def _catalog(
 
 @contextmanager
 def _snapshot(
-    connection: Connection[Row], spec: WindowSpec, timeout: int, expected: TableSchema | None = None
+    connection: Connection[Any], spec: WindowSpec, timeout: int, expected: TableSchema | None = None
 ) -> Iterator[tuple[TableSchema, sql.Composed, tuple[object, ...], datetime, str]]:
     validate_timeout(timeout)
     dataset, source = _declaration(spec)
@@ -270,7 +271,7 @@ def _snapshot(
 
 
 def _copy(
-    connection: Connection[Row],
+    connection: Connection[Any],
     statement: sql.Composed,
     values: tuple[object, ...],
     output: BinaryIO | None = None,
@@ -287,25 +288,40 @@ def _copy(
 
 
 def export_window(
-    connection: Connection[Row],
+    connection: Connection[Any],
     spec: WindowSpec,
     destination: Path,
     *,
     statement_timeout_s: int,
     expected_schema: TableSchema | None = None,
 ) -> ExportedWindow:
-    with _snapshot(connection, spec, statement_timeout_s, expected_schema) as snapshot:
-        schema, statement, values, at, version = snapshot
-        with destination.open("xb") as output:
-            digest, size, rows = _copy(connection, statement, values, output)
-    with destination.open(encoding="utf8", newline="") as stream:
-        if next(csv.reader(stream), None) != [column.name for column in schema.columns]:
-            raise SchemaDrift("CSV header differs from catalog")
+    with TemporaryDirectory(dir=destination.parent, prefix=".export-") as directory:
+        temporary = Path(directory) / "window.csv"
+        with _snapshot(connection, spec, statement_timeout_s, expected_schema) as snapshot:
+            schema, statement, values, at, version = snapshot
+            with temporary.open("xb") as output:
+                digest, size, rows = _copy(connection, statement, values, output)
+                output.flush()
+                os.fsync(output.fileno())
+        with temporary.open(encoding="utf8", newline="") as stream:
+            if next(csv.reader(stream), None) != [column.name for column in schema.columns]:
+                raise SchemaDrift("CSV header differs from catalog")
+        os.link(temporary, destination)
     return ExportedWindow(spec, destination, digest, size, rows, schema, at, version)
 
 
 def recheck_window(
-    connection: Connection[Row], spec: WindowSpec, *, statement_timeout_s: int
+    connection: Connection[Any],
+    spec: WindowSpec,
+    *,
+    statement_timeout_s: int,
+    expected_schema: TableSchema | None = None,
 ) -> tuple[str, int, int]:
-    with _snapshot(connection, spec, statement_timeout_s) as (_, statement, values, _, _):
+    with _snapshot(connection, spec, statement_timeout_s, expected_schema) as (
+        _,
+        statement,
+        values,
+        _,
+        _,
+    ):
         return _copy(connection, statement, values)

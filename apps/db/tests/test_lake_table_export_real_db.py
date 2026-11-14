@@ -1,12 +1,14 @@
 import csv
-from datetime import timedelta
+from dataclasses import replace
 from functools import partial
+from uuid import uuid4
 
 import psycopg
 import pytest
 from test_rescue_fact_day import fact_source as fact_source
 from test_rescue_fact_day import rescue
 
+from transit_ops.history import datasets
 from transit_ops.lake.table_export import (
     ExportRefused,
     SchemaDrift,
@@ -70,74 +72,80 @@ def test_fact_day_export_is_byte_identical_to_the_rescue_export(
         export(source, spec, result.csv_path)
 
 
-def test_month_shared_drift_and_transaction_refusals(source, fact_source, tmp_path):
-    provider, start, _ = fact_source
-    spec = WindowSpec("gold.network_vehicle_day", provider, "2026-11", 2)
+@pytest.fixture
+def owned(source, monkeypatch):
+    table = "public.export_" + uuid4().hex
+    original = datasets.get_dataset("gold.network_vehicle_day")
+    declared = replace(original, dataset_id=table, source=replace(original.source, table=table))
+    monkeypatch.setattr(
+        datasets, "HISTORY_DATASETS", {**datasets.HISTORY_DATASETS, table: declared}
+    )
+    source.execute(
+        f"CREATE TABLE {table} (provider_id text, revision int, service_date date, "
+        "value text NOT NULL, PRIMARY KEY(provider_id,revision,service_date))"
+    )
     try:
-        for day in [start.date() - timedelta(days=1), start.date(), start.date().replace(month=12)]:
-            source.execute(
-                "INSERT INTO gold.network_vehicle_day VALUES (%s,2,%s,1,1,1,'x')", (provider, day)
-            )
-        result = export(source, spec, tmp_path / "month.csv")
-        with result.csv_path.open(newline="", encoding="utf8") as stream:
-            assert [row["service_date"] for row in csv.DictReader(stream)] == ["2026-11-01"]
-        with source.transaction(), pytest.raises(ExportRefused, match="not_read_only"):
-            export(source, spec, tmp_path / "refused.csv")
-        assert not (tmp_path / "refused.csv").exists()
-        shared = export(
-            source, WindowSpec("gold.report_labels", "_shared", "2026-11"), tmp_path / "shared.csv"
-        )
-        assert (
-            shared.rows == source.execute("SELECT count(*) FROM gold.report_labels").fetchone()[0]
-        )
-        source.execute("ALTER TABLE gold.network_vehicle_day ADD COLUMN export_test text")
-        try:
-            with pytest.raises(SchemaDrift):
-                export(source, spec, tmp_path / "drift.csv", expected_schema=result.schema)
-        finally:
-            source.execute("ALTER TABLE gold.network_vehicle_day DROP COLUMN export_test")
-        alter = "ALTER TABLE gold.network_vehicle_day DROP CONSTRAINT network_vehicle_day_pkey, "
-        source.execute(alter + "ADD PRIMARY KEY (provider_id, service_date, revision)")
-        try:
-            with pytest.raises(SchemaDrift):
-                export(source, spec, tmp_path / "key.csv")
-            with pytest.raises(SchemaDrift):
-                recheck(source, spec)
-        finally:
-            source.execute(alter + "ADD PRIMARY KEY (provider_id, revision, service_date)")
+        source.execute(f"INSERT INTO {table} VALUES ('p',2,'2026-11-01','old')")
+        yield WindowSpec(table, "p", "2026-11", 2)
     finally:
-        source.execute("DELETE FROM gold.network_vehicle_day WHERE provider_id=%s", (provider,))
+        source.execute(f"DROP TABLE {table}")
 
 
-def test_edition_resolution_is_provider_scoped_and_unique(source, fact_source, tmp_path):
-    provider, _, _ = fact_source
-    spec = WindowSpec("silver.routes", provider, "a" * 64)
-    ids = []
+def test_month_window_of_a_rollup_contains_exactly_its_month(source, owned, tmp_path):
+    source.execute(
+        f"INSERT INTO {owned.dataset_id} VALUES "
+        "('p',2,'2026-10-31','before'),('p',2,'2026-12-01','after')"
+    )
+    result = export(source, owned, tmp_path / "month.csv")
+    with result.csv_path.open(newline="", encoding="utf8") as stream:
+        assert [row["service_date"] for row in csv.DictReader(stream)] == ["2026-11-01"]
+
+
+def test_whole_table_export_of_a_shared_table(source, tmp_path):
+    result = export(
+        source, WindowSpec("gold.report_labels", "_shared", "2026-11"), tmp_path / "all.csv"
+    )
+    assert result.rows == source.execute("SELECT count(*) FROM gold.report_labels").fetchone()[0]
+
+
+@pytest.mark.parametrize("active", [True, False])
+def test_export_refuses_a_writable_transaction_and_writes_nothing(source, owned, tmp_path, active):
+    source.autocommit = False
+    if active:
+        source.execute("SELECT 1")
     try:
-        for index in range(2):
-            row = source.execute(
-                "INSERT INTO core.dataset_versions "
-                "(provider_id,feed_endpoint_id,source_ingestion_run_id,"
-                "content_hash,checksum_sha256) "
-                "SELECT provider_id,feed_endpoint_id,ingestion_run_id,%s,%s "
-                "FROM raw.realtime_snapshot_index WHERE provider_id=%s "
-                "RETURNING dataset_version_id",
-                ("a" * 64, "a" * 64, provider),
-            ).fetchone()
-            ids.append(row[0])
-            source.execute(
-                "INSERT INTO silver.routes (provider_id,dataset_version_id,route_id,route_type) "
-                "VALUES (%s,%s,'南',3)",
-                (provider, ids[-1]),
-            )
-            if index == 0:
-                assert export(source, spec, tmp_path / "edition.csv").rows == 1
-                with pytest.raises(ExportRefused, match="window"):
-                    recheck(
-                        source, WindowSpec(spec.dataset_id, provider + "-other", spec.window_key)
-                    )
-        with pytest.raises(ExportRefused, match="window"):
-            recheck(source, spec)
+        with pytest.raises(ExportRefused, match="not_read_only"):
+            export(source, owned, tmp_path / "refused.csv")
+        assert not list(tmp_path.iterdir())
     finally:
-        source.execute("DELETE FROM silver.routes WHERE dataset_version_id=ANY(%s)", (ids,))
-        source.execute("DELETE FROM core.dataset_versions WHERE dataset_version_id=ANY(%s)", (ids,))
+        source.rollback()
+        source.autocommit = True
+
+
+@pytest.mark.parametrize("change", ["value TYPE varchar(1000)", "value DROP NOT NULL"])
+def test_recheck_refuses_same_byte_schema_drift(source, owned, tmp_path, change):
+    result = export(source, owned, tmp_path / "old.csv")
+    source.execute(f"ALTER TABLE {owned.dataset_id} ALTER COLUMN {change}")
+    assert recheck(source, owned)[0] == result.content_sha256
+    with pytest.raises(SchemaDrift):
+        recheck(source, owned, expected_schema=result.schema)
+
+
+def test_changed_primary_key_is_refused(source, owned, tmp_path):
+    source.execute(
+        f"ALTER TABLE {owned.dataset_id} DROP CONSTRAINT "
+        f"{owned.dataset_id.split('.')[1]}_pkey, ADD PRIMARY KEY(provider_id,service_date,revision)"
+    )
+    with pytest.raises(SchemaDrift):
+        export(source, owned, tmp_path / "key.csv")
+    with pytest.raises(SchemaDrift):
+        recheck(source, owned)
+
+
+def test_lock_failure_leaves_no_file_and_same_destination_can_retry(source, owned, tmp_path):
+    with psycopg.connect(source.info.dsn) as blocker, blocker.transaction():
+        blocker.execute(f"LOCK TABLE {owned.dataset_id} IN ACCESS EXCLUSIVE MODE")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            export(source, owned, tmp_path / "retry.csv")
+        assert not list(tmp_path.iterdir())
+    assert export(source, owned, tmp_path / "retry.csv").rows == 1
