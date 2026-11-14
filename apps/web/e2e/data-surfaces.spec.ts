@@ -89,11 +89,13 @@ for (const lang of PUBLISHED_LOCALES)
 			'/search?q=' + encodeURIComponent(stopName),
 		]) {
 			await page.goto(localizeHref(path, lang, manifest.provider));
+			await page.waitForLoadState('networkidle');
 			const stamps = page.locator('[data-slot="freshness-stamp"]');
 			for (const stamp of await stamps.all()) {
 				await expect(stamp).toHaveAttribute('data-form', /^(live|record)$/);
 				if ((await stamp.getAttribute('data-form')) === 'live') {
-					await expect(stamp).toHaveText(pattern);
+					await expect(stamp.locator('time')).not.toHaveCSS('white-space', 'nowrap');
+					await expect(stamp.locator('time')).toHaveText(pattern);
 					liveCount++;
 				}
 			}

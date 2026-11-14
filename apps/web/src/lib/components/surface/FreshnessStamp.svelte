@@ -116,6 +116,10 @@
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
+	.freshness-stamp--live .freshness-stamp-age {
+		min-inline-size: 0;
+		max-inline-size: 100%;
+	}
 	.freshness-stamp-age {
 		color: var(--muted-foreground);
 	}

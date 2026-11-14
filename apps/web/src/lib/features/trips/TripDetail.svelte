@@ -295,9 +295,6 @@
 		max-width: 100%;
 		flex-wrap: wrap;
 	}
-	:global(.trip-report-stamp > *) {
-		white-space: nowrap;
-	}
 
 	.trip-head-actions {
 		display: flex;

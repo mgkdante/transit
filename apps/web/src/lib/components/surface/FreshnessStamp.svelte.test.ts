@@ -21,6 +21,11 @@ it.each(['en', 'fr'] as const)(
 		expect(stamp.querySelector('time')).toHaveAttribute('datetime', presentation.generatedUtc);
 		expect(stamp).not.toHaveAttribute('aria-live');
 		expect(stamp).toHaveAttribute('data-state', 'current');
+		expect(stamp.querySelector('time')?.textContent).toMatch(
+			locale === 'en'
+				? /^Live · updated 5 minutes ago$/
+				: /^En direct · mis à jour il y a 5 minutes$/,
+		);
 	},
 );
 

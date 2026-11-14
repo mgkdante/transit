@@ -715,9 +715,6 @@
 		max-width: 100%;
 		flex-wrap: wrap;
 	}
-	:global(.stop-report-stamp > *) {
-		white-space: nowrap;
-	}
 	.stop-report-note {
 		margin: 0;
 		color: var(--muted-foreground);

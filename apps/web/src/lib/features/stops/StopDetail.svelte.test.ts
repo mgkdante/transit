@@ -497,6 +497,7 @@ describe('StopDetail article contract', () => {
 			};
 			const { container } = render(StopDetail, { props: { id: '57191' } });
 			expect(screen.getByText(alertUnavailableCopy[locale].body('OC Transpo'))).toBeVisible();
+			expect(container.querySelector('[data-subject="alerts"]')).toBeNull();
 			expect(screen.getByRole('link', { name: alertUnavailableCopy[locale].link })).toHaveAttribute(
 				'href',
 				stopDetailNav.page.data.provider.alert_links![locale],

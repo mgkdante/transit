@@ -211,7 +211,7 @@
 	.pulse-stamp {
 		display: flex;
 		align-items: center;
-		min-height: 1.5rem;
+		min-block-size: 4lh;
 	}
 	.pulse-tiles {
 		display: grid;
@@ -362,6 +362,9 @@
 		font-size: var(--text-small);
 	}
 	@media (min-width: 640px) {
+		.pulse-stamp {
+			min-block-size: 3lh;
+		}
 		.pulse-worst-lists {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 			column-gap: 2rem;

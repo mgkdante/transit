@@ -1,8 +1,6 @@
-import { defineCopy } from '#lib/i18n/copy.ts';
-
 export type LiveState = 'current' | 'behind' | 'not-responding' | 'unknown';
 
-export const stampCopy = defineCopy({
+export const stampCopy = {
 	en: {
 		live: (subject: 'data' | 'alerts', state: LiveState, age: string | null) =>
 			(subject === 'alerts' ? 'Live alerts' : 'Live') +
@@ -39,4 +37,4 @@ export const stampCopy = defineCopy({
 				.filter(Boolean)
 				.join(' · '),
 	},
-});
+};
