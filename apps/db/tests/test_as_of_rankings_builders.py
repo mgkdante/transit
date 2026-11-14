@@ -703,7 +703,9 @@ def test_hotspots_history_production_plan_executes_exactly_four_closed_day_queri
         strict=True,
     )
 
-    plan = _history_module().build_hotspots_history_plan(conn, provider_id="stm")
+    plan = _history_module().build_hotspots_history_plan(
+        conn, provider_id="stm", as_of_utc=datetime(2026, 7, 7, tzinfo=UTC)
+    )
 
     assert [day.date for day in plan.iter_days()] == ["2026-07-05", "2026-07-06"]
     assert [query_name(sql) for sql in conn.executed] == [
@@ -713,8 +715,14 @@ def test_hotspots_history_production_plan_executes_exactly_four_closed_day_queri
         "history.hotspots.stop_daily",
     ]
     route_sql, stop_sql = conn.executed[-2:]
-    assert "provider_local_date < timezone(dp.timezone, now())::date" in route_sql
-    assert "provider_local_date < timezone(dp.timezone, now())::date" in stop_sql
+    assert (
+        "provider_local_date < timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date"
+        in route_sql
+    )
+    assert (
+        "provider_local_date < timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date"
+        in stop_sql
+    )
     assert "ORDER BY" in route_sql and "ORDER BY" in stop_sql
     assert "LIMIT" not in route_sql and "LIMIT" not in stop_sql
     assert "ORDER BY sp.provider_local_date, sp.route_id" in route_sql
@@ -1405,7 +1413,9 @@ def test_repeat_offenders_history_production_plan_executes_exactly_three_queries
         strict=True,
     )
 
-    plan = _history_module().build_repeat_offenders_history_plan(conn, provider_id="stm")
+    plan = _history_module().build_repeat_offenders_history_plan(
+        conn, provider_id="stm", as_of_utc=datetime(2026, 7, 7, tzinfo=UTC)
+    )
 
     assert [value.date for value in plan.iter_days()] == ["2026-07-05", "2026-07-06"]
     assert [query_name(sql) for sql in conn.executed] == [
@@ -1415,7 +1425,10 @@ def test_repeat_offenders_history_production_plan_executes_exactly_three_queries
     ]
     sql = conn.executed[-1]
     assert "FROM gold.repeat_offender_daily_spine AS sp" in sql
-    assert "provider_local_date < timezone(dp.timezone, now())::date" in sql
+    assert (
+        "provider_local_date < timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date"
+        in sql
+    )
     assert "ORDER BY sp.provider_local_date, sp.entity_kind, sp.entity_id, sp.route_id" in sql
     assert "LIMIT" not in sql
     assert "gold.repeat_offender AS" not in sql

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,8 @@ from transit_ops.snapshots.contract import (
     VehiclesFile,
 )
 from transit_ops.sql_registry import query_name
+
+_BUILD_STAMP = datetime(2026, 7, 21, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("builder", [build_alerts, build_trips, build_stop_departures])
@@ -58,7 +61,7 @@ class FakeResult:
 
 class FakeConn:
     def __init__(self, responses):  # noqa: ANN001
-        self._responses = responses
+        self._responses = {"history.build.as_of": [_BUILD_STAMP], **responses}
         self.executed: list[str] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001, ARG002
@@ -2141,7 +2144,9 @@ def test_build_stop_reliability_emits_shift_and_daytype_grains() -> None:
                 return FakeResult([])
             return FakeResult([])
 
-    out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
+    out = build_stop_reliability(
+        FC(), provider_id="stm", generated_utc="t", as_of_utc=_BUILD_STAMP
+    )
     assert "51234" in out
     by_grain = {p.grain: p for p in out["51234"].periods}
 
@@ -2225,7 +2230,9 @@ def test_build_stop_reliability_occupancy_mix_none_when_no_telemetry() -> None:
                 return FakeResult([])
             return FakeResult([])
 
-    out = build_stop_reliability(FC(), provider_id="stm", generated_utc="t")
+    out = build_stop_reliability(
+        FC(), provider_id="stm", generated_utc="t", as_of_utc=_BUILD_STAMP
+    )
     assert "51234" in out
     assert out["51234"].occupancy_mix is None
 
@@ -2312,7 +2319,9 @@ def test_build_network_trend_emits_week_and_month_grain_series() -> None:
         def execute(self, statement, params=None):  # noqa: ANN001, ANN201, ARG002
             return FakeResult(dispatch.get(query_name(statement), []))
 
-    out = build_network_trend(FC(), provider_id="stm", generated_utc="t")
+    out = build_network_trend(
+        FC(), provider_id="stm", generated_utc="t", as_of_utc=_BUILD_STAMP
+    )
 
     assert [p.date for p in out.weekly] == ["2026-06-01", "2026-06-08"]
     w0, w1 = out.weekly

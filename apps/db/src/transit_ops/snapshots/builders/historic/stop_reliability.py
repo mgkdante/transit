@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import (
     current_date_trailing_clause,
     daytype_case_sql,
 )
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.snapshots.builders._helpers import (
     _STOP_NAMES_SQL,
     _avg_delay_min,
@@ -202,9 +204,14 @@ _STOP_DOW_SQL = named_query(
 
 
 def build_stop_reliability(
-    conn: Connection, *, provider_id: str, generated_utc: str
+    conn: Connection,
+    *,
+    provider_id: str,
+    generated_utc: str,
+    as_of_utc: datetime | None = None,
 ) -> dict[str, StopReliability]:
-    params = {"provider_id": provider_id}
+    as_of_utc = resolve_as_of(conn, as_of_utc)
+    params = {"as_of_utc": as_of_utc, "provider_id": provider_id}
 
     def _weighted_avg_sec(obs: object, weighted: object) -> float | None:
         return (float(weighted) / float(obs)) if obs and weighted is not None else None

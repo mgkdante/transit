@@ -1,8 +1,10 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import Connection
 
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.settings import Settings
 from transit_ops.snapshots import builders, envelope, historic_tree
 from transit_ops.snapshots.contract import (
@@ -23,12 +25,21 @@ class Compatibility:
     alerts: builders.AlertArchiveBundle
 
 
-def build(conn: Connection, *, provider_id: str, settings: Settings, stamp: str) -> Compatibility:
+def build(
+    conn: Connection,
+    *,
+    provider_id: str,
+    settings: Settings,
+    stamp: str,
+    as_of_utc: datetime | None = None,
+) -> Compatibility:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     items, routes, stages, alerts = _build_items(
         conn,
         provider_id=provider_id,
         settings=settings,
         stamp=stamp,
+        as_of_utc=as_of_utc,
     )
     envelope.stamp_envelope(items, provider_id=provider_id, stamp=stamp)
     _finalize_receipts_collection_generation(items)
@@ -73,7 +84,7 @@ def _finalize_receipts_collection_generation(items: Sequence[PutItem]) -> None:
 
 
 def _build_items(
-    conn: Connection, *, provider_id: str, settings: Settings, stamp: str
+    conn: Connection, *, provider_id: str, settings: Settings, stamp: str, as_of_utc: datetime
 ) -> tuple[list[PutItem], list[PutItem], list[PublishStage], builders.AlertArchiveBundle]:
 
     items: list[PutItem] = []
@@ -81,7 +92,9 @@ def _build_items(
     flat_items: list[PutItem] = [
         (
             "historic/network_trend.json",
-            builders.build_network_trend(conn, provider_id=provider_id, generated_utc=stamp),
+            builders.build_network_trend(
+                conn, provider_id=provider_id, generated_utc=stamp, as_of_utc=as_of_utc
+            ),
             "historic",
         ),
         (
@@ -96,12 +109,16 @@ def _build_items(
         ),
         (
             "historic/alert_history.json",
-            builders.build_alert_history(conn, provider_id=provider_id, generated_utc=stamp),
+            builders.build_alert_history(
+                conn, provider_id=provider_id, generated_utc=stamp, as_of_utc=as_of_utc
+            ),
             "historic",
         ),
         (
             "provenance.json",
-            builders.build_provenance(conn, provider_id=provider_id, generated_utc=stamp),
+            builders.build_provenance(
+                conn, provider_id=provider_id, generated_utc=stamp, as_of_utc=as_of_utc
+            ),
             "historic",
         ),
     ]
@@ -110,6 +127,7 @@ def _build_items(
         conn,
         provider_id=provider_id,
         generated_utc=stamp,
+        as_of_utc=as_of_utc,
     )
     route_ids = sorted(route_payloads)
     route_items: list[PutItem] = [
@@ -132,7 +150,7 @@ def _build_items(
     )
 
     all_stops_rel = builders.build_stop_reliability(
-        conn, provider_id=provider_id, generated_utc=stamp
+        conn, provider_id=provider_id, generated_utc=stamp, as_of_utc=as_of_utc
     )
     stop_items: list[PutItem] = [
         (f"historic/stop_reliability/{stop_id}.json", stop_rel, "historic")

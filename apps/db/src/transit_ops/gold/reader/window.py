@@ -44,7 +44,10 @@ class GrainWindows:
 
 
 def current_date_trailing_clause(col: str, *, days: int = 30, tz_alias: str = "dp") -> str:
-    return f"{col} >= (now() AT TIME ZONE {tz_alias}.timezone)::date - {days}"
+    return (
+        f"{col} >= (CAST(:as_of_utc AS timestamptz) "
+        f"AT TIME ZONE {tz_alias}.timezone)::date - {days}"
+    )
 
 
 _AS_OF_SQL = named_query("history.build.as_of", "SELECT now()")

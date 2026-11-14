@@ -445,6 +445,7 @@ def test_legacy_window_and_truncation_keep_unknown_provenance() -> None:
         connection,
         provider_id="stm",
         generated_utc="2026-07-13T00:00:00Z",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
     )
 
     assert payload.model_dump_json() == (
@@ -632,6 +633,7 @@ def test_alert_duration_rounding_matches_mutable_and_retained_windows(seconds, e
         ),
         generated_utc="t",
         provider_id="stm",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
     )
     assert bundle.page_items[0][1].alerts[0].duration_min == expected
     assert current.alerts[0].duration_min == expected
@@ -660,6 +662,7 @@ def test_alert_breakdown_takes_median_of_published_whole_minutes() -> None:
         ),
         generated_utc="t",
         provider_id="stm",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
     )
     assert [alert.duration_min for alert in current.alerts] == [1, 3]
     assert current.breakdown.by_severity[0].median_duration_min == 2

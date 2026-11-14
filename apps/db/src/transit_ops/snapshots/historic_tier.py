@@ -82,10 +82,12 @@ def _build_historic_point_plans(
     conn: Connection,
     *,
     provider_id: str,
+    as_of_utc: datetime,
 ) -> HistoricPointPlanBundle:
     hotspots = builders.build_hotspots_history_plan(
         conn,
         provider_id=provider_id,
+        as_of_utc=as_of_utc,
     )
     return HistoricPointPlanBundle(
         hotspots=hotspots,
@@ -93,6 +95,7 @@ def _build_historic_point_plans(
             conn,
             provider_id=provider_id,
             names=hotspots.names,
+            as_of_utc=as_of_utc,
         ),
     )
 
@@ -152,7 +155,7 @@ def publish(
 
         _historic._activate_historic_phase(_historic_run, "compatibility")
         compatibility = historic_compatibility.build(
-            conn, provider_id=provider_id, settings=settings, stamp=stamp
+            conn, provider_id=provider_id, settings=settings, stamp=stamp, as_of_utc=as_of_utc
         )
         items, route_items, stages, alert_archive = (
             compatibility.items,
@@ -190,7 +193,9 @@ def publish(
             builders.build_stop_history_plan,
             as_of_utc=as_of_utc,
         )
-        point_plans = _build_historic_point_plans(conn, provider_id=provider_id)
+        point_plans = _build_historic_point_plans(
+            conn, provider_id=provider_id, as_of_utc=as_of_utc
+        )
         effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
         alert_findings = gate.check_alert_archive_bundle(
             alert_archive.index,
@@ -428,7 +433,7 @@ def collect(
     if stamp is None:
         stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     compatibility = historic_compatibility.build(
-        conn, provider_id=provider_id, settings=settings, stamp=stamp
+        conn, provider_id=provider_id, settings=settings, stamp=stamp, as_of_utc=as_of_utc
     )
     items, route_items, _alert_archive = (
         compatibility.items,
@@ -460,7 +465,8 @@ def collect(
             as_of_utc=as_of_utc,
         )
     point_plans = (
-        _build_historic_point_plans(conn, provider_id=provider_id) if "points" in include else None
+        _build_historic_point_plans(conn, provider_id=provider_id, as_of_utc=as_of_utc)
+        if "points" in include else None
     )
     return HistoricValidationInputs(
         all_items=[(k, p) for (k, p, _t) in items],

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders._helpers import (
@@ -36,7 +38,16 @@ _PROVENANCE_FRESHNESS_SQL = named_query(
     "provenance.freshness",
     """
     SELECT endpoint_key, status, completed_age_seconds
-    FROM gold.feed_freshness_current
+    FROM (
+        SELECT DISTINCT ON (ir.provider_id, fe.endpoint_key)
+            ir.provider_id, fe.endpoint_key, ir.status,
+            (EXTRACT(epoch FROM (CAST(:as_of_utc AS timestamptz)
+                - ir.completed_at_utc)))::integer AS completed_age_seconds
+        FROM raw.ingestion_runs AS ir
+        JOIN core.feed_endpoints AS fe ON fe.feed_endpoint_id = ir.feed_endpoint_id
+        WHERE ir.run_kind <> 'silver_load'::text
+        ORDER BY ir.provider_id, fe.endpoint_key, ir.started_at_utc DESC
+    ) AS latest_runs
     WHERE provider_id = :provider_id
     ORDER BY endpoint_key
     """,
@@ -64,8 +75,11 @@ _PROVENANCE_CONFORMANCE_SQL = named_query(
 )
 
 
-def build_provenance(conn: Connection, *, provider_id: str, generated_utc: str) -> Provenance:
-    params = {"provider_id": provider_id}
+def build_provenance(
+    conn: Connection, *, provider_id: str, generated_utc: str, as_of_utc: datetime | None = None
+) -> Provenance:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
+    params = {"as_of_utc": as_of_utc, "provider_id": provider_id}
 
     registry = ProviderRegistry.from_project_root()
     gaps = (
