@@ -635,6 +635,7 @@ def sync_alert_archive(
     dry_run: bool = False,
     settings: Settings | None = None,
     engine: Engine | None = None,
+    synced_at_utc: datetime | None = None,
 ) -> AlertArchiveSyncResult:
     if from_date > to_date:
         raise ValueError("from_date must be on or before to_date")
@@ -647,4 +648,5 @@ def sync_alert_archive(
             from_date=from_date,
             to_date=to_date,
             dry_run=dry_run,
+            synced_at_utc=synced_at_utc,
         )
