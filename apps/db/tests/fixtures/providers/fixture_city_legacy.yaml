@@ -1,0 +1,44 @@
+provider:
+  provider_id: fixture_city
+  display_name: Exampleville Transit
+  short_name: EVT
+  city: Exampleville
+  timezone: America/Winnipeg
+  default_language: en
+  attribution_text: Contains information licensed under the Open Government Licence of Exampleville.
+  is_active: false
+public:
+  enabled: false
+  labels:
+    en: {city: Exampleville, operator: EVT}
+    fr: {city: Exampleville, operator: EVT}
+feeds:
+  static_schedule:
+    endpoint_key: static_schedule
+    feed_kind: static_schedule
+    source_format: gtfs_schedule_zip
+    source_url: https://example.org/gtfs/google_transit.zip
+    documentation_url: https://example.org/open-data/licence
+    refresh_interval_seconds: 86400
+    auth: {auth_type: none}
+  trip_updates: &realtime
+    endpoint_key: trip_updates
+    feed_kind: trip_updates
+    source_format: gtfs_rt_trip_updates
+    source_url: https://example.org/gtfs-rt/trip-updates.pb
+    documentation_url: https://example.org/open-data/licence
+    refresh_interval_seconds: 30
+    auth: {auth_type: api_key, credential_env_var: FIXTURE_CITY_API_KEY, auth_query_param: key}
+  vehicle_positions:
+    <<: *realtime
+    endpoint_key: vehicle_positions
+    feed_kind: vehicle_positions
+    source_format: gtfs_rt_vehicle_positions
+    source_url: https://example.org/gtfs-rt/vehicle-positions.pb
+  service_alerts:
+    <<: *realtime
+    endpoint_key: service_alerts
+    feed_kind: service_alerts
+    source_format: gtfs_rt_service_alerts
+    source_url: https://example.org/gtfs-rt/alerts.pb
+    refresh_interval_seconds: 300
