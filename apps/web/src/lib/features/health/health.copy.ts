@@ -2,6 +2,9 @@ import { defineCopy, type Locale } from '#lib/i18n/copy.ts';
 import { articleCopy } from '#lib/components/layout/articleCopy.ts';
 import type { SurfaceHeadCopy } from '#lib/components/surface/index.ts';
 
+/** Ends a sentence on a date, without doubling the period of an abbreviation such as "nov.". */
+const end = (date: string) => (date.endsWith('.') ? date : `${date}.`);
+
 export const copy = defineCopy({
 	en: {
 		questions: {
@@ -25,7 +28,17 @@ export const copy = defineCopy({
 			liveAsOf: 'LIVE FEEDS AS OF',
 		}),
 		heading: 'Is the data up to date?',
-		lede: 'How current each data source is, what is missing and why, and how long we keep history. When something is missing we show “no data” instead of guessing.',
+		summary: {
+			current: (age: string) => `Up to date: live vehicle data, updated ${age}.`,
+			behind: (age: string) => `Not current: live vehicle data, last updated ${age}.`,
+			record: (through: string, published: string) =>
+				`The reliability record covers service through ${through}. It was published on ${published}.`,
+			next: (date: string) => `Next update: ${end(date)}`,
+			clear: 'Nothing known affects the figures on this site right now.',
+			warning: (n: string, count: number) =>
+				`The last record was published with ${n} ${count === 1 ? 'warning' : 'warnings'}. Line, stop and ranking figures come from it; check the date beside each figure.`,
+			gaps: (names: string) => `Not measured: ${names}. These lines publish no live data.`,
+		},
 		overview: {
 			title: 'Overview',
 			dailyRecord: 'Daily record',
@@ -55,6 +68,9 @@ export const copy = defineCopy({
 				metro_realtime: 'Metro: no live vehicle data',
 				otrain_realtime: 'O-Train: no live vehicle data',
 			},
+			names: { metro_realtime: 'Metro', otrain_realtime: 'O-Train' } as Readonly<
+				Record<string, string>
+			>,
 		},
 		pipelineNotes: {
 			section: 'How we calculate',
@@ -238,7 +254,20 @@ export const copy = defineCopy({
 			liveAsOf: 'FLUX EN DIRECT À JOUR AU',
 		}),
 		heading: 'Les données sont-elles à jour?',
-		lede: 'À quel point chaque source est à jour, ce qui manque et pourquoi, et combien de temps on garde l’historique. Quand une donnée manque, on affiche « aucune donnée » plutôt que de deviner.',
+		summary: {
+			current: (age: string) =>
+				`À jour : les données en direct des véhicules, mises à jour ${age}.`,
+			behind: (age: string) =>
+				`Pas à jour : les données en direct des véhicules, dernière mise à jour ${age}.`,
+			record: (through: string, published: string) =>
+				`Le bilan de fiabilité couvre le service jusqu’au ${end(through)} Il a été publié le ${end(published)}`,
+			next: (date: string) => `Prochaine mise à jour : le ${end(date)}`,
+			clear: 'Rien de connu n’affecte les chiffres de ce site en ce moment.',
+			warning: (n: string, count: number) =>
+				`Le dernier bilan a été publié avec ${n} ${count === 1 ? 'avertissement' : 'avertissements'}. Les chiffres des lignes, des arrêts et des classements en proviennent; vérifiez la date à côté de chaque chiffre.`,
+			gaps: (names: string) =>
+				`Non mesuré : ${names}. Ces lignes ne publient aucune donnée en direct.`,
+		},
 		overview: {
 			title: 'Vue d’ensemble',
 			dailyRecord: 'Bilan quotidien',
@@ -268,6 +297,9 @@ export const copy = defineCopy({
 				metro_realtime: 'Métro : aucune donnée en direct',
 				otrain_realtime: 'O-Train : aucune donnée en direct',
 			} as Readonly<Record<string, string>>,
+			names: { metro_realtime: 'Métro', otrain_realtime: 'O-Train' } as Readonly<
+				Record<string, string>
+			>,
 		},
 		pipelineNotes: {
 			section: 'Comment on calcule',

@@ -8,11 +8,34 @@ import type {
 	IsoUtc,
 	Provenance,
 } from '#lib/v1/schemas/index.ts';
+import { ManifestSchema } from '#lib/v1/schemas/index.ts';
+import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
 import { createSurfaceHarness } from '../../../tests/surfaceHarness';
 import HealthStatus from './HealthStatus.svelte';
 import { copy } from './health.copy';
 
 vi.mock('@testing-library/svelte', { spy: true });
+const live = vi.hoisted(() => ({
+	vehicles: null,
+	familyStates: { vehicles: { health: { retained: true, ageSeconds: 20, isStale: false } } },
+	start: () => {},
+	stop: vi.fn(),
+}));
+vi.mock('#lib/v1/live/store.svelte.ts', () => ({ createLiveStore: vi.fn(() => live) }));
+const manifest = ManifestSchema.parse({
+	attribution: '',
+	bbox: [],
+	dataset_version: '',
+	labels: {},
+	surfaces: [],
+	provider: 'invented-network',
+	display_name: 'Network',
+	tz: 'America/Toronto',
+	files: {
+		live: { generated_utc: '2026-07-14T12:00:00Z' },
+		historic: { generated_utc: '2026-07-14T00:00:00Z' },
+	},
+});
 
 const en = copy.en;
 const localeContext = (locale: 'en' | 'fr') =>
@@ -292,7 +315,7 @@ afterAll(() => {
 });
 
 describe('HealthStatus — full manifest render', () => {
-	it('renders the shared status article header with truthful meta, body lede, and no default band', () => {
+	it('renders the shared status article header with truthful meta, the summary, and no default band', () => {
 		const { container } = render(HealthStatus);
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 
@@ -310,7 +333,7 @@ describe('HealthStatus — full manifest render', () => {
 		expect(header).toHaveTextContent('2026');
 		expect(container.querySelector('[data-slot="detail-shell-header"]')).toBeNull();
 		const center = container.querySelector('[data-slot="detail-shell-center"]') as HTMLElement;
-		expect(within(center).getByText(en.lede)).toBeInTheDocument();
+		expect(center.querySelector('[data-slot="health-summary"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="detail-shell"]')?.parentElement).toBe(container);
 	});
 
@@ -402,6 +425,34 @@ describe('HealthStatus — full manifest render', () => {
 		).toBeNull();
 	});
 
+	it('opens with three plain lines: live data, the record, and what to doubt', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-07-14T12:00:00Z'));
+		const lanes = richDataHealth.lanes!.map((lane) =>
+			lane.lane === 'rollup' ? { ...lane, gate: { verdict: 'warn', warnings: 1 } } : lane,
+		);
+		dataHealthState = ready({ ...richDataHealth, lanes });
+		vi.mocked(createLiveStore).mockClear();
+		const { container, unmount } = render(HealthStatus, { props: { manifest } });
+		const summary = container.querySelector('[data-slot="health-summary"]') as HTMLElement;
+
+		expect([...summary.querySelectorAll('p')].map((line) => line.textContent)).toEqual([
+			'Up to date: live vehicle data, updated 20 seconds ago.',
+			'The reliability record covers service through Jul 13. It was published on Jul 14.',
+			'The last record was published with 1 warning. Line, stop and ranking figures come from it; check the date beside each figure. Not measured: Metro. These lines publish no live data.',
+		]);
+		expect(summary).toHaveAttribute('aria-busy', 'false');
+		expect(summary.compareDocumentPosition(screen.getByText(en.lanes.note))).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING,
+		);
+		expect(createLiveStore).toHaveBeenCalledWith(manifest, expect.anything(), {
+			families: ['vehicles'],
+		});
+		unmount();
+		expect(live.stop).toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
 	it('keeps status article meta honestly absent when no status document is available', () => {
 		provenanceState = ready<Provenance>(null);
 		dataHealthState = ready<DataHealth>(null);
@@ -454,13 +505,11 @@ describe('HealthStatus — full manifest render', () => {
 		expect(pairs[1].querySelector('time')).toHaveAttribute('datetime', '2026-06-19T12:00:00Z');
 	});
 
-	it('keeps EN and FR status keywords distinct and removes internal /v1 jargon from the lede', () => {
+	it('keeps EN and FR status keywords distinct', () => {
 		expect(copy.en.article.tags).toEqual(['data', 'feeds', 'freshness', 'known gaps']);
 		expect(copy.fr.article.tags).toEqual(['données', 'flux', 'fraîcheur', 'lacunes connues']);
 		expect(copy.en.article.sections(1)).toBe('1 section');
 		expect(copy.fr.article.sections(1)).toBe('1 section');
-		expect(copy.en.lede).not.toContain('/v1');
-		expect(copy.fr.lede).not.toContain('/v1');
 	});
 
 	it('uses one wide left rail and renders At a glance once below its navigation', () => {
@@ -628,7 +677,7 @@ describe('HealthStatus — Overview and independent resources', () => {
 		const overview = screen
 			.getByRole('button', { name: overviewCopy.en.title })
 			.closest('[data-slot="card"]') as HTMLElement;
-		expect(within(overview).getByText(en.lede)).toBeInTheDocument();
+		expect(overview.querySelector('[data-slot="health-summary"]')).not.toBeNull();
 		expect(within(overview).getByText(overviewCopy.en.dailyRecord)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.en.liveFeeds)).toBeInTheDocument();
 		expect(within(overview).getByText(overviewCopy.en.retainedHistory)).toBeInTheDocument();

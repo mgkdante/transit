@@ -288,6 +288,20 @@ test('the status page stacks its coverage table on phones and says when data is 
 	expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 	await expect(page.getByRole('main').getByRole('status').first()).toBeVisible();
 });
+for (const lang of PUBLISHED_LOCALES)
+	test(`${lang}: the status page opens by saying how old live vehicle data is`, async ({
+		page,
+	}) => {
+		const t = healthCopy[lang].summary;
+		const forms = [t.current('\0'), t.behind('\0'), stampCopy[lang].live('data', 'unknown', null)];
+		const pattern = new RegExp(
+			'^(?:' + forms.map((form) => form.split('\0').join('.+')).join('|') + ')$',
+		);
+		await page.goto(localizeHref('/status', lang));
+		const summary = page.locator('[data-slot="health-summary"]');
+		await expect(summary.locator('p').first()).toHaveText(pattern);
+		await expect(summary).toHaveAttribute('aria-busy', 'false');
+	});
 test('rankings name lines by number in both languages', async ({ page }) => {
 	for (const lang of PUBLISHED_LOCALES) {
 		await page.goto(localizeHref('/hotspots', lang));

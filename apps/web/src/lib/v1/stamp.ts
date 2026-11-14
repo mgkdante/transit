@@ -1,6 +1,6 @@
 import type { Locale } from '#lib/i18n/copy.ts';
 import { formatRelativeSeconds, formatDateKey } from '#lib/utils/time.ts';
-import type { HistoricAvailabilityIndex, Manifest } from './schemas/index';
+import type { DataHealth, HistoricAvailabilityIndex, Manifest } from './schemas/index';
 import { recordClosedThrough } from './closedWindow';
 import { stampCopy, type LiveState } from './stamp.copy';
 export type { LiveState } from './stamp.copy';
@@ -46,6 +46,7 @@ export function recordStamp(input: {
 	readonly historyIndex: HistoricAvailabilityIndex | null;
 	readonly fileGeneratedUtc?: string | null;
 	readonly day?: string;
+	readonly dataHealth?: DataHealth | null;
 }): RecordStamp {
 	return {
 		form: 'record',
@@ -55,8 +56,12 @@ export function recordStamp(input: {
 			(input.fileGeneratedUtc ?? input.manifest?.files.historic?.generated_utc)?.slice(0, 10) ??
 			null,
 		nextUpdateUtc: null,
-		warning: false,
+		warning: ['warn', 'fail'].includes(recordGate(input.dataHealth)?.verdict ?? ''),
 	};
+}
+/** The quality check of the record's last publication: data health's rollup lane. */
+export function recordGate(dataHealth: DataHealth | null | undefined) {
+	return dataHealth?.lanes?.find((lane) => lane.lane === 'rollup')?.gate ?? null;
 }
 export function stampDate(key: string, locale: Locale, timeZone: string | undefined): string {
 	const year = timeZone
