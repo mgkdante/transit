@@ -44,6 +44,8 @@ PERCENTILE_LOOKBACK_DAYS = 13
 
 SET_ROLLUP_WORK_MEM = named_query("rollup.session.work_mem", "SET LOCAL work_mem = '512MB'")
 
+_BUILD_AS_OF_SQL = named_query("rollup.build.as_of", "SELECT now()")
+
 
 def provider_is_seeded(conn, provider_id: str) -> bool:  # noqa: ANN001
     sql = named_query(
@@ -1415,7 +1417,8 @@ UPSERT_ROUTE_HEADWAY_DAILY = named_query(
             MIN(f.captured_at_utc) AS trip_start_utc
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
-          AND f.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
+          AND f.captured_at_utc >= CAST(:as_of_utc AS timestamptz)
+              - make_interval(days => :fact_retention_days)
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
@@ -1560,7 +1563,8 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
             MIN(f.captured_at_utc) AS trip_start_utc
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
-          AND f.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
+          AND f.captured_at_utc >= CAST(:as_of_utc AS timestamptz)
+              - make_interval(days => :fact_retention_days)
           AND f.route_id IS NOT NULL
           AND f.trip_id IS NOT NULL
           AND f.delay_seconds IS NOT NULL
@@ -1797,7 +1801,8 @@ UPSERT_REPEAT_OFFENDER_DAILY = named_query(
         INNER JOIN gold.dim_provider AS dp
             ON dp.provider_id = f.provider_id
         WHERE f.provider_id = :provider_id
-          AND f.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
+          AND f.captured_at_utc >= CAST(:as_of_utc AS timestamptz)
+              - make_interval(days => :fact_retention_days)
           AND f.delay_seconds IS NOT NULL
           AND ABS(f.delay_seconds) <= 3600
           AND f.route_id IS NOT NULL
@@ -2243,7 +2248,12 @@ def build_warm_rollups(
     settings: Settings | None = None,
     engine: Engine | None = None,
     since_utc: datetime | None = None,
+    as_of_utc: datetime | None = None,
 ) -> WarmRollupBuildResult:
+    if as_of_utc is not None:
+        if as_of_utc.utcoffset() is None:
+            raise ValueError("as_of_utc must be timezone-aware")
+        as_of_utc = as_of_utc.astimezone(UTC)
     if settings is None:
         settings = get_settings()
     open_window_days = getattr(settings, "GOLD_REPORTING_OPEN_WINDOW_DAYS", 10)
@@ -2261,7 +2271,11 @@ def build_warm_rollups(
     if engine is None:
         engine = make_engine(settings)
 
+    build_now = as_of_utc
     with engine.begin() as conn:
+        set_daily_warm_transaction_timeouts(conn)
+        if as_of_utc is None:
+            as_of_utc = conn.execute(_BUILD_AS_OF_SQL).scalar_one()
         seeded = provider_is_seeded(conn, provider_id)
     if not seeded:
         logger.info(
@@ -2277,7 +2291,7 @@ def build_warm_rollups(
         )
     reporting_aggregate_row_counts: dict[str, int] = {}
     completed_stage_receipts: list[WarmRollupStageReceipt] = []
-    now = utc_now()
+    now = build_now if build_now is not None else utc_now()
 
     # Check UTC capture cutoffs as well as local dates near DST retention boundaries.
     percentile_lookback_days = PERCENTILE_LOOKBACK_DAYS
@@ -2285,7 +2299,7 @@ def build_warm_rollups(
         set_daily_warm_transaction_timeouts(conn)
         today_local = conn.execute(
             _PROVIDER_TODAY_LOCAL_SQL,
-            {"provider_id": provider_id},
+            {"provider_id": provider_id, "as_of_utc": as_of_utc},
         ).scalar_one()
     today_key = int(today_local.strftime("%Y%m%d"))
     floor_key = int((today_local - timedelta(days=percentile_lookback_days)).strftime("%Y%m%d"))
@@ -2353,6 +2367,7 @@ def build_warm_rollups(
                 "provider_id": provider_id,
                 "built_at_utc": now,
                 "fact_retention_days": fact_retention_days,
+                "as_of_utc": as_of_utc,
             }
             if table_name in WINDOWED_HISTORY_TABLES:
                 delete_params = {
@@ -2612,7 +2627,7 @@ def _rebuild_row_delete_sql(kind: RebuildableKind, *, dry_run: bool) -> object:
 
 _PROVIDER_TODAY_LOCAL_SQL = named_query(
     "rollup.provider.today_local",
-    "SELECT (now() AT TIME ZONE dp.timezone)::date "
+    "SELECT (CAST(:as_of_utc AS timestamptz) AT TIME ZONE dp.timezone)::date "
     "FROM gold.dim_provider AS dp WHERE dp.provider_id = :provider_id",
 )
 
@@ -2693,7 +2708,12 @@ def rebuild_warm_rollups(
     kinds: list[str] | None = None,
     dry_run: bool = False,
     confirm: Callable[[WarmRollupRebuildResult], bool] | None = None,
+    as_of_utc: datetime | None = None,
 ) -> WarmRollupRebuildResult:
+    if as_of_utc is not None:
+        if as_of_utc.utcoffset() is None:
+            raise ValueError("as_of_utc must be timezone-aware")
+        as_of_utc = as_of_utc.astimezone(UTC)
     if settings is None:
         settings = get_settings()
     if from_date > to_date:
@@ -2703,13 +2723,16 @@ def rebuild_warm_rollups(
         engine = make_engine(settings)
 
     target_kinds = _resolve_rebuild_kinds(kinds)
-    now = utc_now()
+    wall_now = utc_now()
+    now = as_of_utc if as_of_utc is not None else wall_now
 
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
+        if as_of_utc is None:
+            as_of_utc = conn.execute(_BUILD_AS_OF_SQL).scalar_one()
         today_local = conn.execute(
             _PROVIDER_TODAY_LOCAL_SQL,
-            {"provider_id": provider_id},
+            {"provider_id": provider_id, "as_of_utc": as_of_utc},
         ).scalar_one()
     floor_local = today_local - timedelta(days=fact_retention_days - 1)
     if from_date < floor_local:
@@ -2749,7 +2772,7 @@ def rebuild_warm_rollups(
             to_date=to_date,
             dry_run=True,
             aborted=False,
-            completed_at_utc=now,
+            completed_at_utc=wall_now,
             deleted_row_counts=deleted_rows,
             deleted_watermark_counts=deleted_watermarks,
         )
@@ -2771,7 +2794,7 @@ def rebuild_warm_rollups(
         to_date=to_date,
         dry_run=False,
         aborted=False,
-        completed_at_utc=now,
+        completed_at_utc=wall_now,
         deleted_row_counts=plan_rows,
         deleted_watermark_counts=plan_watermarks,
     )
@@ -2894,7 +2917,7 @@ def rebuild_warm_rollups(
         to_date=to_date,
         dry_run=False,
         aborted=False,
-        completed_at_utc=now,
+        completed_at_utc=wall_now,
         deleted_row_counts=deleted_rows,
         deleted_watermark_counts=deleted_watermarks,
         rebuilt_day_counts=rebuilt_days,

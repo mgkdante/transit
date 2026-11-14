@@ -163,6 +163,9 @@ class FakeConnection:
         sql = str(statement)
         self.executed.append(sql)
 
+        if query_name(statement) == "rollup.build.as_of":
+            return ScalarResult(datetime(2026, 3, 26, 12, tzinfo=UTC))
+
         if query_name(statement) == "rollup.daily.built_calendars":
             return IterableResult([])
 
