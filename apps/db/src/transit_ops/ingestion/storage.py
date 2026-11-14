@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -100,19 +102,29 @@ class LocalBronzeStorage(BronzeStorage):
     def put_if_absent(self, temp_path: Path, storage_path: str) -> str:
         final_path = self.root / Path(storage_path)
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        with temp_path.open("rb") as source:
+        temporary = final_path.with_name(f".transit-bronze-{uuid4().hex}.tmp")
+        created = False
+        try:
+            with temporary.open("xb") as destination:
+                created = True
+                with temp_path.open("rb") as source:
+                    shutil.copyfileobj(source, destination)
+            # Only completed, closed files become visible at the object key.
             try:
-                destination = final_path.open("xb")
+                os.link(temporary, final_path)
             except FileExistsError as exc:
                 raise ObjectAlreadyExists(
                     f"Bronze archive path already exists: {final_path}"
                 ) from exc
-            try:
-                with destination:
-                    shutil.copyfileobj(source, destination)
-            except BaseException:
-                final_path.unlink()
-                raise
+        except BaseException as failure:
+            if created:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    failure.add_note(f"Temporary Bronze cleanup failed: {cleanup_error}")
+            raise
+        else:
+            temporary.unlink()
         temp_path.unlink()
         return str(final_path)
 
