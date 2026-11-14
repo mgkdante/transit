@@ -2,14 +2,16 @@
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
-from typing import Any
+from hashlib import sha256
+from typing import Any, cast
 
 from pydantic import JsonValue, TypeAdapter
 
 from transit_ops.control.objects import key_part
 from transit_ops.history import datasets, ledger
+from transit_ops.snapshots.serialization import snapshot_json_bytes
 
 type Identity = tuple[str, str, int, str]
 
@@ -31,6 +33,7 @@ class EventRecord:
     actor: str
     reason: str | None
     details: dict[str, object]
+    sequence: tuple[int, int] | None = None  # Assigned when the envelope commits.
 
 
 def _identity(doc: ledger.WindowState | ledger.ArchiveCopy) -> Identity:
@@ -68,7 +71,11 @@ def encode_window(doc: WindowDocument) -> dict[str, Any]:
 
 
 def encode_event(record: EventRecord) -> dict[str, Any]:
-    return {"format": 1, **asdict(record)}
+    return {
+        "format": 1,
+        **asdict(record),
+        "sequence": list(record.sequence) if record.sequence is not None else None,
+    }
 
 
 def _require(valid: bool) -> None:
@@ -97,6 +104,7 @@ def decode_event(raw: dict[str, Any]) -> EventRecord:
         record = _decode(EventRecord, raw)
         _require(bool(record.actor))
         _require(record.content_version is None or record.content_version >= 1)
+        _require(record.sequence is None or (record.sequence[0] >= 1 and record.sequence[1] >= 0))
         return record
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise LedgerDocumentInvalid("invalid event record") from exc
@@ -105,9 +113,7 @@ def decode_event(raw: dict[str, Any]) -> EventRecord:
 def decode_window(raw: dict[str, Any]) -> WindowDocument:
     try:
         doc = _decode(WindowDocument, raw)
-        dataset = datasets.get_dataset(doc.dataset_id)
-        ledger._check_revision(dataset, doc.revision)
-        _require(doc.window_start == datasets.window_start(dataset, doc.window_key))
+        _require(doc.window_start == _window_start(_identity(doc)))
         _require(doc.seq >= 1)
         versions = [copy.content_version for copy in doc.copies]
         _require(versions == sorted(set(versions)))
@@ -134,3 +140,66 @@ def decode_window(raw: dict[str, Any]) -> WindowDocument:
         return doc
     except (KeyError, TypeError, ValueError, AttributeError, datasets.UndeclaredDataset) as exc:
         raise LedgerDocumentInvalid("invalid window document") from exc
+
+
+def _window_start(identity: Identity) -> date | None:
+    dataset = datasets.get_dataset(identity[0])
+    ledger._check_revision(dataset, identity[2])
+    return datasets.window_start(dataset, identity[3])
+
+
+def decode_transition(
+    raw: bytes,
+    identity: Identity,
+    seq: int,
+    before: bytes | None,
+) -> WindowDocument | None:
+    """Validate a write-ahead envelope, including an event-only absent state."""
+    try:
+        event = json.loads(raw)
+        _require(type(event["format"]) is int and event["format"] == 1)
+        _require(type(event["seq"]) is int and event["seq"] == seq)
+        _require(event["before_sha256"] == (sha256(before).hexdigest() if before else None))
+        _require(
+            datetime.fromisoformat(event["at_utc"].replace("Z", "+00:00")).utcoffset() is not None
+        )
+        _require(isinstance(event["records"], list))
+        for index, record in enumerate(event["records"]):
+            _require(decode_event(record).sequence == (seq, index))
+        if event["after"] is None:
+            _require(before is None and bool(event["records"]))
+            _window_start(identity)
+            return None
+        doc = decode_window(event["after"])
+        _require(_identity(doc) == identity and doc.seq == seq)
+        return doc
+    except (KeyError, TypeError, ValueError, AttributeError, datasets.UndeclaredDataset) as exc:
+        raise LedgerDocumentInvalid("invalid window transition") from exc
+
+
+def prepare_transition(
+    after: WindowDocument | None,
+    records: tuple[EventRecord, ...],
+    identity: Identity,
+    seq: int,
+    before: bytes | None,
+    at: datetime,
+) -> tuple[WindowDocument | None, dict[str, Any]]:
+    for record in records:
+        if after is not None and record.kind == "trim":
+            fingerprint = record.details.get("remainder_fingerprint")
+            after = replace(after, remainder_fingerprint=cast(str | None, fingerprint))
+    event = {
+        "format": 1,
+        "seq": seq,
+        "at_utc": _json(at),
+        "before_sha256": sha256(before).hexdigest() if before else None,
+        "records": [
+            encode_event(replace(decode_event(encode_event(r)), sequence=(seq, index)))
+            for index, r in enumerate(records)
+        ],
+        "after": encode_window(after) if after is not None else None,
+    }
+    after = decode_transition(snapshot_json_bytes(event), identity, seq, before)
+    event["after"] = encode_window(after) if after is not None else None
+    return after, event

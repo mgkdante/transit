@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import UTC, date, datetime
 
@@ -70,3 +71,28 @@ def test_decode_refuses_invalid_window(field, value):
 def test_decode_refuses_invalid_event(field, value):
     with pytest.raises(m.LedgerDocumentInvalid):
         m.decode_event({**m.encode_event(RECORD), field: value})
+
+
+def test_public_record_sequence_round_trips_and_rejects_invalid_coordinates():
+    record = replace(RECORD, sequence=(7, 0))
+    assert m.encode_event(record)["sequence"] == [7, 0]
+    assert m.decode_event(m.encode_event(record)) == record
+    for sequence in ([0, 0], [1, -1], [1], [1.0, 0]):
+        with pytest.raises(m.LedgerDocumentInvalid):
+            m.decode_event({**m.encode_event(record), "sequence": sequence})
+
+
+def test_event_only_envelope_requires_indexed_public_records():
+    record = m.encode_event(replace(RECORD, sequence=(1, 0)))
+    envelope = {
+        "format": 1,
+        "seq": 1,
+        "at_utc": "2026-01-02T03:04:05.123456Z",
+        "before_sha256": None,
+        "after": None,
+        "records": [record],
+    }
+    assert m.decode_transition(json.dumps(envelope).encode(), ID, 1, None) is None
+    for records in ([], [{**record, "sequence": [1, 1]}], [m.encode_event(RECORD)]):
+        with pytest.raises(m.LedgerDocumentInvalid):
+            m.decode_transition(json.dumps({**envelope, "records": records}).encode(), ID, 1, None)
