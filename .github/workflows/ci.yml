@@ -148,8 +148,17 @@ jobs:
       - name: Run real-DB test suite
         run: |
           unset PGHOST PGHOSTADDR PGPORT PGDATABASE PGUSER PGSERVICE PGSERVICEFILE
-          uv run pytest tests -n 4 --dist worksteal --max-worker-restart=0 --durations=20
+          uv run pytest tests -n 4 --dist worksteal --max-worker-restart=0 --durations=20 -rs --junitxml=real-db-junit.xml
         working-directory: apps/db
+
+      - name: Upload real-DB test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: real-db-junit
+          path: apps/db/real-db-junit.xml
+          retention-days: 14
+          if-no-files-found: warn
 
   required-contexts:
     needs:
