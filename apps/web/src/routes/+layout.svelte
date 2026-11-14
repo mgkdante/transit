@@ -81,11 +81,11 @@
 	import { legalCopy } from '#lib/features/legal/legal.copy.ts';
 	import {
 		chromeSearchResultHref,
-		chromeSearchResults,
+		searchTransit,
 		scopeForPath,
 		type ChromeSearchResult,
 		type ChromeSearchScope,
-	} from '#lib/search/chromeSearch.ts';
+	} from '#lib/search/transitSearch.ts';
 	import type { TransitModeKey } from '#lib/search/stopMode.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { GeocodeSuggestion } from '#lib/geocode/types.ts';
@@ -287,15 +287,14 @@
 			: null,
 	);
 	const topSearchResults = $derived(
-		chromeSearchResults(
-			topSearch,
+		searchTransit(
+			{ surface: 'header', query: topSearch, scope: searchScope, modes: searchModes },
 			{
 				routes: searchRoutes.data?.routes ?? [],
 				stops: searchStops.data?.stops ?? [],
 				vehicles: searchLive?.vehicles?.vehicles ?? [],
 				addresses: addressSuggestions,
 			},
-			{ scope: searchScope, modes: searchModes },
 		),
 	);
 
@@ -431,15 +430,14 @@
 	async function submitSearch(value: string): Promise<void> {
 		if (!data.v1) return;
 		const query = value.trim();
-		const [first] = chromeSearchResults(
-			query,
+		const [first] = searchTransit(
+			{ surface: 'header', query, scope: searchScope, modes: searchModes },
 			{
 				routes: searchRoutes.data?.routes ?? [],
 				stops: searchStops.data?.stops ?? [],
 				vehicles: searchLive?.vehicles?.vehicles ?? [],
 				addresses: addressSuggestions,
 			},
-			{ scope: searchScope, modes: searchModes },
 		);
 		if (first) {
 			await selectSearchResult(first);
@@ -450,7 +448,10 @@
 		if (searchModes.size > 0) return;
 		if (!shouldSuggestAddress(query)) return;
 		const addresses = await fetchAddressSuggestions(query, 1);
-		const [addressResult] = chromeSearchResults(query, { addresses }, { scope: searchScope });
+		const [addressResult] = searchTransit(
+			{ surface: 'header', query, scope: searchScope },
+			{ addresses },
+		);
 		if (addressResult) await selectSearchResult(addressResult);
 	}
 

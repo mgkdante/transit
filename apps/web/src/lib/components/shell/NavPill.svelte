@@ -26,7 +26,7 @@
 		localizeHref,
 		localizeUrl,
 	} from '#lib/i18n/index.ts';
-	import type { ChromeSearchResult, ChromeSearchScope } from '#lib/search/chromeSearch.ts';
+	import type { ChromeSearchResult, ChromeSearchScope } from '#lib/search/transitSearch.ts';
 	import type { TransitModeKey } from '#lib/search/stopMode.ts';
 	import { SvelteSet } from 'svelte/reactivity';
 	import SearchControls, {

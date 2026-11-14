@@ -15,13 +15,7 @@
 	import { getV1Context } from '#lib/v1/boot.ts';
 	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
 	import { createReliabilityLoader } from '#lib/v1/reliabilitySnapshot.svelte.ts';
-	import type {
-		RouteIndexEntry,
-		StopIndexEntry,
-		Vehicle,
-		StatusCode,
-		OccupancyCode,
-	} from '#lib/v1/index.ts';
+	import type { RouteIndexEntry, Vehicle, StatusCode, OccupancyCode } from '#lib/v1/index.ts';
 	import {
 		ResourceBoundary,
 		EntityList,
@@ -37,14 +31,11 @@
 	import { FreshnessStamp } from '#lib/components/surface/index.ts';
 	import MetricInfo from '#lib/features/metrics/MetricInfo.svelte';
 	import { metricName } from '#lib/metrics.ts';
-	import { dedupeBy, foldSearchText, tokenMatchScore } from '#lib/search/normalize.ts';
+	import { searchTransit } from '#lib/search/transitSearch.ts';
 	import {
-		stopGroupKey,
 		stopModeHint,
-		stopModeKey,
 		stopModeTag,
 		routeModeHint,
-		routeModeKey,
 		type TransitModeKey,
 	} from '#lib/search/stopMode.ts';
 	import { routeColor } from '#lib/search/routeColor.ts';
@@ -77,56 +68,18 @@
 	const MAX_RESULTS = 50;
 
 	let query = $state(new URLSearchParams(page.url.search).get('q') ?? '');
-	const normalized = $derived(foldSearchText(query));
-	const hasQuery = $derived(normalized.length > 0);
-
 	let scope = $state<SearchScopeKey>('all');
 	const modes = new SvelteSet<TransitModeKey>();
-	const modeActive = $derived(modes.size > 0);
-
-	const matchedRoutesAll = $derived.by<RouteIndexEntry[]>(() => {
-		if (!hasQuery || !routes.data) return [];
-		return routes.data.routes
-			.map((r) => ({ r, score: tokenMatchScore([r.id, r.short, r.long], normalized) }))
-			.filter((m): m is { r: RouteIndexEntry; score: number } => m.score != null)
-			.sort((a, b) => a.score - b.score)
-			.map((m) => m.r);
-	});
-	const matchedStopsAll = $derived.by<StopIndexEntry[]>(() => {
-		if (!hasQuery || !stops.data) return [];
-		const ranked = stops.data.stops
-			.map((s) => ({ s, score: tokenMatchScore([s.id, s.name, s.code], normalized) }))
-			.filter((m): m is { s: StopIndexEntry; score: number } => m.score != null)
-			.sort((a, b) => a.score - b.score)
-			.map((m) => m.s);
-		return dedupeBy(ranked, stopGroupKey);
-	});
-	const matchedVehiclesAll = $derived.by<Vehicle[]>(() => {
-		if (!hasQuery) return [];
-		const all = live.vehicles?.vehicles ?? [];
-		return all.filter((v) => foldSearchText(v.id) === normalized);
-	});
-
-	const matchedRoutes = $derived(
-		modeActive
-			? matchedRoutesAll.filter((r) => {
-					const m = routeModeKey(r.type);
-					return m != null && modes.has(m);
-				})
-			: matchedRoutesAll,
+	const matches = $derived(
+		searchTransit(
+			{ surface: 'page', query, modes },
+			{ routes: routes.data?.routes, stops: stops.data?.stops, vehicles: live.vehicles?.vehicles },
+		),
 	);
-	const matchedStops = $derived(
-		modeActive
-			? matchedStopsAll.filter((s) => {
-					const m = stopModeKey(s);
-					return m != null && modes.has(m);
-				})
-			: matchedStopsAll,
-	);
-
-	const matchedVehicles = $derived(
-		modeActive ? (modes.has('bus') ? matchedVehiclesAll : []) : matchedVehiclesAll,
-	);
+	const hasQuery = $derived(matches.query.length > 0);
+	const matchedRoutes = $derived(matches.routes);
+	const matchedStops = $derived(matches.stops);
+	const matchedVehicles = $derived(matches.vehicles);
 
 	const showRoutes = $derived((scope === 'all' || scope === 'route') && matchedRoutes.length > 0);
 	const showStops = $derived((scope === 'all' || scope === 'stop') && matchedStops.length > 0);

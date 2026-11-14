@@ -37,15 +37,80 @@ export interface ChromeSearchResult {
 	readonly precision?: GeocodePrecision;
 }
 
-interface ChromeSearchSources {
+export interface SearchSources {
 	readonly routes?: readonly RouteIndexEntry[] | null;
 	readonly stops?: readonly StopIndexEntry[] | null;
 	readonly vehicles?: readonly Vehicle[] | null;
 	readonly addresses?: readonly GeocodeSuggestion[] | null;
 }
 
-function routeLabel(route: RouteIndexEntry): string {
-	return route.long ? `${route.short} ${route.long}` : route.short;
+export interface HeaderSearchRequest extends ChromeSearchOptions {
+	readonly query: string;
+	readonly surface: 'header';
+}
+export interface PageSearchRequest {
+	readonly query: string;
+	readonly surface: 'page';
+	readonly modes?: ReadonlySet<TransitModeKey>;
+}
+export interface PageSearchResults {
+	readonly query: string;
+	readonly routes: RouteIndexEntry[];
+	readonly stops: StopIndexEntry[];
+	readonly vehicles: Vehicle[];
+}
+interface Candidate<T> {
+	value: T;
+	score: number;
+}
+interface Candidates {
+	routes: Candidate<RouteIndexEntry>[];
+	stops: Candidate<StopIndexEntry>[];
+	vehicles: Vehicle[];
+}
+
+function scoredCandidates<T>(
+	values: readonly T[],
+	query: string,
+	fields: (value: T) => readonly (string | null | undefined)[],
+): Candidate<T>[] {
+	return values
+		.map((value) => ({ value, score: tokenMatchScore(fields(value), query) }))
+		.filter((match): match is Candidate<T> => match.score != null);
+}
+function byScore(a: { score: number }, b: { score: number }): number {
+	return a.score - b.score;
+}
+
+function candidates(
+	request: HeaderSearchRequest | PageSearchRequest,
+	sources: SearchSources,
+	query: string,
+): Candidates {
+	const modes = request.modes?.size ? request.modes : null;
+	const keepsMode = (mode: TransitModeKey | null): boolean => !modes || (!!mode && modes.has(mode));
+	const routes = scoredCandidates(sources.routes ?? [], query, (route) => [
+		route.id,
+		route.short,
+		route.long,
+	])
+		.filter(({ value }) => keepsMode(routeModeKey(value.type)))
+		.sort(byScore);
+	const stopMatches = scoredCandidates(sources.stops ?? [], query, (stop) => [
+		stop.code,
+		stop.id,
+		stop.name,
+	])
+		.filter(({ value }) => request.surface === 'page' || keepsMode(stopModeKey(value)))
+		.sort(byScore);
+	// Header selects a representative from allowed modes; page selects it before filtering.
+	const stops = dedupeBy(stopMatches, ({ value }) => stopGroupKey(value)).filter(({ value }) =>
+		keepsMode(stopModeKey(value)),
+	);
+	const vehicles = keepsMode('bus')
+		? (sources.vehicles ?? []).filter((vehicle) => foldSearchText(vehicle.id) === query)
+		: [];
+	return { routes, stops, vehicles };
 }
 
 function collate(a: ChromeSearchResult, b: ChromeSearchResult): number {
@@ -54,42 +119,23 @@ function collate(a: ChromeSearchResult, b: ChromeSearchResult): number {
 		a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
 	);
 }
-
-export function chromeSearchResults(
-	query: string,
-	sources: ChromeSearchSources,
-	options: ChromeSearchOptions = {},
-): ChromeSearchResult[] {
-	const q = foldSearchText(query);
-	if (!q) return [];
-
-	const scope = options.scope ?? 'all';
-	const modes = options.modes?.size ? options.modes : null;
-	const keepsMode = (mode: TransitModeKey | null): boolean => !modes || (!!mode && modes.has(mode));
-
-	const routes = (sources.routes ?? [])
-		.map((route): ChromeSearchResult | null => {
-			const score = tokenMatchScore([route.id, route.short, route.long], q);
-			if (score == null || !keepsMode(routeModeKey(route.type))) return null;
-			return {
+function headerRoutes(routes: Candidates['routes']): ChromeSearchResult[] {
+	return routes
+		.map(
+			({ value: route, score }): ChromeSearchResult => ({
 				kind: 'route',
 				id: route.id,
-				label: routeLabel(route),
+				label: route.long ? `${route.short} ${route.long}` : route.short,
 				priority: score,
-			};
-		})
-		.filter((result): result is ChromeSearchResult => result != null)
+			}),
+		)
 		.sort(collate)
 		.slice(0, 5);
-
-	const stopMatches = (sources.stops ?? [])
-		.map((stop) => ({ stop, score: tokenMatchScore([stop.code, stop.id, stop.name], q) }))
-		.filter((m): m is { stop: StopIndexEntry; score: number } => m.score != null)
-		.filter((m) => keepsMode(stopModeKey(m.stop)))
-		.sort((a, b) => a.score - b.score);
-	const stops = dedupeBy(stopMatches, (m) => stopGroupKey(m.stop))
+}
+function headerStops(stops: Candidates['stops']): ChromeSearchResult[] {
+	return stops
 		.map(
-			({ stop, score }): ChromeSearchResult => ({
+			({ value: stop, score }): ChromeSearchResult => ({
 				kind: 'stop',
 				id: stop.id,
 				label: stopDisplayName(stop.name),
@@ -98,42 +144,83 @@ export function chromeSearchResults(
 			}),
 		)
 		.slice(0, 5);
-
-	const vehicles = (keepsMode('bus') ? (sources.vehicles ?? []) : [])
-		.filter((vehicle) => foldSearchText(vehicle.id) === q)
+}
+function headerVehicles(
+	vehicles: Candidates['vehicles'],
+	routes: SearchSources['routes'],
+): ChromeSearchResult[] {
+	return [...vehicles]
+		.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
+		.slice(0, 3)
 		.map(
 			(vehicle): ChromeSearchResult => ({
 				kind: 'vehicle',
 				id: vehicle.id,
 				label: vehicle.id,
-				meta: vehicle.route
-					? `Route ${lineLabel(vehicle.route, sources.routes ?? [])}`
-					: 'Live bus',
+				meta: vehicle.route ? `Route ${lineLabel(vehicle.route, routes ?? [])}` : 'Live bus',
 				priority: 20,
 			}),
-		)
+		);
+}
+function headerAddresses(
+	request: HeaderSearchRequest,
+	sources: SearchSources,
+): ChromeSearchResult[] {
+	return (request.modes?.size ? [] : (sources.addresses ?? [])).slice(0, 3).map(
+		(address, index): ChromeSearchResult => ({
+			kind: 'address',
+			id: addressResultId(address),
+			label: address.label,
+			meta: precisionLabel(address.precision),
+			priority: 30 + index,
+			lat: address.lat,
+			lon: address.lon,
+			precision: address.precision,
+		}),
+	);
+}
+function headerResults(
+	request: HeaderSearchRequest,
+	sources: SearchSources,
+	matches: Candidates,
+): ChromeSearchResult[] {
+	const routes = headerRoutes(matches.routes);
+	const stops = headerStops(matches.stops);
+	if (request.scope === 'route') return routes;
+	if (request.scope === 'stop') return stops;
+	return [
+		...routes,
+		...stops,
+		...headerVehicles(matches.vehicles, sources.routes),
+		...headerAddresses(request, sources),
+	]
 		.sort(collate)
-		.slice(0, 3);
+		.slice(0, 8);
+}
 
-	const addresses = (modes ? [] : (sources.addresses ?? []))
-		.map(
-			(address, index): ChromeSearchResult => ({
-				kind: 'address',
-				id: addressResultId(address),
-				label: address.label,
-				meta: precisionLabel(address.precision),
-				priority: 30 + index,
-				lat: address.lat,
-				lon: address.lon,
-				precision: address.precision,
-			}),
-		)
-		.sort(collate)
-		.slice(0, 3);
-
-	if (scope === 'route') return routes.slice(0, 8);
-	if (scope === 'stop') return stops.slice(0, 8);
-	return [...routes, ...stops, ...vehicles, ...addresses].sort(collate).slice(0, 8);
+export function searchTransit(
+	request: HeaderSearchRequest,
+	sources: SearchSources,
+): ChromeSearchResult[];
+export function searchTransit(
+	request: PageSearchRequest,
+	sources: SearchSources,
+): PageSearchResults;
+export function searchTransit(
+	request: HeaderSearchRequest | PageSearchRequest,
+	sources: SearchSources,
+): ChromeSearchResult[] | PageSearchResults {
+	const query = foldSearchText(request.query);
+	const matches = query
+		? candidates(request, sources, query)
+		: { routes: [], stops: [], vehicles: [] };
+	if (request.surface === 'header') return query ? headerResults(request, sources, matches) : [];
+	return {
+		query,
+		routes: matches.routes.map(({ value }) => value),
+		stops: matches.stops.map(({ value }) => value),
+		vehicles: matches.vehicles,
+	};
 }
 
 export function scopeForPath(delocalizedPath: string): ChromeSearchScope {

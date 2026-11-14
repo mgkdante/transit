@@ -164,9 +164,9 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	},
 	desktop: { current: true },
 }));
-vi.mock('#lib/search/chromeSearch.ts', () => ({
+vi.mock('#lib/search/transitSearch.ts', () => ({
 	chromeSearchResultHref: () => '/map',
-	chromeSearchResults: () => [],
+	searchTransit: () => [],
 	scopeForPath: () => 'all',
 }));
 

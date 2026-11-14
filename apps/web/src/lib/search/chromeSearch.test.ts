@@ -4,12 +4,22 @@ import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '#lib/v1/schemas/i
 vi.mock('$app/navigation', () => ({ goto: () => Promise.resolve() }));
 
 import {
-	chromeSearchResults,
+	searchTransit,
+	type SearchSources,
+	type ChromeSearchOptions,
 	chromeSearchHref,
 	chromeSearchResultHref,
 	scopeForPath,
 	type ChromeSearchResult,
-} from './chromeSearch';
+} from './transitSearch';
+
+function chromeSearchResults(
+	query: string,
+	sources: SearchSources,
+	options: ChromeSearchOptions = {},
+): ChromeSearchResult[] {
+	return searchTransit({ surface: 'header', query, ...options }, sources);
+}
 
 const routes: RouteIndexEntry[] = [
 	{ id: '24', short: '24', long: 'Sherbrooke', type: 3 },
@@ -47,6 +57,35 @@ const vehicles: Vehicle[] = [
 ];
 
 describe('chromeSearchResults', () => {
+	it("preserves each surface's tied line and stop order", () => {
+		const routes = [
+			{ id: 'z', short: '20', long: 'Café', type: 3 },
+			{ id: 'a', short: '3', long: 'Café', type: 3 },
+		];
+		const stops = [
+			{ id: 'z', code: 'z', name: 'Zulu Hub', lat: 0, lon: 0 },
+			{ id: 'a', code: 'a', name: 'Alpha Hub', lat: 0, lon: 0 },
+		];
+		expect(chromeSearchResults('café', { routes }).map((r) => r.id)).toEqual(['a', 'z']);
+		expect(chromeSearchResults('hub', { stops }).map((r) => r.id)).toEqual(['a', 'z']);
+	});
+	it("keeps exact, prefix, substring and reversed-token matches in today's order", () => {
+		const routes = ['x hub', 'hub north', 'hub', 'hub x'].map((long, i) => ({
+			id: `r${i}`,
+			short: `n${i}`,
+			long,
+			type: 3,
+		}));
+		expect(chromeSearchResults('hub', { routes }).map((r) => r.id)).toEqual([
+			'r2',
+			'r1',
+			'r3',
+			'r0',
+		]);
+		expect(chromeSearchResults('x hub', { routes }).map((r) => r.id)).toEqual(['r0', 'r3']);
+		expect(chromeSearchResults('n1', { routes }).map((r) => r.id)).toEqual(['r1']);
+		expect(chromeSearchResults('r1', { routes }).map((r) => r.id)).toEqual(['r1']);
+	});
 	it('prioritizes route and stop matches over exact live bus ids', () => {
 		const results = chromeSearchResults('161', { routes, stops, vehicles });
 
@@ -441,4 +480,49 @@ describe('chromeSearchResults mode filter', () => {
 		expect(withModes).toEqual([]);
 		expect(chromeSearchResults('casgrain', { addresses }).length).toBe(1);
 	});
+});
+
+it('preserves mode filtering relative to stop deduplication', () => {
+	const stops: StopIndexEntry[] = [
+		{ id: 'rail-first', code: 'r', name: 'Station Central', lat: 0, lon: 0, mode: 'rail' },
+		{ id: 'metro-second', code: 'm', name: 'Station Central', lat: 0, lon: 0, mode: 'metro' },
+	];
+	expect(
+		chromeSearchResults('central', { stops }, { modes: new Set(['metro']) }).map((r) => r.id),
+	).toEqual(['metro-second']);
+});
+
+it('keeps header caps and full page counts', () => {
+	const routes = Array.from({ length: 6 }, (_, i) => ({
+		id: String(i),
+		short: String(i),
+		long: 'Hub',
+		type: 3,
+	}));
+	const stops = Array.from({ length: 6 }, (_, i) => ({
+		id: String(i),
+		code: String(i),
+		name: 'Hub',
+		lat: 0,
+		lon: 0,
+	}));
+	expect(
+		chromeSearchResults('hub', { routes, stops }, { scope: 'route' }).map((r) => r.id),
+	).toEqual(['0', '1', '2', '3', '4']);
+	expect(chromeSearchResults('hub', { routes, stops }, { scope: 'stop' }).map((r) => r.id)).toEqual(
+		['0', '1', '2', '3', '4'],
+	);
+	for (const scope of ['all', 'map'] as const)
+		expect(
+			chromeSearchResults('hub', { routes, stops }, { scope }).map((r) => r.kind + ':' + r.id),
+		).toEqual([
+			'route:0',
+			'route:1',
+			'route:2',
+			'route:3',
+			'route:4',
+			'stop:0',
+			'stop:1',
+			'stop:2',
+		]);
 });
