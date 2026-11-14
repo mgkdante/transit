@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+from test_sample_transit_containers import load
 
 from transit_ops.operations.resource_plan import (
     DISK_CATEGORIES,
@@ -22,7 +23,7 @@ def peak(service="worker", **changes):
 
 def disk(services=("worker",), **changes):
     items = tuple(
-        DiskItem(service, category, 10, "b" * 64, "disjoint occupied paths")
+        DiskItem(service, category, 10, "b" * 64, "disjoint occupied paths", "occupied_bytes")
         for service in services
         for category in DISK_CATEGORIES
     )
@@ -132,7 +133,7 @@ def test_duckdb_memory_is_at_most_sixty_percent():
     assert plan(peak(container_memory_bytes=1)).services["worker"].duckdb_memory_bytes == 1
 
 
-@pytest.mark.parametrize("field", ("pid_peak", "container_memory_bytes", "process_rss_bytes"))
+@pytest.mark.parametrize("field", ("pid_peak",))
 def test_fractional_counts_are_refused(field):
     with pytest.raises(ResourceEvidenceMissing, match=field):
         plan(peak(**{field: 1.5}))
@@ -142,10 +143,39 @@ def test_fractional_counts_are_refused(field):
 
 def test_block_io_is_not_disk_occupancy():
     storage = disk()
-    for basis in ("BlockIO", "filesystem free bytes", ""):
-        item = replace(storage.items[0], basis=basis)
-        with pytest.raises(ResourceEvidenceMissing, match="database.*basis"):
+    metrics = load().metrics({"BlockIO": "4kB / 5kB"})
+    for kind in ("block_in_bytes", "block_out_bytes", "free_bytes", None):
+        item = replace(
+            storage.items[0],
+            occupied_bytes=metrics.get(kind, 10),
+            measurement_kind=kind,
+            basis=f"LS0.3 metrics.{kind}.max",
+        )
+        with pytest.raises(ResourceEvidenceMissing, match="worker.database.*measurement_kind"):
             plan(storage=replace(storage, items=(item, *storage.items[1:])))
+    item = replace(storage.items[0], basis="du -sb /transit/database-free/worker/data.duckdb")
+    assert (
+        plan(storage=replace(storage, items=(item, *storage.items[1:]))).total.disk_budget_bytes
+        == 1000
+    )
+    with pytest.raises(ResourceEvidenceMissing, match="basis"):
+        plan(storage=replace(storage, items=(replace(item, basis=""), *storage.items[1:])))
+
+
+def test_sampler_memory_estimates_round_up_and_zero_cpu_is_refused():
+    metrics = load().metrics({"CPUPerc": "0.00%", "MemUsage": "1.1MiB / 1GiB", "PIDs": "3"})
+    assert metrics["memory_bytes"] == 1153433.6
+    sample = peak(
+        container_memory_bytes=metrics["memory_bytes"],
+        process_rss_bytes=None,
+        pid_peak=metrics["pids"],
+    )
+    assert plan(sample).services["worker"].memory_bytes == 1_730_151
+    assert plan(sample).pilot_unresolved == ("worker.process_rss_bytes",)
+    with pytest.raises(ResourceEvidenceMissing, match="worker.cpu_cores"):
+        plan(
+            replace(sample, cpu_cores=ServicePeak.cores_from_docker_percent(metrics["cpu_percent"]))
+        )
 
 
 def test_disk_requires_disjoint_complete_measured_categories_and_fixed_reservations():

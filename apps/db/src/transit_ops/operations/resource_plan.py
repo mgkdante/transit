@@ -41,8 +41,8 @@ class ServicePeak:
     complete: bool
     gaps: tuple[str, ...]
     cpu_cores: float | None
-    container_memory_bytes: int | None
-    process_rss_bytes: int | None
+    container_memory_bytes: int | float | None
+    process_rss_bytes: int | float | None
     pid_peak: int | None
     worker: bool
 
@@ -58,6 +58,7 @@ class DiskItem:
     occupied_bytes: int | None
     measurement_sha: str
     basis: str
+    measurement_kind: str
 
 
 @dataclass(frozen=True)
@@ -121,8 +122,10 @@ def _disk(disk: DiskPeak, names: set[str]) -> tuple[dict[str, int], set[str]]:
         if item.service not in names or item.category not in DISK_CATEGORIES or key in sizes:
             raise ResourceEvidenceMissing(f"{name}: duplicate or unknown disk category")
         _proof(item.measurement_sha, name)
-        if not item.basis.strip() or any(s in item.basis.lower() for s in ("blockio", "free")):
-            raise ResourceEvidenceMissing(f"{name}.basis: occupied bytes required")
+        if item.measurement_kind != "occupied_bytes":
+            raise ResourceEvidenceMissing(f"{name}.measurement_kind: {item.measurement_kind}")
+        if not item.basis.strip():
+            raise ResourceEvidenceMissing(f"{name}.basis")
         sizes[key] = _ceil(_number(item.occupied_bytes, f"{name}.occupied_bytes"))
         proofs.add(item.measurement_sha)
     if set(disk.reservations) != names:
@@ -147,13 +150,18 @@ def _limit(peak: ServicePeak, temp: int, reservation: int) -> ServiceLimit:
     if peak.complete is not True or peak.gaps:
         raise ResourceEvidenceMissing(f"{name}.coverage")
     cpu = _number(peak.cpu_cores, f"{name}.cpu_cores", integral=False) * Decimal("1.5")
+    if cpu == 0:
+        raise ResourceEvidenceMissing(f"{name}.cpu_cores: positive measured peak required")
     memory = _ceil(
-        _number(peak.container_memory_bytes, f"{name}.container_memory_bytes") * Decimal("1.5")
+        _number(peak.container_memory_bytes, f"{name}.container_memory_bytes", integral=False)
+        * Decimal("1.5")
     )
     pids = _ceil(_number(peak.pid_peak, f"{name}.pid_peak") * Decimal("1.5"))
     rss = peak.process_rss_bytes
     if rss is not None:
-        rss_limit = _ceil(_number(rss, f"{name}.process_rss_bytes") * Decimal("1.5"))
+        rss_limit = _ceil(
+            _number(rss, f"{name}.process_rss_bytes", integral=False) * Decimal("1.5")
+        )
         if peak.worker and rss_limit > 3_758_096_384:
             raise TenantCapacityExceeded(f"{name}.pilot: RSS plus headroom exceeds 3.5 GiB")
     if peak.worker and memory > 3_758_096_384:
