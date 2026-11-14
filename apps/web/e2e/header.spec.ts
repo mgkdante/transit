@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { navPillCopy } from '../src/lib/i18n/messages';
+import { revealHeaderControls } from './header-controls';
 import {
 	AUDIT_NAV,
 	SURFACE_NAV,
@@ -61,7 +62,7 @@ for (const redirected of [false, true]) {
 		await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
 		if (redirected) {
 			await expect(page.getByRole('dialog')).toHaveCount(0);
-			await expect(language).not.toBeFocused();
+			await expect(page.locator('[data-testid="language-toggle"]:focus')).toHaveCount(0);
 		} else {
 			await expect(page.getByRole('navigation', { name: navPillCopy.fr.menu })).toBeVisible();
 			await expect(language).toBeFocused();
@@ -108,6 +109,7 @@ for (const locale of PUBLISHED_LOCALES) {
 	test(`${locale}: the language switch round-trips from home`, async ({ page }) => {
 		await page.goto(home(locale));
 		for (const from of [locale, next(locale)]) {
+			await revealHeaderControls(page, from);
 			await page
 				.getByRole('link', { name: new RegExp(`^${literal(navPillCopy[from].language)}:`) })
 				.click();
@@ -159,6 +161,7 @@ for (const locale of PUBLISHED_LOCALES) {
 
 	test(`${locale}: the language switch loads the other locale`, async ({ page }) => {
 		await page.goto(start(locale));
+		await revealHeaderControls(page, locale);
 		await page.getByRole('link', { name: new RegExp(`^${literal(copy.language)}:`) }).click();
 
 		await expect(page).toHaveURL(samePath(start(next(locale))));

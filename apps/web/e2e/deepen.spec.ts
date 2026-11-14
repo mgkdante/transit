@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import boot from '@yesid/ui/boot.json' with { type: 'json' };
+import { revealHeaderControls } from './header-controls';
 
 test.beforeEach(async ({ page }) => {
 	await page.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => route.abort());
@@ -30,6 +31,7 @@ test('boot CSP, responsive header and reload language redirect', async ({ page }
 		).toBe(true);
 		await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
 		await expect(page.getByTestId('sections-toggle')).toHaveCount(0);
+		await revealHeaderControls(page, 'en');
 		await expect(page.getByTestId('language-toggle')).toHaveAttribute(
 			'data-sveltekit-reload',
 			'true',
@@ -50,12 +52,12 @@ test('boot CSP, responsive header and reload language redirect', async ({ page }
 	}
 
 	// Keep the real reload link and make its actual destination redirect once.
+	await page.getByRole('button', { name: 'Open menu' }).click();
 	const language = page.getByTestId('language-toggle');
 	const destination = new URL((await language.getAttribute('href'))!, page.url());
 	await page.route(destination.href, (route) =>
 		route.fulfill({ status: 302, headers: { location: '/fr/terms?provider=stm' } }),
 	);
-	await page.getByRole('button', { name: 'Open menu' }).click();
 	await language.click();
 	await expect(page).toHaveURL(/\/fr\/terms\?provider=stm$/);
 	await expect(page.locator('html')).toHaveAttribute('lang', 'fr');

@@ -5,6 +5,7 @@ import { SURFACE_NAV } from '../src/lib/content/nav';
 import { copy as mapCopy } from '../src/lib/features/map/map.copy';
 import { PUBLISHED_LOCALES } from '../src/lib/i18n/config';
 import { localizeHref } from '../src/lib/i18n/routing';
+import { revealHeaderControls } from './header-controls';
 
 const fixture = (name: string) =>
 	JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'));
@@ -73,6 +74,7 @@ test('manual refresh stays busy until live data is received and rendered', async
 	const placement = page.viewportSize()!.width < 1024 ? 'head' : 'floating';
 	const timestamp = page.locator(`.map-freshness[data-placement="${placement}"] time`);
 	await expect(timestamp).toHaveAttribute('datetime', new Date(generated).toISOString());
+	await revealHeaderControls(page, 'en');
 	hold = true;
 	const invalidated = page.waitForResponse((response) => response.url().includes('__data.json'));
 	try {
@@ -146,6 +148,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
 			`.map-freshness[data-placement="${placement}"] [data-slot="freshness-stamp"]`,
 		);
 		await expect(stamp).toHaveAttribute('data-age-seconds', /^\d+$/);
+		await revealHeaderControls(page, 'en');
 		const originalAge = Number(await stamp.getAttribute('data-age-seconds'));
 		const timestamp = await stamp.locator('time').getAttribute('datetime');
 		for (let click = 1; click <= 3; click += 1) {

@@ -13,8 +13,20 @@ import NavPill from './__fixtures__/NavPillHarness.svelte';
 import { createNavigationRouter } from './__fixtures__/navigationRouter';
 import catalog from '../../../../e2e/providers.json';
 import { PublicProviderCatalogSchema } from '#lib/v1/providers.ts';
-import { NAV_ITEMS } from '#lib/content/nav.ts';
+import { NAV_GROUPS, NAV_ITEMS, SEARCH_LABEL } from '#lib/content/nav.ts';
 import { navPillCopy } from '#lib/i18n/messages.ts';
+
+it.each(['en', 'fr'] as const)('labels search and the four menu groups in %s', async (locale) => {
+	const view = render(NavPill, { props: { locale } });
+	expect(view.getByRole('link', { name: navPillCopy[locale].searchAria.all })).toHaveTextContent(
+		SEARCH_LABEL[locale],
+	);
+	await fireEvent.click(view.getByRole('button', { name: navPillCopy[locale].openMenu }));
+	const menu = within(view.getByRole('dialog'));
+	for (const group of NAV_GROUPS) {
+		expect(menu.getByRole('heading', { name: group.label[locale] })).toBeInTheDocument();
+	}
+});
 
 it.each(['en', 'fr'] as const)('gates alert navigation by capability in %s', async (locale) => {
 	const base = PublicProviderCatalogSchema.parse(catalog).providers[0];

@@ -555,12 +555,7 @@
 								</div>
 							{/key}
 						{/if}
-						<SiteFooter
-							tagline={footer.tagline(footerAgency)}
-							groups={footerGroups}
-							statusPrefix={footer.statusPrefix}
-							liveLabel={footer.liveLabel}
-						>
+						<SiteFooter tagline={footer.tagline(footerAgency)} groups={footerGroups}>
 							{#snippet brand()}
 								<BrandCluster productHref={localizeHref('/', locale, data.providerId)} />
 							{/snippet}
