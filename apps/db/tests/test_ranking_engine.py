@@ -1,6 +1,8 @@
 import json
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, replace
 from pathlib import Path
+
+import pytest
 
 from transit_ops.ranking import (
     RULES,
@@ -140,3 +142,26 @@ def test_ids_beyond_the_basic_plane_compare_by_code_point():
 
 def test_operands_beyond_2_to_the_53_stay_exact():
     check_vector("operands_past_2_53")
+
+
+def test_exact_ties_use_descending_trips_then_code_point_id():
+    spec = spec_from(json.loads(VECTORS.read_bytes())["vectors"][5]["spec"])
+    rows = [
+        EntityWindow("a", {"on_time": 90, "n": 100, "trips": 30}),
+        EntityWindow("z", {"on_time": 90, "n": 100, "trips": 60}),
+        EntityWindow("Z", {"on_time": 90, "n": 100, "trips": 60}),
+    ]
+    for ordered in (rows, list(reversed(rows))):
+        actual = rank_entities(ordered, spec=spec, window_days=1, rules=RULES)
+        assert [(row.entity_id, row.shown_units, row.rank) for row in actual] == [
+            ("Z", 900, 1),
+            ("z", 900, 1),
+            ("a", 900, 1),
+        ]
+
+
+def test_supplied_pair_is_rejected():
+    spec = spec_from(json.loads(VECTORS.read_bytes())["vectors"][5]["spec"])
+    rows = [EntityWindow("a", {"on_time": 90, "n": 100, "trips": 30})]
+    with pytest.raises(NotImplementedError):
+        rank_entities(rows, spec=replace(spec, pair=spec), window_days=1, rules=RULES)
