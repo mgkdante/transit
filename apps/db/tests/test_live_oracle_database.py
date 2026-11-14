@@ -292,171 +292,184 @@ def test_migration_failure_drops_the_created_database(real_db_engine, clock, mon
         )
 
 
-def test_clock_refusal_names_are_sorted_and_in_the_message():
-    expressions = (("gold.z", "pg_catalog.now()"), ("core.a", "CURRENT_DATE"))
-    error = UnpinnableClockError(("gold.z", "core.a"), expressions=expressions)
-    assert error.objects == ("core.a", "gold.z")
-    assert error.expressions == tuple(reversed(expressions))
-    assert "core.a: CURRENT_DATE" in str(error) and "gold.z: pg_catalog.now()" in str(error)
-
-
 @pytest.fixture
 def guard_oracle(real_db_engine, clock):
-    url = real_db_engine.url.render_as_string(hide_password=False)
-    with oracle_database(url, clock=clock, environment=os.environ) as engine:
+    with oracle_database(
+        real_db_engine.url.render_as_string(hide_password=False),
+        clock=clock,
+        environment=os.environ,
+    ) as engine:
         yield engine
 
 
 @pytest.mark.parametrize(
-    "keyword",
-    ["CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP(3)", "LOCALTIME", "LOCALTIMESTAMP"],
+    "expression", ["'now'::date", "TIMESTAMP 'today'", "CAST('yesterday' AS time)"]
 )
-def test_a_view_reading_a_keyword_clock_is_refused(guard_oracle, keyword):
-    with guard_oracle.begin() as conn:
-        conn.exec_driver_sql(f"CREATE VIEW gold.oracle_probe AS SELECT {keyword}")
-        with pytest.raises(UnpinnableClockError) as caught:
-            assert_clock_pinned(conn)
-        assert caught.value.objects == ("gold.oracle_probe",)
-        assert keyword in dict(caught.value.expressions)["gold.oracle_probe"]
+def test_cheap_literal_precheck(expression):
+    with pytest.raises(UnpinnableClockError):
+        assert_ddl_clock_pinned(f"CREATE VIEW gold.probe AS SELECT {expression}")
 
 
 @pytest.mark.parametrize(
-    "function",
-    ["now", "clock_timestamp", "statement_timestamp", "transaction_timestamp", "timeofday"],
-)
-def test_a_view_naming_the_catalog_clock_is_refused(guard_oracle, function):
-    with guard_oracle.begin() as conn:
-        conn.exec_driver_sql(f"CREATE VIEW gold.oracle_probe AS SELECT pg_catalog.{function}()")
-        sql = f"CREATE TABLE gold.oracle_default (at text DEFAULT pg_catalog.{function}()::text)"
-        conn.exec_driver_sql(sql)
-        with pytest.raises(UnpinnableClockError) as caught:
-            assert_clock_pinned(conn)
-        assert caught.value.objects == ("gold.oracle_default.at", "gold.oracle_probe")
-        assert all(function in expression for _, expression in caught.value.expressions)
-
-
-def test_a_function_with_its_own_search_path_is_refused(guard_oracle):
-    with guard_oracle.begin() as conn:
-        conn.exec_driver_sql(
-            "CREATE FUNCTION gold.oracle_probe() RETURNS int LANGUAGE sql "
-            "SET search_path=public AS $$SELECT 1$$"
-        )
-        with pytest.raises(UnpinnableClockError) as caught:
-            assert_clock_pinned(conn)
-        assert caught.value.objects == ("gold.oracle_probe",)
-        assert "search_path=public" in str(caught.value)
-
-
-@pytest.mark.parametrize(
-    "body",
+    "ddl,owner",
     [
-        "LANGUAGE sql AS $$SELECT CURRENT_DATE$$",
-        "LANGUAGE plpgsql AS $$BEGIN RETURN CURRENT_DATE; END$$",
-        "LANGUAGE sql BEGIN ATOMIC SELECT pg_catalog.now()::date; END",
-        'LANGUAGE sql AS $$SELECT "pg_catalog"."now"()::date$$',
-        "LANGUAGE sql AS $$SELECT public.now()::date$$",
+        ("CREATE VIEW gold.probe AS SELECT CURRENT_DATE", "gold.probe"),
+        ("CREATE MATERIALIZED VIEW gold.probe AS SELECT CURRENT_TIME", "gold.probe"),
+        ("CREATE TABLE gold.probe (at timestamptz DEFAULT pg_catalog.now())", "gold.probe.at"),
+        ("CREATE TABLE gold.probe (at date CHECK(at < CURRENT_DATE))", "gold.probe.probe_at_check"),
+        ("CREATE DOMAIN gold.probe AS date DEFAULT CURRENT_DATE", "gold.probe"),
+        ("CREATE DOMAIN gold.probe AS date CHECK(VALUE<CURRENT_DATE)", "gold.probe.probe_check"),
+        (
+            "CREATE FUNCTION public.now() RETURNS int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$;"
+            "CREATE TABLE gold.probe(at int GENERATED ALWAYS AS(public.now()) STORED)",
+            "gold.probe.at",
+        ),
+        (
+            "CREATE FUNCTION gold.probe(d timestamptz DEFAULT pg_catalog.now()) "
+            "RETURNS timestamptz LANGUAGE sql AS $$SELECT d$$",
+            "gold.probe",
+        ),
+        (
+            "CREATE FUNCTION gold.probe(d date DEFAULT CURRENT_DATE) "
+            "RETURNS date LANGUAGE sql AS $$SELECT d$$",
+            "gold.probe",
+        ),
+        (
+            "CREATE FUNCTION gold.probe() RETURNS date LANGUAGE sql "
+            "BEGIN ATOMIC SELECT CURRENT_DATE; END",
+            "gold.probe",
+        ),
+        (
+            "CREATE FUNCTION gold.probe() RETURNS int LANGUAGE sql "
+            "SET search_path=public AS $$SELECT 1$$",
+            "gold.probe",
+        ),
     ],
 )
-def test_function_clock_reads_are_refused(guard_oracle, body):
+def test_deparsed_catalog_covers_each_owner(guard_oracle, ddl, owner):
+    with guard_oracle.begin() as conn:
+        conn.exec_driver_sql(ddl)
+        with pytest.raises(UnpinnableClockError) as error:
+            assert_clock_pinned(conn)
+        assert error.value.objects == (owner,)
+        assert dict(error.value.expressions)[owner]
+
+
+def test_dependency_only_default_is_refused(guard_oracle):
     with guard_oracle.begin() as conn:
         conn.exec_driver_sql(
             "CREATE FUNCTION public.now() RETURNS timestamptz "
             "LANGUAGE sql AS $$SELECT pg_catalog.now()$$"
         )
-        conn.exec_driver_sql(f"CREATE FUNCTION gold.oracle_probe() RETURNS date {body}")
-        with pytest.raises(UnpinnableClockError) as caught:
-            assert_clock_pinned(conn)
-        assert caught.value.objects == ("gold.oracle_probe",)
-        assert dict(caught.value.expressions)["gold.oracle_probe"]
-
-
-def test_a_fresh_oracle_database_passes(guard_oracle):
-    with guard_oracle.connect() as conn:
-        assert_clock_pinned(conn)
-
-
-def test_a_check_constraint_reading_a_clock_is_refused(guard_oracle):
-    with guard_oracle.begin() as conn:
         conn.exec_driver_sql(
-            "CREATE TABLE gold.oracle_check (at timestamptz, "
-            "CONSTRAINT live_clock CHECK (at < pg_catalog.now()))"
+            "CREATE FUNCTION gold.probe(d timestamptz DEFAULT public.now()) "
+            "RETURNS timestamptz LANGUAGE sql AS $$SELECT d$$"
         )
-        with pytest.raises(UnpinnableClockError) as caught:
+        conn.exec_driver_sql("SET LOCAL search_path=public,pg_catalog")
+        assert (
+            value(
+                conn,
+                "SELECT pg_get_expr(proargdefaults,0) FROM pg_proc "
+                "WHERE oid='gold.probe(timestamptz)'::regprocedure",
+            )
+            == "now()"
+        )
+        with pytest.raises(UnpinnableClockError) as error:
             assert_clock_pinned(conn)
-        assert caught.value.objects == ("gold.oracle_check.live_clock",)
-        assert "pg_catalog.now()" in str(caught.value)
+        assert error.value.expressions == (("gold.probe", "clock dependency: now()"),)
 
 
-def test_a_generated_column_reading_another_schema_clock_is_refused(guard_oracle):
+def test_runtime_cast_detector_is_independent(guard_oracle):
     with guard_oracle.begin() as conn:
-        conn.exec_driver_sql(
-            "CREATE FUNCTION gold.now() RETURNS int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$"
-        )
-        conn.exec_driver_sql(
-            "CREATE TABLE gold.oracle_generated (at int GENERATED ALWAYS AS (gold.now()) STORED)"
-        )
-        with pytest.raises(UnpinnableClockError) as caught:
+        conn.exec_driver_sql("CREATE VIEW gold.probe AS SELECT 'now'::text::timestamptz")
+        with pytest.raises(UnpinnableClockError, match="clock literal cast"):
             assert_clock_pinned(conn)
-        assert caught.value.objects == ("gold.oracle_generated.at",)
-        assert "gold.now()" in str(caught.value)
 
 
-def test_a_pinned_view_passes(guard_oracle, clock):
+@pytest.mark.parametrize("offset", [0, -1, 1, 7])
+def test_ddl_result_detector_is_independent(guard_oracle, offset):
     with guard_oracle.begin() as conn:
-        conn.exec_driver_sql("CREATE VIEW gold.oracle_pinned AS SELECT now() AS at")
-        assert_clock_pinned(conn)
-        assert value(conn, "SELECT at FROM gold.oracle_pinned") == clock.instant
-
-
-@pytest.mark.parametrize("literal", ["now", "today", "tomorrow", "yesterday"])
-@pytest.mark.parametrize("form", ["'{0}'::date", "TIMESTAMP '{0}'", "CAST('{0}' AS timestamptz)"])
-def test_special_literals_are_refused_before_parsing(literal, form):
-    expression = form.format(literal).replace("::", "/*outer/*inner*/end*/::")
-    with pytest.raises(UnpinnableClockError) as caught:
-        assert_ddl_clock_pinned(f"SELECT 1; CREATE VIEW gold.oracle_probe AS SELECT {expression}")
-    assert caught.value.objects == ("gold.oracle_probe",)
-    assert literal in str(caught.value)
+        start = value(conn, "SELECT pg_catalog.transaction_timestamp()")
+        literal = (
+            start.isoformat()
+            if offset == 0
+            else (start.date() + timedelta(days=offset)).isoformat()
+        )
+        kind = "timestamptz" if offset == 0 else "date"
+        conn.exec_driver_sql(f"CREATE VIEW gold.probe AS SELECT '{literal}'::{kind}")
+        if offset == 7:
+            assert_clock_pinned(conn, migration_starts=[start])
+        else:
+            with pytest.raises(UnpinnableClockError, match="clock literal resolved at DDL time"):
+                assert_clock_pinned(conn, migration_starts=[start])
 
 
 @pytest.mark.parametrize(
     "expression",
-    ["'now'::text", "DATE '2025-01-01'", "now()", "$$TIMESTAMP 'now'$$", "1 /* 'today'::date */"],
+    [
+        "'CURRENT_DATE'::text",
+        "'pg_catalog.now()'::text",
+        '1 AS "current_time"',
+        "1 /* pg_catalog.now() */",
+        "1 -- CURRENT_DATE\n",
+        "now()",
+    ],
 )
-def test_fixed_literals_and_pinned_calls_pass_ddl_admission(expression):
-    assert_ddl_clock_pinned(f"CREATE VIEW gold.oracle_probe AS SELECT {expression}")
-
-
-def test_function_body_literal_is_checked_before_parsing():
-    sql = "CREATE FUNCTION gold.oracle_probe() RETURNS date LANGUAGE sql AS $$SELECT DATE 'today'$$"
-    with pytest.raises(UnpinnableClockError):
-        assert_ddl_clock_pinned(sql)
+def test_deparsed_non_code_and_pinned_view_pass(guard_oracle, expression):
+    with guard_oracle.begin() as conn:
+        conn.exec_driver_sql(f"CREATE VIEW gold.probe AS SELECT {expression}")
+        assert_clock_pinned(conn)
 
 
 @pytest.mark.parametrize(
-    "expression",
-    ["CURRENT_DATE", "'now'::date", "'today'::date", "'tomorrow'::date", "'yesterday'::date"],
+    "ddl,owner",
+    [
+        *[
+            (f"CREATE VIEW gold.probe AS SELECT {expr}", "gold.probe")
+            for expr in (
+                "('now')::timestamptz",
+                "CAST(('today') AS date)",
+                "$$tomorrow$$::date",
+                "date('yesterday')",
+                r"E'tod\141y'::date",
+                "'now'::text::timestamptz",
+                r"(E'no\167')::time",
+                r"(E'no\167')::timetz",
+            )
+        ],
+        ("CREATE TABLE gold.probe (at timestamptz DEFAULT 'now')", "gold.probe.at"),
+        ("CREATE TABLE gold.probe (at date CHECK(at > 'yesterday'))", "gold.probe.probe_at_check"),
+        ("DO $$ BEGIN CREATE VIEW gold.probe AS SELECT DATE 'today'; END $$", "gold.probe"),
+        (
+            "CREATE FUNCTION gold.probe() RETURNS date LANGUAGE sql "
+            "BEGIN ATOMIC SELECT 1; SELECT DATE 'today'; END",
+            "gold.probe",
+        ),
+    ],
 )
-def test_guard_failure_before_yield_drops_the_database(
-    real_db_engine, clock, monkeypatch, expression
+def test_migration_spellings_are_refused_and_cleaned(
+    real_db_engine, clock, monkeypatch, ddl, owner
 ):
     upgrade, names = command.upgrade, []
 
-    def introduce_unpinnable_view(config, revision):
+    def migrate(config, revision):
         upgrade(config, revision)
         engine = create_engine(config.get_main_option("sqlalchemy.url"))
         names.append(engine.url.database)
         try:
             with engine.begin() as conn:
-                conn.exec_driver_sql(f"CREATE VIEW gold.oracle_probe AS SELECT {expression}")
+                conn.exec_driver_sql(ddl)
         finally:
             engine.dispose()
 
-    monkeypatch.setattr(command, "upgrade", introduce_unpinnable_view)
-    url = real_db_engine.url.render_as_string(hide_password=False)
-    with pytest.raises(UnpinnableClockError) as caught:
-        with oracle_database(url, clock=clock, environment=os.environ):
-            pytest.fail("guard must refuse before yielding")
-    assert caught.value.objects == ("gold.oracle_probe",)
+    monkeypatch.setattr(command, "upgrade", migrate)
+    with pytest.raises(UnpinnableClockError) as error:
+        with oracle_database(
+            real_db_engine.url.render_as_string(hide_password=False),
+            clock=clock,
+            environment=os.environ,
+        ):
+            pytest.fail("must refuse before yield")
+    assert error.value.objects == (owner,)
     with real_db_engine.connect() as conn:
-        sql = "SELECT datname FROM pg_database WHERE datname=:name"
-        assert value(conn, sql, name=names[0]) is None
+        assert value(conn, "SELECT datname FROM pg_database WHERE datname=:n", n=names[0]) is None
