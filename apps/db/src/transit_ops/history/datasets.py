@@ -1,7 +1,7 @@
 """Declarations for kept records and intentionally working-only tables."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from types import MappingProxyType
@@ -148,7 +148,18 @@ def window_start(dataset: HistoryDataset, window_key: str) -> date | None:
     raise ValueError(f"window key {window_key} does not fit {grain}")
 
 
+def declare_datasets(entries: Iterable[HistoryDataset]) -> Mapping[str, HistoryDataset]:
+    """Keep repeated declarations visible until they can be refused."""
+    registry: dict[str, HistoryDataset] = {}
+    for entry in entries:
+        if entry.dataset_id in registry:
+            raise InvalidDeclaration(f"duplicate dataset: {entry.dataset_id}")
+        registry[entry.dataset_id] = entry
+    return MappingProxyType(registry)
+
+
 # Rows keep the DDL primary-key order; - means a whole-state copy.
+# Whole-state months label replacement snapshots, not disjoint row partitions.
 _TABLE_ROWS: tuple[tuple[ArchiveGrain, int | None, str | None, tuple[str, ...]], ...] = (
     (
         "month",
@@ -193,6 +204,8 @@ _TABLE_ROWS: tuple[tuple[ArchiveGrain, int | None, str | None, tuple[str, ...]],
             "gold.route_scheduled_trips_daily/provider_local_date/provider_id,provider_local_date,route_id",
             "gold.route_service_span_daily/provider_local_date/provider_id,provider_local_date,route_id",
             "gold.route_skipped_stop_daily/provider_local_date/provider_id,provider_local_date,route_id",
+            # Summary rows outlive their edition metadata, so no checksum join is safe.
+            "gold.schedule_version_service_summary/-/provider_id,dataset_version_id,route_id,day_type",
             "gold.stop_delay_hourly/period_start_utc/provider_id,period_start_utc,stop_id,route_id",
             "gold.stop_delay_percentile_daily/provider_local_date/provider_id,provider_local_date,stop_id",
             "gold.stop_delay_shift_daily/provider_local_date/provider_id,stop_id,route_id,provider_local_date,shift",
@@ -231,7 +244,6 @@ _TABLE_ROWS: tuple[tuple[ArchiveGrain, int | None, str | None, tuple[str, ...]],
         None,
         None,
         (
-            "gold.schedule_version_service_summary/dataset_version_id/provider_id,dataset_version_id,route_id,day_type",
             "gold.trip_service_span/dataset_version_id/provider_id,dataset_version_id,trip_id",
             "silver.agency/dataset_version_id/dataset_version_id,agency_id",
             "silver.calendar/dataset_version_id/dataset_version_id,service_id",
@@ -251,8 +263,8 @@ _TABLE_ROWS: tuple[tuple[ArchiveGrain, int | None, str | None, tuple[str, ...]],
     ),
 )
 
-_TABLE_DATASETS = {
-    table: HistoryDataset(
+_TABLE_DATASETS = (
+    HistoryDataset(
         table,
         TableSource(table, None if window == "-" else window, tuple(keys.split(",")), revision, 0),
         grain,
@@ -263,7 +275,7 @@ _TABLE_DATASETS = {
     for grain, hot_days, revision, rows in _TABLE_ROWS
     for row in rows
     for table, window, keys in (row.split("/"),)
-}
+)
 
 HISTORY_DATASETS: Mapping[str, HistoryDataset] = MappingProxyType(
     {
@@ -283,7 +295,7 @@ HISTORY_DATASETS: Mapping[str, HistoryDataset] = MappingProxyType(
         )
     }
 )
-HISTORY_DATASETS = MappingProxyType({**HISTORY_DATASETS, **_TABLE_DATASETS})
+HISTORY_DATASETS = declare_datasets((*HISTORY_DATASETS.values(), *_TABLE_DATASETS))
 WORKING_ONLY: Mapping[str, WorkingOnly] = MappingProxyType({})
 
 validate_declarations(HISTORY_DATASETS, WORKING_ONLY)

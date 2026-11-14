@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, date, datetime
 from unittest.mock import Mock
 
 import pytest
@@ -6,6 +7,41 @@ import pytest
 from transit_ops.history import datasets as d
 from transit_ops.history.close_runs import close_unfinished_runs
 from transit_ops.history.daily_selection import capture_providers
+from transit_ops.maintenance.gold import GOLD_AGGREGATE_RETENTION_COLUMNS
+
+
+def test_retained_edition_summaries_need_no_prunable_edition_metadata():
+    dataset = d.get_dataset("gold.schedule_version_service_summary")
+    assert dataset.archive_grain == "month"
+    assert dataset.source == d.TableSource(
+        "gold.schedule_version_service_summary",
+        None,
+        ("provider_id", "dataset_version_id", "route_id", "day_type"),
+        None,
+        0,
+    )
+    assert d.window_start(dataset, "2026-11") == date(2026, 11, 1)
+
+
+@pytest.mark.parametrize("name", ["gold.route_delay_spine", "capture.trip_updates"])
+def test_declaration_assembly_refuses_reclassification_and_capture_collisions(name):
+    original = d.get_dataset(name)
+    replacement = replace(
+        original,
+        source=d.TableSource(
+            "gold.route_delay_spine", "dataset_version_id", ("provider_id",), None, 0
+        ),
+        archive_grain="edition",
+    )
+    with pytest.raises(d.InvalidDeclaration, match=name):
+        d.declare_datasets([original, replacement])
+
+
+@pytest.mark.parametrize("table,column,_local_date", GOLD_AGGREGATE_RETENTION_COLUMNS)
+def test_rollup_archive_windows_match_the_retention_owner(table, column, _local_date):
+    dataset = d.get_dataset(table)
+    assert dataset.archive_grain == "month"
+    assert dataset.source.window_column == column
 
 
 @pytest.mark.parametrize(
