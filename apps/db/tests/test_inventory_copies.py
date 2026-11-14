@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import re
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -491,6 +492,70 @@ def test_raw_objects_are_not_fetched_and_resume_is_deduplicated(tmp_path):
 def test_read_only_budget_expires_before_a_connection_is_opened():
     with pytest.raises(TimeoutError):
         list(load().read_only(None, 10, lambda: 10, "SELECT 1"))
+
+
+@pytest.fixture
+def lock_catalog():
+    # Evaluate the lock predicate with identical relation OIDs in two databases.
+    with sqlite3.connect(":memory:") as locks:
+        locks.executescript("""
+            CREATE TABLE pg_database (oid integer, datname text);
+            INSERT INTO pg_database VALUES (1, 'inventory'), (2, 'other_worker');
+            CREATE TABLE pg_locks (database integer, relation integer, mode text, granted boolean);
+        """)
+        locks.create_function("current_database", 0, lambda: "inventory")
+        locks.create_function(
+            "to_regclass", 1, lambda name: 10 if name.endswith('"blocked"') else 20
+        )
+        yield locks
+
+
+@pytest.mark.parametrize("lock_database", [1, 2])
+def test_database_continues_past_unrelated_queued_ddl(monkeypatch, lock_catalog, lock_database):
+    module, rows = load(), []
+    fixed = datetime(2026, 11, 13, 9, tzinfo=UTC)
+    monkeypatch.setattr(module, "utc_now", lambda: fixed)
+    monkeypatch.setenv("LS03_STATIC_WARM_FINISHED_AT", fixed.isoformat())
+    catalog = [
+        dict(
+            schema="fixture",
+            name=name,
+            relkind="r",
+            indexes=[],
+            columns={"provider_id": "text", "dataset_version_id": "integer"},
+            row_count=None,
+            byte_size=None,
+        )
+        for name in ("blocked", "editions")
+    ]
+    editions = [dict(provider_id="inactive", dataset_version_id=i, row_count=1) for i in (1, 2)]
+    lock_catalog.execute(
+        "INSERT INTO pg_locks VALUES (?, 10, 'AccessExclusiveLock', false)", (lock_database,)
+    )
+
+    def read(engine, end, clock, query, params=None, **kwargs):
+        if query == module.CATALOG:
+            return iter(catalog)
+        if "pg_locks" in query:
+            return iter(dict(queued=row[0]) for row in lock_catalog.execute(query, params or {}))
+        return iter(editions)
+
+    monkeypatch.setattr(module, "read_only", read)
+    engine = SimpleNamespace(
+        dialect=SimpleNamespace(
+            identifier_preparer=SimpleNamespace(quote_identifier=lambda s: '"' + s + '"')
+        )
+    )
+    module.database(engine, Settings(_env_file=None), rows.append, fixed + timedelta(hours=1))
+    measured = [
+        r for r in rows if r.get("kind") == "measurement" and r["table"] == "fixture.editions"
+    ]
+    assert {r["dataset_version_id"] for r in measured} == {1, 2}
+    assert all(r["row_count"] == 1 and r["row_count_basis"] == "exact count" for r in measured)
+    refusals = [(r["table"], r["reason"]) for r in rows if r["kind"] == "not_measured"]
+    assert refusals == (
+        [("fixture.blocked", "queued_exclusive_lock")] if lock_database == 1 else []
+    )
 
 
 def test_discovered_inactive_provider_and_source_rows_unchanged(

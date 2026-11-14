@@ -294,7 +294,16 @@ def measure_table(
         raise Refusal("exclusion_window")
     if row["relkind"] in ("f", "v"):
         raise Refusal("unsupported_relation")
-    if any(read("SELECT 1 FROM pg_locks WHERE mode='AccessExclusiveLock' AND NOT granted")):
+    relation = quote(row["schema"]) + "." + quote(row["name"])
+    # pg_locks covers the cluster; unrelated DDL must not suppress this table.
+    if any(
+        read(
+            "SELECT 1 FROM pg_locks WHERE mode='AccessExclusiveLock' AND NOT granted "
+            "AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) "
+            "AND relation=to_regclass(:relation)",
+            {"relation": relation},
+        )
+    ):
         raise Refusal("queued_exclusive_lock")
     table = f"{row['schema']}.{row['name']}"
     if table not in GOLD_FACT_TABLES and not row["name"].startswith("fact_"):
@@ -306,7 +315,6 @@ def measure_table(
     ):
         raise Refusal("missing_index")
     providers = list(read("SELECT provider_id FROM core.providers"))
-    relation = quote(row["schema"]) + "." + quote(row["name"])
     for provider in providers:
         bounds = fact_bounds(read, relation, provider["provider_id"])
         bounds["eligible_from"] = None
