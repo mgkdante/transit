@@ -6,12 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
-from sqlalchemy import create_engine, text
-from test_static_silver import _write_minimal_compliant_gtfs_zip
+from sqlalchemy import create_engine, event, text
+from test_static_silver import (
+    _minimal_compliant_members,
+    _write_members_zip,
+    _write_minimal_compliant_gtfs_zip,
+)
 
 from transit_ops.cli import _seed_feed_endpoints, _seed_provider
 from transit_ops.ingestion.storage import LocalBronzeStorage
-from transit_ops.live.oracle.database import PinnedClock, oracle_database
+from transit_ops.live.oracle.database import OracleDatabase, PinnedClock, oracle_database
 from transit_ops.live.oracle.seed import SeedRefused, seed_static
 from transit_ops.live.oracle.window import EditionInput, ReplayWindow
 from transit_ops.providers import ProviderRegistry
@@ -65,14 +69,8 @@ def case(tmp_path):
         at + timedelta(seconds=1),
         at + timedelta(seconds=2),
     )
-    window = ReplayWindow(
-        "oracle_seed",
-        {"static_schedule": 901, "trip_updates": 904, "vehicle_positions": 905},
-        (),
-        edition,
-        at + timedelta(seconds=3),
-        (),
-    )
+    endpoints = {"static_schedule": 901, "trip_updates": 904, "vehicle_positions": 905}
+    window = ReplayWindow("oracle_seed", endpoints, (), edition, at + timedelta(seconds=3), ())
     settings = Settings(_env_file=None)
     return SimpleNamespace(
         window=window,
@@ -91,6 +89,8 @@ def oracle(real_db_engine, case):
         environment=os.environ,
     ) as engine:
         yield engine
+    with pytest.raises(SeedRefused, match="owned oracle"):
+        seed(engine, case)
 
 
 def seed(engine, case):
@@ -101,7 +101,7 @@ def seed(engine, case):
 
 def test_seeded_endpoints_equal_what_seed_core_writes_except_the_id(oracle, case):
     manifest = case.registry.get_provider(case.window.provider_id)
-    with oracle.connect() as connection:
+    with oracle.engine.connect() as connection:
         transaction = connection.begin()
         _seed_provider(connection, manifest)
         _seed_feed_endpoints(connection, manifest, case.settings)
@@ -113,7 +113,7 @@ def test_seeded_endpoints_equal_what_seed_core_writes_except_the_id(oracle, case
         expected = [{k: v for k, v in row.items() if k != "feed_endpoint_id"} for row in expected]
         transaction.rollback()
     seed(oracle, case)
-    with oracle.connect() as connection:
+    with oracle.engine.connect() as connection:
         rows = (
             connection.execute(text("SELECT * FROM core.feed_endpoints ORDER BY endpoint_key"))
             .mappings()
@@ -131,42 +131,47 @@ def test_seeded_endpoints_equal_what_seed_core_writes_except_the_id(oracle, case
 
 
 def assert_raw_edition(connection, edition):
-    assert tuple(
-        connection.execute(
-            text("""
-        SELECT ingestion_run_id, feed_endpoint_id, status, requested_at_utc,
-               started_at_utc, completed_at_utc FROM raw.ingestion_runs
-    """)
-        ).one()
-    ) == (
+    run = connection.execute(text("SELECT * FROM raw.ingestion_runs")).mappings().one()
+    assert (run["ingestion_run_id"], run["feed_endpoint_id"], run["status"]) == (
         902,
         901,
         "succeeded",
-        edition.requested_at_utc,
-        edition.started_at_utc,
-        edition.completed_at_utc,
     )
-    assert tuple(
-        connection.execute(
-            text("""
-        SELECT ingestion_object_id, ingestion_run_id, source_url, checksum_sha256,
-               byte_size, created_at_utc FROM raw.ingestion_objects
-    """)
-        ).one()
-    ) == (
+    for field in ("requested_at_utc", "started_at_utc", "completed_at_utc"):
+        assert run[field] == getattr(edition, field)
+    obj = connection.execute(text("SELECT * FROM raw.ingestion_objects")).mappings().one()
+    assert (obj["ingestion_object_id"], obj["ingestion_run_id"], obj["source_url"]) == (
         903,
         902,
         None,
-        edition.checksum_sha256,
-        edition.byte_size,
-        edition.object_created_at_utc,
     )
+    assert obj["checksum_sha256"] == edition.checksum_sha256
+    assert obj["byte_size"] == edition.byte_size
+    assert obj["created_at_utc"] == edition.object_created_at_utc
 
 
-def test_seed_static_loads_the_edition_and_its_source_version_is_set(oracle, case):
+@pytest.mark.parametrize("provider_strict,settings_strict", [(False, True), (None, False)])
+def test_seed_static_loads_the_edition_and_its_source_version_is_set(
+    oracle, case, provider_strict, settings_strict
+):
+    case.registry.get_provider(case.window.provider_id).provider.strict_gtfs = provider_strict
+    case.settings.STRICT_GTFS = settings_strict
+    members = _minimal_compliant_members()
+    members["agency.txt"] = "agency_name,agency_url\nFixture,https://fixture.test\n"
+    path = case.bronze("local").root / "schedule.zip"
+    _write_members_zip(path, members)
+    payload = path.read_bytes()
+    case.window = replace(
+        case.window,
+        edition=replace(
+            case.window.edition,
+            checksum_sha256=hashlib.sha256(payload).hexdigest(),
+            byte_size=len(payload),
+        ),
+    )
     seed(oracle, case)
     edition = case.window.edition
-    with oracle.connect() as connection:
+    with oracle.engine.connect() as connection:
         version = connection.execute(
             text("""
             SELECT source_version, source_ingestion_run_id, source_ingestion_object_id
@@ -193,12 +198,24 @@ def test_seed_static_loads_the_edition_and_its_source_version_is_set(oracle, cas
         ]
 
 
-def test_unknown_endpoint_is_refused(case):
+def test_unknown_endpoint_is_refused(oracle, case):
     case.window = replace(case.window, feed_endpoints={"unknown": 999})
+    with pytest.raises(SeedRefused, match="unknown"):
+        seed(oracle, case)
+
+
+@pytest.mark.parametrize("kind", ["engine", "inactive"])
+def test_unowned_engine_is_refused_before_connect(case, kind):
     engine = create_engine("sqlite://")
+    target = engine if kind == "engine" else OracleDatabase()
+
+    @event.listens_for(engine, "connect")
+    def connected(*args):
+        pytest.fail("seed_static connected to an unowned engine")
+
     try:
-        with pytest.raises(SeedRefused, match="unknown"):
-            seed(engine, case)
+        with pytest.raises(SeedRefused, match="owned oracle"):
+            seed(target, case)
     finally:
         engine.dispose()
 
@@ -210,7 +227,7 @@ def test_sequences_move_past_seeded_ids(oracle, case):
         ("raw.ingestion_runs", "ingestion_run_id", 902),
         ("raw.ingestion_objects", "ingestion_object_id", 903),
     ):
-        with oracle.begin() as connection:
+        with oracle.engine.begin() as connection:
             next_id = connection.execute(
                 text("SELECT nextval(pg_get_serial_sequence(:table, :column))"),
                 {"table": table, "column": column},

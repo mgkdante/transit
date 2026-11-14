@@ -44,6 +44,7 @@ class ReplayWindow:
     cycles: tuple[CycleSpec, ...]
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "feed_endpoints", dict(self.feed_endpoints))
         _validate(self)
 
     def to_json(self) -> bytes:

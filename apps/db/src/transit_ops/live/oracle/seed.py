@@ -2,11 +2,12 @@
 
 from dataclasses import asdict
 
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Connection, text
 
 from transit_ops.gold.marts import refresh_gold_static
 from transit_ops.gold.realtime import initialize_realtime_serving
 from transit_ops.ingestion.storage import BronzeStorageResolver
+from transit_ops.live.oracle.database import OracleDatabase, OracleDatabaseRefused
 from transit_ops.live.oracle.window import ReplayWindow
 from transit_ops.providers import ProviderRegistry
 from transit_ops.settings import Settings
@@ -18,7 +19,7 @@ class SeedRefused(RuntimeError):
 
 
 def seed_static(
-    engine: Engine,
+    oracle: OracleDatabase,
     window: ReplayWindow,
     *,
     settings: Settings,
@@ -28,7 +29,14 @@ def seed_static(
     """The caller pins the database clock to the window's serving initialization time."""
     from transit_ops.cli import _seed_provider
 
+    if type(oracle) is not OracleDatabase:
+        raise SeedRefused("active owned oracle required")
+    try:
+        engine = oracle.engine
+    except OracleDatabaseRefused as exc:
+        raise SeedRefused(str(exc)) from exc
     manifest = registry.get_provider(window.provider_id)
+    strict = manifest.provider.strict_gtfs
     endpoints = {seed.endpoint_key: seed for seed in manifest.to_feed_endpoint_seeds(settings)}
     for key in window.feed_endpoints:
         if key not in endpoints:
@@ -48,14 +56,13 @@ def seed_static(
         _seed_edition(connection, window)
         archive = _archive(window, bronze)
         load_static_zip_to_silver(
-            connection, archive=archive, bronze_storage=bronze(window.edition.storage_backend)
+            connection,
+            archive=archive,
+            bronze_storage=bronze(window.edition.storage_backend),
+            strict_gtfs=strict if strict is not None else settings.STRICT_GTFS,
         )
     refresh_gold_static(window.provider_id, settings=settings, registry=registry, engine=engine)
-    realtime = [
-        key
-        for key in window.feed_endpoints
-        if endpoints[key].feed_kind in ("trip_updates", "vehicle_positions")
-    ]
+    realtime = sorted(window.feed_endpoints.keys() & {"trip_updates", "vehicle_positions"})
     initialize_realtime_serving(window.provider_id, realtime, engine=engine, settings=settings)
     with engine.begin() as connection:
         _advance_sequences(connection)

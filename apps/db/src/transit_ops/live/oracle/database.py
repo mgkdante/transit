@@ -24,6 +24,17 @@ class OracleDatabaseRefused(RuntimeError):
     pass
 
 
+class OracleDatabase:
+    @property
+    def engine(self) -> Engine:
+        if self not in _OWNED:
+            raise OracleDatabaseRefused("active owned oracle required")
+        return _OWNED[self]
+
+
+_OWNED: dict[OracleDatabase, Engine] = {}
+
+
 class PinnedClock:
     def __init__(self, instant: datetime) -> None:
         self.set(instant)
@@ -84,7 +95,7 @@ def _pin_connections(engine: Engine, clock: PinnedClock) -> None:
 @contextmanager
 def oracle_database(
     admin_url: str, *, clock: PinnedClock, environment: Mapping[str, str], keep: bool = False
-) -> Iterator[Engine]:
+) -> Iterator[OracleDatabase]:
     try:
         assert_disposable_test_url(admin_url, environment)
         url = make_url(admin_url)
@@ -110,14 +121,17 @@ def oracle_database(
     engine = create_engine(oracle_url, poolclass=NullPool)
     database = admin.dialect.identifier_preparer.quote_identifier(name)
     created = False
+    handle = OracleDatabase()
     try:
         with admin.connect() as connection:
             connection.exec_driver_sql(f"CREATE DATABASE {database} TEMPLATE template0")
             created = True
         _initialize(engine, database, admin, clock)
         _pin_connections(engine, clock)
-        yield engine
+        _OWNED[handle] = engine
+        yield handle
     finally:
+        _OWNED.pop(handle, None)
         try:
             engine.dispose()
         finally:
