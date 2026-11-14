@@ -2251,6 +2251,8 @@ def build_warm_rollups(
     as_of_utc: datetime | None = None,
     wall_clock_utc: datetime | None = None,
 ) -> WarmRollupBuildResult:
+    if wall_clock_utc is not None and wall_clock_utc.utcoffset() is None:
+        raise ValueError("wall_clock_utc must be timezone-aware")
     if as_of_utc is not None:
         if as_of_utc.utcoffset() is None:
             raise ValueError("as_of_utc must be timezone-aware")

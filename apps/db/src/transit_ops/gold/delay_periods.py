@@ -261,8 +261,10 @@ def build_delay_periods(
     dry_run: bool = False,
     wall_clock_utc: datetime | None = None,
 ) -> int:
-    if wall_clock_utc is not None and wall_clock_utc.utcoffset() is None:
-        raise ValueError("wall_clock_utc must be timezone-aware")
+    if wall_clock_utc is not None:
+        if wall_clock_utc.utcoffset() is None:
+            raise ValueError("wall_clock_utc must be timezone-aware")
+        wall_clock_utc = wall_clock_utc.astimezone(UTC)
     if retention_days < 2:
         raise ValueError("Delay period builds require at least two days of retained facts")
     closed_before = period_start(now)

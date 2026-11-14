@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 import test_delay_period_lifecycle_real_db as lifecycle
@@ -10,6 +11,20 @@ from transit_ops.gold import delay_periods, rollups
 PERIOD = lifecycle.PERIOD
 STAMP = PERIOD + timedelta(days=1)
 BOUNDARY = PERIOD + timedelta(days=14)
+DST_CASES = [
+    pytest.param(
+        datetime(2026, 3, 1, 13, 30, tzinfo=UTC),
+        datetime(2026, 3, 15, 9, tzinfo=ZoneInfo("America/New_York")),
+        1,
+        id="spring-forward",
+    ),
+    pytest.param(
+        datetime(2026, 10, 31, 13, 30, tzinfo=UTC),
+        datetime(2026, 11, 14, 9, tzinfo=ZoneInfo("America/New_York")),
+        0,
+        id="fall-back",
+    ),
+]
 
 
 @pytest.fixture
@@ -100,6 +115,16 @@ def test_naive_wall_clock_is_refused_by_name():
         )
 
 
+def test_unseeded_warm_rollups_refuse_naive_wall_clock():
+    with pytest.raises(ValueError, match="wall_clock_utc.*timezone-aware"):
+        rollups.build_warm_rollups(
+            "wall-clock",
+            engine=FakeEngine(FakeConnection(seeded=False)),
+            as_of_utc=STAMP,
+            wall_clock_utc=datetime(2026, 9, 5),
+        )
+
+
 @pytest.mark.parametrize("explicit", [False, True])
 def test_warm_rollups_forward_the_optional_clock(monkeypatch, explicit):
     monkeypatch.setattr(delay_periods, "utc_now", lambda: PERIOD + timedelta(days=15))
@@ -111,3 +136,52 @@ def test_warm_rollups_forward_the_optional_clock(monkeypatch, explicit):
         **kwargs,
     )
     assert result.built_trip_delay_periods == (1 if explicit else 0)
+
+
+@pytest.mark.parametrize("period, wall, expected", DST_CASES)
+def test_equivalent_dst_clocks_make_the_same_retention_decision(period, wall, expected):
+    for clock in (wall.astimezone(UTC), wall):
+        progress = delay_periods.PeriodBuildProgress()
+        assert (
+            delay_periods.build_delay_periods(
+                FakeEngine(FakeConnection(trip_delay_periods=[period])),
+                provider_id="wall-clock",
+                since_utc=period,
+                now=period + timedelta(days=1),
+                progress=progress,
+                wall_clock_utc=clock,
+            )
+            == expected
+        )
+        assert progress.committed_rows == expected
+
+
+@pytest.mark.parametrize("period, wall, expected", DST_CASES)
+def test_equivalent_dst_clocks_build_identical_summaries_and_watermarks(
+    conn, period, wall, expected
+):
+    lifecycle.add_capture(conn, period + timedelta(seconds=5))
+    results = []
+    for clock in (wall.astimezone(UTC), wall):
+        with conn.begin_nested() as attempt:
+            progress = delay_periods.PeriodBuildProgress()
+            assert (
+                delay_periods.build_delay_periods(
+                    lifecycle.TransactionEngine(conn),
+                    provider_id=lifecycle.PROVIDER,
+                    since_utc=period,
+                    now=period + timedelta(days=1),
+                    progress=progress,
+                    wall_clock_utc=clock,
+                )
+                == expected
+            )
+            assert progress.committed_rows == expected
+            results.append(stored_rows(conn))
+            if expected:
+                assert lifecycle.summaries(conn) == [(period, "51", 1, 60)]
+                assert results[-1][1] == [("trip_delay_summary_5m", period, None)]
+            else:
+                assert results[-1] == ([], [])
+            attempt.rollback()
+    assert results[0] == results[1]
