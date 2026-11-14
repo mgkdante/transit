@@ -1,5 +1,6 @@
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 import real_db_seed as seed
@@ -9,8 +10,7 @@ from transit_ops.gold.rollups import build_warm_rollups
 from transit_ops.settings import Settings
 
 PROVIDER = "rollup_order_test"
-STAMP = datetime(2026, 6, 18, 16, tzinfo=UTC)
-DAY = date(2026, 6, 16)
+LOCAL_TZ = ZoneInfo("America/Toronto")
 
 
 class TransactionEngine:
@@ -25,6 +25,11 @@ class TransactionEngine:
 @pytest.fixture
 def conn(real_db_engine, seed_provider):
     with real_db_engine.connect() as connection, connection.begin() as transaction:
+        stamp = connection.execute(text("SELECT clock_timestamp()")).scalar_one()
+        day = stamp.astimezone(LOCAL_TZ).date() - timedelta(days=3)
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+        connection.info.update(order_stamp=stamp, order_day=day)
         seed_provider(connection, PROVIDER, display_name="Rollup order test")
         seed.feed_endpoints(connection, {"p": PROVIDER, "e": 987001})
         # Service-span materialization lags a capture day.
@@ -40,7 +45,9 @@ def conn(real_db_engine, seed_provider):
 
 
 def observe(conn, sid, trip, delay, *, minute=0, entity=0, route="span"):
-    stamp = datetime(2026, 6, 16, 14, tzinfo=UTC) + timedelta(minutes=minute)
+    day = conn.info["order_day"]
+    local = datetime.combine(day, time(10), tzinfo=LOCAL_TZ) + timedelta(minutes=minute)
+    stamp = local.astimezone(UTC)
     params = {"p": PROVIDER, "e": 987001, "r": sid, "s": sid, "ts": stamp, "n": 1}
     seed.ingestion_runs(conn, params)
     seed.realtime_snapshot_index(conn, params)
@@ -57,12 +64,12 @@ def observe(conn, sid, trip, delay, *, minute=0, entity=0, route="span"):
         {
             **params,
             "entity": entity,
-            "day": DAY,
+            "day": day,
             "trip": trip,
             "route": route,
             "delay": delay,
-            "date_key": int(stamp.strftime("%Y%m%d")),
-            "capture_day": stamp.date(),
+            "date_key": int(local.strftime("%Y%m%d")),
+            "capture_day": local.date(),
         },
     )
 
@@ -72,7 +79,7 @@ def build(conn):
         PROVIDER,
         engine=TransactionEngine(conn),
         settings=Settings.model_construct(DATABASE_URL=None),
-        as_of_utc=STAMP,
+        as_of_utc=conn.info["order_stamp"],
     )
 
 
@@ -83,7 +90,7 @@ def span(conn):
             "FROM gold.route_service_span_daily "
             "WHERE provider_id = :p AND provider_local_date = :day AND route_id = 'span'"
         ),
-        {"p": PROVIDER, "day": DAY},
+        {"p": PROVIDER, "day": conn.info["order_day"]},
     ).one()
 
 
@@ -143,7 +150,7 @@ def test_headway_tied_trip_starts_keep_the_positive_gap_sample(conn):
             "FROM gold.route_headway_shift_daily "
             "WHERE provider_id = :p AND route_id = 'headway' AND provider_local_date = :day"
         ),
-        {"p": PROVIDER, "day": DAY},
+        {"p": PROVIDER, "day": conn.info["order_day"]},
     ).all()
     assert [tuple(row) for row in rows] == [
         (7, 1, 10, [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
@@ -157,7 +164,13 @@ def test_equal_load_stamps_choose_the_larger_edition_id(conn, reverse):
     if reverse:
         editions.reverse()
     for edition in editions:
-        params = {"p": PROVIDER, "e": 987001, "r": 987400, "d": edition, "ts": STAMP}
+        params = {
+            "p": PROVIDER,
+            "e": 987001,
+            "r": 987400,
+            "d": edition,
+            "ts": conn.info["order_stamp"],
+        }
         seed.dataset_versions(conn, params, content_hash="CAST(:d AS text)", loaded_at_utc=":ts")
         conn.execute(
             text(
@@ -165,7 +178,14 @@ def test_equal_load_stamps_choose_the_larger_edition_id(conn, reverse):
                 "(dataset_version_id, provider_id, service_id, service_date, exception_type) "
                 "VALUES (:d, :p, 'service', :day, 1)"
             ),
-            {**params, "day": DAY},
+            {**params, "day": conn.info["order_day"]},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO silver.routes (dataset_version_id, provider_id, route_id, route_type) "
+                "VALUES (:d, :p, CAST(:d AS text), 3)"
+            ),
+            params,
         )
         conn.execute(
             text(
@@ -182,6 +202,6 @@ def test_equal_load_stamps_choose_the_larger_edition_id(conn, reverse):
             "FROM gold.route_scheduled_trips_daily "
             "WHERE provider_id = :p AND provider_local_date = :day"
         ),
-        {"p": PROVIDER, "day": DAY},
+        {"p": PROVIDER, "day": conn.info["order_day"]},
     ).all()
     assert [tuple(row) for row in rows] == [("987411", 987411, 1)]
