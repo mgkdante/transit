@@ -1,3 +1,5 @@
+import { stampCopy } from '#lib/v1/stamp.copy.ts';
+import { formatDateKey } from '#lib/utils/time.ts';
 import { createLineDirectory } from '#lib/site/lineDirectory.ts';
 import {
 	headerWeek as CURRENT_RELIABILITY,
@@ -41,7 +43,11 @@ const routeDetailNav = vi.hoisted(() => {
 		replaceState: vi.fn(defaultReplaceState),
 	};
 });
-const routeManifest = vi.hoisted(() => ({ provider: 'stm' }));
+const routeManifest = vi.hoisted(() => ({
+	provider: 'stm',
+	files: { historic: {} },
+	tz: 'America/Toronto',
+}));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const routeProvider = vi.hoisted(() => ({
 	value: undefined as import('#lib/v1/providers.ts').PublicProvider | undefined,
@@ -498,7 +504,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
 	});
 
-	it('uses historic freshness on the reliability tab', () => {
+	it('shows a date-only record only on Reliability and ignores prepared publication times', async () => {
 		routeDetailNav.page.url = new URL('http://localhost/lines/161?tab=reliability');
 		reliabilityResourceState = {
 			data: CURRENT_RELIABILITY,
@@ -506,50 +512,30 @@ describe('RouteDetail article cover and focus scope', () => {
 			loading: false,
 			settled: true,
 		};
-		const view = renderRoute();
-		expect(view.container.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
-			'datetime',
-			CURRENT_RELIABILITY.generated_utc,
-		);
-	});
-
-	it('uses a prepared article time only for the same route, ISO, and locale', async () => {
-		routeDetailNav.page.url = new URL('http://localhost/lines/161?tab=reliability');
-		reliabilityResourceState = {
-			data: CURRENT_RELIABILITY,
-			error: null,
-			loading: false,
-			settled: true,
-		};
-		const prepared = {
-			routeId: '161',
-			iso: CURRENT_RELIABILITY.generated_utc,
-			locale: 'en' as const,
-			text: 'Prepared current timestamp',
-		};
-		const props = { id: '161', seed: routeSeed(), preparedArticleTime: prepared };
-		const view = routeSurface.mount(RouteDetail, { props });
-		const articleTime = () =>
-			view.container.querySelector<HTMLElement>('[data-slot="article-header"] time[datetime]');
-		expect(articleTime()).toHaveTextContent(prepared.text);
-		expect(articleTime()).toHaveAttribute('datetime', prepared.iso);
-		expect(view.container.querySelector('.header__edge-right')).toHaveTextContent(prepared.text);
-
-		for (const mismatch of [
-			{ routeId: 'other' },
-			{ iso: ROUTE_FILE.generated_utc },
-			{ locale: 'fr' as const },
-		]) {
-			await view.rerender({ ...props, preparedArticleTime: { ...prepared, ...mismatch } });
-			expect(articleTime()).not.toHaveTextContent(prepared.text);
+		const view = routeSurface.mount(RouteDetail, {
+			props: {
+				id: '161',
+				seed: routeSeed(),
+				preparedArticleTime: {
+					routeId: '161',
+					iso: CURRENT_RELIABILITY.generated_utc,
+					locale: 'en',
+					text: 'Prepared current timestamp',
+				},
+			},
+		});
+		const header = view.container.querySelector('[data-slot="article-header"]') as HTMLElement;
+		const date = CURRENT_RELIABILITY.generated_utc.slice(0, 10);
+		expect(
+			within(header).getByText(
+				stampCopy.en.record(null, formatDateKey(date, 'en', false), 'window'),
+			),
+		).toHaveAttribute('datetime', date);
+		expect(header).not.toHaveTextContent('Prepared current timestamp');
+		for (const name of ['Detail', 'Schedule']) {
+			await fireEvent.click(screen.getByRole('tab', { name }));
+			expect(header.querySelector('time')).toBeNull();
 		}
-
-		await view.rerender(props);
-		expect(articleTime()).toHaveTextContent(prepared.text);
-		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
-		await tick();
-		expect(articleTime()).toHaveAttribute('datetime', ROUTE_FILE.generated_utc);
-		expect(articleTime()).not.toHaveTextContent(prepared.text);
 	});
 
 	it('keeps tab URLs shareable while preserving unrelated search parameters', async () => {

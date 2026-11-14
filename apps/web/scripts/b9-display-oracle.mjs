@@ -988,7 +988,7 @@ function lineOracle(fixture, locale, view) {
 			),
 		),
 		observation('line.weak_stops.raw_count', windowedStops.length),
-		observation('line.pane.freshness_iso', raw.generated_utc),
+		observation('line.pane.freshness_iso', raw.generated_utc?.slice(0, 10) ?? null),
 		observation(
 			'line.trend.rows',
 			trendTable([c.x, c.otp, c.avg], displayedTrend, locale, ['%', ' min']),
@@ -1204,7 +1204,7 @@ function stopOracle(fixture, locale, view) {
 						},
 		}),
 		observation('stop.display.scalars', stopScalars),
-		observation('stop.pane.freshness_iso', raw.generated_utc),
+		observation('stop.pane.freshness_iso', raw.generated_utc?.slice(0, 10) ?? null),
 	];
 }
 

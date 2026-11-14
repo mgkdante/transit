@@ -185,7 +185,7 @@ afterEach(() => {
 });
 
 describe('StopDetail independent report owners', () => {
-	it('keeps fresh departures independent of stale alerts and labels static header time', async () => {
+	it('keeps fresh departures independent of stale alerts and omits static time from the Detail header', async () => {
 		fixture.alerts.mockResolvedValue(alerts(-600));
 		mount();
 		await settle();
@@ -193,11 +193,7 @@ describe('StopDetail independent report owners', () => {
 		expect(reportStamp('departures')).toHaveAttribute('data-age-seconds', '0');
 		expect(reportStamp('alerts')).toHaveAttribute('data-stale', 'true');
 		expect(reportStamp('alerts')).toHaveAttribute('data-age-seconds', '600');
-		expect(document.querySelector('[data-slot="article-header"] time')).toHaveAttribute(
-			'datetime',
-			staticStop.generated_utc,
-		);
-		expect(screen.getByText('Stop info updated')).toBeInTheDocument();
+		expect(document.querySelector('[data-slot="article-header"] time')).toBeNull();
 		expect(fixture.network).not.toHaveBeenCalled();
 		expect(fixture.vehicles).not.toHaveBeenCalled();
 		expect(fixture.trips).not.toHaveBeenCalled();
@@ -298,13 +294,9 @@ describe('StopDetail independent report owners', () => {
 		await settle();
 		const summary = document.querySelector('[data-slot="stop-reliability-summary"]')!;
 		expect(summary).toHaveTextContent('10%');
-		expect(summary).toHaveTextContent('Reported daily summary');
 		expect(summary).not.toHaveTextContent('4 min');
 		expect(summary).not.toHaveTextContent('Jun 12');
-		expect(reportStamp('historic')?.querySelector('time')).toHaveAttribute(
-			'datetime',
-			stamp(-3600),
-		);
+		expect(reportStamp('historic')).toBeNull();
 	});
 
 	it('does not borrow live time for an unavailable historic report', async () => {

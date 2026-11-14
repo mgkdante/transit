@@ -32,7 +32,11 @@ export function historyViewContract(
 			try {
 				await waitFor(() => expect(fixture.index).toHaveBeenCalledTimes(1));
 				if (fixture.entityId != null)
-					expect(fixture.index).toHaveBeenCalledWith(fixture.entityId, expect.any(Object));
+					expect(fixture.index).toHaveBeenCalledWith(
+						fixture.entityId,
+						expect.any(Object),
+						expect.any(Function),
+					);
 				expect(fixture.range).not.toHaveBeenCalled();
 				expect(fixture.owned.read(view.container)).toContain(fixture.owned.current);
 				fixture.current?.(view.container);

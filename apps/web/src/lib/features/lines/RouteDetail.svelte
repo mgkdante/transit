@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createRecordStamp } from '#lib/v1/recordStamp.svelte.ts';
 	import { readableName } from '#lib/components/surface/readableName.ts';
 	import '#lib/components/surface/compact-row.css';
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
@@ -181,17 +182,15 @@
 	});
 
 	const shortName = manifest.short_name?.trim() || manifest.display_name;
-	const articleGeneratedUtc = $derived(
-		detailTabController.active === 'reliability'
-			? (reliability.data?.generated_utc ??
-					route.data?.generated_utc ??
-					presentation.publicationUtc)
-			: (presentation.publicationUtc ??
-					route.data?.generated_utc ??
-					reliability.data?.generated_utc ??
-					null),
+	const record = createRecordStamp(
+		() => manifest,
+		() => reliability.data?.generated_utc ?? null,
+		() => lineHistory,
 	);
 	const articleEdgeLeft = $derived([t.kicker, titleName.number].filter(Boolean).join(' '));
+	const articleGeneratedUtc = $derived(
+		presentation.publicationUtc ?? route.data?.generated_utc ?? null,
+	);
 	const articleTimeText = $derived(
 		articleGeneratedUtc
 			? preparedArticleTime?.routeId === id &&
@@ -201,17 +200,14 @@
 				: formatUtc(articleGeneratedUtc, locale)
 			: null,
 	);
-	const articleEdgeRight = $derived(articleTimeText ?? shortName);
+	const articleEdgeRight = $derived(
+		detailTabController.active === 'reliability' ? shortName : (articleTimeText ?? shortName),
+	);
 	const articleMeta = $derived.by((): readonly ArticleMetaEntry[] => {
 		const entries: ArticleMetaEntry[] = [];
 		if (shortName) entries.push({ label: t.article.provider, text: shortName });
-		if (articleGeneratedUtc && articleTimeText !== null) {
-			entries.push({
-				label: t.article.generated,
-				text: articleTimeText,
-				datetime: articleGeneratedUtc,
-			});
-		}
+		const stamp = detailTabController.active === 'reliability' ? record.meta(locale) : null;
+		if (stamp) entries.push(stamp);
 		return entries;
 	});
 
@@ -358,6 +354,7 @@
 			backHref={localizeHref('/lines', locale)}
 			backLabel={t.article.back}
 			meta={articleMeta}
+			metaPending={detailTabController.active === 'reliability' && record.pending}
 			edgeLeft={articleEdgeLeft}
 			edgeRight={articleEdgeRight}
 			titleId="line-title"

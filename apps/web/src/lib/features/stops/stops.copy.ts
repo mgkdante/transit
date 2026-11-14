@@ -113,7 +113,6 @@ export const detailCopy = defineCopy({
 		report: {
 			departures: 'Rapport des passages',
 			alerts: 'Rapport des avis',
-			historic: 'Rapport de fiabilité',
 			refreshUnavailable: 'Actualisation indisponible',
 			behind: 'Rapport en retard',
 			retained: 'Le dernier rapport reçu reste affiché. Il peut ne plus être à jour.',
@@ -121,10 +120,6 @@ export const detailCopy = defineCopy({
 			retainedStatic: 'Les dernières informations reçues restent affichées.',
 			historicRefreshUnavailable: 'Fiabilité non actualisée',
 			retainedHistoric: 'Le dernier rapport de fiabilité reçu reste affiché.',
-		},
-		summary: {
-			reported: 'Résumé quotidien du rapport',
-			day: (date: string) => `Observations du ${date}`,
 		},
 		alertState: {
 			none: 'Aucun avis correspondant à cet arrêt dans ce rapport.',
@@ -188,6 +183,7 @@ export const detailCopy = defineCopy({
 			routesServed: 'Lignes desservies',
 		},
 		schedule: {
+			loadedOn: (date: string) => `D’après l’horaire chargé le ${date}.`,
 			heading: 'Exemple d’horaire en semaine',
 			none: 'Aucun exemple d’horaire publié pour cet arrêt.',
 			scope:
@@ -221,7 +217,6 @@ export const detailCopy = defineCopy({
 		report: {
 			departures: 'Departure report',
 			alerts: 'Alert report',
-			historic: 'Reliability report',
 			refreshUnavailable: 'Refresh unavailable',
 			behind: 'Report behind schedule',
 			retained: 'Showing the last report received. It may no longer be current.',
@@ -230,7 +225,6 @@ export const detailCopy = defineCopy({
 			historicRefreshUnavailable: 'Reliability could not refresh',
 			retainedHistoric: 'Showing the last reliability report received.',
 		},
-		summary: { reported: 'Reported daily summary', day: (date) => `Observations on ${date}` },
 		alertState: {
 			none: 'No matching alerts for this stop in this report.',
 			limited:
@@ -293,6 +287,7 @@ export const detailCopy = defineCopy({
 			routesServed: 'Lines served',
 		},
 		schedule: {
+			loadedOn: (date: string) => `From the schedule loaded on ${date}.`,
 			heading: 'Sample weekday schedule',
 			none: 'No sample schedule published for this stop.',
 			scope:
