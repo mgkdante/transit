@@ -32,9 +32,19 @@ def test_late_average_uses_pooled_seconds() -> None:
             reader.late_avg_min(total, late)
 
 
+def test_band_pct_preserves_divide_then_scale_half_tie() -> None:
+    # 9 * 100 / 2000 = 0.45 exactly, so half-away to one decimal is 0.5.
+    assert reader.band_pct(9, 2000) == 0.5
+
+
 def test_min_service_days_of_one_two_and_three_days() -> None:
     for width, scheduled, expected in [(1, 1, 1), (2, 2, 2), (3, 3, 3)]:
         assert reader.min_service_days(width, scheduled) == expected
+
+
+def test_late_average_preserves_a_value_just_below_a_half_tie() -> None:
+    # Seconds = 27 * late - 1: minutes = 0.45 - 1/60000000000000000, below the tie.
+    assert reader.late_avg_min(26999999999999999, 1000000000000000) == 0.4
 
 
 def test_min_service_days_is_capped_by_scheduled_days_and_never_under_four() -> None:
@@ -161,6 +171,14 @@ def test_delay_bins_preserve_open_ends_and_empty_mass() -> None:
     )
     assert reader.delay_bins([]) == (None, None)
     assert reader.delay_bins([(2, [], []), (2, [45], [0])]) == (None, None)
+
+
+def test_delay_bins_distinguish_p90_from_p89() -> None:
+    # Ranks 1..890 are in [0,10); rank 900 is in layout 2's [3600,infinity) bin.
+    assert reader.delay_bins([(2, [45, 160], [890, 110])]) == (
+        QuantileBin(45, 0, 10, 1000),
+        QuantileBin(160, 3600, None, 1000),
+    )
 
 
 def test_delay_bins_pass_layout_tagged_parts_and_refuse_another_layout() -> None:
