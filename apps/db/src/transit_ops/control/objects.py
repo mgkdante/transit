@@ -157,11 +157,13 @@ class SnapshotConditionalObjects:
         )
         iterator = self._store.iter_object_versions(self._path(directory))
         while (version := _call(lambda: next(iterator, None))) is not None:
-            yield (
+            logical_key = (
                 "/".join(bytes.fromhex(p[1:]).decode() for p in version.rel_key.split("/"))
                 if (isinstance(self._store, LocalSnapshotStorage))
                 else version.rel_key
             )
+            if logical_key.startswith(prefix):
+                yield logical_key
 
 
 def _bronze_objects(settings: Settings, prefix: str) -> SnapshotConditionalObjects:

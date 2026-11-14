@@ -176,24 +176,32 @@ def test_locked_create_race_compares_winner_bytes(body, code):
 
 
 @pytest.mark.parametrize("remote", [False, True])
-def test_listing_requires_a_directory_prefix(objects, remote):
+@pytest.mark.parametrize("key,expected", [("events", []), ("events/a", ["events/a"])])
+def test_listing_requires_a_directory_prefix(objects, remote, key, expected):
     if remote:
         client = Client(429)
-        client.list_objects_v2 = lambda **kw: {
-            "Contents": [
-                {
-                    "Key": kw["Prefix"] + "a",
-                    "ETag": '"one"',
-                    "Size": 2,
-                    "LastModified": datetime(2026, 1, 1, tzinfo=UTC),
-                }
-            ]
-        }
+
+        def list_objects(**kw):
+            assert kw["Prefix"] == "x/events/"
+            return {
+                "Contents": [
+                    {
+                        "Key": "x/" + key,
+                        "ETag": '"one"',
+                        "Size": 2,
+                        "LastModified": datetime(2026, 1, 1, tzinfo=UTC),
+                    }
+                ]
+                if ("x/" + key).startswith(kw["Prefix"])
+                else []
+            }
+
+        client.list_objects_v2 = list_objects
         objects = m.SnapshotConditionalObjects(
             SnapshotStorage(client, bucket="private", base_prefix="x")
         )
     else:
-        objects.create("events/a", {})
+        objects.create(key, {})
     with pytest.raises(ValueError):
         list(objects.list_keys("ev"))
-    assert list(objects.list_keys("events/")) == ["events/a"]
+    assert list(objects.list_keys("events/")) == expected
