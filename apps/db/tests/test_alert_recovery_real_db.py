@@ -76,11 +76,8 @@ def test_insert_preserves_fields_rerun_and_provider_isolation(target, kind):
         assert report.inserted == ("a",)
         before = rows(c, p)
         row = before[0]
-        assert (row["description_text"], row["description_text_en"], row["message"]) == (
-            "Travaux",
-            "Works",
-            None,
-        )
+        assert row["description_text"] == "Travaux" and row["description_text_en"] == "Works"
+        assert row["message"] is None
         assert row["archive_month"] == date(2020, 1, 1)
         assert row["updated_at_utc"] == NOW
         assert row["first_seen_utc"].isoformat() == "2020-01-02T00:00:00+00:00"
@@ -248,9 +245,14 @@ def test_entry_found_in_an_older_published_generation_is_written_back(target, tm
         older = rows(c, p)[1]
         assert (older["description_text"], older["description_text_en"]) == ("Travaux", "Works")
         assert older["url_en"] is None and older["updated_at_utc"] == NOW
-        assert older["message"] == dict(
-            snapshot_id="evidence", alert_index=2, captured_utc="2026-11-01T00:00:00Z"
-        )
+        assert older["message"] == {
+            "snapshot_id": "evidence",
+            "alert_index": 2,
+            "captured_utc": "2026-11-01T00:00:00Z",
+            "header_language": None,
+            "description_language": None,
+            "url_language": None,
+        }
         assert older["archive_month"] == date(2020, 1, 1)
         assert older["last_seen_utc"].isoformat() == "2026-11-01T00:00:00+00:00"
         assert recover(c, p, items, reports).inserted == ()
