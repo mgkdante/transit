@@ -55,16 +55,20 @@ describe('EdgeState — delayed skeleton fallback', () => {
 
 			expect(root).toHaveAttribute('data-loading-state', 'pending');
 			expect(root).toHaveAttribute('aria-hidden', 'true');
-			expect(root).not.toHaveAttribute('aria-busy');
+			expect(root).toHaveAttribute('aria-busy', 'true');
+			expect(root).not.toHaveAttribute('role');
+			expect(root).not.toHaveAttribute('aria-live');
 
 			await vi.advanceTimersByTimeAsync(DEFAULT_LOADING_SKELETON_DELAY_MS - 1);
 			expect(root).toHaveAttribute('data-loading-state', 'pending');
+			expect(root).toHaveAttribute('aria-busy', 'true');
 
 			await vi.advanceTimersByTimeAsync(1);
 			expect(root).toHaveAttribute('data-loading-state', 'visible');
 			expect(root).not.toHaveAttribute('aria-hidden');
 			expect(root).toHaveAttribute('aria-busy', 'true');
 			expect(root).toHaveAttribute('role', 'status');
+			expect(root).toHaveAttribute('aria-live', 'polite');
 		} finally {
 			vi.useRealTimers();
 		}

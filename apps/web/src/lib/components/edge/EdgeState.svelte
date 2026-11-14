@@ -218,7 +218,7 @@
 		data-layout={layout}
 		data-loading-state={skeletonRevealed ? 'visible' : 'pending'}
 		role={skeletonRevealed ? 'status' : undefined}
-		aria-busy={skeletonRevealed ? 'true' : undefined}
+		aria-busy="true"
 		aria-live={skeletonRevealed ? 'polite' : undefined}
 		aria-hidden={skeletonRevealed ? undefined : 'true'}
 	>
