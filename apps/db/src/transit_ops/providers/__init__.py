@@ -6,9 +6,29 @@ from transit_ops.providers.declaration import (
     Providers,
     load_providers,
 )
+from transit_ops.providers.normalize import (
+    Fill,
+    NormalizedCapture,
+    RawCapture,
+    RuleOutcome,
+    ScheduleIdentity,
+    normalize_capture,
+)
 from transit_ops.providers.registry import ProviderRegistry, load_provider_manifest
 
 __all__ = [
-    "ProviderRegistry", "load_provider_manifest", "load_providers", "Providers",
-    "Provider", "Feed", "DeclarationError", "SITE_LOCALES",
+    "ProviderRegistry",
+    "load_provider_manifest",
+    "load_providers",
+    "Providers",
+    "Provider",
+    "Feed",
+    "DeclarationError",
+    "SITE_LOCALES",
+    "normalize_capture",
+    "RawCapture",
+    "NormalizedCapture",
+    "Fill",
+    "RuleOutcome",
+    "ScheduleIdentity",
 ]
