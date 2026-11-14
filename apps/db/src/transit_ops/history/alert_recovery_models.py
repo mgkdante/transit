@@ -30,6 +30,10 @@ class SourceReport:
     coverage: tuple[str, ...] = ("not read",)
     complete: bool = False
 
+    def __post_init__(self) -> None:
+        if self.complete and ("not read" in self.coverage or self.missing or self.errors):
+            raise ValueError("inconsistent complete source report")
+
 
 @dataclass(frozen=True)
 class RecoveryReport:
@@ -43,6 +47,18 @@ class RecoveryReport:
     conflicts: tuple[str, ...] = ()
     unrecovered_expected_ids: tuple[str, ...] | None = None
     complete: bool = False
+
+    def __post_init__(self) -> None:
+        reports = self.source_reports
+        all_complete = (
+            len(reports) == 3
+            and {r.kind for r in reports} == {"backup", "published", "capture"}
+            and all(r.complete for r in reports)
+        )
+        if self.complete and (not all_complete or self.conflicts):
+            raise ValueError("inconsistent complete recovery report")
+        if self.unrecovered_expected_ids is not None and not all_complete:
+            raise ValueError("unrecovered inventory requires complete sources")
 
 
 def select_candidates(
@@ -96,6 +112,7 @@ def unrecovered_ids(
     found_ids: Iterable[str],
     reports: Iterable[SourceReport],
 ) -> tuple[str, ...] | None:
-    if expected_ids is None or not all(report.complete for report in reports):
+    reports = tuple(reports)
+    if expected_ids is None or not reports or not all(report.complete for report in reports):
         return None
     return tuple(sorted(set(expected_ids) - set(found_ids)))
