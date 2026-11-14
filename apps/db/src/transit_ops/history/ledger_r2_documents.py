@@ -36,6 +36,11 @@ class EventRecord:
     sequence: tuple[int, int] | None = None  # Assigned when the envelope commits.
 
 
+@dataclass(frozen=True, kw_only=True)
+class RecordedEvent(EventRecord):
+    at_utc: datetime
+
+
 def _identity(doc: ledger.WindowState | ledger.ArchiveCopy) -> Identity:
     return doc.dataset_id, doc.provider_id, doc.revision, doc.window_key
 
@@ -148,6 +153,33 @@ def _window_start(identity: Identity) -> date | None:
     return datasets.window_start(dataset, identity[3])
 
 
+def normalize_candidate(
+    after: WindowDocument | None,
+    current: WindowDocument | None,
+    identity: Identity,
+    seq: int,
+) -> WindowDocument | None:
+    if after is None:
+        _require(current is None)
+        return None
+    after = decode_window({"format": 1, **asdict(after)})
+    if current is None and after.seq == 1:
+        after = replace(after, seq=seq)
+    if after.seq != seq or _identity(after) != identity:
+        raise ValueError("transition must advance one event with unchanged identity")
+    return after
+
+
+def event_time(value: str) -> datetime:
+    stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    _require(stamp.utcoffset() is not None)
+    return stamp.astimezone(UTC)
+
+
+def recorded_event(raw: dict[str, Any], at: str) -> RecordedEvent:
+    return RecordedEvent(**asdict(decode_event(raw)), at_utc=event_time(at))
+
+
 def decode_transition(
     raw: bytes,
     identity: Identity,
@@ -159,10 +191,9 @@ def decode_transition(
         event = json.loads(raw)
         _require(type(event["format"]) is int and event["format"] == 1)
         _require(type(event["seq"]) is int and event["seq"] == seq)
+        _require(isinstance(event["operation_id"], str) and bool(event["operation_id"]))
         _require(event["before_sha256"] == (sha256(before).hexdigest() if before else None))
-        _require(
-            datetime.fromisoformat(event["at_utc"].replace("Z", "+00:00")).utcoffset() is not None
-        )
+        event_time(event["at_utc"])
         _require(isinstance(event["records"], list))
         for index, record in enumerate(event["records"]):
             _require(decode_event(record).sequence == (seq, index))
@@ -184,6 +215,8 @@ def prepare_transition(
     seq: int,
     before: bytes | None,
     at: datetime,
+    *,
+    operation_id: str,
 ) -> tuple[WindowDocument | None, dict[str, Any]]:
     for record in records:
         if after is not None and record.kind == "trim":
@@ -192,6 +225,7 @@ def prepare_transition(
     event = {
         "format": 1,
         "seq": seq,
+        "operation_id": operation_id,
         "at_utc": _json(at),
         "before_sha256": sha256(before).hexdigest() if before else None,
         "records": [

@@ -86,6 +86,7 @@ def test_event_only_envelope_requires_indexed_public_records():
     record = m.encode_event(replace(RECORD, sequence=(1, 0)))
     envelope = {
         "format": 1,
+        "operation_id": "seed",
         "seq": 1,
         "at_utc": "2026-01-02T03:04:05.123456Z",
         "before_sha256": None,
@@ -96,3 +97,21 @@ def test_event_only_envelope_requires_indexed_public_records():
     for records in ([], [{**record, "sequence": [1, 1]}], [m.encode_event(RECORD)]):
         with pytest.raises(m.LedgerDocumentInvalid):
             m.decode_transition(json.dumps({**envelope, "records": records}).encode(), ID, 1, None)
+    for operation_id in (None, "", 7):
+        with pytest.raises(m.LedgerDocumentInvalid):
+            m.decode_transition(
+                json.dumps({**envelope, "operation_id": operation_id}).encode(), ID, 1, None
+            )
+
+
+def test_candidate_and_recorded_view_preserve_sequence_and_time():
+    assert m.normalize_candidate(DOC, None, ID, 3).seq == 3
+    assert m.normalize_candidate(None, None, ID, 1) is None
+    with pytest.raises(m.LedgerDocumentInvalid):
+        m.normalize_candidate(None, DOC, ID, 2)
+    record = m.recorded_event(
+        m.encode_event(replace(RECORD, sequence=(2, 0))), "2026-01-02T03:04:05.123456Z"
+    )
+    assert (record.kind, record.sequence, record.at_utc) == ("changed", (2, 0), NOW)
+    with pytest.raises(m.LedgerDocumentInvalid):
+        m.recorded_event(m.encode_event(RECORD), "2026-01-02T03:04:05")
