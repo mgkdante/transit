@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.gold.reader import shift_case_sql
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryNameIndex,
     history_row_int,
@@ -107,7 +108,7 @@ _HOTSPOTS_HISTORY_ROUTE_DAILY_SQL = named_query(
     FROM gold.route_delay_spine AS sp
     JOIN gold.dim_provider AS dp ON dp.provider_id = sp.provider_id
     WHERE sp.provider_id = :provider_id
-      AND sp.provider_local_date < timezone(dp.timezone, now())::date
+      AND sp.provider_local_date < timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date
     GROUP BY sp.provider_local_date, sp.route_id
     ORDER BY sp.provider_local_date, sp.route_id
     """,
@@ -127,7 +128,7 @@ _HOTSPOTS_HISTORY_STOP_DAILY_SQL = named_query(
         FROM gold.stop_delay_spine AS sp
         JOIN gold.dim_provider AS dp ON dp.provider_id = sp.provider_id
         WHERE sp.provider_id = :provider_id
-          AND sp.provider_local_date < timezone(dp.timezone, now())::date
+          AND sp.provider_local_date < timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date
         GROUP BY sp.provider_local_date, sp.stop_id, sp.route_id
     ),
     peak AS (
@@ -142,7 +143,8 @@ _HOTSPOTS_HISTORY_STOP_DAILY_SQL = named_query(
         FROM gold.stop_delay_shift_daily AS shift
         JOIN gold.dim_provider AS dp ON dp.provider_id = shift.provider_id
         WHERE shift.provider_id = :provider_id
-          AND shift.provider_local_date < timezone(dp.timezone, now())::date
+          AND shift.provider_local_date <
+              timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date
           AND shift.shift IN ({_PEAK_SHIFT_IN_LITERAL})
         GROUP BY shift.provider_local_date, shift.stop_id, shift.route_id
     )
@@ -605,9 +607,11 @@ def build_hotspots_history_plan(
     conn: Connection,
     *,
     provider_id: str,
+    as_of_utc: datetime | None = None,
 ) -> HotspotsHistoryPlan:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
 
-    params = {"provider_id": provider_id}
+    params = {"as_of_utc": as_of_utc, "provider_id": provider_id}
     timezone_row = conn.execute(_HOTSPOTS_HISTORY_TIMEZONE_SQL, params).mappings().fetchone()
     if timezone_row is None or not isinstance(timezone_row.get("timezone"), str):
         raise ValueError(f"Hotspots history provider {provider_id!r} has no timezone")

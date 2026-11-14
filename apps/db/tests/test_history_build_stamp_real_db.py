@@ -97,7 +97,7 @@ def test_history_plans_follow_the_stamp_not_the_wall_clock(real_db_engine, tmp_p
 def test_one_publish_reads_one_instant(monkeypatch, explicit):
     from test_partitioned_history_publish import _patch_minimal_historic
 
-    _patch_minimal_historic(monkeypatch)
+    _patch_minimal_historic(monkeypatch, as_of_utc=seed.HISTORY_CLOCK)
     clock = Mock(side_effect=[seed.HISTORY_CLOCK, datetime(2030, 1, 1, tzinfo=UTC)])
     monkeypatch.setattr(historic_tier, "utc_now", clock)
     seen = []

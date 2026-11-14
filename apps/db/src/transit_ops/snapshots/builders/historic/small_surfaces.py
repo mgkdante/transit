@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import (
@@ -11,6 +11,7 @@ from transit_ops.gold.reader import (
     round_half_away,
     shift_case_sql,
 )
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.silver.i3 import alert_message_provenance
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
@@ -887,7 +888,7 @@ _ALERT_HISTORY_COUNT_SQL = named_query(
 _ALERT_HISTORY_ANCHOR_SQL = named_query(
     "alerts.history.anchor",
     """
-    SELECT (now() AT TIME ZONE dp.timezone)::date AS anchor
+    SELECT (CAST(:as_of_utc AS timestamptz) AT TIME ZONE dp.timezone)::date AS anchor
     FROM gold.dim_provider AS dp
     WHERE dp.provider_id = :provider_id
     """,
@@ -931,12 +932,17 @@ def _alert_breakdown(
 _ALERT_HISTORY_LIMIT = 500
 
 
-def build_alert_history(conn: Connection, *, provider_id: str, generated_utc: str) -> AlertHistory:
+def build_alert_history(
+    conn: Connection, *, provider_id: str, generated_utc: str, as_of_utc: datetime | None = None
+) -> AlertHistory:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     from transit_ops.settings import get_settings
 
     retention_days = get_settings().SILVER_I3_CLOSED_RETENTION_DAYS
     anchor_row = (
-        conn.execute(_ALERT_HISTORY_ANCHOR_SQL, {"provider_id": provider_id}).mappings().fetchone()
+        conn.execute(
+            _ALERT_HISTORY_ANCHOR_SQL, {"provider_id": provider_id, "as_of_utc": as_of_utc}
+        ).mappings().fetchone()
     )
     win_end: date | None = anchor_row["anchor"] if anchor_row else None
     win_start: date | None = (

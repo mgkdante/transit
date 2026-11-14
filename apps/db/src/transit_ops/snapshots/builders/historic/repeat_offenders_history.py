@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any
 
 from transit_ops.gold.reader import avg_delay_min
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.snapshots.builders.historic.history_common import (
     HistoryNameIndex,
     history_row_int,
@@ -73,7 +74,7 @@ _REPEAT_OFFENDERS_HISTORY_DAILY_SQL = named_query(
     FROM gold.repeat_offender_daily_spine AS sp
     JOIN gold.dim_provider AS dp ON dp.provider_id = sp.provider_id
     WHERE sp.provider_id = :provider_id
-      AND sp.provider_local_date < timezone(dp.timezone, now())::date
+      AND sp.provider_local_date < timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date
     ORDER BY sp.provider_local_date, sp.entity_kind, sp.entity_id, sp.route_id
     """,
 )
@@ -374,9 +375,11 @@ def build_repeat_offenders_history_plan(
     *,
     provider_id: str,
     names: HistoryNameIndex | None = None,
+    as_of_utc: datetime | None = None,
 ) -> RepeatOffendersHistoryPlan:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
 
-    params = {"provider_id": provider_id}
+    params = {"as_of_utc": as_of_utc, "provider_id": provider_id}
     if names is None:
         timezone_row = (
             conn.execute(_REPEAT_OFFENDERS_HISTORY_TIMEZONE_SQL, params).mappings().fetchone()

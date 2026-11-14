@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import re
+from functools import partial
 from unittest.mock import Mock
 
 import pytest
@@ -63,6 +64,7 @@ from transit_ops.sql_registry import query_name
 class FakeConn(NamedQueryConn):
     def __init__(self, mapping=None):  # noqa: ANN001
         super().__init__(dict(mapping) if mapping is not None else {})
+        self._mapping["history.build.as_of"] = [datetime.datetime(2026, 7, 21, tzinfo=datetime.UTC)]
         self.executed_query_params: list[tuple[str | None, dict]] = []
 
     def execute(self, statement, params=None):  # noqa: ANN001
@@ -3559,7 +3561,7 @@ def _batch_builder():  # noqa: ANN202
 
     builder = getattr(builders, "build_all_route_reliability", None)
     assert callable(builder), "build_all_route_reliability must be exported"
-    return builder
+    return partial(builder, as_of_utc=datetime.datetime(2026, 7, 21, tzinfo=datetime.UTC))
 
 
 def test_build_all_route_reliability_preserves_public_assembler_signature() -> None:
@@ -3569,7 +3571,8 @@ def test_build_all_route_reliability_preserves_public_assembler_signature() -> N
         "(conn: 'Connection', *, provider_id: 'str', route_id: 'str', "
         "generated_utc: 'str', weak_stops_limit: 'int' = 100, "
         "route_names: 'Mapping[str, str] | None' = None, "
-        "stop_names: 'Mapping[str, str] | None' = None) -> 'RouteReliability'"
+        "stop_names: 'Mapping[str, str] | None' = None, "
+        "as_of_utc: 'datetime | None' = None) -> 'RouteReliability'"
     )
     assert callable(_batch_builder())
 
@@ -3738,6 +3741,7 @@ def test_build_all_route_reliability_shares_provider_static_rows_across_routes(
         generated_utc: str,
         route_names,
         stop_names,
+        as_of_utc,
     ) -> str:  # noqa: ANN001
         del generated_utc, route_names, stop_names
         checks = (
@@ -3767,6 +3771,7 @@ def test_build_all_route_reliability_shares_provider_static_rows_across_routes(
 
     built = batch_module.build_all_route_reliability(
         ManyServiceConn(route_ids),
+        as_of_utc=datetime.datetime(2026, 7, 21, tzinfo=datetime.UTC),
         provider_id="stm",
         generated_utc="t",
     )

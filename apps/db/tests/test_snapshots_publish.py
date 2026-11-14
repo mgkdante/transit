@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import pytest
 from _sqlfakes import history_count_rows
@@ -36,6 +37,8 @@ class FakeResult:
 
 class FakeConn:
     def execute(self, statement, params=None):  # noqa: ANN001
+        if query_name(statement) == "history.build.as_of":
+            return NamedRowsResult([datetime(2026, 7, 13, tzinfo=UTC)])
         if query_name(statement) == "publish.lock.try_acquire":
             return NamedRowsResult([True])
         return FakeResult()
@@ -773,6 +776,7 @@ def test_publish_historic_hoists_name_catalogs_for_two_routes(monkeypatch) -> No
         provider_id="stm",
         settings=FakeSettings(),
         stamp="t",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
     )
 
     assert (
@@ -1172,6 +1176,8 @@ def test_publish_historic_writes_expected_keys_and_network_history(tmp_path) -> 
 
     class FakeConnHistoric:
         def execute(self, statement, params=None):
+            if query_name(statement) == "history.build.as_of":
+                return NamedRowsResult([datetime.datetime(2026, 7, 13, tzinfo=UTC)])
             return _FakeResult(
                 history_count_rows(
                     statement,
@@ -1645,7 +1651,7 @@ def test_publish_historic_uses_one_sorted_route_batch_and_preserves_hash_gate(
     stamp = "2026-07-21T00:00:00Z"
     batch_calls: list[tuple[str, str]] = []
 
-    def build_batch(conn, *, provider_id, generated_utc):  # noqa: ANN001, ANN202
+    def build_batch(conn, *, provider_id, generated_utc, as_of_utc=None):  # noqa: ANN001, ANN202
         batch_calls.append((provider_id, generated_utc))
         return {
             "R2": RouteReliability(generated_utc=generated_utc, id="R2", name="Route Two"),

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -32,7 +34,10 @@ def test_manifest_and_provenance_share_policy(provider, gap, ids, types):
         def execute(self, *args):
             return EmptyResult()
 
-    assert build_provenance(Connection(), provider_id=provider, generated_utc="t").gaps == [gap]
+    assert build_provenance(
+        Connection(), provider_id=provider, generated_utc="t",
+        as_of_utc=datetime(2026, 7, 21, tzinfo=UTC),
+    ).gaps == [gap]
     assert registry.get_provider("sto").realtime.lines_without_live_data == []
 
 

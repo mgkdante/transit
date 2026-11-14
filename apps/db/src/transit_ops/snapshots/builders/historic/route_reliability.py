@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import (
@@ -8,6 +9,7 @@ from transit_ops.gold.reader import (
     current_date_trailing_clause,
     round_half_away,
 )
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.snapshots.builders._helpers import (
     _ROUTE_NAMES_SQL,
     _STOP_NAMES_SQL,
@@ -480,8 +482,10 @@ def build_route_reliability(
     weak_stops_limit: int = 100,
     route_names: Mapping[str, str] | None = None,
     stop_names: Mapping[str, str] | None = None,
+    as_of_utc: datetime | None = None,
 ) -> RouteReliability:
-    params = {"provider_id": provider_id, "route_id": route_id}
+    as_of_utc = resolve_as_of(conn, as_of_utc)
+    params = {"as_of_utc": as_of_utc, "provider_id": provider_id, "route_id": route_id}
 
     periods = _route_periods(conn, params)
 

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import cov_case_sql
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.snapshots.builders._helpers import (
     _ACTIVE_SERVICES_SQL,
     _CURRENT_DATASET_VERSION_SQL,
@@ -509,14 +510,14 @@ _OCCUPANCY_SQL = named_query(
         JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
         WHERE rob.provider_id = :provider_id AND rob.route_id IS NOT NULL
           AND rob.provider_local_date >=
-              (now() AT TIME ZONE dp.timezone)::date - 30
+              (CAST(:as_of_utc AS timestamptz) AT TIME ZONE dp.timezone)::date - 30
     ), hourly AS MATERIALIZED (
         SELECT rob.*
         FROM gold.route_occupancy_band_hourly AS rob
         JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
         WHERE rob.provider_id = :provider_id AND rob.route_id IS NOT NULL
           AND rob.provider_local_date >=
-              (now() AT TIME ZONE dp.timezone)::date - 30
+              (CAST(:as_of_utc AS timestamptz) AT TIME ZONE dp.timezone)::date - 30
     )
     SELECT
         route_id, 'band_window'::text AS section,
@@ -618,7 +619,7 @@ _CROWDING_DELAY_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = rdc.provider_id
     WHERE rdc.provider_id = :provider_id AND rdc.route_id IS NOT NULL
       AND rdc.provider_local_date >=
-          (now() AT TIME ZONE dp.timezone)::date - 30
+          (CAST(:as_of_utc AS timestamptz) AT TIME ZONE dp.timezone)::date - 30
     GROUP BY rdc.route_id, rdc.band
     ORDER BY rdc.route_id, rdc.band
     """,
@@ -983,7 +984,9 @@ def build_all_route_reliability(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
 ) -> dict[str, RouteReliability]:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
 
     inventory = _inventory_rows(conn.execute(_ROUTE_INVENTORY_SQL, {"provider_id": provider_id}))
     route_ids_ordered = sorted(
@@ -1115,7 +1118,9 @@ def build_all_route_reliability(
     _load_occupancy(
         stores,
         route_ids,
-        _mapping_rows(conn.execute(_OCCUPANCY_SQL, {"provider_id": provider_id})),
+        _mapping_rows(conn.execute(
+            _OCCUPANCY_SQL, {"provider_id": provider_id, "as_of_utc": as_of_utc}
+        )),
     )
     _put_route_rows(
         stores,
@@ -1133,7 +1138,9 @@ def build_all_route_reliability(
         stores,
         route_ids,
         "route.delay.by_crowding",
-        _mapping_rows(conn.execute(_CROWDING_DELAY_SQL, {"provider_id": provider_id})),
+        _mapping_rows(conn.execute(
+            _CROWDING_DELAY_SQL, {"provider_id": provider_id, "as_of_utc": as_of_utc}
+        )),
     )
 
     return {
@@ -1146,6 +1153,7 @@ def build_all_route_reliability(
             provider_id=provider_id,
             route_id=route_id,
             generated_utc=generated_utc,
+            as_of_utc=as_of_utc,
             route_names=route_names,  # type: ignore[arg-type]
             stop_names=stop_names,  # type: ignore[arg-type]
         )

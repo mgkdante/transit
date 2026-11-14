@@ -82,10 +82,12 @@ def _build_historic_point_plans(
     conn: Connection,
     *,
     provider_id: str,
+    as_of_utc: datetime | None = None,
 ) -> HistoricPointPlanBundle:
     hotspots = builders.build_hotspots_history_plan(
         conn,
         provider_id=provider_id,
+        as_of_utc=as_of_utc,
     )
     return HistoricPointPlanBundle(
         hotspots=hotspots,
@@ -93,6 +95,7 @@ def _build_historic_point_plans(
             conn,
             provider_id=provider_id,
             names=hotspots.names,
+            as_of_utc=as_of_utc,
         ),
     )
 
@@ -139,11 +142,12 @@ def publish(
 ) -> list[str]:
     if not isinstance(storage, HistoricWriter):
         raise TypeError("historic publication requires a conditional historic writer")
-    as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
+    publication_instant = utc_now() if as_of_utc is None else as_of_utc
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     if _historic_run is not None:
         _historic_run.run_instant_utc = as_of_utc
     if stamp is None:
-        stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
+        stamp = publication_instant.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     concurrency = uploads.concurrency(settings)
     with uploads.provider_executor(concurrency):
         _historic._activate_historic_phase(_historic_run, "parent_compose")
@@ -152,7 +156,7 @@ def publish(
 
         _historic._activate_historic_phase(_historic_run, "compatibility")
         compatibility = historic_compatibility.build(
-            conn, provider_id=provider_id, settings=settings, stamp=stamp
+            conn, provider_id=provider_id, settings=settings, stamp=stamp, as_of_utc=as_of_utc
         )
         items, route_items, stages, alert_archive = (
             compatibility.items,
@@ -190,7 +194,9 @@ def publish(
             builders.build_stop_history_plan,
             as_of_utc=as_of_utc,
         )
-        point_plans = _build_historic_point_plans(conn, provider_id=provider_id)
+        point_plans = _build_historic_point_plans(
+            conn, provider_id=provider_id, as_of_utc=as_of_utc
+        )
         effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
         alert_findings = gate.check_alert_archive_bundle(
             alert_archive.index,
@@ -424,11 +430,12 @@ def collect(
     as_of_utc: datetime | None = None,
     include: Collection[HistoricInclude],
 ) -> HistoricValidationInputs:
-    as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
+    publication_instant = utc_now() if as_of_utc is None else as_of_utc
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     if stamp is None:
-        stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
+        stamp = publication_instant.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     compatibility = historic_compatibility.build(
-        conn, provider_id=provider_id, settings=settings, stamp=stamp
+        conn, provider_id=provider_id, settings=settings, stamp=stamp, as_of_utc=as_of_utc
     )
     items, route_items, _alert_archive = (
         compatibility.items,
@@ -460,7 +467,8 @@ def collect(
             as_of_utc=as_of_utc,
         )
     point_plans = (
-        _build_historic_point_plans(conn, provider_id=provider_id) if "points" in include else None
+        _build_historic_point_plans(conn, provider_id=provider_id, as_of_utc=as_of_utc)
+        if "points" in include else None
     )
     return HistoricValidationInputs(
         all_items=[(k, p) for (k, p, _t) in items],

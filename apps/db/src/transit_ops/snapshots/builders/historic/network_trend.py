@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from transit_ops.gold.reader import round_half_away
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.settings import get_settings
 from transit_ops.snapshots.builders._helpers import (
     _avg_delay_min,
@@ -37,7 +39,7 @@ _TREND_DAILY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))  AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 90
+      AND sp.provider_local_date >= (CAST(:as_of_utc AS timestamptz) AT TIME ZONE 'UTC')::date - 90
     GROUP BY sp.provider_local_date
     """,
 )
@@ -53,7 +55,8 @@ _TREND_FACT_SQL = named_query(
     WHERE fts.provider_id = :provider_id
       AND fts.delay_seconds IS NOT NULL
       AND ABS(fts.delay_seconds) <= 3600
-      AND fts.captured_at_utc >= now() - make_interval(days => :fact_retention_days)
+      AND fts.captured_at_utc >= CAST(:as_of_utc AS timestamptz)
+          - make_interval(days => :fact_retention_days)
     GROUP BY timezone(dp.timezone, fts.captured_at_utc)::date
     """,
 )
@@ -105,7 +108,7 @@ _TREND_WEEKLY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))     AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
+      AND sp.provider_local_date >= (CAST(:as_of_utc AS timestamptz) AT TIME ZONE 'UTC')::date - 371
     GROUP BY date_trunc('week', sp.provider_local_date)::date
     """,
 )
@@ -121,7 +124,7 @@ _TREND_MONTHLY_SQL = named_query(
                 FROM unnest(sp.delay_histogram) AS x))      AS inclamp_obs
     FROM gold.route_delay_spine AS sp
     WHERE sp.provider_id = :provider_id
-      AND sp.provider_local_date >= (now() AT TIME ZONE 'UTC')::date - 371
+      AND sp.provider_local_date >= (CAST(:as_of_utc AS timestamptz) AT TIME ZONE 'UTC')::date - 371
     GROUP BY date_trunc('month', sp.provider_local_date)::date
     """,
 )
@@ -284,8 +287,12 @@ def _trend_points(
     ]
 
 
-def build_network_trend(conn: Connection, *, provider_id: str, generated_utc: str) -> NetworkTrend:
+def build_network_trend(
+    conn: Connection, *, provider_id: str, generated_utc: str, as_of_utc: datetime | None = None
+) -> NetworkTrend:
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     params = {
+        "as_of_utc": as_of_utc,
         "provider_id": provider_id,
         "fact_retention_days": get_settings().GOLD_FACT_RETENTION_DAYS,
     }
