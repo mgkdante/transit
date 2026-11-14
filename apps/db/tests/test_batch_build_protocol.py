@@ -19,7 +19,14 @@ from transit_ops.sql_registry import named_query
 
 
 def request():
-    return BuildRequest("network", (date(2026, 11, 1),), datetime(2026, 11, 3, tzinfo=UTC), 14, 10)
+    return BuildRequest(
+        "network",
+        (date(2026, 11, 1),),
+        datetime(2026, 11, 3, tzinfo=UTC),
+        14,
+        10,
+        "America/Toronto",
+    )
 
 
 def test_build_request_refuses_what_the_postgres_build_refuses():
@@ -235,3 +242,54 @@ def test_a_filled_registry_slot_satisfies_the_protocol(monkeypatch):
     assert resolved is builder and isinstance(resolved, FamilyBuilder)
     assert resolved.inputs(request()) == (InputNeed("gold.toy", "all"),)
     assert all(resolve_builder(name) is None for name in FAMILIES if name != builder.family_id)
+
+
+@pytest.mark.parametrize("zone", ["Unknown/Nowhere", "", None])
+def test_request_requires_an_iana_timezone(zone):
+    with pytest.raises(ValueError, match="timezone"):
+        replace(request(), timezone=zone)
+
+
+@pytest.mark.parametrize(
+    "day,closing_stamp",
+    [
+        (date(2026, 11, 1), datetime(2026, 11, 2, 5, tzinfo=UTC)),
+        (date(2026, 3, 8), datetime(2026, 3, 9, 4, tzinfo=UTC)),
+    ],
+)
+def test_requested_local_days_must_be_closed(day, closing_stamp):
+    changes = {"local_dates": (day,), "timezone": "America/Toronto"}
+    closed = replace(request(), as_of_utc=closing_stamp, **changes)
+    assert closed.local_dates == (day,)
+    with pytest.raises(ValueError, match="closed"):
+        replace(closed, as_of_utc=closing_stamp - timedelta(microseconds=1))
+    with pytest.raises(ValueError, match="closed"):
+        replace(closed, local_dates=(day + timedelta(days=1),))
+
+
+@pytest.mark.parametrize(
+    "day,expected,expanded",
+    [
+        (
+            date(2026, 11, 1),
+            ("2026-11-01", "2026-11-02"),
+            ("2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03"),
+        ),
+        (
+            date(2026, 3, 8),
+            ("2026-03-08", "2026-03-09"),
+            ("2026-03-07", "2026-03-08", "2026-03-09", "2026-03-10"),
+        ),
+    ],
+)
+def test_utc_days_cover_dst_days_and_declared_offsets(day, expected, expanded):
+    from transit_ops.batch.build import utc_days
+
+    local = replace(request(), local_dates=(day,), timezone="America/Toronto")
+    assert utc_days(local) == expected
+    assert utc_days(local, lookback_days=1, after_days=1) == expanded
+    utc = replace(local, timezone="UTC")
+    assert utc_days(utc) == (day.isoformat(),)
+    for offsets in [{"lookback_days": -1}, {"after_days": -1}, {"after_days": 1.5}]:
+        with pytest.raises(ValueError, match="offset"):
+            utc_days(local, **offsets)
