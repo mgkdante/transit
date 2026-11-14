@@ -3,6 +3,10 @@ A public dashboard that tells riders how reliable their transit service is, from
 
 ## Language
 
+**Object digest**:
+The checksum of the stored bytes of one object.
+_Avoid_: content digest, ETag
+
 **Dataset**:
 One declared kind of kept record with one key, such as the captures of one feed or the rows of one table.
 _Avoid_: edition (a schedule edition, which the code calls a dataset version)
