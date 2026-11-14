@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
@@ -52,33 +54,35 @@ if TYPE_CHECKING:  # pragma: no cover
 _group_rows = group_history_entity_date_rows
 
 
+NOW = "CAST(:as_of_utc AS timestamptz)"
+
 STOP_HISTORY_ENTITY_BATCH_SIZE = 100
 STOP_HISTORY_METRICS = historic_tree.STOP_HISTORY_METRICS
 
 _STOP_HISTORY_IDS_SQL = named_query(
     "history.stops.ids.inner",
-    """
+    f"""
     WITH retained_ids AS (
         SELECT spine.stop_id
         FROM gold.stop_delay_spine AS spine
         JOIN gold.dim_provider AS dp ON dp.provider_id = spine.provider_id
         WHERE spine.provider_id = :provider_id
-          AND spine.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND spine.provider_local_date < timezone(dp.timezone, now())::date
+          AND spine.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND spine.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT pct.stop_id
         FROM gold.stop_delay_percentile_daily AS pct
         JOIN gold.dim_provider AS dp ON dp.provider_id = pct.provider_id
         WHERE pct.provider_id = :provider_id
-          AND pct.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND pct.provider_local_date < timezone(dp.timezone, now())::date
+          AND pct.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND pct.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT occ.stop_id
         FROM gold.stop_occupancy_band_daily AS occ
         JOIN gold.dim_provider AS dp ON dp.provider_id = occ.provider_id
         WHERE occ.provider_id = :provider_id
-          AND occ.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND occ.provider_local_date < timezone(dp.timezone, now())::date
+          AND occ.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND occ.provider_local_date < timezone(dp.timezone, {NOW})::date
     ), inventory AS (
         SELECT stop_id FROM retained_ids
         WHERE stop_id IS NOT NULL AND stop_id <> ''
@@ -93,7 +97,7 @@ _STOP_HISTORY_IDS_SQL = named_query(
 
 _STOP_HISTORY_DELAY_SQL = named_query(
     "history.stops.delay.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY spine.stop_id, date_trunc('month', spine.provider_local_date)
            ) AS __history_scope_count,
@@ -108,8 +112,8 @@ _STOP_HISTORY_DELAY_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = spine.provider_id
     WHERE spine.provider_id = :provider_id
       AND spine.stop_id = ANY(:entity_ids)
-      AND spine.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND spine.provider_local_date < timezone(dp.timezone, now())::date
+      AND spine.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND spine.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY spine.stop_id, spine.provider_local_date
     ORDER BY spine.stop_id, spine.provider_local_date
     """,
@@ -117,7 +121,7 @@ _STOP_HISTORY_DELAY_SQL = named_query(
 
 _STOP_HISTORY_PERCENTILES_SQL = named_query(
     "history.stops.percentiles.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY pct.stop_id, date_trunc('month', pct.provider_local_date)
            ) AS __history_scope_count,
@@ -131,15 +135,15 @@ _STOP_HISTORY_PERCENTILES_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = pct.provider_id
     WHERE pct.provider_id = :provider_id
       AND pct.stop_id = ANY(:entity_ids)
-      AND pct.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND pct.provider_local_date < timezone(dp.timezone, now())::date
+      AND pct.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND pct.provider_local_date < timezone(dp.timezone, {NOW})::date
     ORDER BY pct.stop_id, pct.provider_local_date
     """,
 )
 
 _STOP_HISTORY_OCCUPANCY_SQL = named_query(
     "history.stops.occupancy.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY occ.stop_id, date_trunc('month', occ.provider_local_date)
            ) AS __history_scope_count,
@@ -157,8 +161,8 @@ _STOP_HISTORY_OCCUPANCY_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = occ.provider_id
     WHERE occ.provider_id = :provider_id
       AND occ.stop_id = ANY(:entity_ids)
-      AND occ.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND occ.provider_local_date < timezone(dp.timezone, now())::date
+      AND occ.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND occ.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY occ.stop_id, occ.provider_local_date
     ORDER BY occ.stop_id, occ.provider_local_date
     """,
@@ -527,14 +531,17 @@ def build_stop_history_plan(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
     entity_batch_size: int = STOP_HISTORY_ENTITY_BATCH_SIZE,
     phase_context: HistoryPhaseContext | None = None,
 ) -> StopHistoryPlan:
     if entity_batch_size <= 0:
         raise ValueError("Stop history entity_batch_size must be positive")
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     settings = get_settings()
     base_params = {
         "provider_id": provider_id,
+        "as_of_utc": as_of_utc,
         "warm_retention_days": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
     }
     with history_phase(phase_context, "source_digest"):
@@ -571,12 +578,14 @@ def build_stop_history(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
     entity_batch_size: int = STOP_HISTORY_ENTITY_BATCH_SIZE,
 ) -> StopHistoryBundle:
     return build_stop_history_plan(
         conn,
         provider_id=provider_id,
         generated_utc=generated_utc,
+        as_of_utc=as_of_utc,
         entity_batch_size=entity_batch_size,
     ).materialize()
 

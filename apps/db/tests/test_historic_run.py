@@ -305,7 +305,10 @@ def test_truncated_inventory_is_fatal():
         }
     )
     with pytest.raises(historic.HistoricPartitionError, match="inventory row count"):
-        build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")
+        build_stop_history_plan(
+            conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm",
+            as_of_utc=datetime(2026, 7, 2, tzinfo=UTC),
+        )
 
 
 def test_truncated_scope_load_is_fatal():
@@ -317,7 +320,10 @@ def test_truncated_scope_load_is_fatal():
             ],
         }
     )
-    plan = build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")
+    plan = build_stop_history_plan(
+        conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm",
+        as_of_utc=datetime(2026, 7, 2, tzinfo=UTC),
+    )
     with pytest.raises(historic.HistoricPartitionError, match="scope row count"):
         list(plan.iter_partition_items())
 
@@ -332,7 +338,10 @@ def test_invalid_inventory_id_is_fatal_before_normalization(entity):
         }
     )
     with pytest.raises(historic.HistoricPartitionError, match="ID must be nonempty text"):
-        build_stop_history_plan(conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm")
+        build_stop_history_plan(
+            conn, generated_utc="2026-07-02T00:00:00Z", provider_id="stm",
+            as_of_utc=datetime(2026, 7, 2, tzinfo=UTC),
+        )
 
 
 @pytest.mark.parametrize(

@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, cast
 
 from sqlalchemy.engine import Connection
 
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.ingestion.common import utc_now
 from transit_ops.settings import Settings
 from transit_ops.snapshots import builders, gate, historic_compatibility, historic_tree, uploads
@@ -129,6 +131,7 @@ def publish(
     provider_id: str,
     settings: Settings,
     stamp: str | None = None,
+    as_of_utc: datetime | None = None,
     gate_report: gate.GateReport | None = None,
     prior_files_total: int | None = None,
     force: bool = False,
@@ -136,8 +139,11 @@ def publish(
 ) -> list[str]:
     if not isinstance(storage, HistoricWriter):
         raise TypeError("historic publication requires a conditional historic writer")
+    as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
+    if _historic_run is not None:
+        _historic_run.run_instant_utc = as_of_utc
     if stamp is None:
-        stamp = publication_stamp()
+        stamp = as_of_utc.strftime("%Y-%m-%dT00:00:00Z")
     concurrency = uploads.concurrency(settings)
     with uploads.provider_executor(concurrency):
         _historic._activate_historic_phase(_historic_run, "parent_compose")
@@ -182,6 +188,7 @@ def publish(
             builders.build_network_history_plan,
             builders.build_line_history_plan,
             builders.build_stop_history_plan,
+            as_of_utc=as_of_utc,
         )
         point_plans = _build_historic_point_plans(conn, provider_id=provider_id)
         effective_report = gate_report or gate.new_report(provider_id, "historic", stamp)
@@ -413,9 +420,13 @@ def collect(
     *,
     provider_id: str,
     settings: Settings,
-    stamp: str,
+    stamp: str | None = None,
+    as_of_utc: datetime | None = None,
     include: Collection[HistoricInclude],
 ) -> HistoricValidationInputs:
+    as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
+    if stamp is None:
+        stamp = as_of_utc.strftime("%Y-%m-%dT00:00:00Z")
     compatibility = historic_compatibility.build(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )
@@ -430,6 +441,7 @@ def collect(
             conn,
             provider_id=provider_id,
             generated_utc=stamp,
+            as_of_utc=as_of_utc,
         )
     line_history = None
     if "lines" in include:
@@ -437,6 +449,7 @@ def collect(
             conn,
             provider_id=provider_id,
             generated_utc=stamp,
+            as_of_utc=as_of_utc,
         )
     stop_history = None
     if "stops" in include:
@@ -444,6 +457,7 @@ def collect(
             conn,
             provider_id=provider_id,
             generated_utc=stamp,
+            as_of_utc=as_of_utc,
         )
     point_plans = (
         _build_historic_point_plans(conn, provider_id=provider_id) if "points" in include else None

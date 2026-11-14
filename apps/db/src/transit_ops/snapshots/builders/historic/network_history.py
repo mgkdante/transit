@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
@@ -41,9 +43,11 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.engine import Connection
 
 
+NOW = "CAST(:as_of_utc AS timestamptz)"
+
 _NETWORK_HISTORY_DELAY_SQL = named_query(
     "history.network.delay.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY date_trunc('month', sp.provider_local_date)
            ) AS __history_scope_count,
@@ -61,8 +65,8 @@ _NETWORK_HISTORY_DELAY_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = sp.provider_id
     WHERE sp.provider_id = :provider_id
       AND sp.provider_local_date >=
-          timezone(dp.timezone, now())::date - :warm_retention_days
-      AND sp.provider_local_date < timezone(dp.timezone, now())::date
+          timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND sp.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY sp.provider_local_date
     ORDER BY sp.provider_local_date
     """,
@@ -71,9 +75,9 @@ _NETWORK_HISTORY_DELAY_SQL = named_query(
 
 _NETWORK_HISTORY_FACT_SQL = named_query(
     "history.network.fact.inner",
-    """
+    f"""
     WITH source_bounds AS (
-        SELECT now() - make_interval(days => :fact_retention_days) AS retention_floor_utc
+        SELECT {NOW} - make_interval(days => :fact_retention_days) AS retention_floor_utc
     )
     SELECT COUNT(*) OVER (
                PARTITION BY date_trunc(
@@ -96,7 +100,7 @@ _NETWORK_HISTORY_FACT_SQL = named_query(
       AND timezone(dp.timezone, fts.captured_at_utc)::date >
           timezone(dp.timezone, bounds.retention_floor_utc)::date
       AND timezone(dp.timezone, fts.captured_at_utc)::date <
-          timezone(dp.timezone, now())::date
+          timezone(dp.timezone, {NOW})::date
     GROUP BY timezone(dp.timezone, fts.captured_at_utc)::date
     ORDER BY local_date
     """,
@@ -105,7 +109,7 @@ _NETWORK_HISTORY_FACT_SQL = named_query(
 
 _NETWORK_HISTORY_CANCELLATION_SQL = named_query(
     "history.network.cancellation.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY date_trunc('month', rcd.provider_local_date)
            ) AS __history_scope_count,
@@ -124,8 +128,8 @@ _NETWORK_HISTORY_CANCELLATION_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = rcd.provider_id
     WHERE rcd.provider_id = :provider_id
       AND rcd.provider_local_date >=
-          timezone(dp.timezone, now())::date - :warm_retention_days
-      AND rcd.provider_local_date < timezone(dp.timezone, now())::date
+          timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND rcd.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY rcd.provider_local_date
     ORDER BY rcd.provider_local_date
     """,
@@ -134,7 +138,7 @@ _NETWORK_HISTORY_CANCELLATION_SQL = named_query(
 
 _NETWORK_HISTORY_OCCUPANCY_SQL = named_query(
     "history.network.occupancy.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY date_trunc('month', rob.provider_local_date)
            ) AS __history_scope_count,
@@ -151,8 +155,8 @@ _NETWORK_HISTORY_OCCUPANCY_SQL = named_query(
     JOIN gold.dim_provider AS dp ON dp.provider_id = rob.provider_id
     WHERE rob.provider_id = :provider_id
       AND rob.provider_local_date >=
-          timezone(dp.timezone, now())::date - :warm_retention_days
-      AND rob.provider_local_date < timezone(dp.timezone, now())::date
+          timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND rob.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY rob.provider_local_date
     ORDER BY rob.provider_local_date
     """,
@@ -465,16 +469,20 @@ def build_network_history_plan(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
     phase_context: HistoryPhaseContext | None = None,
 ) -> NetworkHistoryPlan:
 
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     settings = get_settings()
     warm_params = {
         "provider_id": provider_id,
+        "as_of_utc": as_of_utc,
         "warm_retention_days": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
     }
     fact_params = {
         "provider_id": provider_id,
+        "as_of_utc": as_of_utc,
         "fact_retention_days": settings.GOLD_FACT_RETENTION_DAYS,
     }
     with history_phase(phase_context, "source_digest"):
@@ -502,12 +510,14 @@ def build_network_history(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
 ) -> NetworkHistoryBundle:
 
     return build_network_history_plan(
         conn,
         provider_id=provider_id,
         generated_utc=generated_utc,
+        as_of_utc=as_of_utc,
     ).materialize()
 
 
