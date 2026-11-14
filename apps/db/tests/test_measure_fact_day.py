@@ -19,7 +19,7 @@ from pathlib import Path
 signal.signal(signal.SIGTERM,signal.SIG_IGN)
 s=socket.socket();s.bind(('127.0.0.1',0));s.listen()
 folder=Path(sys.argv[2]);(folder/'nested').mkdir()
-(folder/'nested/fact.csv.partial').write_bytes(b'private')
+stream=(folder/'nested/fact.csv.partial').open('wb');stream.write(b'private');stream.flush()
 ready=Path(sys.argv[3]);partial=ready.with_suffix('.partial')
 partial.write_text(json.dumps([os.getpid(),sys.argv[2],s.getsockname()[1]]));partial.replace(ready)
 while True: time.sleep(0.1)
@@ -119,6 +119,12 @@ with r.guarded(source,Mock(db_phase_s=0.05)): time.sleep(10)
     assert json.loads(output.out)["reason"] == "measurement_failed" and not output.err
 
 
+def assert_recovered(directory, capsys):
+    assert measure.supervise([], worker="print('{}')", scratch_root=Path(directory).parent) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert directory in receipt["swept_paths"] and not receipt["leftover_paths"]
+
+
 @pytest.mark.parametrize(
     "stop", ["SIGTERM", "SIGINT", "abrupt"] + (["SIGBREAK"] if hasattr(signal, "SIGBREAK") else [])
 )
@@ -157,6 +163,8 @@ sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
                     assert observer.recv(1) == b""
                 except ConnectionResetError:
                     pass
+        if Path(directory).exists() and stop == "abrupt":
+            assert_recovered(directory, capsys)
         assert not Path(directory).exists(), "owned scratch remains after worker exit"
         assert sentinel.read_text() == "preserve"
         if stop != "abrupt":
@@ -168,3 +176,65 @@ sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
             with socket.socket() as observer:
                 if observer.connect_ex(("127.0.0.1", port)) == 0:
                     os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+
+
+@pytest.mark.parametrize("lock", ["none", "brief", "persistent"])
+def test_start_sweeps_only_provably_dead_markers(tmp_path, capsys, monkeypatch, lock):
+    birth = measure.process_birth(os.getpid())
+    assert birth is not None
+    roots = {}
+    for name in ("live", "stale", "unmarked", "foreign"):
+        root = tmp_path / ("transit-measure-" + name)
+        root.mkdir()
+        roots[name] = root
+        (root / "payload").write_bytes(b"preserve" if name != "stale" else b"stale")
+        if name != "unmarked":
+            data = dict(invocation="a" * 32, path=str(root), pid=os.getpid(), start=birth)
+            if name == "stale":
+                data["start"] = birth[:-1] + ("0" if birth[-1] != "0" else "1")
+            if name == "foreign":
+                data["start"] = "foreign@1"
+            (root / ".owner").write_text(json.dumps(data), encoding="utf-8")
+    clock, failed, unlink = [0.0], [False], Path.unlink
+
+    def locked(path, *args, **kwargs):
+        if path == roots["stale"] / "payload" and (
+            lock == "persistent" or lock == "brief" and not failed[0]
+        ):
+            failed[0] = True
+            raise PermissionError("brief sharing violation")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    monkeypatch.setattr(measure.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(measure.time, "sleep", lambda delay: clock.__setitem__(0, clock[0] + delay))
+    assert measure.supervise([], worker="print('{}')", scratch_root=tmp_path) == (
+        1 if lock == "persistent" else 0
+    )
+    receipt = json.loads(capsys.readouterr().out)
+    if lock == "persistent":
+        assert receipt["reason"] == "scratch_recovery_incomplete"
+        assert receipt["leftover_paths"] == [str(roots["stale"])] and clock[0] <= 2.1
+    else:
+        assert receipt["swept_paths"] == [str(roots["stale"])] and not roots["stale"].exists()
+    assert all(
+        (roots[n] / "payload").read_bytes() == b"preserve" for n in ("live", "unmarked", "foreign")
+    )
+
+
+def test_unavailable_owner_proof_never_sweeps_or_measures(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "transit-measure-unmarked"
+    root.mkdir()
+    (root / "outside").write_bytes(b"preserve")
+
+    def unavailable(pid):
+        raise OSError("unsupported proof")
+
+    monkeypatch.setattr(measure, "process_birth", unavailable)
+    assert (
+        measure.supervise([], worker="raise AssertionError('must not run')", scratch_root=tmp_path)
+        == 1
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["reason"] == "scratch_owner_proof_unavailable" and not report["swept_paths"]
+    assert (root / "outside").read_bytes() == b"preserve"
