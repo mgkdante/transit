@@ -205,7 +205,12 @@ def compress(source: Path) -> dict[str, Any]:
     with source.open("rb") as stream, partial.open("xb") as output:
         with gzip.GzipFile(filename="", mode="wb", fileobj=output, compresslevel=9, mtime=0) as gz:
             shutil.copyfileobj(stream, gz)
-    target.hardlink_to(partial)
+    try:
+        target.hardlink_to(partial)
+    except FileExistsError:
+        with target.open("rb") as old, partial.open("rb") as new:
+            if digest(old) != digest(new):
+                raise ValueError("spool_corrupt") from None
     partial.unlink()
     with target.open("rb") as stream:
         object_hash, object_bytes = digest(stream)
@@ -220,19 +225,25 @@ def compress(source: Path) -> dict[str, Any]:
     )
 
 
-def resume(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
-    checkpoint = cast(dict[str, Any], json.loads((folder / "checkpoint.json").read_bytes()))
+def read_record(folder: Path, identity: dict[str, Any], name: str) -> dict[str, Any]:
+    checkpoint = cast(dict[str, Any], json.loads((folder / name).read_bytes()))
     if any(checkpoint.get(key) != value for key, value in identity.items()):
         raise ValueError("checkpoint_bounds")
     if set(checkpoint["tables"]) != set(SCHEMAS):
         raise ValueError("incomplete_checkpoint")
     for table, meta in checkpoint["tables"].items():
-        path = folder / (table + ".csv.gz")
         if (
             meta["schema"] != SCHEMAS[table]
             or meta["schema_sha256"] != hashlib.sha256(encoded(SCHEMAS[table])).hexdigest()
         ):
             raise ValueError("schema_drift")
+    return checkpoint
+
+
+def resume(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
+    checkpoint = read_record(folder, identity, "checkpoint.json")
+    for table, meta in checkpoint["tables"].items():
+        path = folder / (table + ".csv.gz")
         with path.open("rb") as stream:
             if digest(stream) != (meta["object_sha256"], meta["object_bytes"]):
                 raise ValueError("spool_corrupt")
@@ -325,6 +336,25 @@ class GuardedSource:
         if self.failed.is_set():
             raise ValueError("interference_or_deadline")
 
+    def prove_visibility(self) -> None:
+        for table in SCHEMAS:
+            self.execute(sql.SQL("SELECT 1 FROM gold.{} LIMIT 0").format(sql.Identifier(table)))
+        observer = connect()
+        try:
+            # Demonstrated visibility of ordinary read locks, independent of role membership.
+            visible = observer.execute(
+                "SELECT EXISTS (SELECT FROM pg_stat_activity WHERE pid=%s) AND "
+                "(SELECT count(DISTINCT relation) FROM pg_locks WHERE pid=%s AND granted "
+                "AND mode='AccessShareLock' AND relation IN "
+                "('gold.fact_trip_delay_snapshot'::regclass, "
+                "'gold.fact_vehicle_snapshot'::regclass))=2",
+                (self.info.backend_pid,) * 2,
+            ).fetchone()[0]
+            if not visible:
+                raise ValueError("lock_visibility_required")
+        finally:
+            observer.close()
+
     def execute(self, *args: Any, **kwargs: Any) -> Any:
         self.check()
         result = self.source.execute(*args, **kwargs)
@@ -371,19 +401,24 @@ class GuardedCursor:
             self.source.check()
 
 
+def terminate_self(controller: Any, pid: int) -> None:
+    row = controller.execute(
+        "SELECT pg_terminate_backend(pid, 500) FROM pg_stat_activity "
+        "WHERE pid=%s AND usename=current_user AND xact_start IS NOT NULL",
+        (pid,),
+    ).fetchone()
+    if row is not None and not row[0]:
+        raise ValueError("self_termination_failed")
+
+
 @contextmanager
 def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any:
     """Independent visibility monitor cancels only the exporting connection."""
     stop, failed, ready = threading.Event(), threading.Event(), threading.Event()
     monitor = connect()
     monitor.execute("SET statement_timeout = '1s'")
-    visible = monitor.execute(
-        "SELECT pg_has_role(current_user, 'pg_monitor', 'MEMBER') "
-        "OR (SELECT rolsuper FROM pg_roles WHERE rolname=current_user)"
-    ).fetchone()[0]
-    if not visible:
-        monitor.close()
-        raise ValueError("lock_visibility_required")
+    terminator = connect()
+    terminator.execute("SET statement_timeout = '1s'")
     pid = connection.info.backend_pid
     phase_end = deadline if deadline is not None else time.monotonic() + args.db_phase_s
     terminating = threading.Lock()
@@ -397,17 +432,20 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
             connection.cancel_safe(timeout=2)
         except Exception:
             pass
+        # Only our captured exporting pid is signalled, through an independent connection.
+        # No source driver lock: <=2 s cancel + .25 s grace + 1 s primary statement
+        # + 5 s fallback connect + 1 s fallback statement: under 10 seconds.
+        time.sleep(0.25)
         try:
-            connection.rollback()
+            terminate_self(terminator, pid)
         except Exception:
-            pass
-        finally:
+            recovery = connect()
             try:
-                connection.close()
-            except Exception:
-                pass
+                terminate_self(recovery, pid)
             finally:
-                ready.set()
+                recovery.close()
+        finally:
+            ready.set()
 
     timer = threading.Timer(max(0, phase_end - time.monotonic()), cancel)
     timer.daemon = True
@@ -446,7 +484,8 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
     finally:
         stop.set()
         timer.cancel()
-        thread.join(timeout=2)
+        thread.join(timeout=10)
+        terminator.close()
         if thread.is_alive():
             raise ValueError("monitor_unavailable")
 
@@ -476,6 +515,7 @@ def inventory(connection: Any) -> list[Any]:
 
 def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
+    args.completed_tables = set()
     observations: dict[str, Any] = {}
     started = time.monotonic()
     with (
@@ -505,6 +545,7 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                 "SELECT clock_timestamp(), current_setting('server_version')"
             ).fetchone()
             bounds(args, now)
+            connection.prove_visibility()
             ranges = inventory(connection)
             if args.inventory:
                 return dict(snapshot_time=now.isoformat(), ranges=ranges)
@@ -525,6 +566,7 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                     end_utc=stamp(identity["end"]),
                     destination=folder / (table + ".csv.partial"),
                 )
+                args.completed_tables.add(table)
                 observed = next(
                     row
                     for row in ranges
@@ -538,15 +580,6 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                 )
                 metadata[table]["coverage"] = "emergency_snapshot_completeness_unknown"
     # No compression or object I/O holds a source transaction or connection open.
-    for table, meta in metadata.items():
-        (folder / (table + ".csv.partial")).rename(folder / (table + ".csv"))
-        compressed = compress(folder / (table + ".csv"))
-        if any(meta[key] != compressed[key] for key in ("csv_sha256", "csv_bytes")):
-            raise ValueError("csv_changed")
-        if meta["copy_rows"] >= 0 and meta["copy_rows"] != compressed["rows"]:
-            raise ValueError("copy_count_mismatch")
-        meta.update(compressed)
-        validate_csv(folder / (table + ".csv.gz"), meta)
     checkpoint = dict(
         **identity,
         tables=metadata,
@@ -556,11 +589,35 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
         run_observations=dict(leading_interval_unobserved=observations),
         retention_days=get_settings().GOLD_FACT_RETENTION_DAYS,
     )
-    partial = folder / "checkpoint.json.partial"
+    write_record(folder, "export.json", checkpoint)
+    return finalize(folder, identity)
+
+
+def write_record(folder: Path, name: str, record: dict[str, Any]) -> None:
+    partial = folder / (name + ".partial")
     with partial.open("xb") as output:
-        output.write(encoded(checkpoint))
-    (folder / "checkpoint.json").hardlink_to(partial)
+        output.write(encoded(record))
+    (folder / name).hardlink_to(partial)
     partial.unlink()
+
+
+def finalize(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
+    checkpoint = read_record(folder, identity, "export.json")
+    for table in SCHEMAS:
+        partial, source = folder / (table + ".csv.partial"), folder / (table + ".csv")
+        if not source.exists():
+            partial.rename(source)
+    for table, meta in checkpoint["tables"].items():
+        source = folder / (table + ".csv")
+        with source.open("rb") as stream:
+            if digest(stream) != (meta["csv_sha256"], meta["csv_bytes"]):
+                raise ValueError("csv_changed")
+        compressed = compress(source)
+        if meta["copy_rows"] >= 0 and meta["copy_rows"] != compressed["rows"]:
+            raise ValueError("copy_count_mismatch")
+        meta.update(compressed)
+        validate_csv(folder / (table + ".csv.gz"), meta)
+    write_record(folder, "checkpoint.json", checkpoint)
     return checkpoint
 
 
@@ -612,7 +669,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parser().parse_args(argv)
         folder = Path(args.spool_dir) if args.spool_dir else Path(tempfile.gettempdir())
-        reused = not args.inventory and (folder / "checkpoint.json").exists()
+        reused = not args.inventory and any(
+            (folder / name).exists() for name in ("checkpoint.json", "export.json")
+        )
         identity = bounds(args, datetime.now(UTC), new_export=not reused)
     except ValueError as error:
         refused = str(error) in {"insufficient_budget", "day_not_closed"}
@@ -633,9 +692,23 @@ def main(argv: list[str] | None = None) -> int:
             folder.mkdir(parents=True, exist_ok=True)
         phase = "resume" if reused else "export"
         if not reused and not args.inventory and any(folder.iterdir()):
-            raise ValueError("incomplete_spool")
+            remaining = [p for p in folder.iterdir() if not p.name.startswith("abandoned-")]
+            if any(p.name not in {t + ".csv.partial" for t in SCHEMAS} for p in remaining):
+                raise ValueError("incomplete_spool")
+            if remaining:
+                archive = Path(tempfile.mkdtemp(prefix="abandoned-", dir=folder))
+                for path in remaining:
+                    path.rename(archive / path.name)
         export_started = not reused and not args.inventory
-        checkpoint = resume(folder, identity) if reused else export(args, identity, folder)
+        checkpoint = (
+            (
+                resume(folder, identity)
+                if (folder / "checkpoint.json").exists()
+                else finalize(folder, identity)
+            )
+            if reused
+            else export(args, identity, folder)
+        )
         phase = "upload_readback"
         object_report = publish(checkpoint, folder) if args.upload else {}
         print(
@@ -643,6 +716,7 @@ def main(argv: list[str] | None = None) -> int:
                 dict(
                     outcome="readback_complete" if args.upload else "local_complete",
                     reused_spool=reused,
+                    queried_postgres=not reused,
                     checkpoint=checkpoint,
                     object_io=object_report,
                     script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -660,13 +734,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (Exception, KeyboardInterrupt) as error:
         interrupted = isinstance(error, KeyboardInterrupt)
-        if interrupted and export_started:
+        if interrupted and (export_started or reused):
             for name in [
                 "checkpoint.json.partial",
+                "export.json.partial",
                 *(
                     table + suffix
                     for table in SCHEMAS
                     for suffix in (".csv.partial", ".csv.gz.partial")
+                    if suffix != ".csv.partial"
+                    or (
+                        not (folder / "export.json").exists()
+                        and table not in getattr(args, "completed_tables", set())
+                    )
                 ),
             ]:
                 (folder / name).unlink(missing_ok=True)

@@ -2,10 +2,16 @@ import gzip
 import importlib.util
 import io
 import json
-from datetime import UTC, datetime
+import threading
+from contextlib import contextmanager
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 
 from transit_ops.ingestion.storage import LocalBronzeStorage, ObjectAlreadyExists
 
@@ -16,24 +22,27 @@ spec.loader.exec_module(rescue)
 NOW = datetime(2026, 11, 13, 23, tzinfo=UTC)
 
 
-def args(tmp_path, *extra):
-    return rescue.parser().parse_args(
-        [
-            "--provider",
-            "sample",
-            "--date",
-            "2026-11-01",
-            "--spool-dir",
-            str(tmp_path),
-            "--not-after",
-            "2026-11-14T05:45:00Z",
-            "--statement-timeout-s",
-            "60",
-            "--db-phase-s",
-            "180",
-            *extra,
-        ]
+def copy_to(connection, path, table=None, provider="sample", start=NOW, end=NOW):
+    return rescue.copy_fact_table(
+        connection,
+        table=table or next(iter(rescue.SCHEMAS)),
+        provider_id=provider,
+        start_utc=start,
+        end_utc=end,
+        destination=path,
     )
+
+
+def args(tmp_path, *extra):
+    defaults = dict(
+        provider="sample",
+        date="2026-11-01",
+        spool_dir=str(tmp_path),
+        not_after="2026-11-14T05:45:00Z",
+        statement_timeout_s=60,
+        db_phase_s=180,
+    )
+    return rescue.parser().parse_args([*command_for(SimpleNamespace(**defaults)), *extra])
 
 
 @pytest.mark.parametrize(
@@ -113,17 +122,8 @@ def test_rescue_incomplete_upload_has_no_completion_receipt(tmp_path):
 
 def test_rescue_resumes_spool_after_source_rows_have_been_pruned(tmp_path):
     identity = rescue.bounds(args(tmp_path), NOW)
-    tables = {}
-    for table, schema in rescue.SCHEMAS.items():
-        source = tmp_path / (table + ".csv")
-        source.write_bytes((",".join(row[0] for row in schema) + "\n").encode())
-        tables[table] = {
-            **rescue.compress(source),
-            "schema": schema,
-            "schema_sha256": rescue.hashlib.sha256(rescue.encoded(schema)).hexdigest(),
-        }
-    checkpoint = {**identity, "tables": tables}
-    (tmp_path / "checkpoint.json").write_text(json.dumps(checkpoint))
+    checkpoint = empty_checkpoint(tmp_path, identity)
+    tables = checkpoint["tables"]
     assert rescue.resume(tmp_path, identity) == checkpoint
     (tmp_path / (next(iter(tables)) + ".csv.gz")).write_bytes(b"corrupt")
     with pytest.raises(ValueError):
@@ -143,13 +143,8 @@ def test_rescue_copies_both_fact_tables_in_one_read_only_snapshot(real_db_engine
             connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             connection.execute("SET LOCAL TimeZone = 'UTC'")
             for table in rescue.SCHEMAS:
-                result = rescue.copy_fact_table(
-                    connection,
-                    table=table,
-                    provider_id="absent-fixture-provider",
-                    start_utc=NOW,
-                    end_utc=NOW,
-                    destination=tmp_path / (table + ".csv"),
+                result = copy_to(
+                    connection, tmp_path / (table + ".csv"), table, "absent-fixture-provider"
                 )
                 assert result["copy_rows"] == 0
                 assert result["schema"] == rescue.SCHEMAS[table]
@@ -158,28 +153,13 @@ def test_rescue_copies_both_fact_tables_in_one_read_only_snapshot(real_db_engine
 def test_rescue_copy_requires_active_read_only_transaction(real_db_engine, tmp_path):
     with real_db_engine.connect() as sa:
         with pytest.raises(ValueError):
-            rescue.copy_fact_table(
-                sa.connection.driver_connection,
-                table=next(iter(rescue.SCHEMAS)),
-                provider_id="sample",
-                start_utc=NOW,
-                end_utc=NOW,
-                destination=tmp_path / "refused.csv",
-            )
+            copy_to(sa.connection.driver_connection, tmp_path / "refused.csv")
 
 
 def test_rescue_checkpoint_rejects_changed_counts_and_schema(tmp_path):
     identity = rescue.bounds(args(tmp_path), NOW)
-    tables = {}
-    for table, schema in rescue.SCHEMAS.items():
-        source = tmp_path / (table + ".csv")
-        source.write_bytes((",".join(row[0] for row in schema) + "\n").encode())
-        tables[table] = {
-            **rescue.compress(source),
-            "schema": schema,
-            "schema_sha256": rescue.hashlib.sha256(rescue.encoded(schema)).hexdigest(),
-        }
-    checkpoint = {**identity, "tables": tables}
+    checkpoint = empty_checkpoint(tmp_path, identity)
+    tables = checkpoint["tables"]
     tables[next(iter(tables))]["rows"] = 7
     (tmp_path / "checkpoint.json").write_bytes(rescue.encoded(checkpoint))
     with pytest.raises(ValueError):
@@ -187,18 +167,9 @@ def test_rescue_checkpoint_rejects_changed_counts_and_schema(tmp_path):
 
 
 def test_rescue_refuses_queued_exclusive_lock_and_cancels_only_itself(tmp_path, monkeypatch):
-    from types import SimpleNamespace
-
-    class Monitor:
-        def execute(self, query, params=None):
-            return self
-
-        def fetchone(self):
-            return (True,)
-
-        def close(self):
-            pass
-
+    monitor = SimpleNamespace(
+        execute=lambda *args: monitor, fetchone=lambda: (True,), close=lambda: None
+    )
     cancelled = []
     source = SimpleNamespace(
         info=SimpleNamespace(backend_pid=42),
@@ -206,7 +177,7 @@ def test_rescue_refuses_queued_exclusive_lock_and_cancels_only_itself(tmp_path, 
         rollback=lambda: None,
         close=lambda: None,
     )
-    monkeypatch.setattr(rescue, "connect", Monitor)
+    monkeypatch.setattr(rescue, "connect", lambda: monitor)
     with pytest.raises(ValueError):
         with rescue.guarded(source, args(tmp_path)):
             pytest.fail("source must never run behind a queued exclusive lock")
@@ -215,11 +186,6 @@ def test_rescue_refuses_queued_exclusive_lock_and_cancels_only_itself(tmp_path, 
 
 @pytest.fixture
 def fact_source(real_db_engine):
-    from datetime import timedelta
-    from uuid import uuid4
-
-    from sqlalchemy import text
-
     provider = "rescue-" + uuid4().hex
     start = datetime(2026, 11, 1, tzinfo=UTC)
     end = start + timedelta(days=1)
@@ -306,14 +272,7 @@ def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
         connection.execute("SET LOCAL TimeZone = 'UTC'")
         for table in rescue.SCHEMAS:
             destination = tmp_path / (table + ".csv")
-            meta = rescue.copy_fact_table(
-                connection,
-                table=table,
-                provider_id=provider,
-                start_utc=start,
-                end_utc=end,
-                destination=destination,
-            )
+            meta = copy_to(connection, destination, table, provider, start, end)
             parsed = list(csv.DictReader(io.StringIO(destination.read_text(encoding="utf-8"))))
             assert [row["entity_index"] for row in parsed] == ["1", "2", "3"]
             assert all(row["entity_id"] == "Montréal\n南" for row in parsed)
@@ -324,7 +283,7 @@ def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
             assert meta["csv_sha256"] == compressed["csv_sha256"]
             assert connection.execute("SHOW transaction_read_only").fetchone() == ("on",)
             assert connection.execute("SHOW transaction_isolation").fetchone() == (
-                "repeatable read",
+                "repeatable read"
             )
 
 
@@ -364,7 +323,6 @@ def test_rescue_partial_upload_resumes_without_receipt_until_both_match(tmp_path
 def test_rescue_closes_source_transaction_before_object_io(
     real_db_engine, fact_source, tmp_path, monkeypatch
 ):
-    from datetime import timedelta
 
     provider, _, _ = fact_source
     connections = []
@@ -409,9 +367,6 @@ def test_rescue_closes_source_transaction_before_object_io(
 
 @pytest.mark.parametrize("drift", ["type", "nullable", "order", "pk"])
 def test_rescue_refuses_catalog_drift_before_copy(tmp_path, drift):
-    from copy import deepcopy
-    from types import SimpleNamespace
-
     table = next(iter(rescue.SCHEMAS))
     schema = deepcopy(rescue.SCHEMAS[table])
     if drift == "type":
@@ -434,27 +389,39 @@ def test_rescue_refuses_catalog_drift_before_copy(tmp_path, drift):
             )
 
     with pytest.raises(ValueError, match="schema_drift"):
-        rescue.copy_fact_table(
-            Connection(),
-            table=table,
-            provider_id="sample",
-            start_utc=NOW,
-            end_utc=NOW,
-            destination=tmp_path / "refused",
-        )
+        copy_to(Connection(), tmp_path / "refused", table)
     assert not (tmp_path / "refused").exists()
+
+
+@pytest.fixture
+def rescue_login(real_db_engine):
+    role, password = "rescue_" + uuid4().hex, uuid4().hex
+    with real_db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as admin:
+        admin.exec_driver_sql(
+            rescue.sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER PASSWORD {}")
+            .format(rescue.sql.Identifier(role), rescue.sql.Literal(password))
+            .as_string()
+        )
+        try:
+            admin.exec_driver_sql(f'GRANT USAGE ON SCHEMA gold TO "{role}"')
+            for table in rescue.SCHEMAS:
+                admin.exec_driver_sql(f'GRANT SELECT ON gold.{table} TO "{role}"')
+            yield real_db_engine.url.set(username=role, password=password)
+        finally:
+            admin.exec_driver_sql(f'DROP OWNED BY "{role}"')
+            admin.exec_driver_sql(f'DROP ROLE "{role}"')
 
 
 @pytest.mark.parametrize("idle", [False, True])
 def test_rescue_real_queued_lock_releases_only_source(
-    real_db_engine, fact_source, tmp_path, monkeypatch, idle
+    real_db_engine, fact_source, tmp_path, monkeypatch, idle, rescue_login
 ):
-    import threading
 
     def connect():
         return rescue.psycopg.connect(
-            **real_db_engine.url.translate_connect_args(username="user", database="dbname"),
+            **rescue_login.translate_connect_args(username="user", database="dbname"),
             autocommit=True,
+            options="-c statement_timeout=1000",
         )
 
     monkeypatch.setattr(rescue, "connect", connect)
@@ -463,8 +430,14 @@ def test_rescue_real_queued_lock_releases_only_source(
 
     def exclusive():
         try:
-            with connect() as locker, locker.transaction():
-                locker.execute("SET LOCAL statement_timeout = '10s'")
+            with (
+                rescue.psycopg.connect(
+                    **real_db_engine.url.translate_connect_args(username="user", database="dbname"),
+                    autocommit=True,
+                ) as locker,
+                locker.transaction(),
+            ):
+                locker.execute("SET LOCAL statement_timeout = '15s'")
                 locker.execute("LOCK TABLE gold.fact_vehicle_snapshot IN ACCESS EXCLUSIVE MODE")
             completed.set()
         except Exception as error:
@@ -472,21 +445,44 @@ def test_rescue_real_queued_lock_releases_only_source(
 
     worker = threading.Thread(target=exclusive)
     with connect() as source:
+        pid = source.info.backend_pid
+        assert source.execute(
+            "SELECT pg_has_role(current_user,'pg_monitor','MEMBER'), "
+            "(SELECT rolsuper FROM pg_roles WHERE rolname=current_user)"
+        ).fetchone() == (False, False)
+        monkeypatch.setattr(source, "cancel_safe", lambda **kw: None)  # deliberately miss
+        started = rescue.time.monotonic()
         with pytest.raises((rescue.psycopg.OperationalError, ValueError)):
             with rescue.guarded(source, args(tmp_path)) as protected, protected.transaction():
                 protected.execute("SET TRANSACTION READ ONLY")
-                protected.execute("SELECT * FROM gold.fact_vehicle_snapshot LIMIT 0")
+                protected.prove_visibility()
+                protected.execute("SET LOCAL statement_timeout = '30s'")
                 worker.start()
                 if idle:
-                    deadline = rescue.time.monotonic() + 3
-                    while not source.closed and rescue.time.monotonic() < deadline:
-                        completed.wait(0.01)
-                    assert source.closed, "idle source must release locks before another statement"
+                    assert completed.wait(10), "idle backend must release locks within the bound"
                     protected.execute("SELECT 1")
                 else:
-                    protected.execute("SELECT pg_sleep(5)")
+                    with (
+                        protected.cursor() as cursor,
+                        cursor.copy("COPY (SELECT pg_sleep(30)) TO STDOUT") as blocks,
+                    ):
+                        list(blocks)
+        assert rescue.time.monotonic() - started < 10
     worker.join(timeout=12)
     assert completed.is_set() and not failures
+    with real_db_engine.connect() as observer:
+        assert (
+            observer.execute(
+                text("SELECT count(*) FROM pg_stat_activity WHERE pid=:pid"), {"pid": pid}
+            ).scalar_one()
+            == 0
+        )
+        assert (
+            observer.execute(
+                text("SELECT count(*) FROM pg_locks WHERE pid=:pid"), {"pid": pid}
+            ).scalar_one()
+            == 0
+        )
 
 
 def empty_checkpoint(folder, identity):
@@ -504,58 +500,7 @@ def empty_checkpoint(folder, identity):
     return checkpoint
 
 
-def test_rescue_interference_closes_idle_source_before_copy(tmp_path, monkeypatch):
-    import threading
-    from types import SimpleNamespace
-
-    queued, cancelled, closed = threading.Event(), threading.Event(), threading.Event()
-    calls = []
-
-    class Monitor:
-        def execute(self, query, params=None):
-            self.blocked = "pg_blocking_pids" in query and queued.is_set()
-            return self
-
-        def fetchone(self):
-            return (self.blocked if hasattr(self, "blocked") else True,)
-
-        def close(self):
-            pass
-
-    monitor = Monitor()
-    # Visibility succeeds; subsequent lock samples follow the queued request.
-    original_execute = monitor.execute
-
-    def execute(query, params=None):
-        if "pg_has_role" in query:
-            monitor.blocked = True
-            return monitor
-        return original_execute(query, params)
-
-    monkeypatch.setattr(monitor, "execute", execute)
-    source = SimpleNamespace(
-        info=SimpleNamespace(backend_pid=42),
-        cancel_safe=lambda **kw: cancelled.set(),
-        rollback=lambda: calls.append("rollback"),
-        close=lambda: (calls.append("close"), closed.set()),
-    )
-    monkeypatch.setattr(rescue, "connect", lambda: monitor)
-    with pytest.raises(ValueError):
-        with rescue.guarded(source, args(tmp_path)) as protected:
-            queued.set()  # Inventory has returned; backend is idle while opening a local spool.
-            assert cancelled.wait(2)
-            assert closed.wait(2), "an idle cancel must release the source transaction"
-            assert calls == ["rollback", "close"]
-            with pytest.raises(ValueError, match="interference_or_deadline"):
-                protected.execute("SELECT 1")
-            with pytest.raises(ValueError, match="interference_or_deadline"):
-                with protected.cursor():
-                    pytest.fail("COPY must not open a cursor after interference")
-
-
 def test_rescue_asof_checkpoint_resumes_after_midnight(tmp_path, monkeypatch, capsys):
-    from datetime import timedelta
-
     previous = datetime.now(UTC) - timedelta(days=2)
     options = args(
         tmp_path,
@@ -573,23 +518,7 @@ def test_rescue_asof_checkpoint_resumes_after_midnight(tmp_path, monkeypatch, ca
     monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("resume must not query Postgres"))
     uploaded = []
     monkeypatch.setattr(rescue, "publish", lambda saved, folder: uploaded.append(saved) or {})
-    command = [
-        "--provider",
-        options.provider,
-        "--date",
-        options.date,
-        "--as-of",
-        options.as_of,
-        "--spool-dir",
-        str(tmp_path),
-        "--not-after",
-        options.not_after,
-        "--statement-timeout-s",
-        "60",
-        "--db-phase-s",
-        "180",
-        "--upload",
-    ]
+    command = command_for(options)
     assert rescue.main(command) == 0
     assert uploaded == [checkpoint]
     assert json.loads(capsys.readouterr().out)["reused_spool"] is True
@@ -599,7 +528,6 @@ def test_rescue_asof_checkpoint_resumes_after_midnight(tmp_path, monkeypatch, ca
 def test_rescue_interrupt_reports_json_and_preserves_completed_spool(
     tmp_path, monkeypatch, capsys, complete
 ):
-    from datetime import timedelta
 
     options = args(
         tmp_path,
@@ -618,20 +546,7 @@ def test_rescue_interrupt_reports_json_and_preserves_completed_spool(
 
     monkeypatch.setattr(rescue, "export", interrupted)
     monkeypatch.setattr(rescue, "publish", interrupted)
-    command = [
-        "--provider",
-        "sample",
-        "--date",
-        "2026-11-01",
-        "--spool-dir",
-        str(tmp_path),
-        "--not-after",
-        options.not_after,
-        "--statement-timeout-s",
-        "60",
-        "--db-phase-s",
-        "180",
-    ]
+    command = command_for(options)
     assert rescue.main([*command, "--upload"]) == 1
     report = json.loads(capsys.readouterr().out)
     assert report["reason"] == "interrupted"
@@ -643,8 +558,6 @@ def test_rescue_interrupt_reports_json_and_preserves_completed_spool(
 def test_rescue_observation_changes_do_not_change_completion_receipt(tmp_path, monkeypatch):
     checkpoint = empty_checkpoint(tmp_path, rescue.bounds(args(tmp_path), NOW))
     storage = LocalBronzeStorage("local", tmp_path / "remote")
-    from types import SimpleNamespace
-
     monkeypatch.setattr(
         rescue,
         "history_storage",
@@ -661,9 +574,6 @@ def test_rescue_observation_changes_do_not_change_completion_receipt(tmp_path, m
 
 
 def test_rescue_stream_checks_persistent_failure_before_reading_more_bytes():
-    import threading
-    from types import SimpleNamespace
-
     failed, reads = threading.Event(), []
     source = rescue.GuardedSource(SimpleNamespace(info=None), failed)
     cursor = rescue.GuardedCursor(None, source)
@@ -678,3 +588,207 @@ def test_rescue_stream_checks_persistent_failure_before_reading_more_bytes():
     with pytest.raises(ValueError, match="interference_or_deadline"):
         next(blocks)
     assert reads == ["read"]
+
+
+@pytest.mark.parametrize("cancel_fails", [False, True])
+def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch, cancel_fails):
+    queued, released, done = (threading.Event() for _ in range(3))
+    lock, methods, targets = threading.Lock(), [], []
+
+    class Source:
+        info = SimpleNamespace(backend_pid=42)
+
+        def cancel_safe(self, **kwargs):
+            if cancel_fails:
+                raise TimeoutError("synthetic transport failure")
+
+        def rollback(self):
+            methods.append("rollback")
+            with lock:
+                pass
+
+        def close(self):
+            methods.append("close")
+            with lock:
+                pass
+
+        def execute(self, *unused):
+            with lock:
+                queued.set()
+                released.wait(12)
+
+    class Monitor:
+        def execute(self, query, params=None):
+            if "pg_terminate_backend" in query:
+                targets.append(params)
+                released.set()
+            self.row = ("pg_has_role" in query or queued.is_set(),)
+            return self
+
+        def fetchone(self):
+            return self.row
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(rescue, "connect", Monitor)
+    errors = []
+
+    def run():
+        try:
+            with rescue.guarded(Source(), args(tmp_path)) as protected:
+                protected.execute("synthetic blocked COPY")
+        except ValueError:
+            with pytest.raises(ValueError, match="interference_or_deadline"):
+                protected.execute("SELECT 1")
+            with pytest.raises(ValueError, match="interference_or_deadline"):
+                with protected.cursor():
+                    pytest.fail("COPY cursor opened after persistent failure")
+            errors.append("stopped")
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    try:
+        assert queued.wait(2)
+        assert released.wait(3), "termination must not wait for the export driver lock"
+        assert methods == []
+        assert targets == [(42,)]
+    finally:
+        released.set()
+        worker.join(3)
+    assert done.is_set() and errors == ["stopped"]
+
+
+@pytest.fixture
+def fake_copy_source(tmp_path, monkeypatch):
+    class Source:
+        closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *unused):
+            self.closed = True
+
+        @contextmanager
+        def transaction(self):
+            yield
+
+        def execute(self, *unused):
+            return SimpleNamespace(fetchone=lambda: (datetime.now(UTC), "fixture"))
+
+    source, copied = Source(), []
+    monkeypatch.setattr(rescue, "connect", lambda: source)
+
+    @contextmanager
+    def guard(connection, *unused, **kwargs):
+        connection.check = lambda: None
+        connection.prove_visibility = lambda: None
+        yield connection
+
+    monkeypatch.setattr(rescue, "guarded", guard)
+    monkeypatch.setattr(
+        rescue,
+        "inventory",
+        lambda conn: [
+            dict(provider="sample", table=table, minimum=None) for table in rescue.SCHEMAS
+        ],
+    )
+
+    def copy(connection, *, table, destination, **kwargs):
+        payload = (",".join(row[0] for row in rescue.SCHEMAS[table]) + "\n").encode()
+        destination.write_bytes(payload)
+        copied.append(table)
+        return dict(
+            schema=rescue.SCHEMAS[table],
+            schema_sha256=rescue.hashlib.sha256(rescue.encoded(rescue.SCHEMAS[table])).hexdigest(),
+            copy_rows=0,
+            csv_sha256=rescue.hashlib.sha256(payload).hexdigest(),
+            csv_bytes=len(payload),
+        )
+
+    monkeypatch.setattr(rescue, "copy_fact_table", copy)
+    monkeypatch.setattr(rescue.tempfile, "gettempdir", lambda: str(tmp_path.parent))
+    options = args(
+        tmp_path,
+        "--not-after",
+        (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT05:45:00Z"),
+    )
+    return source, copied, copy, command_for(options)
+
+
+def command_for(options):
+    return [
+        item
+        for key, value in vars(options).items()
+        if value not in (None, False)
+        for item in (
+            ["--" + key.replace("_", "-")]
+            if value is True
+            else ["--" + key.replace("_", "-"), str(value)]
+        )
+    ]
+
+
+def test_interrupt_first_compression_resumes_both_raw_tables(
+    tmp_path, monkeypatch, capsys, fake_copy_source
+):
+    source, copied, _, command = fake_copy_source
+    original = rescue.compress
+
+    def interrupt(path):
+        assert source.closed and len(copied) == 2
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(rescue, "compress", interrupt)
+    assert rescue.main(command) == 1
+    assert (tmp_path / "export.json").exists()
+    for table in rescue.SCHEMAS:
+        assert (tmp_path / (table + ".csv")).exists()
+    monkeypatch.setattr(rescue, "compress", original)
+    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("protected raw resume queried DB"))
+    assert rescue.main(command) == 0
+    reports = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert reports[-1]["reused_spool"] and not reports[-1]["queried_postgres"]
+    raw = json.loads((tmp_path / "export.json").read_bytes())
+    for table, meta in reports[-1]["checkpoint"]["tables"].items():
+        assert meta["csv_sha256"] == raw["tables"][table]["csv_sha256"]
+
+
+def test_interrupt_second_copy_retains_completed_stream_and_reexports_pair(
+    tmp_path, monkeypatch, fake_copy_source
+):
+    source, copied, original, command = fake_copy_source
+    first, second = rescue.SCHEMAS
+
+    def interrupt(connection, **kwargs):
+        if kwargs["table"] == second:
+            kwargs["destination"].write_bytes(b"unfinished")
+            raise KeyboardInterrupt
+        return original(connection, **kwargs)
+
+    monkeypatch.setattr(rescue, "copy_fact_table", interrupt)
+    assert rescue.main(command) == 1
+    assert (tmp_path / (first + ".csv.partial")).exists()
+    assert not (tmp_path / (second + ".csv.partial")).exists()
+    assert not (tmp_path / "export.json").exists()
+    source.closed = False
+    monkeypatch.setattr(rescue, "copy_fact_table", original)
+    assert rescue.main(command) == 0
+    assert copied == [first, first, second]
+
+
+def test_visibility_requires_observed_self_locks_before_copy(monkeypatch):
+    statements = []
+    raw = SimpleNamespace(
+        info=SimpleNamespace(backend_pid=42), execute=lambda query: statements.append(query)
+    )
+    monitor = SimpleNamespace(
+        execute=lambda *args: SimpleNamespace(fetchone=lambda: (False,)), close=lambda: None
+    )
+    monkeypatch.setattr(rescue, "connect", lambda: monitor)
+    with pytest.raises(ValueError, match="lock_visibility_required"):
+        rescue.GuardedSource(raw, threading.Event()).prove_visibility()
+    assert len(statements) == 2
