@@ -12,9 +12,10 @@ from alembic.config import Config
 from psycopg import Connection
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.pool import NullPool
 
-from transit_ops.db.target_safety import assert_disposable_test_url
+from transit_ops.db.target_safety import assert_disposable_test_url, resolve_database_target
 from transit_ops.ingestion.common import project_root
 
 CLOCK_SCHEMA = "transit_oracle_clock"
@@ -82,6 +83,19 @@ def _pin_connections(engine: Engine, clock: PinnedClock) -> None:
         connection.commit()
 
 
+def _drop_database(
+    admin: Engine, database: str, admin_url: str, environment: Mapping[str, str], uncertain: bool
+) -> None:
+    checked = resolve_database_target(admin_url, environment)
+    current = resolve_database_target(admin_url, os.environ)
+    fields = ("host", "hostaddr", "port", "username", "database")
+    if any(getattr(checked, field) != getattr(current, field) for field in fields):
+        raise OracleDatabaseRefused("Oracle cleanup target changed after validation")
+    optional = "IF EXISTS " if uncertain else ""
+    with admin.connect() as connection:
+        connection.exec_driver_sql(f"DROP DATABASE {optional}{database} WITH (FORCE)")
+
+
 @contextmanager
 def oracle_database(
     admin_url: str, *, clock: PinnedClock, environment: Mapping[str, str], keep: bool = False
@@ -112,11 +126,15 @@ def oracle_database(
     admin = create_engine(url, poolclass=NullPool, isolation_level="AUTOCOMMIT")
     engine = create_engine(oracle_url, poolclass=NullPool)
     database = admin.dialect.identifier_preparer.quote_identifier(name)
-    created = False
+    created, uncertain = False, False
     try:
         with admin.connect() as connection:
-            connection.exec_driver_sql(f"CREATE DATABASE {database} TEMPLATE template0")
-            created = True
+            try:
+                connection.exec_driver_sql(f"CREATE DATABASE {database} TEMPLATE template0")
+                created = True
+            except OperationalError:
+                uncertain = True
+                raise
         _initialize(engine, database, admin, clock)
         _pin_connections(engine, clock)
         yield engine
@@ -125,8 +143,7 @@ def oracle_database(
             engine.dispose()
         finally:
             try:
-                if created and not keep:
-                    with admin.connect() as connection:
-                        connection.exec_driver_sql(f"DROP DATABASE {database} WITH (FORCE)")
+                if (created or uncertain) and not keep:
+                    _drop_database(admin, database, admin_url, environment, uncertain)
             finally:
                 admin.dispose()
