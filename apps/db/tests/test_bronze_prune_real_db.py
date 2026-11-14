@@ -4,11 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import real_db_seed as db_seed
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.exc import DBAPIError
 
 from transit_ops.maintenance.bronze import (
     COUNT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
+    DELETE_REALTIME_SNAPSHOT_INDEX_BY_OBJECT_IDS,
     SELECT_ELIGIBLE_BRONZE_REALTIME_OBJECTS,
     prune_bronze_realtime_objects,
     prune_bronze_static_objects,
@@ -477,8 +478,7 @@ def test_realtime_prune_honors_oldest_first_limit(conn) -> None:
     assert _object_exists(conn, TU_FRESH[1])
 
 
-def test_realtime_prune_statement_timeout_rolls_back_candidate_metadata(conn) -> None:
-    storage = FakeBronzeStorage()
+def _delay_bronze_snapshot_delete(conn) -> None:
     conn.execute(
         text(
             """
@@ -503,8 +503,19 @@ def test_realtime_prune_statement_timeout_rolls_back_candidate_metadata(conn) ->
             """
         )
     )
-    conn.execute(text("SET LOCAL statement_timeout = '25ms'"))
+
+
+def test_realtime_prune_statement_timeout_rolls_back_candidate_metadata(conn) -> None:
+    storage = FakeBronzeStorage()
+    _delay_bronze_snapshot_delete(conn)
+
+    def timeout_delete(connection, clauseelement, multiparams, params, execution_options):
+        if clauseelement is DELETE_REALTIME_SNAPSHOT_INDEX_BY_OBJECT_IDS:
+            # Earlier selection/recheck queries must not race the DELETE's timeout.
+            connection.exec_driver_sql("SET LOCAL statement_timeout = '25ms'")
+
     batch = conn.begin_nested()
+    event.listen(conn, "before_execute", timeout_delete)
     try:
         with pytest.raises(DBAPIError) as timeout_error:
             prune_bronze_realtime_objects(
@@ -516,7 +527,9 @@ def test_realtime_prune_statement_timeout_rolls_back_candidate_metadata(conn) ->
                 max_objects=1,
             )
         assert timeout_error.value.orig.sqlstate == "57014"
+        assert "DELETE FROM raw.realtime_snapshot_index" in timeout_error.value.statement
     finally:
+        event.remove(conn, "before_execute", timeout_delete)
         batch.rollback()
         conn.execute(text("SET LOCAL statement_timeout = 0"))
 
