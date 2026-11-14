@@ -1,8 +1,9 @@
 """Ledger sessions in the caller's PostgreSQL transaction."""
 
+import json
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import date, datetime
 from typing import cast, get_args
 
@@ -12,6 +13,16 @@ from sqlalchemy.engine import ExceptionContext
 from transit_ops.history import ledger
 from transit_ops.history.ledger import ArchiveCopy, EventKind, WindowState, WorkingState
 from transit_ops.history.ledger_store import NewCopy, RecordedEvent, WindowIdentity, WindowSession
+
+_WINDOW = """dataset_id=:dataset_id AND provider_id=:provider_id
+             AND revision=:revision AND window_key=:window_key"""
+_COPY = _WINDOW + " AND content_version=:content_version"
+
+
+def _aware(at: datetime) -> datetime:
+    if not isinstance(at, datetime) or at.utcoffset() is None:
+        raise ValueError("copy time must be an aware datetime")
+    return at
 
 
 class PostgresLedger:
@@ -32,8 +43,9 @@ class PostgresLedger:
         event.listen(self.connection.engine, "handle_error", note_failure)
         try:
             with self.connection.begin_nested():
-                yield _Session(self.connection, identity)
-                if failed:
+                session = _Session(self.connection, identity)
+                yield session
+                if failed or session.failed:
                     raise RuntimeError("ledger session failed; all session writes rolled back")
         finally:
             event.remove(self.connection.engine, "handle_error", note_failure)
@@ -44,12 +56,26 @@ class PostgresLedger:
     def find_copies(
         self, *, dataset_id: str, provider_id: str, start: date, end: date, revision: int = 0
     ) -> list[ArchiveCopy]:
-        raise NotImplementedError("copy reads arrive in LS3.1d-2 (PR 2)")
+        return ledger.find_copies(
+            self.connection,
+            dataset_id=dataset_id,
+            provider_id=provider_id,
+            start=start,
+            end=end,
+            revision=revision,
+        )
 
 
 class _Session:
     def __init__(self, connection: Connection, identity: WindowIdentity) -> None:
-        self.connection, self.identity = connection, identity
+        self._connection, self.identity = connection, identity
+        self.failed = False
+
+    @property
+    def connection(self) -> Connection:
+        if self.failed:
+            raise RuntimeError("ledger session failed; only exit is permitted")
+        return self._connection
 
     def state(self) -> WindowState | None:
         return ledger.window_state(self.connection, **asdict(self.identity))
@@ -124,20 +150,109 @@ class _Session:
         return self.events(kinds={"processing_evidence"})
 
     def copies(self) -> list[ArchiveCopy]:
-        raise NotImplementedError("copy reads arrive in LS3.1d-2 (PR 2)")
+        columns = ", ".join(
+            f"c.{f.name}"
+            for f in fields(ArchiveCopy)
+            if f.name not in {"window_start", "is_current"}
+        )
+        predicate = " AND ".join(f"c.{name}=:{name}" for name in asdict(self.identity))
+        rows = self.connection.execute(
+            text(f"""
+            SELECT {columns}, w.window_start,
+                   COALESCE(w.current_version=c.content_version, false) AS is_current
+            FROM core.history_archive_copy c JOIN core.history_window w
+              USING (dataset_id, provider_id, revision, window_key)
+            WHERE {predicate} ORDER BY c.content_version
+        """),
+            asdict(self.identity),
+        ).mappings()
+        return [ArchiveCopy(**row) for row in rows]
 
     def insert_allocated_copy(self, copy: NewCopy) -> None:
-        raise NotImplementedError("copy writes arrive in LS3.1d-2 (PR 2)")
+        self._copy_values(copy.content_version, None)
+        values = {**asdict(self.identity), **{f.name: getattr(copy, f.name) for f in fields(copy)}}
+        values["details"] = json.dumps(dict(copy.details), sort_keys=True)
+        columns = ", ".join(values)
+        params = ", ".join("CAST(:details AS jsonb)" if k == "details" else f":{k}" for k in values)
+        self._update(
+            f"""
+            INSERT INTO core.history_archive_copy ({columns}, allocated_at_utc)
+            VALUES ({params}, clock_timestamp())
+            ON CONFLICT (dataset_id, provider_id, revision, window_key, content_version) DO NOTHING
+        """,
+            values,
+            "insert",
+        )
 
     def mark_sealed(self, content_version: int, *, actor: str | None = None) -> None:
-        raise NotImplementedError("copy writes arrive in LS3.1d-2 (PR 2)")
+        values = self._copy_values(content_version, actor)
+        self._update(
+            f"""
+            UPDATE core.history_archive_copy SET sealed_at_utc=clock_timestamp()
+            WHERE {_COPY} AND sealed_at_utc IS NULL AND rejected_at_utc IS NULL
+        """,
+            values,
+            "seal",
+        )
+        self.record_event("seal", content_version=content_version, actor=actor)
 
     def mark_rejected(
         self, content_version: int, *, rejected_at: datetime, reason: str, actor: str | None = None
     ) -> None:
-        raise NotImplementedError("copy writes arrive in LS3.1d-2 (PR 2)")
+        values = self._copy_values(content_version, actor, _aware(rejected_at), reason)
+        self._update(
+            f"""
+            UPDATE core.history_archive_copy SET rejected_at_utc=:at, reject_reason=:reason
+            WHERE {_COPY} AND rejected_at_utc IS NULL AND verified_at_utc IS NULL
+        """,
+            values,
+            "reject",
+        )
+        self.record_event("reject", content_version=content_version, reason=reason, actor=actor)
 
     def make_current(
         self, content_version: int, *, verified_at: datetime, actor: str | None = None
     ) -> None:
-        raise NotImplementedError("copy writes arrive in LS3.1d-2 (PR 2)")
+        values = self._copy_values(content_version, actor, _aware(verified_at))
+        window = self.state()
+        previous = window.current_version if window else None
+        self._update(
+            f"""
+            UPDATE core.history_archive_copy SET verified_at_utc=:at
+            WHERE {_COPY} AND sealed_at_utc IS NOT NULL
+              AND verified_at_utc IS NULL AND rejected_at_utc IS NULL
+        """,
+            values,
+            "verify",
+        )
+        self._update(
+            f"""
+            UPDATE core.history_window SET current_version=:content_version
+            WHERE {_WINDOW} AND (current_version IS NULL OR current_version < :content_version)
+        """,
+            values,
+            "make current",
+        )
+        self.record_event("verify", content_version=content_version, actor=actor)
+        self.record_event(
+            "current",
+            content_version=content_version,
+            actor=actor,
+            details={"previous_version": previous},
+        )
+
+    def _copy_values(
+        self, version: int, actor: str | None, at: datetime | None = None, reason: str | None = None
+    ) -> dict[str, object]:
+        if version < 1:
+            raise ValueError("content_version must be positive")
+        if actor == "" or reason == "":
+            raise ValueError("reason and actor must not be empty")
+        return {**asdict(self.identity), "content_version": version, "at": at, "reason": reason}
+
+    def _update(self, sql: str, values: dict[str, object], action: str) -> None:
+        if self.connection.execute(text(sql), values).rowcount != 1:
+            self.failed = True
+            identity = {**asdict(self.identity), "content_version": values["content_version"]}
+            verb = "make copy current" if action == "make current" else f"{action} copy"
+            raise RuntimeError(f"could not {verb} {identity}")
