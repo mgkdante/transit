@@ -23,10 +23,10 @@ _Avoid_: archive (the stored copies themselves)
 One audit record of what changed in a window, who changed it and why.
 
 **Window transition**:
-One numbered, write-once change to a window; it carries the window's next state and any ledger events it records.
+One numbered, write-once change to a window; it carries the window's next state, if any, and its ledger events.
 
 **Window sequence**:
-The number of window transitions applied to a window.
+The number of window transitions recorded for a window.
 _Avoid_: version (an archive copy's content version)
 
 **Archive copy**:

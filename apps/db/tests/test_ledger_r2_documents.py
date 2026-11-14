@@ -66,35 +66,41 @@ def test_decode_refuses_invalid_window(field, value):
 
 @pytest.mark.parametrize(
     "field,value",
-    [("kind", "unknown"), ("actor", ""), ("format", 2), ("details", {"value": (1, 2)})],
+    [
+        ("kind", "unknown"),
+        ("actor", ""),
+        ("reason", ""),
+        ("format", 2),
+        ("details", {"value": (1, 2)}),
+    ],
 )
 def test_decode_refuses_invalid_event(field, value):
     with pytest.raises(m.LedgerDocumentInvalid):
         m.decode_event({**m.encode_event(RECORD), field: value})
 
 
-def test_public_record_sequence_round_trips_and_rejects_invalid_coordinates():
-    record = replace(RECORD, sequence=(7, 0))
-    assert m.encode_event(record)["sequence"] == [7, 0]
+def test_public_record_sequence_round_trips_and_rejects_invalid_ordinals():
+    record = replace(RECORD, sequence=7)
+    assert m.encode_event(record)["sequence"] == 7
     assert m.decode_event(m.encode_event(record)) == record
-    for sequence in ([0, 0], [1, -1], [1], [1.0, 0]):
+    for sequence in (0, -1, [1, 0], 1.0):
         with pytest.raises(m.LedgerDocumentInvalid):
             m.decode_event({**m.encode_event(record), "sequence": sequence})
 
 
-def test_event_only_envelope_requires_indexed_public_records():
-    record = m.encode_event(replace(RECORD, sequence=(1, 0)))
-    envelope = {
-        "format": 1,
-        "operation_id": "seed",
-        "seq": 1,
-        "at_utc": "2026-01-02T03:04:05.123456Z",
-        "before_sha256": None,
-        "after": None,
-        "records": [record],
-    }
-    assert m.decode_transition(json.dumps(envelope).encode(), ID, 1, None) is None
-    for records in ([], [{**record, "sequence": [1, 1]}], [m.encode_event(RECORD)]):
+@pytest.mark.parametrize("state", [None, DOC])
+def test_prepare_transition_assigns_stored_public_ordinals(state):
+    after, envelope = m.prepare_transition(
+        state, (RECORD, RECORD), ID, 1, None, NOW, operation_id="seed", first_record=1
+    )
+    assert after == state and envelope["next_record"] == 3
+    assert [r["sequence"] for r in envelope["records"]] == [1, 2]
+    record = envelope["records"][0]
+    assert m.decode_transition(json.dumps(envelope).encode(), ID, 1, None) == state
+    for records in (([],) if state is None else ()) + (
+        [{**record, "sequence": 9}],
+        [m.encode_event(RECORD)],
+    ):
         with pytest.raises(m.LedgerDocumentInvalid):
             m.decode_transition(json.dumps({**envelope, "records": records}).encode(), ID, 1, None)
     for operation_id in (None, "", 7):
@@ -110,8 +116,8 @@ def test_candidate_and_recorded_view_preserve_sequence_and_time():
     with pytest.raises(m.LedgerDocumentInvalid):
         m.normalize_candidate(None, DOC, ID, 2)
     record = m.recorded_event(
-        m.encode_event(replace(RECORD, sequence=(2, 0))), "2026-01-02T03:04:05.123456Z"
+        m.encode_event(replace(RECORD, sequence=2)), "2026-01-02T03:04:05.123456Z"
     )
-    assert (record.kind, record.sequence, record.at_utc) == ("changed", (2, 0), NOW)
+    assert (record.kind, record.sequence, record.at_utc) == ("changed", 2, NOW)
     with pytest.raises(m.LedgerDocumentInvalid):
         m.recorded_event(m.encode_event(RECORD), "2026-01-02T03:04:05")
