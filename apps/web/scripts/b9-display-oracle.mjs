@@ -1,3 +1,4 @@
+import { stampCopy } from '../src/lib/v1/stamp.copy.ts';
 import { closedTrendPoints, trendClosedThrough } from '../src/lib/v1/closedWindow.ts';
 import rich from './__fixtures__/b9/rich.json' with { type: 'json' };
 import sparse from './__fixtures__/b9/sparse.json' with { type: 'json' };
@@ -1324,23 +1325,14 @@ function networkOracle(fixture, locale, view) {
 		0,
 		Math.round((Date.parse(fixture.frozen_utc) - Date.parse(live.generated_utc)) / 1000),
 	);
-	const feedSeconds =
-		finite(live.feed_freshness_s) == null ? null : live.feed_freshness_s + ageSeconds;
 	const networkMeta = {
 		freshness: {
-			label: locale === 'fr' ? 'EN DIRECT' : 'LIVE',
-			age: normalizeObservation(relativeSeconds(ageSeconds, locale)),
+			text: normalizeObservation(
+				stampCopy[locale].live('data', 'current', relativeSeconds(ageSeconds, locale)),
+			),
 			datetime: live.generated_utc,
 			seconds: ageSeconds,
 		},
-		feed:
-			feedSeconds == null
-				? null
-				: {
-						label: locale === 'fr' ? 'FLUX' : 'FEED',
-						value: normalizeObservation(relativeSeconds(feedSeconds, locale)),
-						aria: `${locale === 'fr' ? 'Flux du travailleur mis à jour' : 'Worker feed updated'} ${relativeSeconds(feedSeconds, locale)}`,
-					},
 		conformance: conformanceDisplay(fixture.files['provenance.json']?.conformance, locale),
 		scalars: {
 			headline: [

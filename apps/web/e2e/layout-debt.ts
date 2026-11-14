@@ -40,13 +40,6 @@ export function knownTextDefect(finding: Awaited<ReturnType<typeof textDefects>>
 		text === 'salle-de-contrôle'
 	)
 		return 'LAYOUT-TERMINAL: French control-room title truncates without an accessible full title';
-	if (
-		(kind === 'broken-word' &&
-			selector.startsWith('[data-slot="freshness-stamp"]') &&
-			text === 'obsolète') ||
-		(kind === 'clipped' && selector.startsWith('#main >') && text === '· obsolète')
-	)
-		return 'LAYOUT-STALE: French stale stamp breaks or clips in narrow live surfaces';
 	return null;
 }
 export async function expectLayout(page: Page, info: TestInfo, overlaps: string[]) {

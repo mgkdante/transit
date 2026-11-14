@@ -207,7 +207,7 @@ const liveStore = {
 			retainedGeneration: '2026-06-15T12:00:00Z',
 			health: { state: 'live', retained: true, ageSeconds: 12, isStale: false, notice: null },
 		},
-		alerts: { health: { ageSeconds: 300 as number | null } },
+		alerts: { health: { ageSeconds: 300 as number | null, retained: true } },
 	},
 	isStale: false,
 	start: vi.fn(),
@@ -1026,9 +1026,9 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 
 describe('RouteDetail Detail tab: service alerts affecting this route', () => {
 	it.each([
-		['en', 'Alerts checked 5 minutes ago'],
-		['fr', 'Alertes vérifiées il y a 5 minutes'],
-	] as const)('shows the separate alerts age in %s', (locale, note) => {
+		['en', 'Live alerts · updated 5 minutes ago'],
+		['fr', 'Avis en direct · mis à jour il y a 5 minutes'],
+	] as const)('shows the alerts live stamp in %s', (locale, note) => {
 		routeSurface.mount(RouteDetail, {
 			props: { id: '161', seed: routeSeed() },
 			context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
@@ -1039,7 +1039,7 @@ describe('RouteDetail Detail tab: service alerts affecting this route', () => {
 		liveStore.familyStates.alerts.health.ageSeconds = null;
 		try {
 			renderRoute();
-			expect(screen.queryByText(/Alerts checked/)).not.toBeInTheDocument();
+			expect(document.querySelector('[data-subject="alerts"]')).not.toBeInTheDocument();
 		} finally {
 			liveStore.familyStates.alerts.health.ageSeconds = 300;
 		}

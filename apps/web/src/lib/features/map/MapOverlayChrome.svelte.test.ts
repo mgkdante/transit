@@ -162,8 +162,10 @@ describe('MapOverlayChrome', () => {
 				const stamps = container.querySelectorAll('[data-slot="freshness-stamp"]');
 				expect(stamps).toHaveLength(2);
 				for (const stamp of stamps) {
-					expect(stamp.querySelector('.freshness-stamp-label')).toHaveTextContent(t.latestReport);
-					expect(stamp).not.toHaveTextContent(locale === 'en' ? 'LIVE' : 'EN DIRECT');
+					expect(stamp.querySelector('time')).toHaveTextContent(
+						locale === 'en' ? 'Live · updated' : 'En direct · mis à jour',
+					);
+
 					expect(stamp.querySelector('time')).toHaveTextContent(formatRelativeSeconds(age, locale));
 					expect(stamp.querySelector('time')).toHaveAttribute('datetime', timestamp);
 					expect(stamp).toHaveAttribute('data-stale', 'false');

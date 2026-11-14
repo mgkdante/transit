@@ -1,11 +1,37 @@
 import type { Locale } from '#lib/i18n/copy.ts';
-import { formatDateKey } from '#lib/utils/time.ts';
+import { formatRelativeSeconds, formatDateKey } from '#lib/utils/time.ts';
 import type { HistoricAvailabilityIndex, Manifest } from './schemas/index';
 import { recordClosedThrough } from './closedWindow';
-import { stampCopy } from './stamp.copy';
+import { stampCopy, type LiveState } from './stamp.copy';
+export type { LiveState } from './stamp.copy';
 
 export interface LiveStamp {
 	readonly form: 'live';
+	readonly subject: 'data' | 'alerts';
+	readonly state: LiveState;
+	readonly ageSeconds: number | null;
+	readonly generatedUtc: string | null;
+}
+export function liveStamp(input: {
+	readonly subject?: 'data' | 'alerts';
+	readonly ageSeconds: number | null;
+	readonly generatedUtc?: string | null;
+	readonly isStale?: boolean;
+	readonly notResponding?: boolean;
+}): LiveStamp {
+	return {
+		form: 'live',
+		subject: input.subject ?? 'data',
+		state: input.notResponding
+			? 'not-responding'
+			: input.ageSeconds == null
+				? 'unknown'
+				: input.isStale
+					? 'behind'
+					: 'current',
+		ageSeconds: input.ageSeconds,
+		generatedUtc: input.generatedUtc ?? null,
+	};
 }
 export interface RecordStamp {
 	readonly form: 'record';
@@ -43,7 +69,13 @@ export function stampText(
 	locale: Locale,
 	timeZone: string | undefined,
 ): string {
-	if (stamp.form !== 'record' || (!stamp.dataThrough && !stamp.publishedOn)) return '';
+	if (stamp.form === 'live')
+		return stampCopy[locale].live(
+			stamp.subject,
+			stamp.state,
+			stamp.ageSeconds == null ? null : formatRelativeSeconds(stamp.ageSeconds, locale),
+		);
+	if (!stamp.dataThrough && !stamp.publishedOn) return '';
 	const date = (key: string | null) => (key ? stampDate(key, locale, timeZone) : null);
 	return stampCopy[locale].record(date(stamp.dataThrough), date(stamp.publishedOn), stamp.scope);
 }

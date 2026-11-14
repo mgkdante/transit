@@ -222,7 +222,7 @@ describe('TripDetail: a broadcasting trip', () => {
 		await render(TripDetail, { props: { id: 't161' } });
 		const chip = document.querySelector('[data-slot="freshness-stamp"]') as HTMLElement;
 		expect(chip).not.toBeNull();
-		expect(within(chip).getByText('5 minutes ago')).toBeInTheDocument();
+		expect(within(chip).getByText('Live · updated 5 minutes ago')).toBeInTheDocument();
 		expect(chip.querySelector('time')).toHaveAttribute('datetime', '2026-06-15T12:00:00Z');
 	});
 
@@ -320,7 +320,7 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 			reportNotice = stale ? 'stale' : null;
 			await render(TripDetail, { props: { id: 'tGhost' }, context });
 			const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
-			expect(stamp).toHaveAttribute('data-variant', stale ? 'updated' : 'live');
+			expect(stamp).toHaveAttribute('data-variant', 'live');
 			expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 			expect(stamp.querySelector('time')).toHaveAttribute('datetime', TRIPS_FILE.generated_utc);
 			expect(screen.queryByTestId('trip-report-notice') !== null).toBe(stale);
@@ -330,8 +330,9 @@ describe.each(['en', 'fr'] as const)('TripDetail report scope in %s', (locale) =
 		reportNotice = 'refresh-unavailable';
 		await render(TripDetail, { props: { id: 't161' }, context });
 		const stamp = document.querySelector('[data-slot="freshness-stamp"]')!;
-		expect(stamp).toHaveAttribute('data-variant', 'updated');
-		expect(stamp).not.toHaveAttribute('data-stale');
+		expect(stamp).toHaveAttribute('data-variant', 'live');
+		expect(stamp).toHaveAttribute('data-stale', 'false');
+		expect(document.querySelector('[data-slot="article-keywords"]')).toBeNull();
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent(
 			locale === 'fr' ? 'Actualisation indisponible' : 'Refresh unavailable',
 		);

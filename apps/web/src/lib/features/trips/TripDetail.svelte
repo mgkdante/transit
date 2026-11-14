@@ -19,7 +19,7 @@
 	import type { Trip, StopsIndex } from '#lib/v1/index.ts';
 	import { createResource } from '#lib/v1/resource.svelte.ts';
 	import { ArticleHeader, DetailFrame } from '@yesid/ui/layout';
-	import { ArticleSectionStack, ArticleKeywords } from '#lib/components/layout/index.ts';
+	import { ArticleSectionStack } from '#lib/components/layout/index.ts';
 	import { ResourceBoundary, FreshnessStamp } from '#lib/components/surface/index.ts';
 	import { SectionLabel, SectionHeading } from '@yesid/ui/brand';
 	import { StatusBadge } from '#lib/components/dataviz/index.ts';
@@ -123,10 +123,9 @@
 
 {#snippet reportFreshness()}
 	<FreshnessStamp
-		variant={presentation.notice.kind === 'none' ? 'live' : 'updated'}
+		variant="live"
 		presentation={presentation.stamp}
 		class="trip-report-stamp"
-		label={t.latestReport}
 		{locale}
 	/>
 {/snippet}
@@ -156,7 +155,6 @@
 					{/snippet}
 				</ArticleHeader>
 			{/snippet}
-			{#snippet left()}<ArticleKeywords label={t.keywordsLabel} keywords={t.keywords} />{/snippet}
 			<ArticleSectionStack>
 				{#if presentation.notice.kind !== 'none'}
 					<StateNotice

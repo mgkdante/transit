@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@yesid/ui/button';
-	import { formatRelativeSeconds } from '#lib/utils/time.ts';
-	import { copy as MAP_COPY } from './map.copy';
+	import { liveStamp } from '#lib/v1/stamp.ts';
+	import FreshnessStamp from '#lib/components/surface/FreshnessStamp.svelte';
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import type { Locale } from '#lib/i18n/index.ts';
@@ -71,7 +71,15 @@
 		</h3>
 		{#if alertsAgeSeconds != null}
 			<p class="map-alerts-age">
-				{MAP_COPY[locale].alertsChecked(formatRelativeSeconds(alertsAgeSeconds, locale))}
+				<FreshnessStamp
+					variant="live"
+					stamp={liveStamp({
+						subject: 'alerts',
+						ageSeconds: alertsAgeSeconds,
+						isStale: alertsStale,
+					})}
+					{locale}
+				/>
 			</p>
 		{/if}
 		{#if alerts == null}

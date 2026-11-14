@@ -167,7 +167,7 @@ describe('TripDetail with the shared live store', () => {
 			await advance(ttl * 2 - 1);
 			expect(stamp()).toHaveAttribute('data-stale', 'false');
 			await advance(1);
-			expect(stamp()).toHaveAttribute('data-variant', 'updated');
+			expect(stamp()).toHaveAttribute('data-variant', 'live');
 			expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 			expect(stamp()).toHaveAttribute('data-age-seconds', String(ttl * 3));
 			expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Report behind schedule');
@@ -187,19 +187,19 @@ describe('TripDetail with the shared live store', () => {
 		await settle();
 		fixture.trips.mockRejectedValue(new Error('controlled outage'));
 		await advance(30);
-		expect(stamp()).toHaveAttribute('data-variant', 'updated');
-		expect(stamp()).not.toHaveAttribute('data-stale');
+		expect(stamp()).toHaveAttribute('data-variant', 'live');
+		expect(stamp()).toHaveAttribute('data-stale', 'false');
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Refresh unavailable');
 		expect(document.querySelector('.trip-verdict [data-slot="status-badge"]')).toHaveTextContent(
 			'On time',
 		);
 		await advance(60);
-		expect(stamp()).toHaveAttribute('data-variant', 'updated');
+		expect(stamp()).toHaveAttribute('data-variant', 'live');
 		expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 		fixture.trips.mockResolvedValue(report());
 		await manualRefresh();
 		expect(stamp()).not.toHaveAttribute('data-degraded');
-		expect(stamp()).toHaveAttribute('data-variant', 'updated');
+		expect(stamp()).toHaveAttribute('data-variant', 'live');
 		expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 		expect(screen.getByTestId('trip-report-notice')).toHaveTextContent('Report behind schedule');
 		fixture.trips.mockResolvedValue(report(90));
@@ -259,7 +259,7 @@ describe('TripDetail with the shared live store', () => {
 			}
 			await settle();
 			expect(fixture.trips).toHaveBeenCalledTimes(2);
-			expect(stamp()).toHaveAttribute('data-variant', 'updated');
+			expect(stamp()).toHaveAttribute('data-variant', 'live');
 			expect(document.querySelector('.freshness-stamp-stale')).toBeNull();
 			await advance(30);
 			expect(fixture.trips).toHaveBeenCalledTimes(3);

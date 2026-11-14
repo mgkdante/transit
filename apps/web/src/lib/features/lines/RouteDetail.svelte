@@ -9,10 +9,8 @@
 	const { lineName } = transitDisplay();
 	import { notReporting } from '#lib/components/map/vehicleProjection.ts';
 	import { provideLiveAbsenceContext, liveAbsenceReason } from '#lib/site/absence.ts';
-	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
+	import { feedPresentation, livePresentation } from '#lib/v1/live/livePresentation.ts';
 	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
-	import { formatRelativeSeconds } from '#lib/utils/time.ts';
-	import { copy as MAP_COPY } from '#lib/features/map/map.copy.ts';
 	import { getV1Runtime } from '#lib/v1/runtime.ts';
 	const clock = getV1Runtime().clock;
 	import { onMount, untrack } from 'svelte';
@@ -459,15 +457,16 @@
 											copy={t.alerts}
 											testId="route-alerts"
 										/>
-
 										{#if providerHasAlerts(v1.provider) && routeAlerts.length > 0 && live.familyStates.alerts.health.ageSeconds != null}
 											<p class="route-alerts-age">
-												{MAP_COPY[locale].alertsChecked(
-													formatRelativeSeconds(live.familyStates.alerts.health.ageSeconds, locale),
-												)}
+												<FreshnessStamp
+													variant="live"
+													subject="alerts"
+													presentation={feedPresentation(live.familyStates.alerts, locale)}
+													{locale}
+												/>
 											</p>
 										{/if}
-
 										{#if roster.length > 0}
 											<div class="route-roster" data-testid="route-roster">
 												<div class="route-section-head">

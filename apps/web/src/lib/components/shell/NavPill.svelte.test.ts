@@ -430,7 +430,13 @@ it.each(['en', 'fr'] as const)(
 				props: { locale, search: '40061', searchPresentation: presentation },
 			});
 			expect(view.getByRole('status')).toHaveTextContent(presentation.notice.message);
-			expect(view.getByText(presentation.stamp.ageText)).toBeInTheDocument();
+			expect(
+				view.getByText(
+					locale === 'en'
+						? 'Live · update time unknown'
+						: 'En direct · heure de mise à jour inconnue',
+				),
+			).toBeInTheDocument();
 		} finally {
 			live.stop();
 			dispose();

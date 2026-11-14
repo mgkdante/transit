@@ -744,23 +744,12 @@ async function collectNetwork(page, locale) {
 	const networkMeta = {
 		freshness: (await freshness.count())
 			? {
-					label: await readText(
-						page,
-						'[data-slot="freshness-stamp"][data-variant="live"] .freshness-stamp-label',
-					),
-					age: await readText(
+					text: await readText(
 						page,
 						'[data-slot="freshness-stamp"][data-variant="live"] .freshness-stamp-age',
 					),
 					datetime: await freshness.locator('time').getAttribute('datetime'),
 					seconds: parseNumber(await freshness.getAttribute('data-age-seconds')),
-				}
-			: null,
-		feed: (await page.locator('[data-slot="feed-age"]').count())
-			? {
-					label: await readText(page, '[data-slot="feed-age"] .network-feed-age-label'),
-					value: await readText(page, '[data-slot="feed-age"] .network-feed-age-value'),
-					aria: await page.locator('[data-slot="feed-age"]').getAttribute('aria-label'),
 				}
 			: null,
 		conformance: (await conformance.count())
