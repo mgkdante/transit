@@ -154,6 +154,7 @@ def _run_headway_rollup(connection) -> None:
     params = {
         "provider_id": PROVIDER,
         "built_at_utc": BUILT_AT,
+        "as_of_utc": connection.execute(text("SELECT now()")).scalar_one(),
         "open_window_days": 10,
         "fact_retention_days": 14,
     }
@@ -330,6 +331,7 @@ def _run_direction_headway_rollup(connection) -> None:
     params = {
         "provider_id": PROVIDER,
         "built_at_utc": BUILT_AT,
+        "as_of_utc": connection.execute(text("SELECT now()")).scalar_one(),
         "open_window_days": 10,
         "fact_retention_days": 14,
     }

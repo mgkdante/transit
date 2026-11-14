@@ -2,13 +2,85 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 import revision_2_seed as seed
-from sqlalchemy import event, text
+import test_route_headway_real_db_regression as headways
+from sqlalchemy import create_mock_engine, event, text
+from sqlalchemy.exc import InvalidRequestError
 from test_warm_rollups import FakeConnection, FakeEngine, ScalarResult
 
 from transit_ops.gold import rollups
 from transit_ops.sql_registry import query_name
 
 TABLES = ("route_headway_by_shift", "route_headway_by_direction_shift", "repeat_offender")
+headway_conn = headways.conn
+
+
+@pytest.mark.parametrize("direction", [False, True])
+def test_direct_headway_callers_bind_the_transaction_clock(direction):
+    stamp = seed.HISTORY_CLOCK
+    upserts = []
+
+    def execute(statement, params=None):
+        statement.compile().construct_params(params)
+        if query_name(statement) in (
+            "rollup.route_headway.upsert",
+            "rollup.route_headway_direction.upsert",
+        ):
+            upserts.append(params)
+        return ScalarResult(stamp)
+
+    connection = create_mock_engine("postgresql://", execute)
+    build = headways._run_direction_headway_rollup if direction else headways._run_headway_rollup
+    build(connection)
+    assert upserts and all(p["as_of_utc"] == stamp for p in upserts)
+
+
+@pytest.mark.parametrize("table", TABLES)
+def test_direct_rollup_without_stamp_fails_by_parameter_name(table):
+    statement = rollups.REPORTING_AGGREGATE_UPSERTS[table]
+    with pytest.raises(InvalidRequestError, match="bind parameter 'as_of_utc'"):
+        statement.compile().construct_params(
+            {
+                "provider_id": "stamp-test",
+                "built_at_utc": seed.HISTORY_CLOCK,
+                "fact_retention_days": 14,
+            }
+        )
+
+
+@pytest.mark.parametrize("table", TABLES[:2])
+def test_headway_rows_match_legacy_sql_at_transaction_clock(headway_conn, table):
+    stamp = headway_conn.execute(text("SELECT now()")).scalar_one()
+    day = stamp.astimezone(headways.LOCAL_TZ).date() - timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    headways._seed_pattern(
+        headway_conn,
+        seq_start=1000,
+        route_id="stamp-parity",
+        service_date=day,
+        direction_id=0,
+        local_times=[(10, 0), (10, 2), (10, 12), (10, 22)],
+    )
+    params = {
+        "provider_id": headways.PROVIDER,
+        "built_at_utc": stamp,
+        "fact_retention_days": 14,
+        "as_of_utc": stamp,
+    }
+    statement = rollups.REPORTING_AGGREGATE_UPSERTS[table]
+    legacy = text(
+        str(statement).replace(
+            "CAST(:as_of_utc AS timestamptz)\n              - make_interval",
+            "now() - make_interval",
+        )
+    )
+    select = text(f"SELECT * FROM gold.{table} WHERE provider_id = :provider_id ORDER BY route_id")
+    headway_conn.execute(legacy, params)
+    expected = headway_conn.execute(select, params).mappings().all()
+    assert expected
+    headway_conn.execute(rollups.DELETE_REPORTING_AGGREGATES[table], params)
+    headway_conn.execute(statement, params)
+    assert headway_conn.execute(select, params).mappings().all() == expected
 
 
 class ClockConnection(FakeConnection):
