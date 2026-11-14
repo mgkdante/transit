@@ -69,6 +69,13 @@ Published figures for completed days.
 A provider-local day whose figures are final in the published record.
 _Avoid_: finished UTC day, build day
 
+**Build family**:
+One of the twelve sets of revision 2 rollups and published files whose engine switches together.
+_Avoid_: feed family, history family
+
+**Engine**:
+The query engine a build family runs on, PostgreSQL or DuckDB; the same revision gives the same bytes on either.
+
 **Feed family**:
 One kind of live data from a provider, such as vehicle positions, trip updates or alerts.
 _Avoid_: feed, tier, source
