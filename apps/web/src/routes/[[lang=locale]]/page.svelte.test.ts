@@ -274,3 +274,20 @@ describe('Home civic overview and directory', () => {
 		}
 	}, 20_000);
 });
+
+it.each(['en', 'fr'] as const)(
+	'home search remains a localized link, not a second input in %s',
+	(locale) => {
+		state.locale = locale;
+		renderHome();
+		expect(
+			screen.getByRole('link', {
+				name:
+					locale === 'en' ? 'Search for your line or stop' : 'Cherchez votre ligne ou votre arrêt',
+			}),
+		).toHaveAttribute('href', locale === 'en' ? '/search' : '/fr/search');
+		expect(screen.queryByRole('search')).toBeNull();
+		expect(screen.queryByRole('searchbox')).toBeNull();
+		expect(screen.queryByRole('textbox')).toBeNull();
+	},
+);

@@ -6,7 +6,7 @@ import { livePresentation } from '#lib/v1/live/livePresentation.ts';
 import { ManifestSchema } from '#lib/v1/schemas/index.ts';
 import { SvelteSet } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { chromeSearchResults } from '#lib/search/chromeSearch.ts';
+import { searchTransit } from '#lib/search/transitSearch.ts';
 import { TRANSIT_MODE_FILTERS, type TransitModeKey } from '#lib/search/stopMode.ts';
 import type { RouteIndexEntry } from '#lib/v1/schemas/index.ts';
 import NavPill from './__fixtures__/NavPillHarness.svelte';
@@ -342,7 +342,9 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 	it('clears the mode set the moment its chips have no surface — no control, no narrowing (REGATE-m6i §5c)', async () => {
 		const modes = new SvelteSet<TransitModeKey>(['metro']);
 		const routes: RouteIndexEntry[] = [{ id: '161', short: '161', long: 'Van Horne', type: 3 }];
-		expect(chromeSearchResults('161', { routes }, { scope: 'route', modes })).toEqual([]);
+		expect(
+			searchTransit({ surface: 'header', query: '161', scope: 'route', modes }, { routes }),
+		).toEqual([]);
 
 		const { container } = render(NavPill, {
 			props: {
@@ -363,7 +365,9 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		}
 		expect(modes.size).toBe(0);
 		expect(
-			chromeSearchResults('161', { routes }, { scope: 'route', modes }).map((r) => r.id),
+			searchTransit({ surface: 'header', query: '161', scope: 'route', modes }, { routes }).map(
+				(r) => r.id,
+			),
 		).toEqual(['161']);
 	});
 
@@ -434,6 +438,21 @@ it.each(['en', 'fr'] as const)(
 		} finally {
 			live.stop();
 			dispose();
+		}
+	},
+);
+
+it.each(['en', 'fr'] as const)(
+	'keeps the existing empty and no-match header presentation in %s',
+	(locale) => {
+		for (const search of ['', 'zzzz']) {
+			const view = render(NavPill, { props: { locale, search, searchResults: [] } });
+			expect(view.getByRole('searchbox', { name: navPillCopy[locale].searchAria.all })).toHaveValue(
+				search,
+			);
+			expect(view.queryByRole('group', { name: navPillCopy[locale].searchAria.all })).toBeNull();
+			expect(view.queryByText(/No results|Aucun résultat/)).toBeNull();
+			view.unmount();
 		}
 	},
 );

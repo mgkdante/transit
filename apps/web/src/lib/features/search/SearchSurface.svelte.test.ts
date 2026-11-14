@@ -2,14 +2,14 @@ import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import type { ReliabilitySnapshot } from '#lib/v1/reliabilitySnapshot.svelte.ts';
-import type { Vehicle } from '#lib/v1/schemas/index.ts';
+import type { RouteIndexEntry, StopIndexEntry, Vehicle } from '#lib/v1/schemas/index.ts';
 import SearchSurface from './SearchSurface.svelte';
 
-const ROUTES = [
+const ROUTES: RouteIndexEntry[] = [
 	{ id: '1', short: '1', long: 'Ligne 1 Verte', type: 1, color: '009EE0' },
 	{ id: '161', short: '161', long: 'Van Horne', type: 3, color: null },
 ];
-const STOPS = [
+const STOPS: StopIndexEntry[] = [
 	{
 		id: '57191',
 		code: '57191',
@@ -103,11 +103,13 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 }));
 
 let resourceCall = 0;
+let routeData: RouteIndexEntry[] = ROUTES;
+let stopData: StopIndexEntry[] = STOPS;
 function nextResource() {
 	resourceCall += 1;
 	return resourceCall % 2 === 1
-		? { generated_utc: '2026-06-16T00:00:00Z', routes: ROUTES }
-		: { generated_utc: '2026-06-16T00:00:00Z', stops: STOPS };
+		? { generated_utc: '2026-06-16T00:00:00Z', routes: routeData }
+		: { generated_utc: '2026-06-16T00:00:00Z', stops: stopData };
 }
 
 beforeEach(() => {
@@ -115,6 +117,8 @@ beforeEach(() => {
 	routeSnaps.clear();
 	stopSnaps.clear();
 	resourceCall = 0;
+	routeData = ROUTES;
+	stopData = STOPS;
 	setUrlQuery('q=ber');
 	liveHarness.createLiveStore.mockReset().mockReturnValue({
 		vehicles: { generated_utc: '2026-06-16T00:00:00Z', vehicles: VEHICLES },
@@ -134,6 +138,57 @@ beforeEach(() => {
 });
 
 describe('SearchSurface idle state', () => {
+	it("preserves each surface's tied line and stop order", () => {
+		routeData = [
+			{ id: 'z', short: '20', long: 'Café', type: 3 },
+			{ id: 'a', short: '3', long: 'Café', type: 3 },
+		];
+		stopData = [
+			{ id: 'z', code: 'z', name: 'Zulu Hub', lat: 0, lon: 0 },
+			{ id: 'a', code: 'a', name: 'Alpha Hub', lat: 0, lon: 0 },
+		];
+		for (const [q, name, hrefs] of [
+			['café', 'Lines', ['/lines/z', '/lines/a']],
+			['hub', 'Stops', ['/stop/z', '/stop/a']],
+		] as const) {
+			setUrlQuery(`q=${q}`);
+			const view = render(SearchSurface);
+			expect(
+				within(view.getByRole('region', { name }))
+					.getAllByRole('link')
+					.map((r) => r.getAttribute('href')),
+			).toEqual(hrefs);
+			view.unmount();
+		}
+	});
+	it("keeps exact, prefix, substring and reversed-token matches in today's order", () => {
+		routeData = ['x hub', 'hub north', 'hub', 'hub x'].map((long, i) => ({
+			id: `r${i}`,
+			short: `n${i}`,
+			long,
+			type: 3,
+		}));
+		for (const [q, ids] of [
+			['hub', ['r2', 'r1', 'r3', 'r0']],
+			['x hub', ['r0', 'r3']],
+			['n1', ['r1']],
+			['r1', ['r1']],
+			['40061', []],
+			['400', []],
+		] as const) {
+			setUrlQuery(`q=${q}`);
+			const view = render(SearchSurface);
+			expect(
+				view.queryByRole('region', { name: 'Lines' })
+					? within(view.getByRole('region', { name: 'Lines' }))
+							.getAllByRole('link')
+							.map((r) => r.getAttribute('href'))
+					: [],
+			).toEqual(ids.map((id) => `/lines/${id}`));
+			expect(view.queryAllByRole('link', { name: /Live bus/ })).toHaveLength(q === '40061' ? 1 : 0);
+			view.unmount();
+		}
+	});
 	it.each(['en', 'fr'] as const)('omits the catalogue census and live age in %s', (locale) => {
 		localeState.locale = locale;
 		setUrlQuery('');
@@ -270,4 +325,113 @@ describe('SearchSurface collection disclosure (M6i F25)', () => {
 		render(SearchSurface);
 		expect(screen.getByText(NOTICE_EN)).not.toHaveAttribute('aria-hidden', 'true');
 	});
+});
+
+it('preserves mode filtering relative to stop deduplication', async () => {
+	stopData = [
+		{ id: 'rail-first', code: 'r', name: 'Station Central', lat: 0, lon: 0, mode: 'rail' },
+		{ id: 'metro-second', code: 'm', name: 'Station Central', lat: 0, lon: 0, mode: 'metro' },
+	];
+	setUrlQuery('q=central');
+	const view = render(SearchSurface);
+	expect(view.getByRole('link', { name: /Station Central/ })).toHaveAttribute(
+		'href',
+		'/stop/rail-first',
+	);
+	await view.getByRole('button', { name: 'Métro' }).click();
+	expect(view.queryByRole('region', { name: 'Stops' })).toBeNull();
+	expect(view.getByText('No results')).toBeInTheDocument();
+});
+
+it.each(['en', 'fr'] as const)('keeps header caps and full page counts in %s', (locale) => {
+	localeState.locale = locale;
+	routeData = Array.from({ length: 51 }, (_, i) => ({
+		id: String(i),
+		short: String(i),
+		long: 'Hub',
+		type: 3,
+	}));
+	stopData = Array.from({ length: 51 }, (_, i) => ({
+		id: String(i),
+		code: String(i),
+		name: 'Hub',
+		lat: 0,
+		lon: 0,
+	}));
+	setUrlQuery('q=hub');
+	const view = render(SearchSurface);
+	for (const name of locale === 'en' ? ['Lines', 'Stops'] : ['Lignes', 'Arrêts']) {
+		const group = within(view.getByRole('region', { name }));
+		expect(group.getAllByRole('link')).toHaveLength(50);
+		expect(group.getByText(locale === 'en' ? '51 results' : '51 résultats')).toBeInTheDocument();
+		expect(group.getByText(locale === 'en' ? '+1 more' : '+1 de plus')).toBeInTheDocument();
+	}
+});
+
+it.each(['CRÉMAZIE', 'cremazie', 'Berri-UQAM', 'uqam berri'])(
+	'matches accents and punctuation without changing labels: %s',
+	(q) => {
+		stopData = [{ id: 'c', code: 'c', name: 'Station Crémazie', lat: 0, lon: 0 }, STOPS[1]];
+		setUrlQuery('q=' + encodeURIComponent(q));
+		const view = render(SearchSurface);
+		expect(view.getByRole('link', { name: /Station/ })).toHaveTextContent(
+			q.toLowerCase().includes('mazie') ? 'Station Crémazie' : 'Station Berri-UQAM',
+		);
+	},
+);
+
+it.each(['en', 'fr'] as const)(
+	'distinguishes blank, punctuation-only and unmatched queries in both locales: %s',
+	async (locale) => {
+		localeState.locale = locale;
+		for (const q of ['', '   ', '---', 'zzzz']) {
+			setUrlQuery('q=' + encodeURIComponent(q));
+			const view = render(SearchSurface);
+			expect(view.queryAllByRole('region')).toHaveLength(0);
+			if (q === 'zzzz')
+				expect(
+					view.getByText(locale === 'en' ? 'No results' : 'Aucun résultat'),
+				).toBeInTheDocument();
+			else {
+				expect(view.getByRole('note')).toHaveTextContent(
+					locale === 'en'
+						? 'Search a line, stop or bus'
+						: 'Rechercher une ligne, un arrêt ou un bus',
+				);
+				expect(
+					view.getByRole('button', { name: locale === 'en' ? 'Line number' : 'Numéro de ligne' }),
+				).toBeInTheDocument();
+				expect(view.container.querySelector('[data-slot="freshness-stamp"]')).toBeNull();
+			}
+			view.unmount();
+		}
+		setUrlQuery('q=van horne');
+		const view = render(SearchSurface);
+		await view.getByRole('button', { name: 'Métro' }).click();
+		expect(view.getByText(locale === 'en' ? 'No results' : 'Aucun résultat')).toBeInTheDocument();
+	},
+);
+
+it('keeps stop codes, cross-street order and existing stop representatives', () => {
+	stopData = [
+		{ id: 'first', code: '100', name: 'Park / Road', lat: 0, lon: 0 },
+		{ id: 'same-code', code: '100', name: 'Park / Road', lat: 0, lon: 0 },
+		{ id: 'other', code: '200', name: 'Park / Road', lat: 0, lon: 0 },
+		{ id: 'station-first', code: '300', name: 'Station Central', lat: 0, lon: 0 },
+		{ id: 'station-second', code: '400', name: 'Station Central', lat: 0, lon: 0 },
+	];
+	for (const [q, hrefs] of [
+		['100', ['/stop/first']],
+		['road park', ['/stop/first', '/stop/other']],
+		['central', ['/stop/station-first']],
+	] as const) {
+		setUrlQuery('q=' + q);
+		const view = render(SearchSurface);
+		expect(
+			within(view.getByRole('region', { name: 'Stops' }))
+				.getAllByRole('link')
+				.map((r) => r.getAttribute('href')),
+		).toEqual(hrefs);
+		view.unmount();
+	}
 });

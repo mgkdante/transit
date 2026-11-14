@@ -31,6 +31,26 @@ test.beforeEach(async ({ page }) => {
 
 for (const locale of PUBLISHED_LOCALES) {
 	const nav = navPillCopy[locale];
+	for (const provider of ['stm', 'octranspo']) {
+		test(`${locale}/${provider}: home invitation opens the existing search page`, async ({
+			page,
+		}) => {
+			await page.goto(localizeHref(`/?provider=${provider}`, locale));
+			await page
+				.locator('[data-slot="home-search"]')
+				.getByRole('link', {
+					name:
+						locale === 'en'
+							? 'Search for your line or stop'
+							: 'Cherchez votre ligne ou votre arrêt',
+				})
+				.click();
+			await expect(page).toHaveURL((url) => url.pathname === localizeHref('/search', locale));
+			await expect(
+				page.getByRole('textbox', { name: searchCopy[locale].inputLabel }),
+			).toBeVisible();
+		});
+	}
 
 	test(`${locale}: the header search finds a stop and Enter opens it`, async ({ page }, {
 		project,

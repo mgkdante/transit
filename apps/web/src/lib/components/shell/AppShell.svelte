@@ -4,7 +4,7 @@
 	import type { Snippet } from 'svelte';
 	import { cn } from '#lib/utils/index.ts';
 	import { type Locale, DEFAULT_LOCALE, getLocale } from '#lib/i18n/index.ts';
-	import type { ChromeSearchResult, ChromeSearchScope } from '#lib/search/chromeSearch.ts';
+	import type { ChromeSearchResult, ChromeSearchScope } from '#lib/search/transitSearch.ts';
 	import type { TransitModeKey } from '#lib/search/stopMode.ts';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import NavPill from './NavPill.svelte';
