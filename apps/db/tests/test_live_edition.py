@@ -1,3 +1,5 @@
+from datetime import date
+from itertools import islice
 from unittest.mock import MagicMock
 
 import duckdb
@@ -13,6 +15,7 @@ from test_static_silver_copy_real_db import (
 )
 
 from transit_ops.live.edition import (
+    EDITION_TABLES,
     EditionId,
     EditionMissing,
     create_edition_tables,
@@ -181,6 +184,19 @@ def _local_rows(duck):
 
 def test_loaded_rows_equal_postgres_rows(editions):
     engine, (first, _) = editions
+    with engine.begin() as pg:
+        pg.execute(
+            text("""
+            INSERT INTO silver.stop_times
+                (provider_id, dataset_version_id, trip_id, stop_sequence,
+                 arrival_time, departure_time, stop_id)
+            SELECT provider_id, dataset_version_id, trip_id, n,
+                   arrival_time, departure_time, stop_id
+            FROM silver.stop_times CROSS JOIN generate_series(13, 20013) AS n
+            WHERE dataset_version_id = :d
+        """),
+            {"d": first.dataset_version_id},
+        )
     with engine.connect() as pg, duckdb.connect() as duck:
         load_edition_from_postgres(duck, pg, first)
         for table, source in SOURCES.items():
@@ -250,10 +266,7 @@ def test_counts_are_returned_per_table(editions):
 
 
 def test_empty_relations_are_typed_and_null_metadata_survives():
-    pg = MagicMock()
-    pg.in_transaction.return_value = False
-    pg.connection.dbapi_connection.autocommit = False
-    pg.execute.return_value.fetchall.return_value = []
+    pg = _source_pg(iter(()))
     with duckdb.connect() as duck:
         counts = load_edition_from_postgres(duck, pg, EditionId("empty", 1, None))
         assert counts == {**dict.fromkeys(SOURCES, 0), "edition_meta": 1}
@@ -271,3 +284,86 @@ def test_load_refuses_to_change_the_callers_postgres_transaction(active, autocom
         with pytest.raises(ValueError, match="idle non-autocommit"):
             load_edition_from_postgres(duck, pg, EditionId("replacement", 2, None))
         assert loaded_edition(duck) == EditionId("preserved", 1, None)
+
+
+def _source_pg(rows, *, bounded=False, failure=None):
+    pg = MagicMock()
+    pg.in_transaction.return_value = False
+    pg.connection.dbapi_connection.autocommit = False
+    if failure == "exit":
+        pg.begin.return_value.__exit__.side_effect = RuntimeError("source exit failed")
+
+    def execute(statement, parameters=None, *, execution_options=None):
+        result = MagicMock()
+        result.__enter__.return_value = result
+        selected = iter(rows if "FROM silver.stop_times " in str(statement) else ())
+        fetched = 0
+
+        def fetchmany(size):
+            nonlocal fetched
+            assert 0 < size <= 10_000, "source batch exceeds memory bound"
+            if failure == "read" and fetched:
+                raise RuntimeError("source read failed")
+            batch = list(islice(selected, size))
+            fetched += len(batch)
+            return batch
+
+        def fetchall():
+            assert not bounded, "whole-relation buffering is forbidden"
+            return list(selected)
+
+        if bounded and "SELECT " in str(statement):
+            assert execution_options and 0 < execution_options.get("yield_per", 0) <= 10_000, (
+                "source cursor must stream with bounded buffering"
+            )
+        result.fetchmany.side_effect = fetchmany
+        result.fetchall.side_effect = fetchall
+        return result
+
+    pg.execute.side_effect = execute
+    return pg
+
+
+def test_source_rows_stream_in_bounded_batches():
+    rows = (("trip", n, "25:10:00", None, "駅é") for n in range(25_001))
+    with duckdb.connect() as duck:
+        counts = load_edition_from_postgres(
+            duck, _source_pg(rows, bounded=True), EditionId("streamed", 2, None)
+        )
+        assert counts == {
+            **dict.fromkeys(SOURCES, 0),
+            "edition_stop_times": 25_001,
+            "edition_meta": 1,
+        }
+        assert duck.execute(
+            "SELECT * FROM edition_stop_times ORDER BY stop_sequence"
+        ).fetchall() == [("trip", n, "25:10:00", None, "駅é") for n in range(25_001)]
+        assert loaded_edition(duck) == EditionId("streamed", 2, None)
+
+
+@pytest.mark.parametrize("failure", ["read", "exit"])
+def test_source_failure_preserves_every_table_after_reopen(tmp_path, failure):
+    path = str(tmp_path / "preserved.duckdb")
+    values = {
+        "VARCHAR": "old",
+        "INTEGER": 1,
+        "BIGINT": 1,
+        "DOUBLE": 1.5,
+        "BOOLEAN": True,
+        "DATE": date(2026, 1, 1),
+    }
+    with duckdb.connect(path) as duck:
+        create_edition_tables(duck)
+        for table, columns in EDITION_TABLES.items():
+            placeholders = ", ".join("?" for _ in columns)
+            duck.execute(
+                f"INSERT INTO {table} VALUES ({placeholders})",
+                [values[kind] for _, kind in columns],
+            )
+        before = _local_rows(duck)
+        rows = (("new", n, "26:00:00", "", "新") for n in range(25_001))
+        pg = _source_pg(rows, bounded=failure == "read", failure=failure)
+        with pytest.raises(RuntimeError, match=f"source {failure} failed"):
+            load_edition_from_postgres(duck, pg, EditionId("replacement", 2, None))
+    with duckdb.connect(path) as reopened:
+        assert _local_rows(reopened) == before

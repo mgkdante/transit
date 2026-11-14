@@ -99,6 +99,7 @@ _EDITION_SOURCES = {
     "edition_routes": ("gold.dim_route", "route_id"),
     "edition_stops": ("gold.dim_stop", "stop_id"),
 }
+_EDITION_BATCH_SIZE = 10_000
 
 
 def _copy_edition_relation(
@@ -107,31 +108,38 @@ def _copy_edition_relation(
     source, key = _EDITION_SOURCES[table]
     columns = EDITION_TABLES[table]
     names = ", ".join(name for name, _ in columns)
-    rows = pg.execute(
+    projections = ", ".join(f"UNNEST(CAST(? AS {kind}[]))" for _, kind in columns)
+    duck.execute(f"DELETE FROM {table}")
+    count = 0
+    with pg.execute(
         text(
             f"SELECT {names} FROM {source} "
             "WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id "
             f"ORDER BY {key}"
         ),
         {"provider_id": edition.provider_id, "dataset_version_id": edition.dataset_version_id},
-    ).fetchall()
-    arrays = [[row[index] for row in rows] for index in range(len(columns))]
-    projections = ", ".join(f"UNNEST(CAST(? AS {kind}[]))" for _, kind in columns)
-    duck.execute(f"DELETE FROM {table}")
-    duck.execute(f"INSERT INTO {table} ({names}) SELECT {projections}", arrays)
-    return len(rows)
+        execution_options={"yield_per": _EDITION_BATCH_SIZE},
+    ) as result:
+        while rows := result.fetchmany(_EDITION_BATCH_SIZE):
+            arrays = [[row[index] for row in rows] for index in range(len(columns))]
+            duck.execute(f"INSERT INTO {table} ({names}) SELECT {projections}", arrays)
+            count += len(rows)
+    return count
 
 
 def load_edition_from_postgres(
     duck: duckdb.DuckDBPyConnection, pg: Connection, edition: EditionId
 ) -> dict[str, int]:
-    """Replace the edition atomically, using an idle non-autocommit PostgreSQL connection."""
+    """Replace an edition using an idle non-autocommit PostgreSQL connection.
+
+    The caller must ensure a single writer for the local file.
+    """
     if pg.in_transaction() or getattr(pg.connection.dbapi_connection, "autocommit", True):
         raise ValueError("Edition loading requires an idle non-autocommit PostgreSQL connection")
-    with pg.begin():
-        pg.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
-        duck.execute("BEGIN TRANSACTION")
-        try:
+    duck.execute("BEGIN TRANSACTION")
+    try:
+        with pg.begin():
+            pg.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
             create_edition_tables(duck)
             counts = {
                 table: _copy_edition_relation(duck, pg, edition, table)
@@ -145,8 +153,8 @@ def load_edition_from_postgres(
                 [[edition.provider_id], [edition.dataset_version_id], [edition.source_version]],
             )
             counts["edition_meta"] = 1
-            duck.execute("COMMIT")
-        except BaseException:
-            duck.execute("ROLLBACK")
-            raise
+        duck.execute("COMMIT")
+    except BaseException:
+        duck.execute("ROLLBACK")
+        raise
     return counts
