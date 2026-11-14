@@ -1133,7 +1133,6 @@ describe('RouteDetail Detail tab: current-buses roster', () => {
 		expect(document.querySelector('[data-testid="route-roster"]')).toBeNull();
 	});
 });
-
 describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 	it.each([
 		['stm', 1, 'metro_realtime', 'en'],
@@ -1147,10 +1146,11 @@ describe('RouteDetail Detail tab: HONEST ABSENCE (no live bus)', () => {
 			routeFileData = { ...ROUTE_FILE, type };
 			provenanceData = { generated_utc: '2026-06-15T12:00:00Z', gaps: [gap] };
 			liveIndex = buildIndex([]);
-			routeSurface.mount(RouteDetail, {
+			const view = routeSurface.mount(RouteDetail, {
 				props: { id: '1', seed: routeSeed() },
 				context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
 			});
+			expect(view.container.querySelector('[data-slot="freshness-stamp"]')).toBeNull();
 			expect(
 				screen.getByText(
 					locale === 'en'

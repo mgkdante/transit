@@ -3,6 +3,10 @@ A public dashboard that tells riders how reliable their transit service is, from
 
 ## Language
 
+**Object digest**:
+The checksum of the stored bytes of one object.
+_Avoid_: content digest, ETag
+
 **Dataset**:
 One declared kind of kept record with one key, such as the captures of one feed or the rows of one table.
 _Avoid_: edition (a schedule edition, which the code calls a dataset version)
@@ -60,7 +64,14 @@ _Avoid_: mode, resolution
 
 **Window**:
 One specific span at a grain, such as the week of 27 October.
+For rankings, a window contains closed service days and has kind day, trailing_7, trailing_30, calendar_month or range; range names a visitor-picked kind.
 _Avoid_: period, range
+
+**League table**:
+Lines or stops ordered by one measure over one closed window, with their figures and ranks.
+
+**Shared rank**:
+A rank shared by entries equal at the precision shown; their exact values still determine their order.
 
 **Record**:
 Published figures for completed days.

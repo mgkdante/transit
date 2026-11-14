@@ -263,23 +263,22 @@ describe('HotspotsBoard article', () => {
 		await assertRailIndependence({
 			container,
 			panelNames: [hotspotsCopy.en.rail.controls, hotspotsCopy.en.rail.toc],
-			contentCount: 3,
+			contentCount: 2,
 		});
 	});
 
-	it('renders Top hotspot, Lines, and Stops as simultaneous article-summary cards without tabs', () => {
+	it('renders Lines and Stops without a mixed winner card or sentence', () => {
 		const { container } = render(HotspotsBoard);
-		const cards = ['hotspots-top', 'hotspots-lines', 'hotspots-stops'].map((id) =>
-			card(container, id),
-		);
+		expect(card(container, 'hotspots-top')).toBeNull();
+		expect(screen.queryByLabelText(hotspotsCopy.en.verdict.label)).toBeNull();
+		const cards = ['hotspots-lines', 'hotspots-stops'].map((id) => card(container, id));
 		expect(cards.every(Boolean)).toBe(true);
 		expect(cards.map((el) => el.getAttribute('data-header-variant'))).toEqual([
 			'article-summary',
 			'article-summary',
-			'article-summary',
 		]);
 		expect(cards.map((el) => el.querySelector('[data-slot="badge"]')?.textContent?.trim())).toEqual(
-			['01', '02', '03'],
+			['01', '02'],
 		);
 		expect(container.querySelector('[role="tablist"]')).toBeNull();
 		expect(container.querySelector('[role="tab"]')).toBeNull();
@@ -291,31 +290,17 @@ describe('HotspotsBoard article', () => {
 		).toHaveAttribute('href', '/stop/S1');
 	});
 
-	it.each([
-		['en', 'Top-ranked hotspot: Berri-UQAM, 70% severe-delay predictions.'],
-		['fr', 'Point chaud en tête : Berri-UQAM, 70% de prévisions de retard grave.'],
-	] as const)(
-		'renders the %s verdict from the supplied severe share, not the legacy delta',
-		(locale, expectedVerdict) => {
+	it.each(['en', 'fr'] as const)(
+		'omits the mixed winner in %s while retaining both kinds',
+		(locale) => {
 			currentLocale.value = locale;
 			payload.current!.by_grain![0].entries![0].otp_delta_pts = 9.7;
-			render(HotspotsBoard);
-
-			expect(screen.getByLabelText(hotspotsCopy[locale].verdict.label)).toHaveTextContent(
-				expectedVerdict,
-			);
+			const { container } = render(HotspotsBoard);
+			expect(screen.queryByLabelText(hotspotsCopy[locale].verdict.label)).toBeNull();
+			expect(card(container, 'hotspots-lines')).toBeInTheDocument();
+			expect(card(container, 'hotspots-stops')).toBeInTheDocument();
 		},
 	);
-
-	it.each([
-		[0, 'Top-ranked hotspot: Berri-UQAM, 0% severe-delay predictions.'],
-		[12.4, 'Top-ranked hotspot: Berri-UQAM, 12.4% severe-delay predictions.'],
-		[null, 'Top-ranked hotspot: Berri-UQAM.'],
-	] as const)('preserves the supplied severe share %s in its headline', (severe, expected) => {
-		payload.current!.by_grain![0].entries![0].severe_pct = severe;
-		render(HotspotsBoard);
-		expect(screen.getByLabelText(hotspotsCopy.en.verdict.label)).toHaveTextContent(expected);
-	});
 
 	it('keeps a real chart touch click inside its open card while opening details', async () => {
 		vi.stubGlobal('IntersectionObserver', EnteringIntersectionObserver);
@@ -515,7 +500,7 @@ describe('HotspotsBoard article', () => {
 		).toHaveLength(2);
 		expect(sheet.querySelectorAll('[data-slot="grain-picker"]')).toHaveLength(2);
 		expect(sheet.querySelector('[data-slot="active-window"]')).not.toBeNull();
-		expect(within(sheet).getByRole('button', { name: 'Top hotspot' })).toBeInTheDocument();
+		expect(within(sheet).queryByRole('button', { name: 'Top hotspot' })).toBeNull();
 		expect(within(sheet).getByRole('button', { name: 'Lines' })).toBeInTheDocument();
 		expect(within(sheet).getByRole('button', { name: 'Stops' })).toBeInTheDocument();
 
@@ -530,25 +515,25 @@ describe('HotspotsBoard article', () => {
 
 	it('a TOC jump reveals only its closed Lines card before scrolling', async () => {
 		const { container } = render(HotspotsBoard);
-		const statesAtScroll: Array<{ linesOpen: string | null; topOpen: string | null }> = [];
+		const statesAtScroll: Array<{ linesOpen: string | null; stopsOpen: string | null }> = [];
 		const scrollIntoView = vi.fn(() => {
 			statesAtScroll.push({
 				linesOpen: cardTrigger(container, 'hotspots-lines').getAttribute('aria-expanded'),
-				topOpen: cardTrigger(container, 'hotspots-top').getAttribute('aria-expanded'),
+				stopsOpen: cardTrigger(container, 'hotspots-stops').getAttribute('aria-expanded'),
 			});
 		});
 		Element.prototype.scrollIntoView = scrollIntoView;
-		await fireEvent.click(cardTrigger(container, 'hotspots-top'));
+		await fireEvent.click(cardTrigger(container, 'hotspots-stops'));
 		await fireEvent.click(cardTrigger(container, 'hotspots-lines'));
-		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
+		expect(cardTrigger(container, 'hotspots-stops')).toHaveAttribute('aria-expanded', 'false');
 		expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'false');
 
 		const rail = container.querySelector('[data-slot="surface-rail"]') as HTMLElement;
 		await fireEvent.click(within(rail).getByRole('button', { name: 'Lines' }));
 		await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
-		expect(statesAtScroll).toEqual([{ linesOpen: 'true', topOpen: 'false' }]);
+		expect(statesAtScroll).toEqual([{ linesOpen: 'true', stopsOpen: 'false' }]);
 		expect(cardTrigger(container, 'hotspots-lines')).toHaveAttribute('aria-expanded', 'true');
-		expect(cardTrigger(container, 'hotspots-top')).toHaveAttribute('aria-expanded', 'false');
+		expect(cardTrigger(container, 'hotspots-stops')).toHaveAttribute('aria-expanded', 'false');
 	});
 
 	it('renders below-floor evidence in semantic tables without fabricating readings', () => {

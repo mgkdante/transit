@@ -6,6 +6,8 @@ for (const locale of ['en', 'fr'] as const) {
 		page,
 	}) => {
 		await page.goto(locale === DEFAULT_LOCALE ? '/metrics' : `/${locale}/metrics`);
+		// SSR exposes the expanded section before hydration wires its interactions.
+		await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
 		const section = page.locator('[data-testid="metrics-sections"] .section-card').first();
 		const heading = section.locator('[data-section-trigger]');
 		await expect(heading).toHaveAttribute('aria-expanded', 'true');

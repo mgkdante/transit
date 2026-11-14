@@ -162,7 +162,9 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 }));
 
 beforeEach(async () => {
-	ports.getHistoricAvailability.mockReset().mockReturnValue(null);
+	ports.getHistoricAvailability.mockReset().mockReturnValue({
+		families: [{ family: 'network', last_available_date: '2026-06-17' }],
+	});
 	vi.mocked(mirrorSearchParam).mockClear();
 	resetReceiptState();
 	Element.prototype.scrollIntoView = vi.fn();
@@ -197,6 +199,7 @@ afterEach(resetReceiptState);
 
 describe('receipt closed days', () => {
 	beforeEach(() => {
+		ports.getHistoricAvailability.mockReturnValue(null);
 		indexData = { ...indexData, dates: ['2026-11-10', '2026-11-11'] };
 		ports.getReceipt.mockImplementation((date: string) => ({ ...receiptData, date }));
 	});
@@ -224,6 +227,7 @@ describe('receipt closed days', () => {
 		expect(screen.getByText(t.history.latestCompleteLabel)).toBeInTheDocument();
 		expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', null);
 		expect(container.querySelector('[data-slot="receipt-incomplete-day"]')).toBeNull();
+		expect(screen.getByLabelText(t.dayVerdict.label)).toBeInTheDocument();
 		await fireEvent.change(screen.getByLabelText(t.datePicker.label), {
 			target: { value: '2026-11-11' },
 		});
@@ -231,10 +235,12 @@ describe('receipt closed days', () => {
 			t.history.incompleteDay,
 		);
 		expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', '2026-11-11');
+		expect(screen.queryByLabelText(t.dayVerdict.label)).toBeNull();
 		await fireEvent.change(screen.getByLabelText(t.datePicker.label), {
 			target: { value: '2026-11-10' },
 		});
 		expect(mirrorSearchParam).toHaveBeenLastCalledWith('date', null);
+		expect(screen.getByLabelText(t.dayVerdict.label)).toBeInTheDocument();
 	});
 
 	it.each(['absent', 'rejected'])(

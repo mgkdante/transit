@@ -275,12 +275,7 @@ describe('HotspotsBoard retained date history', () => {
 			expect.objectContaining({ signal: expect.any(AbortSignal) }),
 		);
 		expect(screen.queryByText(/Current week line/)).toBeNull();
-		expect(
-			screen.getByText(
-				'The worst hotspot in the selected retained observations and the evidence behind it',
-			),
-		).toBeInTheDocument();
-		expect(screen.queryByText('The worst current hotspot and the evidence behind it')).toBeNull();
+		expect(container.querySelector('[data-toc="hotspots-top"]')).toBeNull();
 		for (const caption of screen.getAllByText(/Available retained observations ending/)) {
 			expect(caption).toHaveTextContent('Jun 22');
 		}
@@ -294,7 +289,7 @@ describe('HotspotsBoard retained date history', () => {
 		expect(harness.state.url.searchParams.get('n')).toBe('5');
 	});
 
-	it('uses retained stand-down copy when a retained grain has tray evidence but no ranked hotspot', async () => {
+	it('keeps retained tray evidence without a mixed winner when no hotspot ranks', async () => {
 		reset('http://localhost/hotspots?date=2026-06-20');
 		harness.getHotspotsHistoryDay.mockResolvedValue(
 			payload('Retained tray only', '2026-06-20T23:59:59Z', {
@@ -305,10 +300,7 @@ describe('HotspotsBoard retained date history', () => {
 		render(HotspotsBoard);
 
 		await screen.findAllByText('Retained tray only null tray');
-		expect(
-			screen.getByText('No hotspot ranks in the selected retained observations.'),
-		).toBeInTheDocument();
-		expect(screen.queryByText('Nothing is a hotspot right now.')).toBeNull();
+		expect(screen.queryByLabelText(hotspotsCopy.en.verdict.label)).toBeNull();
 	});
 
 	it('canonicalizes an explicit latest date to current and cleans only date', async () => {

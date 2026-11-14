@@ -39,7 +39,6 @@
 	import { DetailFrame, SurfaceRail, type SurfaceRailContext } from '@yesid/ui/layout';
 	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import { CollapsibleSection, TocNav } from '@yesid/ui/brand';
-	import { TypedInformationCard } from '#lib/components/shared/index.ts';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
 	import { prefersReducedMotion } from '@yesid/motion/stores/reducedMotion';
 	import { fmtCount, fmtDelayMin, fmtPct } from '#lib/utils/index.ts';
@@ -215,18 +214,6 @@
 		navKindFor(entry.type) === 'line'
 			? display.lineName(entry.id, entry.name)[spoken ? 'spoken' : 'label']
 			: (entry.name ?? t.unnamed(entry.id));
-	const topHotspot = $derived<HotspotEntry | null>(activeLadder?.entries?.[0] ?? null);
-	const topHotspotName = $derived(topHotspot ? nameFor(topHotspot) : null);
-	const verdictParts = $derived.by(() => {
-		if (!topHotspot || topHotspotName == null) {
-			const before = hotspots.mode === 'history' ? t.history.retainedVerdictNone : t.verdict.none;
-			return { before, after: '' };
-		}
-		const severe = fmtPct(topHotspot.severe_pct, { rounding: 'auto', locale, suffix: t.units.pct });
-		return { before: t.verdict.beforeName(), after: t.verdict.afterName(severe) };
-	});
-	const topHotspotHref = $derived(topHotspot ? hrefFor(topHotspot) : null);
-
 	function ladderFor(kind: 'route' | 'stop', total: number | null | undefined) {
 		const entries = (activeLadder?.entries ?? []).filter((entry) => entry.type === kind);
 		const result = selectHotspotLadder(entries, cap, locale, {
@@ -292,22 +279,15 @@
 
 	const sectionDefs = $derived([
 		{
-			id: 'hotspots-top',
-			number: 1,
-			title: t.cards.top.title,
-			subtitle: hotspots.mode === 'history' ? t.history.retainedTopSubtitle : t.cards.top.subtitle,
-			present: hotspots.data != null && !isEmpty,
-		},
-		{
 			id: 'hotspots-lines',
-			number: 2,
+			number: 1,
 			title: t.cards.lines.title,
 			subtitle: t.cards.lines.subtitle,
 			present: routeLadder.shown > 0 || routeTray.length > 0,
 		},
 		{
 			id: 'hotspots-stops',
-			number: 3,
+			number: 2,
 			title: t.cards.stops.title,
 			subtitle: t.cards.stops.subtitle,
 			present: stopLadder.shown > 0 || stopTray.length > 0,
@@ -456,30 +436,7 @@
 							index={section.number - 1}
 							open={true}
 						>
-							{#if section.id === 'hotspots-top'}
-								<div class="hotspots-article-prose">
-									<p class="hotspots-lede">{t.lede}</p>
-									<div
-										class="hotspots-verdict"
-										data-slot="hotspots-verdict"
-										aria-label={t.verdict.label}
-									>
-										<p class="hotspots-verdict-line">
-											{verdictParts.before}
-											{#if topHotspotHref && topHotspot}
-												<a
-													class="hotspots-verdict-line"
-													href={topHotspotHref}
-													aria-label={nameFor(topHotspot, true)}>{topHotspotName}</a
-												>{:else}{topHotspotName}{/if}{verdictParts.after}
-										</p>
-									</div>
-									<p class="hotspots-window hotspots-window--article">{windowCaption}</p>
-									<TypedInformationCard kind="caveat" label={t.caveatLabel}>
-										<p>{t.caveat}</p>
-									</TypedInformationCard>
-								</div>
-							{:else if section.id === 'hotspots-lines'}
+							{#if section.id === 'hotspots-lines'}
 								<HotspotSection
 									heading={t.ladder.heading}
 									ladder={routeLadder}
@@ -519,68 +476,9 @@
 	.hotspots-rail-toc {
 		margin-top: 0.25rem;
 	}
-	.hotspots-article-prose {
-		display: flex;
-		flex-direction: column;
-		gap: 1.25rem;
-		min-width: 0;
-		color: var(--foreground);
-		font-size: var(--text-detail-body-mobile);
-		line-height: 1.8;
-	}
-	.hotspots-lede {
-		margin: 0;
-		font-size: var(--text-detail-lede-mobile);
-		line-height: 1.65;
-	}
-	.hotspots-verdict-line {
-		display: inline-block;
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: var(--text-subheading);
-		font-weight: 700;
-		line-height: 1.45;
-		color: var(--foreground);
-		text-decoration: none;
-	}
-	a.hotspots-verdict-line {
-		display: inline;
-		padding-block: 0.75em;
-		border-bottom: 1px solid transparent;
-		transition: border-color var(--duration-fast) var(--ease-default);
-	}
-	a.hotspots-verdict-line:hover,
-	a.hotspots-verdict-line:focus-visible {
-		border-bottom-color: var(--primary);
-	}
-	a.hotspots-verdict-line:focus-visible {
-		outline: 2px solid var(--ring);
-		outline-offset: 2px;
-	}
-	.hotspots-window--article {
-		font-size: var(--text-detail-body-mobile);
-		color: var(--foreground);
-	}
 	.hotspots-note {
 		display: flex;
 		justify-content: center;
 		padding: 0.5rem 0;
-	}
-	@media (--desktop-min) {
-		.hotspots-article-prose {
-			font-size: var(--text-detail-body-desktop);
-			line-height: 1.9;
-		}
-		.hotspots-lede {
-			font-size: var(--text-detail-lede-desktop);
-		}
-		.hotspots-window--article {
-			font-size: var(--text-detail-body-desktop);
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		a.hotspots-verdict-line {
-			transition: none;
-		}
 	}
 </style>
