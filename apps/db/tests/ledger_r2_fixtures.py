@@ -1,6 +1,7 @@
 """Conditional S3 test store with opaque tokens and lost acknowledgements."""
 
 import io
+import json
 from hashlib import sha256
 
 import pytest
@@ -85,7 +86,9 @@ def pair():
 
 def seed(objects, after, seq, *, previous=None, records=(RECORD,), at=NOW):
     before = snapshot_json_bytes(m.encode_window(previous)) if previous is not None else None
+    prior = objects.read(m.transition_key(ID, seq - 1)) if seq > 1 else None
+    first = json.loads(prior.body)["next_record"] if prior is not None else 1
     _, envelope = m.prepare_transition(
-        after, records, ID, seq, before, at, operation_id=f"seed-{seq}"
+        after, records, ID, seq, before, at, operation_id=f"seed-{seq}", first_record=first
     )
     objects.create(m.transition_key(ID, seq), envelope)

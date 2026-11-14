@@ -36,10 +36,10 @@ def test_exact_times_and_event_only_history(pair):
     state = replace(DOC, seq=2)
     seed(obj, state, 2, at=later)
     assert [(record.at_utc, record.sequence) for record in r.events(obj, ID)] == [
-        (NOW, (1, 0)),
-        (later, (2, 0)),
+        (NOW, 1),
+        (later, 2),
     ]
-    assert [record.sequence for record in r.events(obj, ID, kinds={"close_runs"})] == [(1, 0)]
+    assert [record.sequence for record in r.events(obj, ID, kinds={"close_runs"})] == [1]
     assert r.current_window(obj, ID) == state
 
 
@@ -50,7 +50,7 @@ def test_repair_replays_deleted_projection_and_confirms_following_chain(pair):
     seed(obj, second, 2, previous=DOC)
     seed(obj, third, 3, previous=second)
     assert r.current_window(obj, ID) == third
-    assert r.confirm_committed(obj, ID, DOC, third) == third
+    assert r.confirm_committed(obj, ID, DOC, third) == DOC
     assert r.rebuild_window(obj, ID) == third
 
 
@@ -61,7 +61,14 @@ def test_wrong_chain_cannot_change_window(pair, reader):
     r.current_window(obj, ID)
     before = obj.read(m.window_key(ID))
     _, envelope = m.prepare_transition(
-        replace(DOC, seq=2), (RECORD,), ID, 2, before.body, NOW, operation_id="bad-chain"
+        replace(DOC, seq=2),
+        (RECORD,),
+        ID,
+        2,
+        before.body,
+        NOW,
+        operation_id="bad-chain",
+        first_record=2,
     )
     obj.create(m.transition_key(ID, 2), {**envelope, "before_sha256": "f" * 64})
     with pytest.raises(m.LedgerDocumentInvalid):
@@ -91,3 +98,11 @@ def test_recovery_read_races_are_bounded(pair, monkeypatch):
     assert calls == [m.window_key(ID), m.window_key(ID)]
     monkeypatch.setattr(obj, "read", read)
     assert r.current_window(obj, ID) == DOC
+
+
+@pytest.mark.parametrize("reader", [r.events, r.current_window, r.rebuild_window])
+def test_corrupt_window_body_has_a_document_error(pair, reader):
+    client, obj, _ = pair
+    client.put_object(Key="x/" + m.window_key(ID), Body=b"not json")
+    with pytest.raises(m.LedgerDocumentInvalid):
+        reader(obj, ID)
