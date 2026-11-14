@@ -1,4 +1,4 @@
-import type { TrendPoint } from '#lib/v1/schemas/network_trend.ts';
+import type { NetworkPointView as TrendPoint } from '#lib/v1/reliabilityView.ts';
 import { OCCUPANCY_CODES, type OccupancyCode } from '#lib/v1/schemas/types.ts';
 import type { StackedShareSpec } from '#lib/components/dataviz/chart/index.ts';
 import { stackedShareSpec } from '#lib/components/dataviz/chart/share.ts';
@@ -23,7 +23,7 @@ export function selectOccupancyTrend(
 ): OccupancyDay[] {
 	const out: OccupancyDay[] = [];
 	for (const p of points) {
-		const mix = p.occupancy_mix;
+		const mix = p.occupancyMix;
 		if (mix == null) continue;
 		const label = dateLabel(p.date);
 		const spec = stackedShareSpec({

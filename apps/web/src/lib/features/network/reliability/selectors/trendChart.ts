@@ -6,7 +6,7 @@ import {
 import type { ChartSpec, SparklineSpec, TrendDatum } from '#lib/components/dataviz/chart/index.ts';
 import { sparkZoomDomain } from '#lib/components/dataviz/chart/sparkDomain.ts';
 import type { Locale } from '#lib/i18n/config.ts';
-import type { TrendPoint } from '#lib/v1/index.ts';
+import type { NetworkPointView as TrendPoint } from '#lib/v1/reliabilityView.ts';
 
 export interface TrendChartOptions {
 	readonly locale: Locale;
@@ -25,9 +25,9 @@ export function selectTrendChart(
 	effectiveRetard: 'p90' | 'avg',
 	opts: TrendChartOptions,
 ): ChartSpec {
-	const onTime = points.map((p) => p.otp_pct ?? null);
+	const onTime = points.map((p) => p.onTimePct ?? null);
 	const retard = points.map((p) =>
-		effectiveRetard === 'avg' ? (p.avg_delay_min ?? null) : (p.p90_min ?? null),
+		effectiveRetard === 'avg' ? (p.meanDelayMin ?? null) : (p.p90Min ?? null),
 	);
 	const minimumPoints = opts.minimumPoints ?? 2;
 	const hasPrimary = onTime.filter((value) => value != null).length >= minimumPoints;

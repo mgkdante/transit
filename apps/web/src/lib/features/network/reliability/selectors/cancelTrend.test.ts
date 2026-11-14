@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { selectCancelTrend } from './cancelTrend';
+import { selectCancelTrend as projectedCancelTrend, type CancelTrendOptions } from './cancelTrend';
 import type { TrendPoint } from '#lib/v1/index.ts';
+import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
+const selectCancelTrend = (points: readonly TrendPoint[], options: CancelTrendOptions) =>
+	projectedCancelTrend(networkReliabilityView({ points }).points, options);
 
 const opts = {
 	locale: 'en',

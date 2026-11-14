@@ -1,4 +1,4 @@
-import type { TrendPoint } from '#lib/v1/index.ts';
+import type { NetworkPointView as TrendPoint } from '#lib/v1/reliabilityView.ts';
 export function selectDailyChange(
 	series: readonly TrendPoint[],
 	presentation?: {
@@ -8,8 +8,8 @@ export function selectDailyChange(
 ) {
 	const latest = series.at(-1);
 	const prior = series.at(-2);
-	if (latest?.otp_pct == null || prior?.otp_pct == null) return null;
-	const points = latest.otp_pct - prior.otp_pct;
+	if (latest?.onTimePct == null || prior?.onTimePct == null) return null;
+	const points = latest.onTimePct - prior.onTimePct;
 	return {
 		points,
 		latest,

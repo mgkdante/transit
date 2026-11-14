@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectShiftRank } from './shiftRank';
 import type { NetworkShift } from '#lib/v1/index.ts';
+import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
 
 const labels = {
 	grainLabel: (g: string) => g,
@@ -14,7 +15,7 @@ describe('selectShiftRank', () => {
 			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
 			{ grain: 'pm_peak', otp_pct: 79, avg_delay_min: 2.6, severe_pct: 7.4 },
 		];
-		const out = selectShiftRank(rows, labels);
+		const out = selectShiftRank(networkReliabilityView({ byShift: rows }).byShift, labels);
 		expect(out.map((r) => r.key)).toEqual(['pm_peak', 'am_peak']);
 		expect(out[0].display).toBe('79%');
 		expect(out[0].value).toBe(7.4);
@@ -25,7 +26,7 @@ describe('selectShiftRank', () => {
 			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
 			{ grain: 'night', otp_pct: null, avg_delay_min: null, severe_pct: null },
 		];
-		const out = selectShiftRank(rows, labels);
+		const out = selectShiftRank(networkReliabilityView({ byShift: rows }).byShift, labels);
 		expect(out.map((r) => r.key)).toEqual(['am_peak']);
 	});
 
@@ -34,7 +35,7 @@ describe('selectShiftRank', () => {
 			{ grain: 'am_peak', otp_pct: 88, avg_delay_min: 1.4, severe_pct: 3.0 },
 			{ grain: 'midday', otp_pct: null, avg_delay_min: 2.0, severe_pct: 9.0 },
 		];
-		const out = selectShiftRank(rows, labels);
+		const out = selectShiftRank(networkReliabilityView({ byShift: rows }).byShift, labels);
 		expect(out.map((r) => r.key)).toEqual(['am_peak', 'midday']);
 		expect(out[1].display).toBeNull();
 		expect(out[1].value).toBe(9.0);

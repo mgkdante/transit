@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
-import { selectDailyChange } from './dailyChange';
+import { selectDailyChange as projectedDailyChange } from './dailyChange';
+import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
+import type { TrendPoint } from '#lib/v1/index.ts';
+const selectDailyChange = (points: readonly TrendPoint[]) =>
+	projectedDailyChange(networkReliabilityView({ points }).points);
 it('compares two closed days and preserves missing on-time values', () => {
 	expect(
 		selectDailyChange([

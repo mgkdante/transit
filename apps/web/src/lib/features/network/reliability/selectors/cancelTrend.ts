@@ -1,7 +1,7 @@
 import { scaleLinear } from 'd3-scale';
 import type { ChartSpec, TrendDatum } from '#lib/components/dataviz/chart/index.ts';
 import type { Locale } from '#lib/i18n/config.ts';
-import type { TrendPoint } from '#lib/v1/index.ts';
+import type { NetworkPointView as TrendPoint } from '#lib/v1/reliabilityView.ts';
 
 export interface CancelTrendOptions {
 	readonly locale: Locale;
@@ -21,7 +21,7 @@ export function selectCancelTrend(
 	points: readonly TrendPoint[],
 	opts: CancelTrendOptions,
 ): CancelTrendVM {
-	const series = points.map((p) => p.cancellation_rate ?? null);
+	const series = points.map((p) => p.cancellationPct ?? null);
 	let latest: number | null = null;
 	let latestDate: string | null = null;
 	for (let i = series.length - 1; i >= 0; i--) {
