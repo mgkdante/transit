@@ -28,15 +28,16 @@ LOCAL = "postgresql+psycopg://transit_ci@localhost/transit_ci"
         "postgresql://transit_ci@localhost/transit_ci?passfile=xNUL",
     ],
 )
-def test_nul_is_refused_by_shared_parsing_and_both_policies(url, nul):
+def test_nul_is_refused_by_shared_parsing_and_disposable_policy(url, nul):
     url = url.replace("NUL", nul)
     for check in (
         lambda: parse_database_target(url),
         lambda: assert_disposable_test_url(url, CONFIRM),
-        lambda: assert_explicit_remote_url(url, CONFIRM),
+        lambda: resolve_database_target(url, CONFIRM),
     ):
         with pytest.raises(RuntimeError, match="Database target parsing policy failed"):
             check()
+    assert_explicit_remote_url(url, {"DATABASE_URL": url})
 
 
 @pytest.mark.parametrize("key", ["conninfo", "dsn", "service", "servicefile", "unknown"])
@@ -65,9 +66,13 @@ def test_policy_resolves_driver_port_without_changing_declared_parser():
     actual = conninfo_to_dict(make_conninfo(*args, **kwargs))
     assert (actual.get("port") or "6543") == "6543"
     assert parse_database_target(url).port == 0
-    assert_explicit_remote_url(
-        url, {"PGPORT": "6543", "DATABASE_URL": "postgresql://transit@remote.invalid:6543/transit"}
-    )
+    environment = {
+        "PGPORT": "6543",
+        "DATABASE_URL": "postgresql://transit@remote.invalid:6543/transit",
+    }
+    assert resolve_database_target(url, environment).port == 6543
+    with pytest.raises(RuntimeError, match="Migration database target policy failed"):
+        assert_explicit_remote_url(url, environment)
 
 
 @pytest.mark.parametrize(

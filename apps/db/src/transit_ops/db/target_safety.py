@@ -16,6 +16,7 @@ _POSTGRESQL_DEFAULT_PORT = 5432
 _DIAGNOSTIC_FIELD_LIMIT = 120
 _CONNECTION_IDENTITY_QUERY_KEYS = frozenset({"user", "dbname", "host", "hostaddr", "port"})
 _CREDENTIAL_QUERY_KEYS = frozenset({"password", "sslpassword"})
+_UNRESOLVABLE_TARGET_QUERY_KEYS = frozenset({"service", "servicefile"})
 _LIBPQ_OPTIONS = pq.Conninfo.parse(b"")
 _PERMITTED_TARGET_QUERY_KEYS = frozenset(
     option.keyword.decode() for option in _LIBPQ_OPTIONS if option.keyword != b"service"
@@ -195,9 +196,11 @@ def _parsing_policy_error() -> RuntimeError:
     )
 
 
-def _parse_database_target(url: str, environment: Mapping[str, str]) -> DatabaseTarget:
+def _parse_database_target(
+    url: str, environment: Mapping[str, str], *, strict_libpq: bool = True
+) -> DatabaseTarget:
     try:
-        if "\x00" in unquote(url):
+        if strict_libpq and "\x00" in unquote(url):
             raise ValueError
         if any(_environment_value(environment, key) for key in ("PGSERVICE", "PGSERVICEFILE")):
             raise ValueError
@@ -207,7 +210,9 @@ def _parse_database_target(url: str, environment: Mapping[str, str]) -> Database
             backend = "postgresql"
         if backend != "postgresql":
             raise ValueError
-        if parsed.query.keys() - _PERMITTED_TARGET_QUERY_KEYS:
+        if _UNRESOLVABLE_TARGET_QUERY_KEYS.intersection(parsed.query):
+            raise ValueError
+        if strict_libpq and parsed.query.keys() - _PERMITTED_TARGET_QUERY_KEYS:
             raise ValueError
         username = _single_query_value(parsed.query, "user")
         if username is None:
@@ -315,14 +320,15 @@ def _is_local_target(target: DatabaseTarget) -> bool:
 def assert_explicit_remote_url(url: str, environment: Mapping[str, str]) -> None:
     """Require an explicit, semantically matching process URL for remote migrations."""
 
-    target = resolve_database_target(url, environment)
+    # Production admission retains its declared-URL policy until separately approved.
+    target = _parse_database_target(url, environment, strict_libpq=False)
     if _is_local_target(target):
         return
 
     process_url = environment.get("DATABASE_URL", "").strip()
     if process_url:
         try:
-            explicit_target = resolve_database_target(process_url, environment)
+            explicit_target = _parse_database_target(process_url, environment, strict_libpq=False)
         except RuntimeError:
             explicit_target = None
         if explicit_target == target:
