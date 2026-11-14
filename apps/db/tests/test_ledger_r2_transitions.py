@@ -122,6 +122,15 @@ def test_coercion_is_rejected_before_writing(objects, value):
     assert list(objects.list_keys("transitions/")) == []
 
 
+@pytest.mark.parametrize(
+    "record", [replace(RECORD, content_version=1.0), replace(RECORD, details={"value": (1, 2)})]
+)
+def test_record_values_are_checked_before_serializing(objects, record):
+    with pytest.raises(m.LedgerDocumentInvalid):
+        advance(objects, lambda doc, now: t.Transition(DOC, (record,)))
+    assert list(objects.list_keys("transitions/")) == []
+
+
 @pytest.mark.parametrize("changes", [{"next_version": 2}, {"working_state": "empty"}])
 def test_dirty_transition_without_public_records_and_noop(objects, changes):
     result = advance(objects, lambda doc, now: t.Transition(DOC, ()))

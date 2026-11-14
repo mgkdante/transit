@@ -158,7 +158,7 @@ def _prepare(
         "seq": after.seq,
         "at_utc": _json(at),
         "before_sha256": sha256(before).hexdigest() if before else None,
-        "records": [encode_event(r) for r in records],
+        "records": [encode_event(decode_event(encode_event(r))) for r in records],
         "after": encode_window(after),
     }
     after = _decode_envelope(snapshot_json_bytes(event), _identity(after), after.seq, before)
