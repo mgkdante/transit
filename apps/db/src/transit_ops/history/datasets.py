@@ -187,6 +187,8 @@ _TABLE_ROWS: tuple[tuple[ArchiveGrain, int | None, str | None, tuple[str, ...]],
             "gold.dim_route_pattern/-/provider_id,route_pattern_id",
             "gold.dim_stop/-/provider_id,stop_id",
             "gold.dim_stop_history/-/provider_id,stop_id,valid_from_utc",
+            # Empty accepted captures leave no facts; keep identity and the fixed cutoff.
+            "gold.realtime_serving_state/-/provider_id,endpoint_key",
             "gold.repeat_offender/-/provider_id,entity_kind,entity_id,route_id",
             "gold.repeat_offender_daily_spine/provider_local_date/provider_id,entity_kind,entity_id,route_id,provider_local_date",
             "gold.repeated_problem_route_stop/period_start_local/provider_id,entity_kind,entity_id,route_id,period_grain,period_start_local",
@@ -296,6 +298,45 @@ HISTORY_DATASETS: Mapping[str, HistoryDataset] = MappingProxyType(
     }
 )
 HISTORY_DATASETS = declare_datasets((*HISTORY_DATASETS.values(), *_TABLE_DATASETS))
-WORKING_ONLY: Mapping[str, WorkingOnly] = MappingProxyType({})
+_WORKING_ROWS = (
+    (
+        "silver.rt_feed_snapshots silver.rt_entities silver.rt_trip_updates "
+        "silver.rt_trip_update_stop_times silver.rt_vehicle_positions",
+        "Decoded realtime rows rebuilt from retained captures",
+        ("capture.trip_updates", "capture.vehicle_positions"),
+    ),
+    (
+        "gold.latest_trip_delay_snapshot",
+        "Current-cycle trip cache rebuilt using saved serving identity, facts and captures",
+        ("gold.fact_trip_delay_snapshot", "capture.trip_updates", "gold.realtime_serving_state"),
+    ),
+    (
+        "gold.latest_vehicle_snapshot",
+        "Current-cycle vehicle cache rebuilt using saved serving identity, facts and captures",
+        (
+            "gold.fact_vehicle_snapshot",
+            "capture.vehicle_positions",
+            "gold.realtime_serving_state",
+        ),
+    ),
+    (
+        "silver.i3_alerts silver.i3_alert_active_periods silver.i3_alert_informed_entities",
+        "Decoded alerts rebuilt from captures; history kept in gold.alert_archive_entry",
+        ("capture.i3_alerts", "capture.service_alerts"),
+    ),
+    (
+        "silver.gis_datasets silver.gis_gtfs_matches "
+        "silver.gis_line_features silver.gis_stop_features",
+        "static lane LS3.12c copies GIS editions",
+        (),
+    ),
+)
+WORKING_ONLY: Mapping[str, WorkingOnly] = MappingProxyType(
+    {
+        table: WorkingOnly(table, (table,), reason, sources)
+        for tables, reason, sources in _WORKING_ROWS
+        for table in tables.split()
+    }
+)
 
 validate_declarations(HISTORY_DATASETS, WORKING_ONLY)

@@ -34,6 +34,9 @@ _Avoid_: window (the span identified by the key)
 The form the pipeline writes and reads every day: rows on the server, and for captures one object per capture.
 _Avoid_: archive copy (a version kept in history)
 
+**Whole-state copy**:
+A copy of every row a table holds at one moment, for tables that are rewritten rather than appended.
+
 **Hot window**:
 The age after which a verified window may have its working copy trimmed.
 _Avoid_: deletion age (trim also requires a verified archive copy)
