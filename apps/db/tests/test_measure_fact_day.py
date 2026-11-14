@@ -25,6 +25,17 @@ partial.write_text(json.dumps([os.getpid(),sys.argv[2],s.getsockname()[1]]));par
 while True: time.sleep(0.1)
 """
 
+PARENT = """import os,runpy,signal,sys,tempfile,threading,time
+from pathlib import Path
+m=runpy.run_path(sys.argv[1]);tempfile.tempdir=sys.argv[2]
+def stop():
+ while not Path(sys.argv[3]).exists(): time.sleep(0.01)
+ print('READY',os.getpid(),flush=True)
+ if sys.argv[5].startswith('SIG'): signal.raise_signal(getattr(signal,sys.argv[5]))
+threading.Thread(target=stop,daemon=True).start()
+sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
+"""
+
 
 def fixture_csv(folder, table):
     schema = measure.rescue.SCHEMAS[table]
@@ -119,30 +130,40 @@ with r.guarded(source,Mock(db_phase_s=0.05)): time.sleep(10)
     assert json.loads(output.out)["reason"] == "measurement_failed" and not output.err
 
 
+def change_owner(root, kind, parent):
+    assert root.parent == parent.resolve()
+    data = json.loads((root / ".owner").read_text())
+    if kind == "replacement":
+        root.rename(root.with_name(root.name + "-original"))
+        root.mkdir()
+        (root / "replacement").write_bytes(b"another directory with a copied marker")
+    else:
+        data["invocation" if kind == "invocation" else "path"] = "different-owner"
+    (root / ".owner").write_text(json.dumps(data))
+    return {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+
 @pytest.mark.parametrize(
-    "stop", ["SIGTERM", "SIGINT", "abrupt"] + (["SIGBREAK"] if hasattr(signal, "SIGBREAK") else [])
+    "stop",
+    ["SIGTERM", "SIGINT", "abrupt", "invocation", "path", "replacement"]
+    + (["SIGBREAK"] if hasattr(signal, "SIGBREAK") else []),
 )
 def test_parent_stop_reaps_worker_and_preserves_outside_sentinel(tmp_path, stop, capsys):
     sentinel, ready = tmp_path / "outside", tmp_path / "ready"
     sentinel.write_text("preserve")
-    parent = """import os,runpy,signal,sys,tempfile,threading,time
-from pathlib import Path
-m=runpy.run_path(sys.argv[1]);tempfile.tempdir=sys.argv[2]
-def stop():
- while not Path(sys.argv[3]).exists(): time.sleep(0.01)
- print('READY',os.getpid(),flush=True)
- if sys.argv[5]!='abrupt': signal.raise_signal(getattr(signal,sys.argv[5]))
-threading.Thread(target=stop,daemon=True).start()
-sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
-"""
-    command = [sys.executable, "-I", "-c", parent, SCRIPT, tmp_path, ready, ACTIVE_WRITER, stop]
+    command = [sys.executable, "-I", "-c", PARENT, SCRIPT, tmp_path, ready, ACTIVE_WRITER, stop]
     try:
         with Popen(command, stdout=PIPE, stderr=PIPE, text=True) as result:
-            handshake = result.stdout.readline().split()
+            first = result.stdout.readline()
+            handshake = first.split()
             if handshake[:1] != ["READY"]:
                 output, error = result.communicate(timeout=8)
-                pytest.fail(error or output or "supervisor exited before READY")
-            if stop == "abrupt":
+                pytest.fail(
+                    f"first stdout: {first!r}\nremaining stdout: {output!r}\nstderr: {error!r}"
+                )
+            if not stop.startswith("SIG"):
+                if stop != "abrupt":
+                    preserved = change_owner(Path(json.loads(ready.read_text())[1]), stop, tmp_path)
                 os.kill(int(handshake[1]), getattr(signal, "SIGKILL", signal.SIGTERM))
             try:
                 output, error = result.communicate(timeout=8)
@@ -157,9 +178,13 @@ sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
                     assert observer.recv(1) == b""
                 except ConnectionResetError:
                     pass
-        assert not Path(directory).exists(), "owned scratch remains after worker exit"
+        if stop in ("invocation", "path", "replacement"):
+            assert all(p.exists() and p.read_bytes() == value for p, value in preserved.items())
+            assert json.loads(error)["leftover_paths"] == [directory]
+        else:
+            assert not Path(directory).exists(), "owned scratch remains after worker exit"
         assert sentinel.read_text() == "preserve"
-        if stop != "abrupt":
+        if stop.startswith("SIG"):
             assert result.returncode == 128 + getattr(signal, stop)
             assert json.loads(output)["reason"] == "measurement_failed" and not error
     finally:
@@ -168,3 +193,44 @@ sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
             with socket.socket() as observer:
                 if observer.connect_ex(("127.0.0.1", port)) == 0:
                     os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+
+
+@pytest.mark.parametrize("stderr", [False, True])
+def test_early_exit_keeps_both_streams(tmp_path, monkeypatch, capsys, stderr):
+    code = "import sys;print('FIRST_STDOUT_DIAGNOSTIC');print('REMAINING_STDOUT_DIAGNOSTIC');"
+    if stderr:
+        code += "print('STDERR_DIAGNOSTIC',file=sys.stderr,flush=True);"
+    code += "sys.exit(2)"
+
+    def early(*args, _real=Popen, **kwargs):
+        return _real([sys.executable, "-I", "-c", code], **kwargs)
+
+    monkeypatch.setitem(globals(), "Popen", early)
+    with pytest.raises(pytest.fail.Exception) as failure:
+        test_parent_stop_reaps_worker_and_preserves_outside_sentinel(tmp_path, "SIGTERM", capsys)
+    message = str(failure.value)
+    assert "first stdout:" in message and "FIRST_STDOUT_DIAGNOSTIC" in message
+    assert "remaining stdout:" in message and "REMAINING_STDOUT_DIAGNOSTIC" in message
+    assert "stderr:" in message and (not stderr or "STDERR_DIAGNOSTIC" in message)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux dir_fd path")
+def test_linux_fd_pins_the_validated_tree(tmp_path, monkeypatch):
+    monkeypatch.setattr(measure.tempfile, "tempdir", str(tmp_path))
+    sentinel = tmp_path / "outside"
+    sentinel.write_bytes(b"preserve")
+    listing = os.listdir
+    with pytest.raises((OSError, ValueError)):
+        with measure.scratch() as (root, proof):
+            expected = measure.owned_snapshot(root)
+            (root / "payload").write_bytes(b"owned")
+
+            def swap(fd):
+                root.rename(tmp_path / "saved")
+                root.symlink_to(tmp_path, target_is_directory=True)
+                return listing(fd)
+
+            monkeypatch.setattr(os, "listdir", swap)
+            measure.remove_owned_tree(root, expected)
+    assert sentinel.read_bytes() == b"preserve"
+    assert (tmp_path / "saved").is_dir() and not (tmp_path / "saved/payload").exists()
