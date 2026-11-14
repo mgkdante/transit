@@ -13,6 +13,28 @@ from transit_ops.db.target_safety import DatabaseTarget, parse_database_target
 _REMOTE = "postgresql+psycopg://transit:pw@db.transit.example.com:5432/transit?sslmode=require"
 
 
+@pytest.mark.parametrize("query", ["prepare_threshold=0", "application_name=x&sslmode=require"])
+def test_remote_guard_preserves_main_query_acceptance(query: str) -> None:
+    url = f"postgresql+psycopg://transit@db.example/transit?{query}"
+    assert_explicit_remote_url(url, {"DATABASE_URL": url})
+
+
+@pytest.mark.parametrize("query", ["service=prod", "servicefile=prod"])
+def test_remote_guard_preserves_main_service_refusal(query: str) -> None:
+    url = f"postgresql+psycopg://transit@db.example/transit?{query}"
+    with pytest.raises(RuntimeError, match="Database target parsing policy failed"):
+        assert_explicit_remote_url(url, {"DATABASE_URL": url})
+
+
+def test_remote_guard_does_not_resolve_additional_libpq_environment() -> None:
+    url = "postgresql+psycopg://transit@db.example/transit"
+    assert_explicit_remote_url(url, {"DATABASE_URL": url, "PGSSLMODE": "require"})
+    with pytest.raises(RuntimeError, match="Migration database target policy failed"):
+        assert_explicit_remote_url(
+            url, {"DATABASE_URL": url + "?sslmode=require", "PGSSLMODE": "require"}
+        )
+
+
 def test_database_target_is_normalized_immutable_and_password_free() -> None:
     target = parse_database_target(
         "postgres://Op%20User:super-secret@DB.Example.COM/my%2Fdb"
