@@ -20,10 +20,14 @@ The record of what is kept, in which form, and whether it was checked.
 _Avoid_: archive (the stored copies themselves)
 
 **Ledger event**:
-One numbered, write-once record of a change to a window; it carries the window's next state.
+One audit record of what changed in a window, who changed it and why.
 
-**Window version**:
-The number of ledger events applied to a window; a change is accepted only against the version it was decided on.
+**Window transition**:
+One numbered, write-once change to a window; it carries the window's next state and any ledger events it records.
+
+**Window sequence**:
+The number of window transitions applied to a window.
+_Avoid_: version (an archive copy's content version)
 
 **Archive copy**:
 The compressed, write-once form of one window of one dataset, in object storage under `archive/`.
