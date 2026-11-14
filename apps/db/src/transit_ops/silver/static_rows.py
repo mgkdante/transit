@@ -9,6 +9,7 @@ from zipfile import ZipFile
 from transit_ops.gtfs.types import parse_gtfs_service_time
 from transit_ops.silver.static_gtfs import (
     REQUIRED_COLUMNS_BY_MEMBER,
+    _blank_to_none,
     _build_agency_record,
     _build_calendar_date_record,
     _build_calendar_record,
@@ -23,7 +24,6 @@ from transit_ops.silver.static_gtfs import (
     _build_trip_record,
     _discover_gtfs_members_from_zip,
     _iter_gtfs_rows,
-    _parse_optional_int,
     _require_value,
     validate_required_static_members,
 )
@@ -45,9 +45,10 @@ def _build_frequency_record(
     headway = int(_require_value(row, "headway_secs", FREQUENCIES_MEMBER))
     if headway <= 0:
         raise ValueError("frequencies.headway_secs must be positive.")
-    exact = _parse_optional_int(row.get("exact_times"))
-    if exact is not None and exact not in (0, 1):
+    exact_text = _blank_to_none(row.get("exact_times"))
+    if exact_text is not None and exact_text not in {"0", "1"}:
         raise ValueError("frequencies.exact_times must be 0 or 1.")
+    exact = int(exact_text) if exact_text is not None else None
     return {
         "provider_id": provider_id,
         "dataset_version_id": dataset_version_id,

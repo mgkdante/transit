@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
@@ -180,7 +182,11 @@ def test_frequency_exact_times_preserves_absence_and_explicit_values(exact) -> N
         ("T1,26:00:00,25:00:00,600,", "frequencies.end_time must be after start_time."),
         ("T1,25:00:00,25:00:00,600,", "frequencies.end_time must be after start_time."),
         ("T1,25:00:00,26:00:00,600,2", "frequencies.exact_times must be 0 or 1."),
-        ("T1,25:00:00,26:00:00,600,no", "invalid literal for int() with base 10: 'no'"),
+        ("T1,25:00:00,26:00:00,600,no", "frequencies.exact_times must be 0 or 1."),
+        ("T1,25:00:00,26:00:00,600,0_0", "frequencies.exact_times must be 0 or 1."),
+        ("T1,25:00:00,26:00:00,600,01", "frequencies.exact_times must be 0 or 1."),
+        ("T1,25:00:00,26:00:00,600,+1", "frequencies.exact_times must be 0 or 1."),
+        ("T1,25:00:00,26:00:00,600,-0", "frequencies.exact_times must be 0 or 1."),
     ],
 )
 def test_frequency_rejections_allow_the_next_row(values, reason) -> None:
@@ -216,6 +222,34 @@ def test_frequency_missing_header_uses_the_existing_member_error(missing) -> Non
         with pytest.raises(ValueError) as actual:
             list(iter_member_rows(archive, FREQUENCIES_MEMBER, provider_id="test"))
     assert str(actual.value) == str(expected.value)
+
+
+def test_frequency_import_and_parse_preserve_public_loader_contracts() -> None:
+    script = """
+from copy import deepcopy
+from io import BytesIO
+from zipfile import ZipFile
+from transit_ops.silver import static_gtfs as loader
+
+columns = deepcopy(loader.REQUIRED_COLUMNS_BY_MEMBER)
+supported = loader.SUPPORTED_STATIC_MEMBER_KEYS.copy()
+from transit_ops.silver.static_rows import FREQUENCIES_MEMBER, iter_member_rows
+
+buffer = BytesIO()
+with ZipFile(buffer, "w") as archive:
+    archive.writestr(FREQUENCIES_MEMBER,
+        "trip_id,start_time,end_time,headway_secs\\nT1,25:00:00,26:00:00,600\\n")
+with ZipFile(buffer) as archive:
+    assert list(iter_member_rows(archive, FREQUENCIES_MEMBER, provider_id="test")) == [{
+        "provider_id": "test", "dataset_version_id": None, "trip_id": "T1",
+        "start_time": "25:00:00", "end_time": "26:00:00", "headway_secs": 600,
+        "exact_times": None,
+    }]
+assert loader.REQUIRED_COLUMNS_BY_MEMBER == columns, "shared required columns changed"
+assert loader.SUPPORTED_STATIC_MEMBER_KEYS == supported, "shared supported members changed"
+"""
+    result = subprocess.run([sys.executable, "-I", "-c", script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_frequency_iterator_leaves_the_loader_on_its_unsupported_member_path(
