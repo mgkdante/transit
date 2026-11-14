@@ -64,7 +64,7 @@ def test_rescue_allows_only_explicit_current_day_asof(tmp_path):
         rescue.bounds(args(tmp_path, "--date", "2026-11-12"), datetime(2026, 11, 13, 5, tzinfo=UTC))
 
 
-def test_rescue_enforces_timeouts_and_0545_deadline(tmp_path):
+def test_rescue_bounds_refuse_insufficient_budget_before_0545(tmp_path):
     with pytest.raises(ValueError):
         rescue.bounds(args(tmp_path), datetime(2026, 11, 14, 5, 44, tzinfo=UTC))
 
@@ -130,7 +130,7 @@ def test_rescue_resumes_spool_after_source_rows_have_been_pruned(tmp_path):
         rescue.resume(tmp_path, identity)
 
 
-def test_rescue_report_counts_actual_bytes_and_redacts_failures(capsys):
+def test_rescue_invalid_arguments_emit_safe_json(capsys):
     assert rescue.main(["--provider", "unsafe/value"]) == 2
     report = json.loads(capsys.readouterr().out)
     assert report["reason"] == "invalid_arguments"
@@ -201,7 +201,10 @@ def test_rescue_refuses_queued_exclusive_lock_and_cancels_only_itself(tmp_path, 
 
     cancelled = []
     source = SimpleNamespace(
-        info=SimpleNamespace(backend_pid=42), cancel_safe=lambda **kw: cancelled.append(42)
+        info=SimpleNamespace(backend_pid=42),
+        cancel_safe=lambda **kw: cancelled.append(42),
+        rollback=lambda: None,
+        close=lambda: None,
     )
     monkeypatch.setattr(rescue, "connect", Monitor)
     with pytest.raises(ValueError):
@@ -287,7 +290,7 @@ def fact_source(real_db_engine):
                 conn.execute(text(f"DELETE FROM {table} WHERE provider_id=:p"), {"p": provider})
 
 
-def test_rescue_uses_strict_utc_bounds_and_reports_partial_oldest_day(
+def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
     real_db_engine, fact_source, tmp_path
 ):
     import csv
@@ -334,11 +337,7 @@ def test_rescue_partial_upload_resumes_without_receipt_until_both_match(tmp_path
             pass
 
     identity = rescue.bounds(args(tmp_path), NOW)
-    checkpoint = {**identity, "tables": {}}
-    for table, schema in rescue.SCHEMAS.items():
-        path = tmp_path / (table + ".csv")
-        path.write_bytes((",".join(row[0] for row in schema) + "\n").encode())
-        checkpoint["tables"][table] = {**rescue.compress(path), "schema": schema}
+    checkpoint = empty_checkpoint(tmp_path, identity)
     storage = LocalBronzeStorage("local", tmp_path / "remote")
     monkeypatch.setattr(rescue, "history_storage", Scope)
     original = rescue.RescueObjects.ensure
@@ -446,8 +445,9 @@ def test_rescue_refuses_catalog_drift_before_copy(tmp_path, drift):
     assert not (tmp_path / "refused").exists()
 
 
-def test_rescue_real_queued_lock_cancels_only_source(
-    real_db_engine, fact_source, tmp_path, monkeypatch
+@pytest.mark.parametrize("idle", [False, True])
+def test_rescue_real_queued_lock_releases_only_source(
+    real_db_engine, fact_source, tmp_path, monkeypatch, idle
 ):
     import threading
 
@@ -472,11 +472,209 @@ def test_rescue_real_queued_lock_cancels_only_source(
 
     worker = threading.Thread(target=exclusive)
     with connect() as source:
-        with pytest.raises((rescue.psycopg.errors.QueryCanceled, ValueError)):
-            with rescue.guarded(source, args(tmp_path)), source.transaction():
-                source.execute("SET TRANSACTION READ ONLY")
-                source.execute("SELECT * FROM gold.fact_vehicle_snapshot LIMIT 0")
+        with pytest.raises((rescue.psycopg.OperationalError, ValueError)):
+            with rescue.guarded(source, args(tmp_path)) as protected, protected.transaction():
+                protected.execute("SET TRANSACTION READ ONLY")
+                protected.execute("SELECT * FROM gold.fact_vehicle_snapshot LIMIT 0")
                 worker.start()
-                source.execute("SELECT pg_sleep(5)")
+                if idle:
+                    deadline = rescue.time.monotonic() + 3
+                    while not source.closed and rescue.time.monotonic() < deadline:
+                        completed.wait(0.01)
+                    assert source.closed, "idle source must release locks before another statement"
+                    protected.execute("SELECT 1")
+                else:
+                    protected.execute("SELECT pg_sleep(5)")
     worker.join(timeout=12)
     assert completed.is_set() and not failures
+
+
+def empty_checkpoint(folder, identity):
+    tables = {}
+    for table, schema in rescue.SCHEMAS.items():
+        path = folder / (table + ".csv")
+        path.write_bytes((",".join(row[0] for row in schema) + "\n").encode())
+        tables[table] = {
+            **rescue.compress(path),
+            "schema": schema,
+            "schema_sha256": rescue.hashlib.sha256(rescue.encoded(schema)).hexdigest(),
+        }
+    checkpoint = {**identity, "tables": tables}
+    (folder / "checkpoint.json").write_bytes(rescue.encoded(checkpoint))
+    return checkpoint
+
+
+def test_rescue_interference_closes_idle_source_before_copy(tmp_path, monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    queued, cancelled, closed = threading.Event(), threading.Event(), threading.Event()
+    calls = []
+
+    class Monitor:
+        def execute(self, query, params=None):
+            self.blocked = "pg_blocking_pids" in query and queued.is_set()
+            return self
+
+        def fetchone(self):
+            return (self.blocked if hasattr(self, "blocked") else True,)
+
+        def close(self):
+            pass
+
+    monitor = Monitor()
+    # Visibility succeeds; subsequent lock samples follow the queued request.
+    original_execute = monitor.execute
+
+    def execute(query, params=None):
+        if "pg_has_role" in query:
+            monitor.blocked = True
+            return monitor
+        return original_execute(query, params)
+
+    monkeypatch.setattr(monitor, "execute", execute)
+    source = SimpleNamespace(
+        info=SimpleNamespace(backend_pid=42),
+        cancel_safe=lambda **kw: cancelled.set(),
+        rollback=lambda: calls.append("rollback"),
+        close=lambda: (calls.append("close"), closed.set()),
+    )
+    monkeypatch.setattr(rescue, "connect", lambda: monitor)
+    with pytest.raises(ValueError):
+        with rescue.guarded(source, args(tmp_path)) as protected:
+            queued.set()  # Inventory has returned; backend is idle while opening a local spool.
+            assert cancelled.wait(2)
+            assert closed.wait(2), "an idle cancel must release the source transaction"
+            assert calls == ["rollback", "close"]
+            with pytest.raises(ValueError, match="interference_or_deadline"):
+                protected.execute("SELECT 1")
+            with pytest.raises(ValueError, match="interference_or_deadline"):
+                with protected.cursor():
+                    pytest.fail("COPY must not open a cursor after interference")
+
+
+def test_rescue_asof_checkpoint_resumes_after_midnight(tmp_path, monkeypatch, capsys):
+    from datetime import timedelta
+
+    previous = datetime.now(UTC) - timedelta(days=2)
+    options = args(
+        tmp_path,
+        "--date",
+        previous.date().isoformat(),
+        "--as-of",
+        previous.replace(hour=12).isoformat(),
+        "--not-after",
+        (previous + timedelta(days=1)).strftime("%Y-%m-%dT05:45:00Z"),
+        "--upload",
+    )
+    identity = rescue.bounds(options, previous.replace(hour=23))
+    checkpoint = empty_checkpoint(tmp_path, identity)
+    monkeypatch.setattr(rescue.tempfile, "gettempdir", lambda: str(tmp_path.parent))
+    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("resume must not query Postgres"))
+    uploaded = []
+    monkeypatch.setattr(rescue, "publish", lambda saved, folder: uploaded.append(saved) or {})
+    command = [
+        "--provider",
+        options.provider,
+        "--date",
+        options.date,
+        "--as-of",
+        options.as_of,
+        "--spool-dir",
+        str(tmp_path),
+        "--not-after",
+        options.not_after,
+        "--statement-timeout-s",
+        "60",
+        "--db-phase-s",
+        "180",
+        "--upload",
+    ]
+    assert rescue.main(command) == 0
+    assert uploaded == [checkpoint]
+    assert json.loads(capsys.readouterr().out)["reused_spool"] is True
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_rescue_interrupt_reports_json_and_preserves_completed_spool(
+    tmp_path, monkeypatch, capsys, complete
+):
+    from datetime import timedelta
+
+    options = args(
+        tmp_path,
+        "--not-after",
+        (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT05:45:00Z"),
+    )
+    identity = rescue.bounds(options, datetime.now(UTC))
+    saved = empty_checkpoint(tmp_path, identity) if complete else None
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    monkeypatch.setattr(rescue.tempfile, "gettempdir", lambda: str(tmp_path.parent))
+
+    def interrupted(*unused):
+        if not complete:
+            (tmp_path / "fact_vehicle_snapshot.csv.partial").write_bytes(b"incomplete")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(rescue, "export", interrupted)
+    monkeypatch.setattr(rescue, "publish", interrupted)
+    command = [
+        "--provider",
+        "sample",
+        "--date",
+        "2026-11-01",
+        "--spool-dir",
+        str(tmp_path),
+        "--not-after",
+        options.not_after,
+        "--statement-timeout-s",
+        "60",
+        "--db-phase-s",
+        "180",
+    ]
+    assert rescue.main([*command, "--upload"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["reason"] == "interrupted"
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+    if complete:
+        assert rescue.resume(tmp_path, identity) == saved
+
+
+def test_rescue_observation_changes_do_not_change_completion_receipt(tmp_path, monkeypatch):
+    checkpoint = empty_checkpoint(tmp_path, rescue.bounds(args(tmp_path), NOW))
+    storage = LocalBronzeStorage("local", tmp_path / "remote")
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        rescue,
+        "history_storage",
+        lambda: SimpleNamespace(resolve=lambda backend: storage, close=lambda: None),
+    )
+    for meta in checkpoint["tables"].values():
+        meta["leading_interval_unobserved"] = None
+    rescue.publish(checkpoint, tmp_path)
+    receipt = (storage.root / checkpoint["prefix"] / "receipt.json").read_bytes()
+    for meta in checkpoint["tables"].values():
+        meta["leading_interval_unobserved"] = [checkpoint["start"], checkpoint["end"]]
+    rescue.publish(checkpoint, tmp_path)
+    assert (storage.root / checkpoint["prefix"] / "receipt.json").read_bytes() == receipt
+
+
+def test_rescue_stream_checks_persistent_failure_before_reading_more_bytes():
+    import threading
+    from types import SimpleNamespace
+
+    failed, reads = threading.Event(), []
+    source = rescue.GuardedSource(SimpleNamespace(info=None), failed)
+    cursor = rescue.GuardedCursor(None, source)
+
+    def read():
+        reads.append("read")
+        return b"first block"
+
+    blocks = cursor.blocks(SimpleNamespace(read=read))
+    assert next(blocks) == b"first block"
+    failed.set()
+    with pytest.raises(ValueError, match="interference_or_deadline"):
+        next(blocks)
+    assert reads == ["read"]

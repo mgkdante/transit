@@ -92,13 +92,13 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def bounds(args: Any, now: datetime) -> dict[str, Any]:
+def bounds(args: Any, now: datetime, *, new_export: bool = True) -> dict[str, Any]:
     deadline = stamp(args.not_after)
     if not (1 <= args.statement_timeout_s <= 900 and 1 <= args.db_phase_s <= 1800):
         raise ValueError("invalid_timeout")
     if deadline.hour != 5 or deadline.minute != 45 or deadline.second or deadline.microsecond:
         raise ValueError("invalid_deadline")
-    if now + timedelta(seconds=args.db_phase_s) >= deadline:
+    if new_export and now + timedelta(seconds=args.db_phase_s) >= deadline:
         raise ValueError("insufficient_budget")
     if args.inventory:
         if any((args.provider, args.date, args.spool_dir, args.as_of, args.upload)):
@@ -113,9 +113,11 @@ def bounds(args: Any, now: datetime) -> dict[str, Any]:
     end = start + timedelta(days=1)
     if args.as_of:
         end = stamp(args.as_of)
-        if day != now.date() or not start < end <= now:
+        if not start < end <= start + timedelta(days=1):
             raise ValueError("invalid_asof")
-    elif now < utc_day_closes_at(day):
+        if new_export and (day != now.date() or end > now):
+            raise ValueError("invalid_asof")
+    elif new_export and now < utc_day_closes_at(day):
         raise ValueError("day_not_closed")
     prefix = f"rescue/v1/facts/{args.provider}/{day.isoformat()}/"
     if args.as_of:
@@ -199,9 +201,12 @@ def compress(source: Path) -> dict[str, Any]:
             if len(row) != len(header):
                 raise ValueError("csv_shape")
             rows += 1
-    with source.open("rb") as stream, target.open("xb") as output:
+    partial = target.with_suffix(".gz.partial")
+    with source.open("rb") as stream, partial.open("xb") as output:
         with gzip.GzipFile(filename="", mode="wb", fileobj=output, compresslevel=9, mtime=0) as gz:
             shutil.copyfileobj(stream, gz)
+    target.hardlink_to(partial)
+    partial.unlink()
     with target.open("rb") as stream:
         object_hash, object_bytes = digest(stream)
     return dict(
@@ -310,6 +315,62 @@ def connect() -> Any:
     )
 
 
+class GuardedSource:
+    """Reject every later statement and stream read once interference is observed."""
+
+    def __init__(self, source: Any, failed: threading.Event) -> None:
+        self.source, self.failed, self.info = source, failed, source.info
+
+    def check(self) -> None:
+        if self.failed.is_set():
+            raise ValueError("interference_or_deadline")
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        self.check()
+        result = self.source.execute(*args, **kwargs)
+        self.check()
+        return result
+
+    @contextmanager
+    def transaction(self) -> Any:
+        self.check()
+        with self.source.transaction():
+            yield
+            self.check()
+
+    @contextmanager
+    def cursor(self) -> Any:
+        self.check()
+        with self.source.cursor() as cursor:
+            yield GuardedCursor(cursor, self)
+
+
+class GuardedCursor:
+    def __init__(self, cursor: Any, source: GuardedSource) -> None:
+        self.cursor, self.source = cursor, source
+
+    @property
+    def rowcount(self) -> int:
+        self.source.check()
+        return int(self.cursor.rowcount)
+
+    def blocks(self, copy: Any) -> Any:
+        while True:
+            self.source.check()
+            block = copy.read()
+            self.source.check()
+            if not block:
+                return
+            yield block
+
+    @contextmanager
+    def copy(self, *args: Any) -> Any:
+        self.source.check()
+        with self.cursor.copy(*args) as copy:
+            yield self.blocks(copy)
+            self.source.check()
+
+
 @contextmanager
 def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any:
     """Independent visibility monitor cancels only the exporting connection."""
@@ -325,14 +386,28 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
         raise ValueError("lock_visibility_required")
     pid = connection.info.backend_pid
     phase_end = deadline if deadline is not None else time.monotonic() + args.db_phase_s
+    terminating = threading.Lock()
+    protected = GuardedSource(connection, failed)
 
     def cancel() -> None:
         failed.set()
-        ready.set()
+        if not terminating.acquire(blocking=False):
+            return
         try:
             connection.cancel_safe(timeout=2)
         except Exception:
             pass
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                pass
+            finally:
+                ready.set()
 
     timer = threading.Timer(max(0, phase_end - time.monotonic()), cancel)
     timer.daemon = True
@@ -366,9 +441,8 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
         ready.wait()
         if failed.is_set():
             raise ValueError("interference_or_deadline")
-        yield failed
-        if failed.is_set():
-            raise ValueError("interference_or_deadline")
+        yield protected
+        protected.check()
     finally:
         stop.set()
         timer.cancel()
@@ -402,10 +476,11 @@ def inventory(connection: Any) -> list[Any]:
 
 def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
+    observations: dict[str, Any] = {}
     started = time.monotonic()
     with (
-        connect() as connection,
-        guarded(connection, args, deadline=started + args.db_phase_s) as failed,
+        connect() as source,
+        guarded(source, args, deadline=started + args.db_phase_s) as connection,
     ):
         with connection.transaction():
             connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -435,7 +510,8 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                 return dict(snapshot_time=now.isoformat(), ranges=ranges)
             for table in SCHEMAS:
                 remaining = args.db_phase_s - (time.monotonic() - started)
-                if failed.is_set() or remaining <= 0:
+                connection.check()
+                if remaining <= 0:
                     raise ValueError("database_deadline")
                 connection.execute(
                     "SELECT set_config('statement_timeout', %s, true)",
@@ -455,7 +531,7 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                     if row["table"] == table and row["provider"] == identity["provider"]
                 )
                 oldest = observed["minimum"]
-                metadata[table]["leading_interval_unobserved"] = (
+                observations[table] = (
                     [identity["start"], min(oldest, identity["end"])]
                     if oldest is not None and oldest > identity["start"]
                     else None
@@ -477,10 +553,14 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
         snapshot_time=now.isoformat(),
         server_version=version,
         ranges=ranges,
+        run_observations=dict(leading_interval_unobserved=observations),
         retention_days=get_settings().GOLD_FACT_RETENTION_DAYS,
     )
-    with (folder / "checkpoint.json").open("xb") as output:
+    partial = folder / "checkpoint.json.partial"
+    with partial.open("xb") as output:
         output.write(encoded(checkpoint))
+    (folder / "checkpoint.json").hardlink_to(partial)
+    partial.unlink()
     return checkpoint
 
 
@@ -490,9 +570,8 @@ def publish(checkpoint: dict[str, Any], folder: Path) -> dict[str, Any]:
     try:
         objects = RescueObjects(scope.resolve("s3"))
         receipt = {
-            key: value
-            for key, value in checkpoint.items()
-            if key not in ("snapshot_time", "server_version", "ranges", "tables", "retention_days")
+            key: checkpoint[key]
+            for key in ("format_version", "provider", "day", "start", "end", "prefix", "status")
         }
         receipt["tables"] = {}
         for table, meta in checkpoint["tables"].items():
@@ -500,7 +579,18 @@ def publish(checkpoint: dict[str, Any], folder: Path) -> dict[str, Any]:
             size += objects.ensure(folder / (table + ".csv.gz"), key, meta)
             uploaded += meta["object_bytes"] if objects.created else 0
             outcomes[table] = "created_readback" if objects.created else "equal_collision_readback"
-            receipt["tables"][table] = {k: v for k, v in meta.items() if not k.endswith("_seconds")}
+            receipt["tables"][table] = {
+                k: meta[k]
+                for k in (
+                    "schema",
+                    "schema_sha256",
+                    "rows",
+                    "csv_sha256",
+                    "csv_bytes",
+                    "object_sha256",
+                    "object_bytes",
+                )
+            }
             receipt["tables"][table]["key"] = key
         with tempfile.TemporaryDirectory(dir=folder) as temporary:
             path = Path(temporary) / "receipt.json"
@@ -521,13 +611,19 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     try:
         args = parser().parse_args(argv)
-        identity = bounds(args, datetime.now(UTC))
+        folder = Path(args.spool_dir) if args.spool_dir else Path(tempfile.gettempdir())
+        reused = not args.inventory and (folder / "checkpoint.json").exists()
+        identity = bounds(args, datetime.now(UTC), new_export=not reused)
     except ValueError as error:
         refused = str(error) in {"insufficient_budget", "day_not_closed"}
         print(json.dumps(dict(phase=phase, reason=str(error) if refused else "invalid_arguments")))
         return 1 if refused else 2
+    except KeyboardInterrupt:
+        print(json.dumps(dict(phase=phase, reason="interrupted")))
+        return 1
     lock = Path(tempfile.gettempdir()) / "transit-ls04-rescue.lock"
     owned = False
+    export_started = False
     try:
         phase = "process_lock"
         lock.mkdir()
@@ -535,10 +631,10 @@ def main(argv: list[str] | None = None) -> int:
         folder = Path(args.spool_dir) if args.spool_dir else Path(tempfile.gettempdir())
         if not args.inventory:
             folder.mkdir(parents=True, exist_ok=True)
-        phase = "resume" if (folder / "checkpoint.json").exists() else "export"
-        reused = phase == "resume"
+        phase = "resume" if reused else "export"
         if not reused and not args.inventory and any(folder.iterdir()):
             raise ValueError("incomplete_spool")
+        export_started = not reused and not args.inventory
         checkpoint = resume(folder, identity) if reused else export(args, identity, folder)
         phase = "upload_readback"
         object_report = publish(checkpoint, folder) if args.upload else {}
@@ -562,11 +658,25 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
-    except Exception:
+    except (Exception, KeyboardInterrupt) as error:
+        interrupted = isinstance(error, KeyboardInterrupt)
+        if interrupted and export_started:
+            for name in [
+                "checkpoint.json.partial",
+                *(
+                    table + suffix
+                    for table in SCHEMAS
+                    for suffix in (".csv.partial", ".csv.gz.partial")
+                ),
+            ]:
+                (folder / name).unlink(missing_ok=True)
         print(
             json.dumps(
                 dict(
-                    phase=phase, provider=args.provider, date=args.date, reason="refused_or_failed"
+                    phase=phase,
+                    provider=args.provider,
+                    date=args.date,
+                    reason="interrupted" if interrupted else "refused_or_failed",
                 )
             )
         )
