@@ -14,11 +14,24 @@ import { formatDateKey } from '#lib/utils/time.ts';
 import { networkReliabilityCopy } from '../network-reliability.copy';
 import { createSurfaceHarness } from '../../../../../tests/surfaceHarness';
 import { assertRailIndependence } from '../../../../../tests/railIndependence';
+import {
+	baselineInventory,
+	canonicalizeGeneratedIds,
+	captureEnvironment,
+	renderedBaseline,
+} from './__fixtures__/renderedBaseline';
+import { tick } from 'svelte';
 const copy = networkReliabilityCopy.en;
 const motion = vi.hoisted(() => ({ reduced: false }));
 const networkManifest = vi.hoisted(() => ({ provider: 'stm', files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const createResourceSpy = vi.hoisted(() => vi.fn());
+const resourceState = vi.hoisted(() => ({
+	hasData: true,
+	loading: false,
+	settled: true,
+	error: null as Error | null,
+}));
 const { openSurface, live, network, trendSeries, weeklySeries, monthlySeries, byShift, byDaytype } =
 	vi.hoisted(() => ({
 		openSurface: vi.fn(),
@@ -109,6 +122,8 @@ function restoreArray<T>(target: T[], defaults: readonly T[]): void {
 	target.splice(0, target.length, ...structuredClone(defaults));
 }
 function resetNetworkSurfaceState(): void {
+	Object.assign(resourceState, { hasData: true, loading: false, settled: true, error: null });
+	networkManifest.provider = 'stm';
 	motion.reduced = false;
 	live.ageSeconds = 20;
 	live.hasNetwork = true;
@@ -233,16 +248,18 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 				? { families: [{ family: 'network', last_available_date: trendSeries.at(-1)?.date }] }
 				: isProvenance
 					? { conformance: null }
-					: {
-							series: trendSeries,
-							weekly: weeklySeries,
-							monthly: monthlySeries,
-							by_shift: byShift,
-							by_daytype: byDaytype,
-						},
-			error: null,
-			loading: false,
-			settled: true,
+					: !resourceState.hasData
+						? null
+						: {
+								series: trendSeries,
+								weekly: weeklySeries,
+								monthly: monthlySeries,
+								by_shift: byShift,
+								by_daytype: byDaytype,
+							},
+			error: isProvenance ? null : resourceState.error,
+			loading: isProvenance ? false : resourceState.loading,
+			settled: /HistoricAvailability/.test(src) ? resourceState.settled : true,
 			reload: vi.fn(),
 		};
 	},
@@ -1098,3 +1115,321 @@ it.each([
 	expect(document.querySelector('[data-slot="reporting-caveat"]')).toHaveTextContent(expected);
 	networkManifest.provider = 'stm';
 });
+
+it('canonicalizes only generated counter offsets while preserving reference pairing', () => {
+	const first =
+		'<button aria-controls="c2-content"></button><div id="c2-content" aria-labelledby="c5"></div><span id="c5"></span>';
+	const offset =
+		'<button aria-controls="c2124-content"></button><div id="c2124-content" aria-labelledby="c2127"></div><span id="c2127"></span>';
+	expect(canonicalizeGeneratedIds(first)).toBe(canonicalizeGeneratedIds(offset));
+	expect(
+		canonicalizeGeneratedIds(
+			first.replace('aria-controls="c2-content"', 'aria-controls="c9-content"'),
+		),
+	).not.toBe(canonicalizeGeneratedIds(first));
+});
+
+it('captures the full current network in English', async () => {
+	captureEnvironment();
+	try {
+		const { container, unmount } = render(NetworkSurface, {
+			context: new Map([[Symbol.for('@yesid/ui/locale'), () => 'en']]),
+		});
+		await tick();
+		await tick();
+		renderedBaseline('current-full-stm-en-desktop', container);
+		unmount();
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+const currentCaptureCases: {
+	key: string;
+	setup?: () => void;
+	control?: string;
+	width?: number;
+	provider?: string;
+}[] = [
+	{ key: 'full' },
+	{
+		key: 'absent-loading',
+		setup: () => {
+			live.hasNetwork = false;
+		},
+	},
+	{
+		key: 'stale',
+		setup: () => {
+			live.isStale = true;
+			live.ageSeconds = 240;
+		},
+	},
+	{
+		key: 'refresh-error',
+		setup: () => {
+			live.error = new Error('fixture refresh');
+		},
+	},
+	{
+		key: 'error-without-data',
+		setup: () => {
+			live.hasNetwork = false;
+			live.error = new Error('fixture initial');
+		},
+	},
+	{
+		key: 'unknown-age',
+		setup: () => {
+			live.ageSeconds = null;
+		},
+	},
+	{
+		key: 'zero',
+		setup: () => {
+			Object.assign(network, {
+				on_time_pct: 0,
+				coverage_pct: 0,
+				delay_p50_min: 0,
+				delay_p90_min: 0,
+				vehicles_in_service: 0,
+				non_responding: 0,
+			});
+			trendSeries.forEach((point) =>
+				Object.assign(point, {
+					otp_pct: 0,
+					avg_delay_min: 0,
+					p90_min: 0,
+					vehicles: 0,
+					cancellation_rate: 0,
+					service_completeness_rate: 0,
+				}),
+			);
+		},
+	},
+	...(['on_time_pct', 'coverage_pct', 'delay_p50_min', 'delay_p90_min'] as const).map((field) => ({
+		key: `null-${field}`,
+		setup: () => {
+			network[field] = null;
+		},
+	})),
+	{
+		key: 'optional-absent',
+		setup: () => {
+			network.delay_histogram = null;
+			network.occupancy_mix = null;
+			network.non_responding_by_route = null;
+		},
+	},
+	{
+		key: 'availability-pending',
+		setup: () => {
+			resourceState.settled = false;
+		},
+	},
+	{
+		key: 'history-missing',
+		setup: () => {
+			resourceState.hasData = false;
+		},
+	},
+	{
+		key: 'history-loading',
+		setup: () => {
+			resourceState.hasData = false;
+			resourceState.loading = true;
+		},
+	},
+	{
+		key: 'history-error',
+		setup: () => {
+			resourceState.hasData = false;
+			resourceState.error = new Error('fixture history');
+		},
+	},
+	{
+		key: 'history-empty',
+		setup: () => {
+			trendSeries.length = weeklySeries.length = monthlySeries.length = 0;
+		},
+	},
+	{
+		key: 'singleton',
+		setup: () => {
+			trendSeries.splice(1);
+		},
+	},
+	{
+		key: 'sparse-null-endpoints',
+		setup: () => {
+			trendSeries.unshift({
+				date: '2026-06-10',
+				otp_pct: null,
+				avg_delay_min: null,
+				p90_min: null,
+			});
+			trendSeries.push({ date: '2026-06-15', otp_pct: null, avg_delay_min: null, p90_min: null });
+			trendSeries[trendSeries.length - 2].date = '2026-06-13';
+			trendSeries[1].date = '2026-06-11';
+		},
+	},
+	{
+		key: 'otp-only',
+		setup: () => {
+			trendSeries.forEach((point) => Object.assign(point, { avg_delay_min: null, p90_min: null }));
+		},
+	},
+	{
+		key: 'occupancy-missing',
+		setup: () => {
+			trendSeries.forEach((point) => {
+				point.occupancy_mix = null;
+			});
+		},
+	},
+	{
+		key: 'cancellation-completeness-null',
+		setup: () => {
+			trendSeries.forEach((point) =>
+				Object.assign(point, { cancellation_rate: null, service_completeness_rate: null }),
+			);
+		},
+	},
+	{
+		key: 'completeness-nan-scan',
+		setup: () => {
+			trendSeries[0].service_completeness_rate = 0;
+			trendSeries[1].service_completeness_rate = NaN;
+		},
+	},
+	{
+		key: 'no-shifts',
+		setup: () => {
+			byShift.length = byDaytype.length = 0;
+		},
+	},
+	{
+		key: 'only-shifts',
+		setup: () => {
+			byDaytype.length = 0;
+		},
+	},
+	{
+		key: 'only-daytype',
+		setup: () => {
+			byShift.length = 0;
+		},
+	},
+	{
+		key: 'shift-null-otp-severe-ties',
+		setup: () => {
+			byShift[0].otp_pct = byShift[1].otp_pct = 50;
+			Object.assign(byShift[2], { otp_pct: null, avg_delay_min: -1, severe_pct: 25 });
+		},
+	},
+	{
+		key: 'negative-delay',
+		setup: () => {
+			network.delay_p50_min = -1;
+			trendSeries[0].avg_delay_min = -2;
+		},
+		control: 'average',
+	},
+	{ key: 'week', control: 'week' },
+	{ key: 'month', control: 'month' },
+	{ key: 'average', control: 'average' },
+	...[7, 30, 90].map((days) => ({
+		key: `window-${days}`,
+		control: `${days}`,
+		setup: () => {
+			trendSeries.splice(
+				0,
+				trendSeries.length,
+				...Array.from({ length: 90 }, (_, index) => ({
+					...trendDefaults[index % 2],
+					date: new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10),
+				})),
+			);
+		},
+	})),
+	{ key: 'collapsed-live', control: 'collapse' },
+	...['stm', 'octranspo'].flatMap((provider) =>
+		[375, 1280].flatMap((width) => [
+			{ key: `full-${provider}-${width}`, provider, width },
+			{
+				key: `absent-${provider}-${width}`,
+				provider,
+				width,
+				setup: () => {
+					live.hasNetwork = false;
+				},
+			},
+		]),
+	),
+	{
+		key: 'stale-octranspo',
+		provider: 'octranspo',
+		setup: () => {
+			live.isStale = true;
+			live.ageSeconds = 240;
+		},
+	},
+];
+const currentCaptureKeys = currentCaptureCases.flatMap(({ key }) =>
+	['en', 'fr'].map((locale) => `current-${key}-${locale}`),
+);
+it('has the exact current capture inventory', () =>
+	baselineInventory('current-', ['current-full-stm-en-desktop', ...currentCaptureKeys]));
+it.each(
+	currentCaptureCases.flatMap((scenario) =>
+		(['en', 'fr'] as const).map((locale) => ({ ...scenario, locale })),
+	),
+)(
+	'captures current $key $locale',
+	async ({ key, setup, control, width = 1280, provider = 'stm', locale }) => {
+		captureEnvironment(width);
+		networkManifest.provider = provider;
+		network.occupancy_mix = structuredClone(trendDefaults[1].occupancy_mix);
+		trendSeries.forEach((point) => {
+			point.service_completeness_rate = 95;
+		});
+		setup?.();
+		const view = render(NetworkSurface, {
+			context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+		});
+		try {
+			await tick();
+			await tick();
+			const words = networkReliabilityCopy[locale];
+			if (control === 'collapse')
+				await fireEvent.click(
+					view.container.querySelector(
+						'[data-network-section="network-live-headline"] button[data-section-trigger]',
+					)!,
+				);
+			else if (control) {
+				const group = ['week', 'month'].includes(control)
+					? words.grain.label
+					: control === 'average'
+						? words.trend.retardToggleLabel
+						: words.window.label;
+				const label =
+					control === 'week'
+						? words.grain.week
+						: control === 'month'
+							? words.grain.month
+							: control === 'average'
+								? words.trend.retardAvg
+								: words.window[`d${control}` as 'd7' | 'd30' | 'd90'];
+				await fireEvent.click(
+					within(view.getByRole('radiogroup', { name: group })).getByRole('radio', { name: label }),
+				);
+			}
+			await tick();
+			renderedBaseline(`current-${key}-${locale}`, view.container);
+		} finally {
+			view.unmount();
+			vi.useRealTimers();
+		}
+	},
+);

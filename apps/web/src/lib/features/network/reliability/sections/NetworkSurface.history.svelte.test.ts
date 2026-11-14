@@ -10,6 +10,14 @@ import type {
 } from '#lib/v1/schemas/index.ts';
 import NetworkSurface from './NetworkSurface.svelte';
 import { networkReliabilityCopy } from '../network-reliability.copy';
+import {
+	baselineInventory,
+	captureEnvironment,
+	renderedBaseline,
+	unreachableBaseline,
+} from './__fixtures__/renderedBaseline';
+import { buildRetainedNetworkTrend } from '../data/retainedTrend';
+import { tick } from 'svelte';
 const harness = vi.hoisted(() => {
 	const page = {
 		url: new URL('http://localhost/network'),
@@ -31,7 +39,7 @@ const harness = vi.hoisted(() => {
 		liveClock: { ageSeconds: 20 as number | null },
 	};
 });
-const networkManifest = vi.hoisted(() => ({ files: { live: { ttl_s: 30 } } }));
+const networkManifest = vi.hoisted(() => ({ provider: 'stm', files: { live: { ttl_s: 30 } } }));
 const createLiveStoreSpy = vi.hoisted(() => vi.fn());
 const currentNetwork = {
 	generated_utc: '2026-06-16T02:00:00Z' as IsoUtc,
@@ -323,6 +331,7 @@ function rowOtp(row: Element): string {
 }
 
 beforeEach(() => {
+	networkManifest.provider = 'stm';
 	harness.page.url = new URL('http://localhost/network');
 	harness.mirrorSearchParams.mockClear();
 	harness.getNetworkHistoryIndex.mockReset();
@@ -802,4 +811,188 @@ historyViewContract('network', {
 			container.querySelector('[data-toc="net-historic"] [data-slot="trend-mark"]'),
 		).toBeNull();
 	},
+});
+
+const retainedCaptureCases = [
+	'ready',
+	'partial',
+	'p90-only',
+	'vehicles-only',
+	'otp-with-mean-only',
+	'no-data',
+	'week',
+	'month',
+	'singleton',
+	'empty-index',
+	'discovery-pending',
+	'loading-index',
+	'loading-range',
+	'index-error',
+	'range-error',
+	'undiscovered',
+	'current-fallback',
+	'corrected-range',
+	'corrected-grain',
+	'retry',
+	'superseded-query',
+	'ready-octranspo',
+	'partial-octranspo',
+	'mean-delay-only-unreachable',
+];
+const retainedCaptureKeys = retainedCaptureCases.flatMap((key) =>
+	['en', 'fr'].map((locale) => `retained-${key}-${locale}`),
+);
+it('has the exact retained capture inventory', () =>
+	baselineInventory('retained-', retainedCaptureKeys));
+it.each(
+	retainedCaptureCases.flatMap((key) => (['en', 'fr'] as const).map((locale) => ({ key, locale }))),
+)('captures retained $key $locale', async ({ key, locale }) => {
+	if (key === 'mean-delay-only-unreachable') {
+		const result = buildRetainedNetworkTrend(historyIndex, retainedPartitions, {
+			from: '2026-01-31',
+			to: '2026-02-01',
+		});
+		expect(result.value?.series.map((point) => point.avg_delay_min)).toEqual([1, 1]);
+		expect(result.value?.series.map((point) => point.otp_pct)).toEqual([20, 90]);
+		for (const points of [result.value!.series, result.value!.weekly, result.value!.monthly]) {
+			for (const point of points)
+				if (point.avg_delay_min != null) expect(point.otp_pct).not.toBeNull();
+		}
+		unreachableBaseline(`retained-${key}-${locale}`);
+		return;
+	}
+	captureEnvironment(1280);
+	networkManifest.provider = key.endsWith('octranspo') ? 'octranspo' : 'stm';
+	const words = networkReliabilityCopy[locale];
+	let index: HistoricCollectionIndex | null = structuredClone(historyIndex);
+	let partitions: NetworkHistoryPartition[] = structuredClone(retainedPartitions);
+	let query = 'from=2026-01-31&to=2026-02-01&focus=keep';
+	const pendingIndex = deferred<HistoricCollectionIndex | null>();
+	const pendingRange = deferred<NetworkHistoryPartition[]>();
+	if (['undiscovered', 'discovery-pending', 'empty-index'].includes(key)) query = 'focus=keep';
+	if (key === 'week' || key === 'month') query += `&grain=${key}`;
+	if (key === 'singleton') {
+		query = 'from=2026-01-31&to=2026-01-31';
+		partitions = [partitions[0]];
+	}
+	if (key === 'corrected-range') query = 'from=bad&to=2026-02-01&grain=month&focus=keep';
+	if (key === 'corrected-grain') query += '&grain=invalid';
+	if (key === 'undiscovered' || key === 'current-fallback') index = null;
+	if (key === 'empty-index')
+		index = {
+			...historyIndex,
+			first_available_date: null,
+			last_available_date: null,
+			partitions: [],
+			metrics: [],
+		};
+	const family =
+		key.startsWith('partial') || key === 'otp-with-mean-only'
+			? 'delay'
+			: key === 'p90-only'
+				? 'delay_percentiles'
+				: key === 'vehicles-only'
+					? 'vehicles'
+					: null;
+	if (family) {
+		index = {
+			...historyIndex,
+			metrics: historyIndex.metrics!.filter((metric) => metric.metric === family),
+		};
+		partitions = partitions.map((partition) => ({
+			...partition,
+			days: partition.days.map((day) => ({ date: day.date, [family]: day[family] })),
+		}));
+	}
+	if (key === 'no-data')
+		partitions = partitions.map((partition) => ({
+			...partition,
+			days: partition.days.map((day) => ({ date: day.date })),
+		}));
+	harness.page.url = new URL(`http://localhost/network?${query}`);
+	harness.getNetworkHistoryIndex.mockResolvedValue(index);
+	harness.loadNetworkHistoryRange.mockResolvedValue(partitions);
+	if (key === 'discovery-pending' || key === 'loading-index')
+		harness.getNetworkHistoryIndex.mockReturnValue(pendingIndex.promise);
+	if (key === 'loading-range' || key === 'superseded-query')
+		harness.loadNetworkHistoryRange.mockReturnValueOnce(pendingRange.promise);
+	if (key === 'index-error')
+		harness.getNetworkHistoryIndex.mockRejectedValue(new Error('fixture index'));
+	if (key === 'range-error' || key === 'retry')
+		harness.loadNetworkHistoryRange.mockRejectedValueOnce(new Error('fixture range'));
+	const view = render(NetworkSurface, {
+		context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+	});
+	try {
+		await waitFor(() => expect(harness.getNetworkHistoryIndex).toHaveBeenCalledTimes(1));
+		if (key === 'loading-range' || key === 'superseded-query')
+			await waitFor(() => expect(harness.loadNetworkHistoryRange).toHaveBeenCalledTimes(1));
+		if (key === 'retry') {
+			await fireEvent.click(
+				await view.findByRole('button', { name: locale === 'en' ? 'Retry' : 'Réessayer' }),
+			);
+			await waitFor(() => expect(harness.loadNetworkHistoryRange).toHaveBeenCalledTimes(2));
+		}
+		if (key === 'superseded-query') {
+			const navigator = view.container.querySelector(
+				'[data-slot="surface-rail"] [data-slot="history-navigator"]',
+			)!;
+			await fireEvent.change(navigator.querySelector('input[type="date"]')!, {
+				target: { value: '2026-01-30' },
+			});
+			await waitFor(() => expect(harness.loadNetworkHistoryRange).toHaveBeenCalledTimes(2));
+			await waitFor(() => expect(trendRows(view.container)).toHaveLength(3));
+			pendingRange.resolve([]);
+			await tick();
+			expect(trendRows(view.container)).toHaveLength(3);
+			expect(harness.page.url.searchParams.get('focus')).toBe('keep');
+			expect(harness.page.url.searchParams.get('from')).toBe('2026-01-30');
+		}
+		if (key === 'no-data')
+			await waitFor(() =>
+				expect(view.container.querySelector('[data-slot="history-no-data"]')).not.toBeNull(),
+			);
+		else if (key === 'index-error' || key === 'range-error')
+			await view.findByRole('button', { name: locale === 'en' ? 'Retry' : 'Réessayer' });
+		else if (key === 'corrected-range' || key === 'current-fallback')
+			await waitFor(() => expect(harness.page.url.searchParams.has('from')).toBe(false));
+		else if (
+			![
+				'empty-index',
+				'discovery-pending',
+				'loading-index',
+				'loading-range',
+				'undiscovered',
+				'superseded-query',
+			].includes(key)
+		) {
+			await waitFor(() =>
+				expect(view.container.querySelector('[data-slot="history-scope-notes"]')).not.toBeNull(),
+			);
+		}
+		await tick();
+		await tick();
+		if (key === 'corrected-range')
+			expect(
+				view.container.querySelector('[data-slot="history-page-announcement"]')?.textContent,
+			).not.toBe('');
+		if (key === 'corrected-grain') {
+			expect(harness.page.url.searchParams.has('grain')).toBe(false);
+			// Invalid grains are silently canonicalized; only date corrections announce.
+			expect(
+				view.container.querySelector('[data-slot="history-page-announcement"]')?.textContent,
+			).toBe('');
+		}
+		expect(
+			view.container.querySelector('[data-network-section="network-live-headline"]'),
+		).not.toBeNull();
+		if (key === 'p90-only')
+			expect(view.getByRole('radio', { name: words.trend.retardAvg })).toBeDisabled();
+		if (key === 'vehicles-only')
+			expect(view.queryByRole('radiogroup', { name: words.trend.retardToggleLabel })).toBeNull();
+		renderedBaseline(`retained-${key}-${locale}`, view.container);
+	} finally {
+		view.unmount();
+		vi.useRealTimers();
+	}
 });
