@@ -41,6 +41,12 @@ class RecordedEvent(EventRecord):
     at_utc: datetime
 
 
+@dataclass(frozen=True)
+class Transition:
+    after: WindowDocument | None
+    records: tuple[EventRecord, ...]
+
+
 def _identity(doc: ledger.WindowState | ledger.ArchiveCopy) -> Identity:
     return doc.dataset_id, doc.provider_id, doc.revision, doc.window_key
 
