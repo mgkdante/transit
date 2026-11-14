@@ -2,7 +2,6 @@
 
 import hashlib
 import re
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +10,7 @@ from typing import Literal
 from sqlalchemy import Connection, RowMapping, text
 
 from transit_ops.ingestion.storage import BronzeStorage, BronzeStorageResolver
+from transit_ops.lake.archive_keys import validate_provider_id
 from transit_ops.lake.objects import object_digest, put_create_only
 
 
@@ -100,13 +100,7 @@ def archive_schedule_zip(
     """Archive an edition in the caller's transaction; return only verified bytes."""
     if not connection.in_transaction():
         raise ValueError("An active caller transaction is required")
-    if (
-        not provider_id
-        or provider_id in {".", ".."}
-        or provider_id.endswith((".", " "))
-        or any(c in '/\\:<>"|?*' or unicodedata.category(c) == "Cc" for c in provider_id)
-    ):
-        raise ValueError("Provider must be a safe key segment")
+    validate_provider_id(provider_id)
     checksum, size, backend, source_key = _metadata(
         _edition(connection, provider_id, dataset_version_id)
     )

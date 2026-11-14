@@ -69,7 +69,9 @@ def test_schedule_archive_refuses_conflicting_metadata(tmp_path, changes):
     assert store.read_bytes("original.zip") == ZIP
 
 
-@pytest.mark.parametrize("provider", ["", ".", "..", "/root", "a/b", "a\\b", "C:escape", "x\n"])
+@pytest.mark.parametrize(
+    "provider", ["", ".", "..", "/root", "a/b", "a\\b", "C:escape", "x\n", "Network", "schemas"]
+)
 def test_schedule_archive_refuses_unsafe_keys(tmp_path, provider):
     connection, store = setup(tmp_path)
     with pytest.raises(ValueError):
