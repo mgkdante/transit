@@ -2249,6 +2249,7 @@ def build_warm_rollups(
     engine: Engine | None = None,
     since_utc: datetime | None = None,
     as_of_utc: datetime | None = None,
+    wall_clock_utc: datetime | None = None,
 ) -> WarmRollupBuildResult:
     if as_of_utc is not None:
         if as_of_utc.utcoffset() is None:
@@ -2338,6 +2339,7 @@ def build_warm_rollups(
             now=now,
             progress=trip_delay_progress,
             retention_days=fact_retention_days,
+            wall_clock_utc=wall_clock_utc,
         ),
         progress=trip_delay_progress,
     )
