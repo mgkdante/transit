@@ -1,77 +1,147 @@
-import pytest
-from sqlalchemy import text
-from test_i3_real_db_regression import ALERT_A, PROVIDER, SNAP_IDS, _load, _seed
+import json
+from datetime import UTC, date, datetime
 
-from transit_ops.static.alert_seed import TABLES, AlertSeed, read_alert_seed
+import pytest
+import test_i3_real_db_regression as fixture
+from sqlalchemy import text
+
+from transit_ops.static import alert_seed as seeds
+
+BIG = 9007199254740993
+AT = "2026-06-10T08:30:00.123456+05:30"
+
+
+def query(pg, sql, **params):
+    return pg.execute(text(sql), params)
 
 
 @pytest.fixture()
-def exported(real_db_engine, seed_provider):
+def exported(real_db_engine, seed_provider, monkeypatch):
+    monkeypatch.setattr(fixture, "SNAP_IDS", (BIG, *fixture.SNAP_IDS[1:]))
+    monkeypatch.setitem(fixture.SNAP_TIMES, BIG, datetime.fromisoformat(AT))
     with real_db_engine.connect() as pg, pg.begin():
-        pg.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
-        _seed(pg, seed_provider)
-        future = {**ALERT_A, "id": "future", "activePeriods": [{"start": "2099-01-01T00:00:00Z"}]}
-        expired = {**ALERT_A, "id": "expired", "activePeriods": [{"end": "2000-01-01T00:00:00Z"}]}
-        _load(pg, SNAP_IDS[0], [ALERT_A, future, expired, {**ALERT_A, "id": "superseded"}])
-        changed = {**ALERT_A, "routes": ["changed"], "stops": ["changed", "changed2", "new"]}
-        _load(pg, SNAP_IDS[1], [changed, future, expired])
-        pg.execute(text("SET TRANSACTION READ ONLY"))
-        seed = read_alert_seed(pg, provider_id=PROVIDER)
-        assert AlertSeed.from_json(seed.to_json()) == seed
-        yield pg, seed
+        query(pg, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        fixture._seed(pg, seed_provider)
+        alert = fixture.ALERT_A | {"extra": {"é": "雪"}}
+        future = alert | {"id": "future", "activePeriods": [{"start": "2099-01-01T00:00:00Z"}]}
+        expired = alert | {"id": "expired", "activePeriods": [{"end": "2000-01-01T00:00:00Z"}]}
+        fixture._load(pg, BIG, [alert, future, expired, alert | {"id": "superseded"}])
+        changed = alert | {"routes": ["changed"], "stops": ["changed", "changed2", "new"]}
+        fixture._load(pg, fixture.SNAP_IDS[1], [changed, future, expired])
+        query(
+            pg,
+            "UPDATE silver.i3_alerts SET url='', url_en=NULL WHERE provider_id=:p",
+            p=fixture.PROVIDER,
+        )
+        query(pg, "SET TRANSACTION READ ONLY")
+        yield pg, seeds.read_alert_seed(pg, provider_id=fixture.PROVIDER)
         pg.rollback()
 
 
-def test_seed_keeps_first_capture_children_and_latest_message_ids(exported):
+def ordered(rows):
+    return sorted(json.dumps(row, sort_keys=True) for row in rows)
+
+
+def value(v):
+    if isinstance(v, datetime):
+        return v.astimezone(UTC).isoformat(timespec="microseconds")
+    return v.isoformat() if isinstance(v, date) else v
+
+
+def expected_rows(pg, name, scope):
+    schema, table = name.split(".")
+    columns = query(
+        pg,
+        "SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema=:s AND table_name=:t ORDER BY ordinal_position",
+        s=schema,
+        t=table,
+    ).all()
+    fields = ", ".join(f'"{c}"::text AS "{c}"' if k == "jsonb" else f'"{c}"' for c, k in columns)
+    return [
+        {c: value(v) for c, v in r.items()}
+        for r in query(
+            pg, f"SELECT {fields} FROM {name} WHERE {scope}", p=fixture.PROVIDER
+        ).mappings()
+    ]
+
+
+def test_complete_scope_and_postgres_special_values(exported):
     pg, seed = exported
-    alert = seed.tables[TABLES[0]].rows[0]
-    assert alert["i3_alert_snapshot_id"] == SNAP_IDS[0]
-    assert alert["message_snapshot_id"] == SNAP_IDS[1]
-    entities = [r for r in seed.tables[TABLES[1]].rows if r["alert_index"] == 0]
-    assert {(r["route_id"], r["stop_id"]) for r in entities} == {
-        ("51", "S100"),
-        ("51", "S101"),
-        ("changed", "new"),
-    }
-    for name, table in seed.tables.items():
-        fields = ", ".join(
-            f'"{c}"::text' if k == "jsonb" else f'"{c}"' for c, k in table.columns.items()
+    active = (
+        "SELECT i3_alert_snapshot_id, alert_index FROM silver.i3_alerts "
+        "WHERE provider_id=:p AND valid_to IS NULL"
+    )
+    refs = (
+        "SELECT message_snapshot_id FROM silver.i3_alerts WHERE provider_id=:p AND valid_to IS NULL"
+    )
+    scopes = [
+        "provider_id=:p AND valid_to IS NULL",
+        f"(i3_alert_snapshot_id, alert_index) IN ({active})",
+        f"(i3_alert_snapshot_id, alert_index) IN ({active})",
+        "provider_id=:p",
+        "provider_id=:p",
+        f"i3_alert_snapshot_id IN (SELECT i3_alert_snapshot_id FROM ({active}) a UNION {refs})",
+    ]
+    for name, scope in zip(seeds.TABLES, scopes, strict=True):
+        expected = expected_rows(pg, name, scope)
+        assert ordered(seed.tables[name].rows) == ordered(expected)
+    assert seeds.AlertSeed.from_json(seed.to_json()) == seed
+    alerts = seed.tables[seeds.TABLES[0]].rows
+    assert {r["alert_id"] for r in alerts} == {"ALERT-A", "future", "expired"}
+    assert all(
+        r["i3_alert_snapshot_id"] == BIG and r["url"] == "" and r["url_en"] is None for r in alerts
+    )
+    assert alerts[0]["captured_at_utc"] == "2026-06-10T03:00:00.123456+00:00"
+    assert any("雪" in r["raw_alert_json"] for r in alerts)
+    entities = seed.tables[seeds.TABLES[1]].rows
+    expected_entities = {("51", "S100"), ("51", "S101"), ("changed", "new")}
+    assert {
+        (r["route_id"], r["stop_id"]) for r in entities if r["alert_index"] == 0
+    } == expected_entities
+    floor = query(pg, "SELECT max(i3_alert_snapshot_id) FROM raw.i3_alert_snapshots").scalar_one()
+    assert seed.global_max_snapshot_id == floor and floor >= BIG
+    assert seeds.read_alert_seed(pg, provider_id="empty_seed_test").global_max_snapshot_id == floor
+
+
+def test_autocommit_refused_by_postgres(real_db_engine):
+    prefix = "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL "
+    with real_db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as pg:
+        query(pg, prefix + "REPEATABLE READ, READ ONLY")
+        try:
+            with pytest.raises(seeds.AlertSeedReadRefused):
+                seeds.read_alert_seed(pg, provider_id="test")
+        finally:
+            query(pg, prefix + "READ COMMITTED, READ WRITE")
+
+
+def test_concurrent_writer_cannot_change_export_snapshot(real_db_engine, seed_provider):
+    provider = "alert_seed_writer_test"
+    with real_db_engine.begin() as writer:
+        seed_provider(writer, provider, display_name="Disposable seed writer")
+        query(
+            writer,
+            "INSERT INTO raw.alert_feed_observations VALUES (:p, current_date, 1, now())",
+            p=provider,
         )
-        expected = pg.execute(text(f"SELECT {fields} FROM {name}")).all()
-        for row in table.rows:
-            actual = tuple(row[c] for c in table.columns)
-            assert actual in [
-                tuple(
-                    v.isoformat(timespec="microseconds")
-                    if hasattr(v, "hour")
-                    else v.isoformat()
-                    if hasattr(v, "isoformat")
-                    else v
-                    for v in r
+    try:
+        with real_db_engine.connect() as pg, pg.begin():
+            query(pg, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            before = seeds.read_alert_seed(pg, provider_id=provider)
+            with real_db_engine.begin() as writer:
+                query(
+                    writer,
+                    "UPDATE raw.alert_feed_observations SET alert_count=2 WHERE provider_id=:p",
+                    p=provider,
                 )
-                for r in expected
-            ]
-
-
-def test_seed_includes_future_and_expired_unsuperseded_rows(exported):
-    _, seed = exported
-    assert {r["alert_id"] for r in seed.tables[TABLES[0]].rows} == {"ALERT-A", "future", "expired"}
-    assert {r["start_utc"] for r in seed.tables[TABLES[2]].rows} == {
-        None,
-        "2099-01-01T00:00:00.000000+00:00",
-    }
-
-
-def test_seed_excludes_superseded_rows_and_orphan_children(exported):
-    _, seed = exported
-    for name in TABLES[:2]:
-        assert {r["alert_index"] for r in seed.tables[name].rows} == {0, 1, 2}
-
-
-def test_global_id_floor_includes_other_providers(exported):
-    pg, seed = exported
-    floor = pg.execute(
-        text("SELECT max(i3_alert_snapshot_id) FROM raw.i3_alert_snapshots")
-    ).scalar_one()
-    assert seed.global_max_snapshot_id == floor
-    assert read_alert_seed(pg, provider_id="empty_seed_test").global_max_snapshot_id == floor
+            assert seeds.read_alert_seed(pg, provider_id=provider) == before
+        with real_db_engine.connect() as pg, pg.begin():
+            query(pg, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            after = seeds.read_alert_seed(pg, provider_id=provider)
+            assert after.tables[seeds.TABLES[3]].rows[0]["alert_count"] == 2
+    finally:
+        with real_db_engine.begin() as writer:
+            query(
+                writer, "DELETE FROM raw.alert_feed_observations WHERE provider_id=:p", p=provider
+            )
+            query(writer, "DELETE FROM core.providers WHERE provider_id=:p", p=provider)
