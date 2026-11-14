@@ -11,6 +11,8 @@ from pydantic import Field
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+from transit_ops.lighter_storage.settings import LighterStorageSettings
+
 LEGACY_DATABASE_URL_KEY = "NEON" "_DATABASE_URL"
 LEGACY_DATABASE_URL_MESSAGE = (
     f"{LEGACY_DATABASE_URL_KEY} is no longer supported; use DATABASE_URL instead."
@@ -96,6 +98,8 @@ class Settings(BaseSettings):
             value = getattr(self, name, None)
             return str(value) if value else None
         return os.environ.get(name) or None
+
+    LIGHTER_STORAGE: LighterStorageSettings = Field(default_factory=LighterStorageSettings)
 
     APP_ENV: str = "local"
     LOG_LEVEL: str = "INFO"

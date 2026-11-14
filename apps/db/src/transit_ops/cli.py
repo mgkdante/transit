@@ -22,6 +22,7 @@ from transit_ops.backups import (
     list_database_backups,
     run_database_backup,
 )
+from transit_ops.commands import batch, batch_families, control, lake, live, operations, static
 from transit_ops.core.models import FeedKind, ProviderManifest
 from transit_ops.daily_run import DailyRun
 from transit_ops.daily_run_process import SubprocessRunner
@@ -95,6 +96,15 @@ app = typer.Typer(
         "Bronze ingestion, Silver loading, Gold marts, and database foundation."
     )
 )
+
+
+app.add_typer(lake.app, name="lake")
+app.add_typer(batch.app, name="batch")
+app.add_typer(batch_families.app, name="batch-families")
+app.add_typer(live.app, name="live-engine")
+app.add_typer(control.app, name="lake-control")
+app.add_typer(static.app, name="lake-static")
+app.add_typer(operations.app, name="lake-ops")
 
 
 class DailyJob(StrEnum):
