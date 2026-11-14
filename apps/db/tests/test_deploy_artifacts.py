@@ -514,9 +514,20 @@ def test_real_db_ci_uses_a_disposable_postgres_service() -> None:
     assert [step["run"].strip() for step in runs] == [
         scrub + "uv run alembic upgrade head",
         scrub + "uv run pytest tests -n 4 --dist worksteal "
-        "--max-worker-restart=0 --durations=20",
+        "--max-worker-restart=0 --durations=20 -rs --junitxml=real-db-junit.xml",
     ]
     assert all(step["working-directory"] == "apps/db" for step in runs)
+    assert job["steps"][job["steps"].index(runs[1]) + 1] == {
+        "name": "Upload real-DB test results",
+        "if": "${{ !cancelled() }}",
+        "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+        "with": {
+            "name": "real-db-junit",
+            "path": "apps/db/real-db-junit.xml",
+            "retention-days": 14,
+            "if-no-files-found": "warn",
+        },
+    }
 
     # Container verification has no live-DB dependency and remains required once,
     # alongside the DB suite rather than on its critical path.
