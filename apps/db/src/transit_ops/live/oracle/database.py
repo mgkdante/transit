@@ -69,6 +69,7 @@ def _pin_connections(engine: Engine, clock: PinnedClock) -> None:
     @event.listens_for(engine, "connect")
     def configure(connection: Connection[tuple[object, ...]], _record: object) -> None:
         with connection.cursor() as cursor:
+            cursor.execute(f"SET search_path = {CLOCK_SCHEMA}, pg_catalog, public")
             cursor.execute(
                 "SELECT pg_catalog.set_config(%s, %s, false)",
                 (CLOCK_SETTING, clock.instant.isoformat()),
@@ -95,6 +96,12 @@ def oracle_database(
         query = dict(url.query)
         if "dbname" in query:
             query["dbname"] = name
+        options = query.get("options", environment.get("PGOPTIONS", ""))
+        if not isinstance(options, str):
+            raise OracleDatabaseRefused("Oracle database requires one options string")
+        query["options"] = (
+            f"{options} -c search_path={CLOCK_SCHEMA},pg_catalog,public -c timezone=UTC"
+        ).strip()
         oracle_url = url.set(database=name, query=query)
         assert_disposable_test_url(oracle_url.render_as_string(hide_password=False), environment)
     except RuntimeError as error:
@@ -106,15 +113,17 @@ def oracle_database(
     try:
         with admin.connect() as connection:
             connection.exec_driver_sql(f"CREATE DATABASE {database} TEMPLATE template0")
-        created = True
+            created = True
         _initialize(engine, database, admin, clock)
         _pin_connections(engine, clock)
         yield engine
     finally:
-        engine.dispose()
         try:
-            if created and not keep:
-                with admin.connect() as connection:
-                    connection.exec_driver_sql(f"DROP DATABASE {database} WITH (FORCE)")
+            engine.dispose()
         finally:
-            admin.dispose()
+            try:
+                if created and not keep:
+                    with admin.connect() as connection:
+                        connection.exec_driver_sql(f"DROP DATABASE {database} WITH (FORCE)")
+            finally:
+                admin.dispose()
