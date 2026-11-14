@@ -250,6 +250,27 @@ def test_missing_copy_value_stays_missing_while_zero_stays_zero(store, make_iden
         assert (copy.byte_size, copy.record_count) == (None, 0)
 
 
+def test_event_only_window_has_no_state_and_keeps_ordered_event_identity(store, make_identity):
+    identity = make_identity()
+    with store.session(identity) as session:
+        session.record_event("close_runs", details={"closed": 2}, actor="closer")
+        session.record_event("processing_evidence", details={"rows": 3}, actor="loader")
+        written = session.events()
+        assert session.state() is None
+    assert store.window_state(identity) is None
+    assert [(e.kind, e.details) for e in written] == [
+        ("close_runs", {"closed": 2}),
+        ("processing_evidence", {"rows": 3}),
+    ]
+    assert written[0].sequence < written[1].sequence
+    assert store.events(identity) == written
+    assert store.events(identity, kinds={"processing_evidence"}) == [written[1]]
+    assert store.events(identity, kinds=set()) == []
+    with store.session(identity) as session:
+        assert session.events() == written
+    assert store.window_state(identity) is None
+
+
 def test_existing_copy_version_is_create_only(store, make_identity):
     identity = make_identity()
     with store.session(identity) as session:

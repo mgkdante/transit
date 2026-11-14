@@ -1,5 +1,5 @@
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -61,3 +61,38 @@ def test_copy_insert_refuses_an_existing_version():
     with pytest.raises(RuntimeError, match=r"could not insert copy.*'content_version': 1\b"):
         with store.session(WindowIdentity("capture.trip_updates", "network", "2026-11-01")) as s:
             s.insert_allocated_copy(new_copy(1))
+
+
+class ClockConnection(TransactionConnection):
+    def execute(self, *args):
+        stamp = datetime(2026, 11, 1, 12, 0, 0, 123456, timezone(timedelta(hours=5)))
+        return SimpleNamespace(scalar_one=lambda: stamp)
+
+
+def test_session_clock_returns_utc_even_when_database_does_not():
+    with PostgresLedger(ClockConnection()).session(
+        WindowIdentity("capture.trip_updates", "network", "2026-11-01")
+    ) as session:
+        assert session.now() == datetime(2026, 11, 1, 7, 0, 0, 123456, UTC)
+        assert session.now().tzinfo is UTC
+
+
+class EventReadConnection(IdleConnection):
+    def execute(self, *args):
+        row = dict(
+            sequence=17,
+            kind="close_runs",
+            content_version=None,
+            reason=None,
+            details={"closed": 2},
+            actor="closer",
+            at_utc=datetime(2026, 11, 1, tzinfo=UTC),
+        )
+        return SimpleNamespace(mappings=lambda: [row])
+
+
+def test_store_events_needs_no_window_session_or_callers_transaction():
+    events = PostgresLedger(EventReadConnection()).events(
+        WindowIdentity("capture.trip_updates", "network", "2026-11-01")
+    )
+    assert [(e.sequence, e.kind, e.details) for e in events] == [(17, "close_runs", {"closed": 2})]
