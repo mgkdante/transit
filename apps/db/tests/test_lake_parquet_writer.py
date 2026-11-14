@@ -6,6 +6,7 @@ from decimal import Decimal
 import duckdb
 import pytest
 
+from transit_ops.lake.csv_validation import InvalidCsvValue
 from transit_ops.lake.parquet_codec import (
     CsvHeaderMismatch,
     RequiredValueMissing,
@@ -179,7 +180,7 @@ def test_header_only_window_retains_schema_and_zero_rows(tmp_path):
 
 @pytest.mark.parametrize("data", [b"id,value\nwrong,x\n", b"id,value\n1,x,extra\n"])
 def test_invalid_csv_is_refused_without_leaving_output(tmp_path, data):
-    with pytest.raises(duckdb.Error):
+    with pytest.raises(InvalidCsvValue):
         write(tmp_path, data, metadata={})
     assert not (tmp_path / "out.parquet").exists()
 
