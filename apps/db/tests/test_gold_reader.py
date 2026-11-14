@@ -266,7 +266,8 @@ def test_grain_windows_frozen_and_prior() -> None:
 
 def test_current_date_trailing_clause_bytes() -> None:
     assert current_date_trailing_clause("rob.provider_local_date") == (
-        "rob.provider_local_date >= (now() AT TIME ZONE dp.timezone)::date - 30"
+        "rob.provider_local_date >= (CAST(:as_of_utc AS timestamptz) "
+        "AT TIME ZONE dp.timezone)::date - 30"
     )
     assert SPINE_WINDOW_CLAUSE == (
         " AND provider_local_date >= :win_start AND provider_local_date <= :win_end"
@@ -305,13 +306,13 @@ _REVIEWED_SQL_SHA256 = {
     "network.spine.by_shift": "1d9b382ba661658fadf93d43984bdd34858e7842712b7e02c692228df6bcf48d",
     "network.spine.by_daytype": "0f763af3358da12ec32ac11dab8d8ceeaea2b53d130c24fa79cc4206a12cd8d4",
     "route.occupancy.band_window": (
-        "71aeadea14a4d11c0c61e8ac9c1a42d15abe46f0bface200b4a286af41e3312d"
+        "501c5f89576f0f5960c95f4459df8aa692a7e4a7ed13f52dbce0e7a84245207e"
     ),
-    "route.occupancy.by_dow": "f8363e495d00c54df99c99ce90ae204e5c5c38bee66af0f8e3edbe6daa19af57",
-    "route.occupancy.by_grain": "8531c2edaca6e28d5d470083451e1a5fb710bc956d8ff32fc77e8fc9a2b00de8",
-    "route.delay.by_crowding": "2e56c8a2b0e241f72563eccd6332ea8ece8f6287d37c94c2dbd00ada728203ff",
+    "route.occupancy.by_dow": "da856cd1dd900e6518e3d28317978877b4553b53ee26eabe979a521c0227690f",
+    "route.occupancy.by_grain": "72fe1afb93ecdd60ece7d1bba1e37a04cad15200e34ef69a35b658be71f30442",
+    "route.delay.by_crowding": "f508afbea959dbec723c64f09d32eb8885b7353ce8f0c37cb801b38fbd5356f9",
     "stop.occupancy.band_window": (
-        "d833895c42e44543e95389d8c9c015f0299286b8d0d34becac220f05ecdb0fed"
+        "c08dfa57a5b4b42691c2ad48012e63f2623fc0ba7df432de77ea178174e69b07"
     ),
     "receipts.accountability": "b9580ef70c44a3a84f74f1d696495602f0d15c55aa82100dcc0bf4745525e5d7",
     "receipts.worst_route": "8c50bf3663aaf38364209de7ab67f35d76981f91aae2ea336ed5e6bc9d65530a",

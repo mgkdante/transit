@@ -1,19 +1,24 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 import revision_2_seed as seed
+from _sqlfakes import NamedQueryConn, _FakeResult
 from snapshot_storage_fixtures import MemorySnapshotStore
 
 from transit_ops import settings as settings_module
 from transit_ops.gold import rollups
-from transit_ops.snapshots import builders, historic_tier, publish
+from transit_ops.snapshots import builders, historic_compatibility, historic_tier, publish
 from transit_ops.snapshots.builders.historic import (
     line_history,
     network_history,
     network_trend,
     provenance,
+    small_surfaces,
     stop_history,
 )
+from transit_ops.sql_registry import query_name
 
 STAMP = "2025-09-02T00:00:00Z"
 SURFACES = (
@@ -41,6 +46,49 @@ def _kwargs(build, provider_id):
 def test_surface_refuses_naive_stamp_before_reading(build):
     with pytest.raises(ValueError, match="aware"):
         build(None, **_kwargs(build, "test"), as_of_utc=datetime(2025, 9, 2))
+
+
+@pytest.mark.parametrize("operation", ["publish", "collect"])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_content_keeps_transaction_clock_across_python_midnight(monkeypatch, operation, explicit):
+    database = datetime(2026, 7, 21, 3, 59, 59, 250000, tzinfo=UTC)
+    completed = database - timedelta(seconds=60.5)
+    monkeypatch.setattr(historic_tier, "utc_now", lambda: database + timedelta(seconds=2))
+
+    class Connection(NamedQueryConn):
+        def execute(self, statement, params=None):
+            name = query_name(statement)
+            if name in {"provenance.freshness", "alerts.history.anchor"}:
+                instant = params["as_of_utc"]
+                age = Decimal(str((instant - completed).total_seconds()))
+                row = {
+                    "endpoint_key": "trip_updates",
+                    "status": "succeeded",
+                    "completed_age_seconds": int(age.quantize(Decimal(1), ROUND_HALF_UP)),
+                }
+                if name == "alerts.history.anchor":
+                    row = {"anchor": instant.astimezone(ZoneInfo("America/Toronto")).date()}
+                return _FakeResult([row])
+            return super().execute(statement, params)
+
+    def capture(conn, *, provider_id, stamp, as_of_utc, **kwargs):
+        args = dict(provider_id=provider_id, generated_utc=stamp, as_of_utc=as_of_utc)
+        payload = provenance.build_provenance(conn, **args)
+        alerts = small_surfaces.build_alert_history(conn, **args)
+        assert payload.freshness[0].age_s == 61
+        assert alerts.window_end == "2026-07-20"
+        raise StopIteration
+
+    monkeypatch.setattr(historic_compatibility, "build", capture)
+    conn = Connection({"history.build.as_of": [database]})
+    args = dict(provider_id="test", settings=seed.settings_for(None), stamp=STAMP)
+    if explicit:
+        args["as_of_utc"] = database
+    with pytest.raises(StopIteration):
+        if operation == "publish":
+            historic_tier.publish(conn, MemorySnapshotStore(), **args)
+        else:
+            historic_tier.collect(conn, include=set(), **args)
 
 
 @pytest.fixture

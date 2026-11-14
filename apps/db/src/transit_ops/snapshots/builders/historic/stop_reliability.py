@@ -204,11 +204,7 @@ _STOP_DOW_SQL = named_query(
 
 
 def build_stop_reliability(
-    conn: Connection,
-    *,
-    provider_id: str,
-    generated_utc: str,
-    as_of_utc: datetime | None = None,
+    conn: Connection, *, provider_id: str, generated_utc: str, as_of_utc: datetime | None = None
 ) -> dict[str, StopReliability]:
     as_of_utc = resolve_as_of(conn, as_of_utc)
     params = {"as_of_utc": as_of_utc, "provider_id": provider_id}

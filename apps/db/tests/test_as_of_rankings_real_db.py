@@ -280,6 +280,7 @@ def test_production_point_plans_are_bounded_closed_parity_exactly_addressed(
         point_plans = historic_tier._build_historic_point_plans(  # noqa: SLF001
             recorded,
             provider_id=PROVIDER,
+            as_of_utc=connection.execute(text("SELECT now()")).scalar_one(),
         )
         hotspot_days = list(point_plans.hotspots.iter_days())
         repeat_days = list(point_plans.repeat_offenders.iter_days())

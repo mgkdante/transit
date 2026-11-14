@@ -82,7 +82,7 @@ def _build_historic_point_plans(
     conn: Connection,
     *,
     provider_id: str,
-    as_of_utc: datetime,
+    as_of_utc: datetime | None = None,
 ) -> HistoricPointPlanBundle:
     hotspots = builders.build_hotspots_history_plan(
         conn,
@@ -142,11 +142,12 @@ def publish(
 ) -> list[str]:
     if not isinstance(storage, HistoricWriter):
         raise TypeError("historic publication requires a conditional historic writer")
-    as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
+    publication_instant = utc_now() if as_of_utc is None else as_of_utc
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     if _historic_run is not None:
         _historic_run.run_instant_utc = as_of_utc
     if stamp is None:
-        stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
+        stamp = publication_instant.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     concurrency = uploads.concurrency(settings)
     with uploads.provider_executor(concurrency):
         _historic._activate_historic_phase(_historic_run, "parent_compose")
@@ -429,9 +430,10 @@ def collect(
     as_of_utc: datetime | None = None,
     include: Collection[HistoricInclude],
 ) -> HistoricValidationInputs:
-    as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
+    publication_instant = utc_now() if as_of_utc is None else as_of_utc
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     if stamp is None:
-        stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
+        stamp = publication_instant.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     compatibility = historic_compatibility.build(
         conn, provider_id=provider_id, settings=settings, stamp=stamp, as_of_utc=as_of_utc
     )

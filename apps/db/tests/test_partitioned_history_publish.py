@@ -58,6 +58,8 @@ from transit_ops.snapshots.uploads import stable_outcome_total as _stable_outcom
 
 @pytest.fixture(autouse=True)
 def _empty_point_history_plans(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(historic_tier, "resolve_as_of", lambda conn, value:
+        historic_compatibility.resolve_as_of(conn, value or datetime(2026, 7, 13, tzinfo=UTC)))
     empty = SimpleNamespace(
         iter_days=lambda: iter(()),
         names=HistoryNameIndex([], provider_timezone="UTC"),
@@ -561,7 +563,10 @@ def _patch_minimal_historic(
     stop_plan=None,
     compatibility_items=None,
     archive=None,
+    as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
 ):
+    monkeypatch.setattr(historic_tier, "resolve_as_of", lambda conn, value:
+        historic_compatibility.resolve_as_of(conn, as_of_utc if value is None else value))
     from transit_ops.snapshots.contract import AlertArchiveIndex, ReceiptsIndex
 
     archive = archive or SimpleNamespace(

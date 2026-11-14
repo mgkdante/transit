@@ -123,7 +123,9 @@ def test_point_bundle_reuses_provider_names_and_executes_five_queries() -> None:
         strict=True,
     )
 
-    bundle = historic_tier._build_historic_point_plans(connection, provider_id="stm")  # noqa: SLF001
+    bundle = historic_tier._build_historic_point_plans(
+        connection, provider_id="stm", as_of_utc=historic_tier.utc_now()
+    )  # noqa: SLF001
 
     assert bundle.hotspots.names is bundle.repeat_offenders.names
     assert [query_name(statement) for statement in connection.executed] == [

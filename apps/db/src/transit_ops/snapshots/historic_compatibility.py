@@ -26,12 +26,8 @@ class Compatibility:
 
 
 def build(
-    conn: Connection,
-    *,
-    provider_id: str,
-    settings: Settings,
-    stamp: str,
-    as_of_utc: datetime | None = None,
+    conn: Connection, *, provider_id: str, settings: Settings, stamp: str,
+    as_of_utc: datetime | None = None
 ) -> Compatibility:
     as_of_utc = resolve_as_of(conn, as_of_utc)
     items, routes, stages, alerts = _build_items(
@@ -84,7 +80,8 @@ def _finalize_receipts_collection_generation(items: Sequence[PutItem]) -> None:
 
 
 def _build_items(
-    conn: Connection, *, provider_id: str, settings: Settings, stamp: str, as_of_utc: datetime
+    conn: Connection, *, provider_id: str, settings: Settings, stamp: str,
+    as_of_utc: datetime | None = None,
 ) -> tuple[list[PutItem], list[PutItem], list[PublishStage], builders.AlertArchiveBundle]:
 
     items: list[PutItem] = []
