@@ -152,7 +152,10 @@ class SnapshotConditionalObjects:
         _key(prefix)
         if not prefix.endswith("/"):
             raise ValueError("listing requires a directory prefix ending in '/'")
-        iterator = self._store.iter_object_versions(self._path(prefix.removesuffix("/")))
+        directory = (
+            prefix.removesuffix("/") if isinstance(self._store, LocalSnapshotStorage) else prefix
+        )
+        iterator = self._store.iter_object_versions(self._path(directory))
         while (version := _call(lambda: next(iterator, None))) is not None:
             yield (
                 "/".join(bytes.fromhex(p[1:]).decode() for p in version.rel_key.split("/"))
