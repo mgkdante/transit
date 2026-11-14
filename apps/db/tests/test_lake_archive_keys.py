@@ -15,11 +15,15 @@ from transit_ops.lake.archive_keys import parse_copy_key, proof_key, schema_key,
     ],
 )
 def test_literal_keys_and_round_trip(dataset, provider, grain, window, folder):
+    from transit_ops.lake.archive_keys import parse_proof_key
+
     key = table_copy_key(dataset, provider, 0, grain, window, 2, 3)
     assert key == f"archive/v1/tables/{dataset}/{provider}/r0/{folder}/{window}.c2.s3.parquet"
     assert proof_key(key) == key.removesuffix(".parquet") + ".proof.json"
     assert schema_key(dataset, 3) == f"archive/v1/tables/{dataset}/schemas/s3.json"
     parsed = parse_copy_key(key)
+    assert parse_proof_key(proof_key(key)) == parsed
+    assert parse_proof_key(key) is None
     assert parsed is not None
     assert (parsed.dataset_id, parsed.provider_id, parsed.revision) == (dataset, provider, 0)
     assert (parsed.grain, parsed.window_key, parsed.version, parsed.schema_version) == (
@@ -31,22 +35,23 @@ def test_literal_keys_and_round_trip(dataset, provider, grain, window, folder):
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    "field,value,message",
     [
-        ("provider_id", "../escape"),
-        ("provider_id", "a*"),
-        ("provider_id", "_other"),
-        ("window_key", "2026-02-30"),
-        ("version", 0),
-        ("schema_version", 0),
-        ("revision", -1),
-        ("version", True),
-        ("grain", "edition"),
-        ("dataset_id", "capture.trip_updates"),
-        ("dataset_id", "unknown.table"),
+        ("provider_id", "../escape", "Invalid provider_id"),
+        ("provider_id", "a*", "Invalid provider_id"),
+        ("provider_id", "Network", "Invalid provider_id: Network"),
+        ("provider_id", "schemas", "Invalid provider_id: schemas"),
+        ("window_key", "2026-02-30", "does not fit"),
+        ("version", 0, "version must be an integer"),
+        ("schema_version", 0, "schema_version must be an integer"),
+        ("revision", -1, "revision must be an integer"),
+        ("version", True, "version must be an integer"),
+        ("grain", "edition", "grain does not match"),
+        ("dataset_id", "capture.trip_updates", "Not a table dataset"),
+        ("dataset_id", "unknown.table", "unknown.table"),
     ],
 )
-def test_refuses_invalid_parts(field, value):
+def test_refuses_invalid_parts(field, value, message):
     args = dict(
         dataset_id="gold.fact_vehicle_snapshot",
         provider_id="network",
@@ -57,7 +62,7 @@ def test_refuses_invalid_parts(field, value):
         schema_version=1,
     )
     args[field] = value
-    with pytest.raises((ValueError, LookupError)):
+    with pytest.raises((ValueError, LookupError), match=message):
         table_copy_key(**args)
 
 
@@ -77,9 +82,9 @@ def test_parser_refuses_noncanonical_keys(key):
 
 
 def test_schema_and_proof_keys_refuse_invalid_input():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid table copy key"):
         proof_key("arbitrary.parquet")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="schema_version must be an integer"):
         schema_key("core.providers", 0)
 
 
@@ -110,7 +115,7 @@ def test_copy_version_counts_orphans_and_receipts_and_recognizes_content(tmp_pat
 
     storage = LocalBronzeStorage("local", tmp_path / "objects")
     args = (storage, "core.providers", "_shared", 0, "month", "2026-11")
-    empty = resolve_copy_version(*args, "a" * 64)
+    empty = resolve_copy_version(*args, "a" * 64, schema_version=1)
     assert (empty.version, empty.key) == (1, None)
     key = table_copy_key("core.providers", "_shared", 0, "month", "2026-11", 4, 2)
     receipt = storage.root / proof_key(key)
@@ -124,26 +129,27 @@ def test_copy_version_counts_orphans_and_receipts_and_recognizes_content(tmp_pat
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"other window")
     before = list(storage.list_keys("archive/"))
-    same = resolve_copy_version(*args, "a" * 64)
+    same = resolve_copy_version(*args, "a" * 64, schema_version=2)
     assert (same.version, same.key) == (4, key)
-    changed = resolve_copy_version(*args, "b" * 64)
+    changed = resolve_copy_version(*args, "b" * 64, schema_version=1)
     assert (changed.version, changed.key) == (9, None)
     assert list(storage.list_keys("archive/")) == before
 
 
-def test_bad_receipt_fails_closed_and_digest_is_required(tmp_path):
+@pytest.mark.parametrize("payload", [b"[]", b'{"content_sha256":' + b"1" * 64 + b"}"])
+def test_bad_receipt_fails_closed_and_digest_is_required(tmp_path, payload):
     from transit_ops.ingestion.storage import LocalBronzeStorage
     from transit_ops.lake.archive_keys import resolve_copy_version
 
     storage = LocalBronzeStorage("local", tmp_path / "objects")
     args = (storage, "core.providers", "_shared", 0, "month", "2026-11")
     with pytest.raises(ValueError, match="content_sha256"):
-        resolve_copy_version(*args, "")
+        resolve_copy_version(*args, "", schema_version=1)
     path = storage.root / proof_key(table_copy_key(*args[1:], 1, 1))
     path.parent.mkdir(parents=True)
-    path.write_bytes(b"[]")
+    path.write_bytes(payload)
     with pytest.raises(ValueError, match="receipt"):
-        resolve_copy_version(*args, "a" * 64)
+        resolve_copy_version(*args, "a" * 64, schema_version=1)
 
 
 def test_schema_race_refuses_different_bytes_without_overwriting(tmp_path):
@@ -161,7 +167,7 @@ def test_schema_race_refuses_different_bytes_without_overwriting(tmp_path):
 
     storage = RacingStorage("local", tmp_path / "objects")
     schema = TableSchema.from_columns([("id", "integer", True)], ["id"])
-    with pytest.raises(ObjectKeyTaken):
+    with pytest.raises(ObjectKeyTaken, match="Object key holds different bytes"):
         resolve_schema_version(storage, "core.providers", schema)
     assert storage.read_bytes(schema_key("core.providers", 1)) == b"competing schema"
 
@@ -176,11 +182,38 @@ def test_unproven_object_does_not_deduplicate_and_latest_matching_receipt_wins(t
     path = storage.root / key
     path.parent.mkdir(parents=True)
     path.write_bytes(b"unproven")
-    result = resolve_copy_version(*args, "a" * 64)
+    result = resolve_copy_version(*args, "a" * 64, schema_version=1)
     assert (result.version, result.key) == (2, None)
     for version in (2, 10):
         candidate = table_copy_key(*args[1:], version, 1)
         (storage.root / proof_key(candidate)).write_text(json.dumps({"content_sha256": "a" * 64}))
-    result = resolve_copy_version(*args, "a" * 64)
+    result = resolve_copy_version(*args, "a" * 64, schema_version=1)
     assert result.version == 10
     assert result.key == table_copy_key(*args[1:], 10, 1)
+
+
+def test_reverted_content_and_type_only_schema_change_advance_version(tmp_path):
+    from transit_ops.ingestion.storage import LocalBronzeStorage
+    from transit_ops.lake.archive_keys import resolve_copy_version
+
+    storage = LocalBronzeStorage("local", tmp_path / "objects")
+    args = (storage, "core.providers", "network", 0, "month", "2026-11")
+    for version, digest in ((1, "a" * 64), (2, "b" * 64)):
+        key = table_copy_key(*args[1:], version, 1)
+        path = storage.root / proof_key(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"content_sha256": digest}))
+    reverted = resolve_copy_version(*args, "a" * 64, schema_version=1)
+    assert (reverted.version, reverted.key) == (3, None)
+    for schema_version, pg_type in enumerate(("integer", "bigint"), 1):
+        from transit_ops.lake.archive_keys import resolve_schema_version
+        from transit_ops.lake.table_schema import TableSchema
+
+        schema = TableSchema.from_columns([("id", pg_type, True)], ["id"])
+        assert resolve_schema_version(storage, "core.providers", schema) == schema_version
+    changed = resolve_copy_version(*args, "b" * 64, schema_version=2)
+    assert (changed.version, changed.key) == (3, None)
+    with pytest.raises(ValueError, match="Invalid provider_id: Network"):
+        resolve_copy_version(
+            storage, "core.providers", "Network", 0, "month", "2026-11", "b" * 64, schema_version=1
+        )

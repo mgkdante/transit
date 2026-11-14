@@ -48,7 +48,7 @@ def table_copy_key(
     dataset = get_dataset(dataset_id)
     if grain != dataset.archive_grain:
         raise ValueError(f"grain does not match {dataset_id}")
-    if not re.fullmatch(r"(?:[A-Za-z0-9][A-Za-z0-9_-]*|_shared)", provider_id):
+    if provider_id == "schemas" or not re.fullmatch(r"[a-z0-9_-]+", provider_id):
         raise ValueError(f"Invalid provider_id: {provider_id}")
     _integer(revision, "revision", 0)
     _integer(version, "version")
@@ -85,6 +85,12 @@ def proof_key(copy_key: str) -> str:
     if parse_copy_key(copy_key) is None:
         raise ValueError(f"Invalid table copy key: {copy_key}")
     return copy_key.removesuffix(".parquet") + ".proof.json"
+
+
+def parse_proof_key(key: str) -> CopyKey | None:
+    if not key.endswith(".proof.json"):
+        return None
+    return parse_copy_key(key.removesuffix(".proof.json") + ".parquet")
 
 
 def schema_key(dataset_id: str, schema_version: int) -> str:
@@ -132,34 +138,37 @@ def resolve_copy_version(
     grain: ArchiveGrain,
     window_key: str,
     content_sha256: str,
+    *,
+    schema_version: int,
 ) -> CopyVersion:
-    """Read receipts for deduplication and reserve above objects and receipts.
+    """Reuse only the newest receipt with matching content and schema versions.
 
     This does not write or reserve a key. Only one copy process may run at a time;
-    the caller must publish with put_create_only after resolving the version.
+    publish with put_create_only. Two writers with different schema versions break
+    the single-writer rule: their different keys escape same-key race protection.
     """
     if not re.fullmatch(r"[0-9a-f]{64}", content_sha256):
         raise ValueError("Invalid content_sha256")
-    first = table_copy_key(dataset_id, provider_id, revision, grain, window_key, 1, 1)
-    prefix = first.removesuffix("1.s1.parquet")
+    first = table_copy_key(dataset_id, provider_id, revision, grain, window_key, 1, schema_version)
+    prefix = first.rsplit(".c", 1)[0] + ".c"
     maximum = 0
-    existing: list[tuple[int, str]] = []
+    latest: tuple[int, int, str] | None = None
     for key in storage.list_keys(prefix):
         receipt = key.endswith(".proof.json")
-        copy_key = key.removesuffix(".proof.json") + ".parquet" if receipt else key
-        parts = parse_copy_key(copy_key)
-        if parts is None or not copy_key.startswith(prefix):
+        parts = parse_proof_key(key) if receipt else parse_copy_key(key)
+        if parts is None or not key.startswith(prefix):
             continue
         maximum = max(maximum, parts.version)
         if receipt:
             value = json.loads(storage.read_bytes(key))
-            if not isinstance(value, dict) or not re.fullmatch(
-                r"[0-9a-f]{64}", str(value.get("content_sha256", ""))
-            ):
+            digest = value.get("content_sha256") if isinstance(value, dict) else None
+            if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
                 raise ValueError(f"Invalid table copy receipt: {key}")
-            if value["content_sha256"] == content_sha256:
-                existing.append((parts.version, copy_key))
-    if existing:
-        version, key = max(existing)
-        return CopyVersion(version, key)
+            candidate = (parts.version, parts.schema_version, digest)
+            latest = max(latest, candidate) if latest else candidate
+    if latest and latest[1:] == (schema_version, content_sha256):
+        key = table_copy_key(
+            dataset_id, provider_id, revision, grain, window_key, latest[0], schema_version
+        )
+        return CopyVersion(latest[0], key)
     return CopyVersion(maximum + 1, None)
