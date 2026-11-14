@@ -35,6 +35,12 @@ def _dataset(dataset_id: str) -> str:
     return f"archive/v1/tables/{dataset_id}"
 
 
+def validate_provider_id(provider_id: str) -> str:
+    if provider_id == "schemas" or not re.fullmatch(r"[a-z0-9_-]+", provider_id):
+        raise ValueError(f"Invalid provider_id: {provider_id}")
+    return provider_id
+
+
 def table_copy_key(
     dataset_id: str,
     provider_id: str,
@@ -48,8 +54,7 @@ def table_copy_key(
     dataset = get_dataset(dataset_id)
     if grain != dataset.archive_grain:
         raise ValueError(f"grain does not match {dataset_id}")
-    if provider_id == "schemas" or not re.fullmatch(r"[a-z0-9_-]+", provider_id):
-        raise ValueError(f"Invalid provider_id: {provider_id}")
+    validate_provider_id(provider_id)
     _integer(revision, "revision", 0)
     _integer(version, "version")
     _integer(schema_version, "schema_version")
