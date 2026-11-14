@@ -113,6 +113,9 @@ _Avoid_: feed age, capture age
 The one instant a build or publish reads as now; every window and age in it is measured from that instant.
 _Avoid_: publication stamp (the day-truncated `generated_utc`).
 
+**Series**:
+Counts of one unit and one population, in one revision, with sources identifying where they live.
+
 **Serving capture age**:
 How old the feed capture accepted into the report's serving data is. A newer download that could not be processed does not make that data current.
 _Avoid_: latest download age, publication age
@@ -136,6 +139,9 @@ _Avoid_: motion emulation, smooth mode, dead reckoning, interpolated position
 **Live notice**:
 The one message that tells a rider how far to trust the live data on a page, chosen from the feed health of the feed families that page shows: nothing to report, report behind, refresh unavailable, partial stall, whole-feed stall, unavailable, or no vehicles.
 _Avoid_: banner, banner state, edge state, alert (alerts are service messages from the agency)
+
+**Metric**:
+A figure worded once, with its arithmetic defined for each revision of its series.
 
 **Silent trip**:
 A trip the schedule says should be running now that has no vehicle reporting for it.
