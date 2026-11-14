@@ -275,13 +275,13 @@ def test_current_date_trailing_clause_bytes() -> None:
 
 _REVIEWED_SQL_SHA256 = {
     "rollup.route_headway.upsert": (
-        "faac29bb6b34cd08f1c65193e40bcd6c43ef4ef919f41644a686fbabde1ccb46"
+        "d5ad00c0848543f4ddb31fe873f94c528e125db2a03f4db5e54b598d52a3f0ca"
     ),
     "rollup.route_headway_direction.upsert": (
-        "b021cb7c78795be7ff53416b272e003cabdede489d95bf2da240dd2f44c584cc"
+        "3847b704f6e1aed35e13f87fe5676d27a474a6bbff242d03d85c2305e470da27"
     ),
     "rollup.route_headway_shift.upsert": (
-        "68ae0f5b0e149eabe88eff831b0b20545784f2ece19320853812309ba021adcd"
+        "52a167e571d52b9913042d00b2bd7e040239f2726bad934259239b567f88fe34"
     ),
     "stop.reliability.by_grain": "e5fcdf48ac5795e3b1ab83cbfcb4bed52e0dc2e5d01026b2fb043b0f3e75741f",
     "route.habit.spine": "ed5437bc9b3d4fc1cb0fb7f48e5ae5eae28333c27b8ef990d7c7d290081a0c60",

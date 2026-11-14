@@ -335,7 +335,7 @@ UPSERT_ROUTE_SCHEDULED_TRIPS_DAILY = named_query(
         WHERE provider_id = :provider_id
           AND dataset_kind = 'static_schedule'
           AND is_current = true
-        ORDER BY loaded_at_utc DESC
+        ORDER BY loaded_at_utc DESC, dataset_version_id DESC
         LIMIT 1
     ),
     active_service AS (
@@ -506,9 +506,11 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = named_query(
             f.route_id,
             f.trip_id,
             MIN(f.captured_at_utc) AS trip_start_utc,
-            (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc ASC, f.entity_index ASC))[1]
+            (ARRAY_AGG(f.delay_seconds ORDER BY
+                f.captured_at_utc ASC, f.entity_index ASC, f.realtime_snapshot_id ASC))[1]
                 AS first_obs_delay,
-            (ARRAY_AGG(f.delay_seconds ORDER BY f.captured_at_utc DESC, f.entity_index DESC))[1]
+            (ARRAY_AGG(f.delay_seconds ORDER BY
+                f.captured_at_utc DESC, f.entity_index DESC, f.realtime_snapshot_id DESC))[1]
                 AS last_obs_delay
         FROM gold.fact_trip_delay_snapshot AS f
         WHERE f.provider_id = :provider_id
@@ -532,10 +534,12 @@ UPSERT_ROUTE_SERVICE_SPAN_DAILY = named_query(
             first_obs_delay,
             last_obs_delay,
             ROW_NUMBER() OVER (
-                PARTITION BY provider_id, route_id ORDER BY trip_start_utc ASC, first_obs_delay ASC
+                PARTITION BY provider_id, route_id
+                ORDER BY trip_start_utc ASC, first_obs_delay ASC NULLS LAST, trip_id COLLATE "C"
             ) AS rn_first,
             ROW_NUMBER() OVER (
-                PARTITION BY provider_id, route_id ORDER BY trip_start_utc DESC, first_obs_delay ASC
+                PARTITION BY provider_id, route_id
+                ORDER BY trip_start_utc DESC, first_obs_delay ASC NULLS LAST, trip_id COLLATE "C"
             ) AS rn_last
         FROM trip_starts
     )
@@ -1456,6 +1460,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = named_query(
             ts.route_id,
             ts.direction_id,
             ts.service_date,
+            ts.trip_id,
             ts.trip_start_utc,
 {_TRIP_SHIFT_CASE_WRAPPED} AS shift
         FROM trip_starts AS ts
@@ -1477,7 +1482,7 @@ UPSERT_ROUTE_HEADWAY_DAILY = named_query(
                 EPOCH FROM (
                     trip_start_utc - LAG(trip_start_utc) OVER (
                         PARTITION BY provider_id, route_id, direction_id, service_date, shift
-                        ORDER BY trip_start_utc
+                        ORDER BY trip_start_utc, trip_id COLLATE "C"
                     )
                 )
             ) / 60.0 AS gap_min
@@ -1582,6 +1587,7 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
             ts.route_id,
             ts.direction_id,
             ts.service_date,
+            ts.trip_id,
             ts.trip_start_utc,
 {_SERVICE_DAYTYPE_CASE} AS service_day_kind,
 {_TRIP_SHIFT_CASE_WRAPPED} AS shift
@@ -1603,7 +1609,7 @@ UPSERT_ROUTE_HEADWAY_DIRECTION_DAILY = named_query(
                         PARTITION BY
                             provider_id, route_id, direction_id, service_day_kind,
                             service_date, shift
-                        ORDER BY trip_start_utc
+                        ORDER BY trip_start_utc, trip_id COLLATE "C"
                     )
                 )
             ) / 60.0 AS gap_min
@@ -1696,7 +1702,8 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
     ),
     shifted AS (
         SELECT
-            ts.provider_id, ts.route_id, ts.direction_id, ts.service_date, ts.trip_start_utc,
+            ts.provider_id, ts.route_id, ts.direction_id, ts.service_date,
+            ts.trip_id, ts.trip_start_utc,
 {_TRIP_SHIFT_CASE} AS shift
         FROM trip_starts AS ts
         INNER JOIN gold.dim_provider AS dp ON dp.provider_id = ts.provider_id
@@ -1707,7 +1714,7 @@ UPSERT_ROUTE_HEADWAY_SHIFT_DAILY = named_query(
             EXTRACT(EPOCH FROM (
                 trip_start_utc - LAG(trip_start_utc) OVER (
                     PARTITION BY provider_id, route_id, direction_id, service_date, shift
-                    ORDER BY trip_start_utc)
+                    ORDER BY trip_start_utc, trip_id COLLATE "C")
             )) / 60.0 AS gap_min
         FROM shifted
     ),
