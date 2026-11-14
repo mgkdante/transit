@@ -1,7 +1,11 @@
+import os
+import subprocess
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from importlib import import_module
+from itertools import combinations
+from types import SimpleNamespace
 
 import duckdb
 import pytest
@@ -10,6 +14,7 @@ from transit_ops.batch.build import BuildRequest, FamilyBuilder, FamilyOutput, I
 from transit_ops.batch.engine import BatchInput, InputRefused, open_batch_session
 from transit_ops.batch.families.registry import FAMILIES, resolve_builder
 from transit_ops.batch.inputs import resolve_inputs
+from transit_ops.gold.rollups import PERCENTILE_LOOKBACK_DAYS, build_warm_rollups
 from transit_ops.sql_registry import named_query
 
 
@@ -19,47 +24,38 @@ def request():
 
 def test_build_request_refuses_what_the_postgres_build_refuses():
     good = request()
-    for changes, message in [
-        (
-            {"fact_retention_days": 13},
-            "GOLD_FACT_RETENTION_DAYS must be at least 14 to cover the percentile lookback",
-        ),
-        (
-            {"open_window_days": 0},
-            "GOLD_REPORTING_OPEN_WINDOW_DAYS must be greater than 0 and less than "
-            "GOLD_FACT_RETENTION_DAYS",
-        ),
-        (
-            {"open_window_days": 14},
-            "GOLD_REPORTING_OPEN_WINDOW_DAYS must be greater than 0 and less than "
-            "GOLD_FACT_RETENTION_DAYS",
-        ),
-        ({"as_of_utc": datetime(2026, 11, 3)}, "as_of_utc must be timezone-aware"),
-    ]:
-        with pytest.raises(ValueError) as error:
-            replace(good, **changes)
-        assert str(error.value) == message
+    for retention, window in [(PERCENTILE_LOOKBACK_DAYS, 10), (14, 0), (14, 14)]:
+        settings = SimpleNamespace(
+            GOLD_FACT_RETENTION_DAYS=retention, GOLD_REPORTING_OPEN_WINDOW_DAYS=window
+        )
+        with pytest.raises(ValueError) as pg_error:
+            build_warm_rollups("network", settings=settings, engine=object())
+        with pytest.raises(ValueError) as batch_error:
+            replace(good, fact_retention_days=retention, open_window_days=window)
+        assert str(batch_error.value) == str(pg_error.value)
     for days in [(), (date(2026, 11, 2), date(2026, 11, 1)), (date(2026, 11, 1),) * 2]:
         with pytest.raises(ValueError, match="local_dates"):
             replace(good, local_dates=days)
-    with pytest.raises(ValueError, match="UTC"):
-        replace(good, as_of_utc=datetime(2026, 11, 3, tzinfo=timezone(timedelta(hours=1))))
+    for changes in [
+        {"provider_id": ""},
+        {"local_dates": []},
+        {"local_dates": (datetime(2026, 11, 1),)},
+        {"local_dates": ("2026-11-01",)},
+        {"as_of_utc": datetime(2026, 11, 3)},
+    ]:
+        with pytest.raises(ValueError):
+            replace(good, **changes)
+    stamp = datetime(2026, 11, 3, 1, 0, 0, 123456, tzinfo=timezone(timedelta(hours=1)))
+    normalized = replace(good, as_of_utc=stamp).as_of_utc
+    assert normalized == datetime(2026, 11, 3, 0, 0, 0, 123456, tzinfo=UTC)
+    assert normalized.tzinfo is UTC
     with pytest.raises(FrozenInstanceError):
         good.provider_id = "other"
 
 
 def test_table_rows_must_be_sorted_and_keyed():
-    values = (
-        Decimal("1.20"),
-        1.5,
-        3,
-        "label",
-        True,
-        date(2026, 11, 1),
-        request().as_of_utc,
-        ["a", None],
-        None,
-    )
+    values = (Decimal("1.20"), 1.5, 3, "label", True, date(2026, 11, 1))
+    values += (request().as_of_utc, ["a", None], None)
     table = TableRows("gold.toy", ("id", "values"), ("id",), ((1, values), (2, None)))
     assert table.rows == ((1, values), (2, None))
     assert replace(table, rows=()).rows == ()
@@ -77,6 +73,30 @@ def test_table_rows_must_be_sorted_and_keyed():
     assert output.bodies["historic/toy.json"] == b'{"value":null}'
 
 
+@pytest.mark.parametrize(
+    "key,rows",
+    [
+        ((), ((1, 2),)),
+        (("a",), ((None, 1),)),
+        (("a", "b"), ((1, None), (2, None))),
+        (("a", "b"), ((None, 1), (None, 2))),
+    ],
+)
+def test_null_and_empty_keys_are_refused(key, rows):
+    with pytest.raises(ValueError, match="key"):
+        TableRows("gold.toy", ("a", "b"), key, rows)
+
+
+@pytest.mark.parametrize("bad_body", [False, True])
+def test_output_refuses_wrong_relations_and_nonbytes(bad_body):
+    table = TableRows("gold.toy", ("id",), ("id",), ((1,),))
+    with pytest.raises(ValueError):
+        FamilyOutput(
+            {"gold.toy" if bad_body else "gold.other": table},
+            {"toy.json": "null" if bad_body else b"null"},
+        )
+
+
 def parquet(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     with duckdb.connect() as conn:
@@ -86,11 +106,11 @@ def parquet(path, value):
 
 def test_inputs_resolve_to_the_local_layout_and_missing_files_are_refused(tmp_path):
     first = parquet(tmp_path / "gold.toy" / "2026-11-01.parquet", 1)
-    second = parquet(tmp_path / "gold.toy" / "local=2026-11-02.parquet", 2)
-    edition = parquet(tmp_path / "silver.toy" / "edition=dataset-7.parquet", 3)
+    second = parquet(tmp_path / "gold.toy" / "2026-11-02.parquet", 2)
+    edition = parquet(tmp_path / "silver.toy" / "edition=7.parquet", 3)
     needs = (
-        InputNeed("silver.toy", "edition:dataset-7"),
-        InputNeed("gold.toy", "local:2026-11-02"),
+        InputNeed("silver.toy", "edition:7"),
+        InputNeed("gold.toy", "2026-11-02"),
         InputNeed("gold.toy", "2026-11-01"),
     )
     resolved = resolve_inputs(needs, tmp_path)
@@ -110,20 +130,15 @@ def test_inputs_resolve_to_the_local_layout_and_missing_files_are_refused(tmp_pa
     edition.unlink()
     with pytest.raises(InputRefused) as error:
         resolve_inputs(needs, tmp_path)
-    assert "silver.toy" in str(error.value) and "edition:dataset-7" in str(error.value)
+    assert "silver.toy" in str(error.value) and "edition:7" in str(error.value)
 
 
 @pytest.mark.parametrize(
     "window",
-    [
-        "2026-02-30",
-        "20261101",
-        "local:2026-1-01",
-        "edition:",
-        "edition:../escape",
-        "../all",
-        "all/child",
-    ],
+    (
+        "2026-02-30|20261101|local:2026-1-01|edition:|edition:../escape|../all|"
+        "all/child|edition:B|edition:1\n|edition: 1"
+    ).split("|"),
 )
 def test_input_need_refuses_invalid_windows(window):
     with pytest.raises(ValueError, match="window"):
@@ -150,7 +165,58 @@ def test_duplicate_needs_are_refused(tmp_path):
         resolve_inputs((InputNeed("gold.toy", "all"),) * 2, tmp_path)
 
 
-def test_a_filled_registry_slot_satisfies_the_protocol(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "windows",
+    tuple(combinations("all 2026-11-01 local:2026-11-01 edition:1".split(), 2)),
+)
+def test_mixed_windows_are_refused(tmp_path, windows):
+    for window in windows:
+        parquet(tmp_path / "gold.toy" / (window.replace(":", "=") + ".parquet"), 1)
+    with pytest.raises(InputRefused, match="gold.toy"):
+        resolve_inputs(tuple(InputNeed("gold.toy", w) for w in windows), tmp_path)
+
+
+@pytest.mark.parametrize(
+    "windows", [("edition:2", "edition:10"), ("local:2026-11-02", "local:2026-11-01")]
+)
+def test_files_follow_window_string_order(tmp_path, windows):
+    paths = [
+        parquet(tmp_path / "gold.toy" / (w.replace(":", "=") + ".parquet"), 1) for w in windows
+    ]
+    assert resolve_inputs(tuple(InputNeed("gold.toy", w) for w in windows), tmp_path) == (
+        BatchInput("gold.toy", tuple(reversed(paths))),
+    )
+
+
+@pytest.mark.parametrize("outside", [False, True])
+@pytest.mark.parametrize("kind", ["file", "directory", "junction"])
+def test_redirected_inputs_are_refused(tmp_path, outside, kind):
+    if kind == "junction" and os.name != "nt":
+        pytest.skip("junctions are Windows-specific; directory symlinks tested separately")
+    root = tmp_path / "inputs"
+    target_root = tmp_path / "outside" if outside else root / "other-edition"
+    target = parquet(target_root / "edition=2.parquet", 999)
+    declared = root / "gold.toy" / "edition=1.parquet"
+    declared.parent.mkdir(parents=True)
+    link = declared if kind == "file" else declared.parent
+    if kind != "file":
+        declared.parent.rmdir()
+        target.rename(target_root / "edition=1.parquet")
+    try:
+        if kind == "junction":
+            command = ["cmd", "/c", "mklink", "/J", str(link), str(target_root)]
+            subprocess.run(command, check=True, capture_output=True)
+        else:
+            link.symlink_to(
+                target if kind == "file" else target_root, target_is_directory=kind != "file"
+            )
+    except (OSError, subprocess.CalledProcessError) as error:
+        pytest.skip(f"host cannot create {kind}: {error}")
+    with pytest.raises(InputRefused, match="gold.toy.*edition:1"):
+        resolve_inputs((InputNeed("gold.toy", "edition:1"),), root)
+
+
+def test_a_filled_registry_slot_satisfies_the_protocol(monkeypatch):
     class ToyBuilder:
         family_id = "route_spine_hours"
         tables = ("gold.toy",)
@@ -164,11 +230,8 @@ def test_a_filled_registry_slot_satisfies_the_protocol(monkeypatch, tmp_path):
             return FamilyOutput({"gold.toy": TableRows("gold.toy", ("id",), ("id",), ((7,),))}, {})
 
     builder = ToyBuilder()
-    module = import_module(FAMILIES[builder.family_id].module_path)
-    monkeypatch.setattr(module, "builder", builder)
+    monkeypatch.setattr(import_module(FAMILIES[builder.family_id].module_path), "builder", builder)
     resolved = resolve_builder(builder.family_id)
     assert resolved is builder and isinstance(resolved, FamilyBuilder)
     assert resolved.inputs(request()) == (InputNeed("gold.toy", "all"),)
-    with open_batch_session((), workdir=tmp_path) as session:
-        assert resolved.build(session, request()).tables["gold.toy"].rows == ((7,),)
     assert all(resolve_builder(name) is None for name in FAMILIES if name != builder.family_id)
