@@ -14,6 +14,7 @@ from google.transit import gtfs_realtime_pb2
 from transit_ops.core.models import ProviderManifest
 from transit_ops.gtfs.types import ProviderBounds
 from transit_ops.history.poll_record import CaptureEntry
+from transit_ops.providers.formats import decode_gtfs_rt
 from transit_ops.silver.realtime_gtfs import (
     RealtimeNormalizationContext,
     manifest_provider_bounds,
@@ -110,9 +111,8 @@ def parse_capture(payload: bytes, capture: CaptureRef, policy: ParsePolicy) -> P
         raise CaptureIntegrityError("Capture byte size mismatch")
     if sha256(payload).hexdigest() != capture.sha256.lower():
         raise CaptureIntegrityError("Capture checksum mismatch")
-    message = gtfs_realtime_pb2.FeedMessage()
     try:
-        message.ParseFromString(payload)
+        message = decode_gtfs_rt(payload)
     except DecodeError as exc:
         raise CaptureParseError("Failed to parse GTFS-RT capture") from exc
     context = RealtimeNormalizationContext(

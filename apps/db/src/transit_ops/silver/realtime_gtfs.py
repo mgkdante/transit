@@ -29,6 +29,7 @@ from transit_ops.ingestion.storage import (
     get_bronze_storage,
 )
 from transit_ops.providers import ProviderRegistry
+from transit_ops.providers.formats import decode_gtfs_rt
 from transit_ops.settings import Settings, get_settings
 from transit_ops.silver._batch import execute_batched_insert
 
@@ -862,9 +863,8 @@ def _read_bronze_realtime_message(
             f"Bronze realtime snapshot {snapshot.realtime_snapshot_id} checksum mismatch"
         )
 
-    message = gtfs_realtime_pb2.FeedMessage()
     try:
-        message.ParseFromString(payload)
+        message = decode_gtfs_rt(payload)
     except Exception as exc:
         raise ValueError(f"Failed to parse GTFS-RT Bronze snapshot: {exc}") from exc
     return message
