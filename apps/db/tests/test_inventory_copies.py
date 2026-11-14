@@ -2,8 +2,10 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -374,3 +376,52 @@ def test_inconsistent_get_length_never_becomes_a_verified_hash(tmp_path):
     result, rows, _ = scan(tmp_path, store)
     assert not result["complete"] and result["get_bytes"] == 0
     assert all(r["sha256"] is None for r in rows if r["kind"] == "object")
+
+
+class ProbeConnection:
+    def __init__(self):
+        self.streaming, self.settings, self.pages = False, [], []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def begin(self):
+        return self
+
+    def execution_options(self, **options):
+        self.streaming = options.get("stream_results", self.streaming)
+        return self
+
+    def exec_driver_sql(self, sql):
+        self.settings.append(sql)
+
+    def execute(self, query, params):
+        if self.streaming:
+            raise SyntaxError("DECLARE cursor FOR SHOW transaction_read_only")
+        assert params == {"provider": "opaque"}
+        assert "READ ONLY" in self.settings[0] and "REPEATABLE READ" in self.settings[0]
+        assert "SET LOCAL lock_timeout='1s'" in self.settings
+        assert any("statement_timeout=" in sql for sql in self.settings)
+        limit, offset = map(int, re.search(r"LIMIT (\d+) OFFSET (\d+)", str(query)).groups())
+        assert limit <= 1000 and "ORDER BY" in str(query)
+        self.pages.append(offset)
+        rows = [dict(value=i) for i in range(offset, min(2001, offset + limit))]
+        return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: rows))
+
+
+def test_read_only_uses_bounded_normal_cursors_for_setting_probes():
+    conn = ProbeConnection()
+    rows = list(
+        load().read_only(
+            SimpleNamespace(connect=lambda: conn),
+            180,
+            lambda: 0,
+            "SELECT value FROM unclassified",
+            {"provider": "opaque"},
+        )
+    )
+    assert rows == [dict(value=i) for i in range(2001)]
+    assert conn.pages == [0, 1000, 2000]

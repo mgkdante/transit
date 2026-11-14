@@ -11,6 +11,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from functools import partial
 from hashlib import sha256
+from itertools import count
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -97,37 +98,35 @@ def read_only(
 ) -> Iterator[Row]:
     if clock() >= end:
         raise TimeoutError
-    with engine.connect() as conn, conn.begin():
-        conn.exec_driver_sql("SET TRANSACTION READ ONLY")
-        for setting in (
-            "lock_timeout='1s'",
-            "idle_in_transaction_session_timeout='15s'",
-            "max_parallel_workers_per_gather=0",
-            "TimeZone='UTC'",
-        ):
-            conn.exec_driver_sql("SET LOCAL " + setting)
+    # Ordinary cursors keep control/probe SQL out of DECLARE ... CURSOR FOR.
+    with engine.connect().execution_options(stream_results=False) as conn, conn.begin():
+        # Offset pages share one snapshot and a deterministic whole-row ordering.
+        conn.exec_driver_sql("SET TRANSACTION READ ONLY, ISOLATION LEVEL REPEATABLE READ")
+        conn.exec_driver_sql("SET LOCAL lock_timeout='1s'")
+        conn.exec_driver_sql("SET LOCAL idle_in_transaction_session_timeout='15s'")
+        conn.exec_driver_sql("SET LOCAL max_parallel_workers_per_gather=0")
+        conn.exec_driver_sql("SET LOCAL TimeZone='UTC'")
         if indexed:
             conn.exec_driver_sql("SET LOCAL enable_seqscan=off")
-        left = end - clock()
-        if left <= 0:
-            raise TimeoutError
-        conn.exec_driver_sql(f"SET LOCAL statement_timeout={max(1, int(min(60, left) * 1000))}")
-        result = conn.execution_options(stream_results=True).execute(text(sql), params or {})
-        for row in result.mappings():
-            if clock() >= end:
+        for offset in count(0, 1000):
+            left = end - clock()
+            if left <= 0:
                 raise TimeoutError
-            yield dict(row)
+            conn.exec_driver_sql(f"SET LOCAL statement_timeout={max(1, int(min(60, left) * 1000))}")
+            query = text(f"SELECT * FROM ({sql}) AS p ORDER BY p LIMIT 1000 OFFSET {offset}")
+            rows = conn.execute(query, params or {}).mappings().all()
+            for row in rows:
+                if clock() >= end:
+                    raise TimeoutError
+                yield dict(row)
+            if len(rows) < 1000:
+                break
 
 
 def fact_bounds(read: Read, relation: str, provider: str) -> Row:
     sql = "SELECT min(captured_at_utc) AS first_observed,max(captured_at_utc) AS last_observed "
-    bounds = list(
-        read(
-            sql + f"FROM {relation} WHERE provider_id=:provider",
-            {"provider": provider},
-            indexed=True,
-        )
-    )[0]
+    query = sql + f"FROM {relation} WHERE provider_id=:provider"
+    bounds = list(read(query, {"provider": provider}, indexed=True))[0]
     return dict(provider_id=provider, row_count=None, row_count_basis=FAILED, **bounds)
 
 
