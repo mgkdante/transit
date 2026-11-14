@@ -2250,8 +2250,10 @@ def build_warm_rollups(
     since_utc: datetime | None = None,
     as_of_utc: datetime | None = None,
 ) -> WarmRollupBuildResult:
-    if as_of_utc is not None and as_of_utc.utcoffset() is None:
-        raise ValueError("as_of_utc must be timezone-aware")
+    if as_of_utc is not None:
+        if as_of_utc.utcoffset() is None:
+            raise ValueError("as_of_utc must be timezone-aware")
+        as_of_utc = as_of_utc.astimezone(UTC)
     if settings is None:
         settings = get_settings()
     open_window_days = getattr(settings, "GOLD_REPORTING_OPEN_WINDOW_DAYS", 10)
@@ -2269,7 +2271,7 @@ def build_warm_rollups(
     if engine is None:
         engine = make_engine(settings)
 
-    now = as_of_utc if as_of_utc is not None else utc_now()
+    build_now = as_of_utc
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
         if as_of_utc is None:
@@ -2289,6 +2291,7 @@ def build_warm_rollups(
         )
     reporting_aggregate_row_counts: dict[str, int] = {}
     completed_stage_receipts: list[WarmRollupStageReceipt] = []
+    now = build_now if build_now is not None else utc_now()
 
     # Check UTC capture cutoffs as well as local dates near DST retention boundaries.
     percentile_lookback_days = PERCENTILE_LOOKBACK_DAYS
@@ -2707,8 +2710,10 @@ def rebuild_warm_rollups(
     confirm: Callable[[WarmRollupRebuildResult], bool] | None = None,
     as_of_utc: datetime | None = None,
 ) -> WarmRollupRebuildResult:
-    if as_of_utc is not None and as_of_utc.utcoffset() is None:
-        raise ValueError("as_of_utc must be timezone-aware")
+    if as_of_utc is not None:
+        if as_of_utc.utcoffset() is None:
+            raise ValueError("as_of_utc must be timezone-aware")
+        as_of_utc = as_of_utc.astimezone(UTC)
     if settings is None:
         settings = get_settings()
     if from_date > to_date:
@@ -2718,7 +2723,8 @@ def rebuild_warm_rollups(
         engine = make_engine(settings)
 
     target_kinds = _resolve_rebuild_kinds(kinds)
-    now = as_of_utc if as_of_utc is not None else utc_now()
+    wall_now = utc_now()
+    now = as_of_utc if as_of_utc is not None else wall_now
 
     with engine.begin() as conn:
         set_daily_warm_transaction_timeouts(conn)
@@ -2766,7 +2772,7 @@ def rebuild_warm_rollups(
             to_date=to_date,
             dry_run=True,
             aborted=False,
-            completed_at_utc=now,
+            completed_at_utc=wall_now,
             deleted_row_counts=deleted_rows,
             deleted_watermark_counts=deleted_watermarks,
         )
@@ -2788,7 +2794,7 @@ def rebuild_warm_rollups(
         to_date=to_date,
         dry_run=False,
         aborted=False,
-        completed_at_utc=now,
+        completed_at_utc=wall_now,
         deleted_row_counts=plan_rows,
         deleted_watermark_counts=plan_watermarks,
     )
@@ -2911,7 +2917,7 @@ def rebuild_warm_rollups(
         to_date=to_date,
         dry_run=False,
         aborted=False,
-        completed_at_utc=now,
+        completed_at_utc=wall_now,
         deleted_row_counts=deleted_rows,
         deleted_watermark_counts=deleted_watermarks,
         rebuilt_day_counts=rebuilt_days,

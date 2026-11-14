@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 import revision_2_seed as seed
@@ -94,6 +95,74 @@ class ClockConnection(FakeConnection):
             self.executed.append(str(statement))
             return ScalarResult(seed.HISTORY_CLOCK)
         return super().execute(statement, params)
+
+
+def test_default_build_samples_python_clock_after_seed_check(monkeypatch):
+    wall = [datetime(2026, 3, 26, 12, 4, 59, tzinfo=UTC)]
+
+    def seeded(*args):
+        wall[0] = datetime(2026, 3, 26, 12, 5, 1, tzinfo=UTC)
+        return True
+
+    monkeypatch.setattr(rollups, "utc_now", lambda: wall[0])
+    monkeypatch.setattr(rollups, "provider_is_seeded", seeded)
+    conn = ClockConnection()
+    rollups.build_warm_rollups("stamp-test", engine=FakeEngine(conn))
+    period = next(p for _, p in conn.calls if p and "closed_before" in p)
+    assert period["closed_before"] == datetime(2026, 3, 26, 12, 5, tzinfo=UTC)
+    calendar = next(p for _, p in conn.calls if p and "retained_since_utc" in p)
+    assert calendar["retained_since_utc"] == wall[0] - timedelta(days=14)
+
+
+@pytest.mark.parametrize("rebuild", [False, True])
+def test_equivalent_stamps_keep_utc_bounds_across_dst(rebuild):
+    local = datetime(2026, 3, 9, 12, tzinfo=ZoneInfo("America/Toronto"))
+    bounds = []
+    for stamp in (local.astimezone(UTC), local):
+        conn = ClockConnection()
+        kwargs = {"engine": FakeEngine(conn), "as_of_utc": stamp}
+        if rebuild:
+            rollups.rebuild_warm_rollups(
+                "stamp-test",
+                from_date=date(2026, 3, 20),
+                to_date=date(2026, 3, 21),
+                kinds=["route_occupancy_band_daily"],
+                **kwargs,
+            )
+        else:
+            rollups.build_warm_rollups("stamp-test", **kwargs)
+        bounds.append(
+            [
+                {k: v.astimezone(UTC) for k, v in p.items() if isinstance(v, datetime)}
+                for _, p in conn.calls
+                if p
+            ]
+        )
+    assert bounds[0] == bounds[1]
+
+
+@pytest.mark.parametrize("mode", ["dry_run", "success", "abort"])
+def test_rebuild_completion_and_preview_use_wall_clock(monkeypatch, mode):
+    wall = datetime(2026, 11, 14, 12, tzinfo=UTC)
+    monkeypatch.setattr(rollups, "utc_now", lambda: wall)
+    previews = []
+
+    def confirm(plan):
+        previews.append(plan.completed_at_utc)
+        return mode == "success"
+
+    result = rollups.rebuild_warm_rollups(
+        "stamp-test",
+        engine=FakeEngine(ClockConnection()),
+        from_date=date(2026, 3, 20),
+        to_date=date(2026, 3, 21),
+        kinds=["route_occupancy_band_daily"],
+        dry_run=mode == "dry_run",
+        confirm=confirm,
+        as_of_utc=datetime(2026, 3, 26, 12, tzinfo=UTC),
+    )
+    assert previews == ([] if mode == "dry_run" else [wall])
+    assert result.completed_at_utc == wall
 
 
 @pytest.mark.parametrize("rebuild", [False, True])
