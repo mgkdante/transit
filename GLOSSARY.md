@@ -3,6 +3,9 @@ A public dashboard that tells riders how reliable their transit service is, from
 
 ## Language
 
+**Edition index**:
+The record that groups a schedule edition's table copies and their proofs, identifies their GTFS file and field names, and states whether its source zip is archived.
+
 **Object digest**:
 The checksum of the stored bytes of one object.
 _Avoid_: content digest, ETag
