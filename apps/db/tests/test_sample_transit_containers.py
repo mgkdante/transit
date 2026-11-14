@@ -255,10 +255,33 @@ def test_output_ceiling_keeps_a_marker_summary_and_nonzero_status(tmp_path, monk
     assert any(r["kind"] == "truncation" for r in rows) and rows[-1]["kind"] == "summary"
 
 
+@pytest.mark.parametrize(
+    "failure", (ValueError("missing project"), subprocess.TimeoutExpired("docker", 1))
+)
+def test_discovery_failure_without_signal_is_preserved(tmp_path, monkeypatch, capsys, failure):
+    sampler, rows = load(), []
+
+    def run(*args, **kwargs):
+        raise failure
+
+    with pytest.raises(type(failure)) as caught:
+        sampler.sample("transit", 1, 60, rows.append, run)
+    assert caught.value is failure
+    assert rows[-1]["outcome"] == 1 and rows[-1]["interrupted"] is False
+    path = tmp_path / "failed.jsonl"
+    monkeypatch.setattr("sys.argv", ["sampler", "--output", str(path)])
+    monkeypatch.setattr(sampler.Control, "run", run)
+    assert sampler.main() == 1
+    assert capsys.readouterr().err == "container sample failed; details withheld\n"
+    terminal = json.loads(path.read_bytes().splitlines()[-1])
+    assert terminal["outcome"] == 1 and terminal["interrupted"] is False
+
+
 SIGNAL_HARNESS = r"""
 import json, os, runpy, signal, subprocess, sys, threading, time
 from pathlib import Path
-test, folder, phase, signum = sys.argv[1:]
+from types import SimpleNamespace
+test, folder, phase, signum, failure = sys.argv[1:]
 folder, signum = Path(folder), int(signum)
 helpers = runpy.run_path(test)
 sampler = helpers['load']()
@@ -266,6 +289,9 @@ base, _ = helpers['fake_run'](sampler)
 real_popen, children = subprocess.Popen, []
 original_run = sampler.Control.run
 def run(self, args, **kwargs):
+    if args[1] == 'ps' and failure != 'none':
+        if failure == 'timeout': raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+        return SimpleNamespace(stdout='')
     if args[1] == phase:
         return original_run(self, args, **kwargs)
     self.check()
@@ -342,19 +368,27 @@ def assert_terminal(path, signum):
 
 @pytest.mark.parametrize("signum", (signal.SIGTERM, signal.SIGINT))
 @pytest.mark.parametrize(
-    "phase",
-    (
-        "ps",
-        "inspect",
-        "stats",
-        "sleep",
-        "summary_prepare",
-        "summary_write",
-        "summary_write_cap",
-        "summary_exit",
-    ),
+    "phase,failure",
+    [
+        (phase, "none")
+        for phase in (
+            "ps",
+            "inspect",
+            "stats",
+            "sleep",
+            "summary_prepare",
+            "summary_write",
+            "summary_write_cap",
+            "summary_exit",
+        )
+    ]
+    + [
+        (phase, failure)
+        for phase in ("summary_write", "summary_exit")
+        for failure in ("missing", "timeout")
+    ],
 )
-def test_sample_cli_returns_interrupt_status(tmp_path, signum, phase):
+def test_sample_cli_returns_interrupt_status(tmp_path, signum, phase, failure):
     fake = "import os,signal,sys,time;from pathlib import Path\n"
     fake += "if os.name!='nt': signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
     fake += "Path(sys.argv[1]).write_text(str(os.getpid()));time.sleep(30)\n"
@@ -367,6 +401,7 @@ def test_sample_cli_returns_interrupt_status(tmp_path, signum, phase):
         str(tmp_path),
         phase,
         str(int(signum)),
+        failure,
     ]
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:

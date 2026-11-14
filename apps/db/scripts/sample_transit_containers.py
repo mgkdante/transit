@@ -279,6 +279,7 @@ def sample(
     if not 0 < duration <= 86400 or not math.isfinite(interval) or interval < 60:
         raise ValueError("duration must be at most 86400 seconds; interval at least 60")
     started, status, slot = clock(), 1, 0
+    pending: Exception | None = None
     history: dict[str, dict[str, Any]] = {
         s: {"samples": 0, "errors": 0, "restarts": 0, "values": {}} for s in SERVICES
     }
@@ -298,12 +299,16 @@ def sample(
             status = 128 + (exc.args[0] if exc.args else signal.SIGINT)
         except OutputLimit:
             status = 2
+        except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            pending = exc
         finally:
             terminal = finish(history, duration, interval, emit, clock() - started, status, control)
             status = reconcile(control, emit, terminal, status)
     if control.signal and terminal["outcome"] != 128 + control.signal:
         with control:
             status = reconcile(control, emit, terminal, status)
+    if pending is not None and not control.signal:
+        raise pending
     return 128 + control.signal if control.signal else status
 
 
