@@ -258,6 +258,7 @@ def test_cleanup_preserves_dependent_objects(replay, engine):
                 conn.exec_driver_sql("CREATE VIEW public.replay_dependency AS SELECT now()")
         with engine.connect() as conn:
             assert conn.exec_driver_sql("SELECT to_regclass('public.replay_dependency')").scalar()
+            assert definitions(conn) == original
     finally:
         with engine.begin() as conn:
             conn.exec_driver_sql("DROP VIEW IF EXISTS public.replay_dependency")
@@ -293,3 +294,15 @@ def test_other_noncanonical_states_are_refused(replay, engine, state):
                 conn.exec_driver_sql(definition)
             if state == "schema":
                 conn.exec_driver_sql("DROP SCHEMA replay_clock")
+
+
+def test_new_pinned_connection_rechecks_server_identity(replay, engine, monkeypatch):
+    with engine.connect() as conn:
+        original = definitions(conn)
+    monkeypatch.setenv("PGOPTIONS", "-c role=pg_read_all_data")
+    with pytest.raises(ReplayDatabaseRefused, match="Server database/role"):
+        with pinned_replay_engine(replay, STAMP):
+            pytest.fail("new pinned connection accepted an unapproved role")
+    with engine.connect() as conn:
+        assert definitions(conn) == original
+        assert conn.exec_driver_sql("SELECT to_regnamespace('replay_clock')").scalar() is None
