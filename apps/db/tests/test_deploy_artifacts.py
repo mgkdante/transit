@@ -712,7 +712,11 @@ def test_compose_requires_explicit_storage_selectors_and_blanks_remote_targets()
 def test_compose_worker_environment_covers_pipeline_settings_only() -> None:
     services = _compose()["services"]
     worker_keys = _environment_keys(services["worker"])
-    expected = (set(Settings.model_fields) - HEALTH_ONLY_SETTINGS) | LIBPQ_ENVIRONMENT_KEYS
+    # A lane packet that adds a real field must revisit compose.
+    nested_settings_groups = {"LIGHTER_STORAGE"}
+    expected = (
+        set(Settings.model_fields) - HEALTH_ONLY_SETTINGS - nested_settings_groups
+    ) | LIBPQ_ENVIRONMENT_KEYS
     assert worker_keys == expected
     assert (worker_keys - {"DATABASE_URL"} - LIBPQ_ENVIRONMENT_KEYS) <= set(Settings.model_fields)
     assert "STM_API_KEY" in worker_keys

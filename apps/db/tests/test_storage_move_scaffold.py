@@ -45,25 +45,33 @@ NAMES = [
     "Alerts and provenance",
 ]
 runner = CliRunner()
-HELP = dict(
-    zip(
-        [
-            "history-probe-pack",
-            "history-seal",
-            "list-pipeline-switches",
-            "show-pipeline-switch",
-            "set-pipeline-switch",
+# All 50 commands from origin/main at 0fe2e936, before dormant lane registration.
+COMMAND_STRUCTURE_DIGEST = "8617137e5e0917bf54a3dbc66c47e76efa1f7b2c305261b5e5f58c9cd492d877"
+
+
+def command_snapshot(command):
+    return {
+        "name": command.name,
+        "help": command.help,
+        "short_help": command.short_help,
+        "hidden": command.hidden,
+        "params": [
+            {
+                "name": param.name,
+                "opts": param.opts,
+                "secondary_opts": param.secondary_opts,
+                "type": param.type.name,
+                "choices": repr(getattr(param.type, "choices", None)),
+                "required": param.required,
+                "default": repr(param.default),
+                "nargs": param.nargs,
+                "multiple": getattr(param, "multiple", False),
+                "is_flag": getattr(param, "is_flag", False),
+                "help": getattr(param, "help", None),
+            }
+            for param in command.params
         ],
-        [
-            "906d488f6140df6855d4d9945c0efff0b134ebe0a30de89b20c6ba364e58c1f9",
-            "c67bc3162de1fc73739115a524704e980532a395ae04c87aed2814a7bb49d291",
-            "8c788e87e2c541d0553a5d2e82d39f85693e8314f6aca8291154d9bbdee5d34e",
-            "8bf6714ee3551773f456edc066e1e0e2fbee05c5f6e392849a2a9f32323e0f89",
-            "b7316b3a0885c233a4b3e2ce657c8326a10afbe5ceaefc07ed5b62d511646f68",
-        ],
-        strict=True,
-    )
-)
+    }
 
 
 def registry():
@@ -96,11 +104,11 @@ def test_empty_lane_invocation_performs_no_work(lane, monkeypatch):
 
 
 def test_existing_cli_commands_keep_their_registration_and_help():
-    assert set(get_command(app).commands) - set(LANES) == set(BASELINE)
-    for name, digest in HELP.items():
-        result = runner.invoke(app, [name, "--help"])
-        assert result.exit_code == 0
-        assert hashlib.sha256(result.output.encode()).hexdigest() == digest
+    commands = get_command(app).commands
+    assert set(commands) - set(LANES) == set(BASELINE)
+    snapshot = {name: command_snapshot(commands[name]) for name in BASELINE}
+    canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+    assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == COMMAND_STRUCTURE_DIGEST
 
 
 NO_IO_SCRIPT = """
