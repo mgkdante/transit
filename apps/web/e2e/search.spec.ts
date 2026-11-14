@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { navPillCopy } from '../src/lib/i18n/messages';
 import { SURFACE_NAV } from '../src/lib/content/nav';
@@ -91,6 +91,58 @@ for (const locale of PUBLISHED_LOCALES) {
 		await expect(
 			page.getByRole('button', { name: new RegExp(`^${literal(stop.name)}`) }),
 		).toBeVisible();
+	});
+
+	// Fills the header field until hydration keeps the value and the row answers.
+	async function headerRow(page: Page, scope: 'all' | 'route', query: string, row: string) {
+		const result = page
+			.getByRole('group', { name: nav.searchAria[scope] })
+			.getByRole('button', { name: new RegExp(`^${literal(row)}`) });
+		await expect(async () => {
+			await page.getByRole('searchbox', { name: nav.searchAria[scope] }).fill(query);
+			await expect(result).toBeVisible({ timeout: 1_000 });
+		}).toPass();
+		return result;
+	}
+	const lineRow = (entry: typeof line) => `${nav.searchKind.route} ${entry.short} ${entry.long}`;
+
+	test(`${locale}: the header search opens a line page from the home page`, async ({ page }, {
+		project,
+	}) => {
+		test.skip(project.name !== 'desktop', 'the header search box shows from 1024px');
+		await page.goto(localizeHref('/', locale));
+		await (await headerRow(page, 'all', line.long, lineRow(line))).click();
+		await expect(page).toHaveURL(
+			(url) => url.pathname === localizeHref(`/lines/${line.id}`, locale),
+		);
+	});
+
+	test(`${locale}: on the map the header search keeps map focus`, async ({ page }, { project }) => {
+		test.skip(project.name !== 'desktop', 'the header search box shows from 1024px');
+		await page.goto(localizeHref(map, locale));
+		await (await headerRow(page, 'all', line.long, lineRow(line))).click();
+		await expect(page).toHaveURL(
+			(url) =>
+				url.pathname === localizeHref(map, locale) &&
+				url.searchParams.get('focus') === `route:${line.id}`,
+		);
+	});
+
+	test(`${locale}: from a line's reliability tab another line opens on the same tab and period`, async ({
+		page,
+	}, { project }) => {
+		test.skip(project.name !== 'desktop', 'the header search box shows from 1024px');
+		const other = fixture('routes-index.json').routes[1];
+		await page.goto(localizeHref(`/lines/${line.id}?tab=reliability&grain=month`, locale));
+		const row = await headerRow(page, 'route', other.short, lineRow(other));
+		const grain = new URL(page.url()).searchParams.get('grain');
+		await row.click();
+		await expect(page).toHaveURL(
+			(url) =>
+				url.pathname === localizeHref(`/lines/${other.id}`, locale) &&
+				url.searchParams.get('tab') === 'reliability' &&
+				url.searchParams.get('grain') === grain,
+		);
 	});
 
 	test(`${locale}: below 1024px the header search opens the search page`, async ({ page }, {

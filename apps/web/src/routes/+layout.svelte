@@ -80,7 +80,7 @@
 	import { NAV_GROUPS, visibleNav, YESID_HOUSE_LINK, mainLandmarkLabel } from '#lib/content/nav.ts';
 	import { legalCopy } from '#lib/features/legal/legal.copy.ts';
 	import {
-		chromeSearchResultHref,
+		searchHitHref,
 		searchTransit,
 		scopeForPath,
 		type ChromeSearchResult,
@@ -418,7 +418,7 @@
 		const resetFocus = resetFocusAfterNavigation();
 		await goto(
 			localizeHref(
-				chromeSearchResultHref(result, searchScope, new URLSearchParams(page.url.search)),
+				searchHitHref(result, { path: seoPath, params: new URLSearchParams(page.url.search) }),
 				locale,
 				data.providerId,
 			),

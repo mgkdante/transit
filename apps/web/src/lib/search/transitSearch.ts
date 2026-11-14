@@ -157,7 +157,7 @@ function headerVehicles(
 				kind: 'vehicle',
 				id: vehicle.id,
 				label: vehicle.id,
-				meta: vehicle.route ? `Route ${lineLabel(vehicle.route, routes ?? [])}` : 'Live bus',
+				meta: vehicle.route ? `Line ${lineLabel(vehicle.route, routes ?? [])}` : 'Live bus',
 				priority: 20,
 			}),
 		);
@@ -230,18 +230,42 @@ export function scopeForPath(delocalizedPath: string): ChromeSearchScope {
 	return 'all';
 }
 
-export function chromeSearchResultHref(
-	result: ChromeSearchResult,
-	scope: ChromeSearchScope,
-	currentSearchParams?: URLSearchParams,
+/** Where the reader searches from: the delocalized path and its query. */
+export interface SearchOrigin {
+	readonly path: string;
+	readonly params: URLSearchParams;
+}
+
+/** The tab and period a line or stop page reads from its URL. */
+const RECORD_VIEW_PARAMS = ['tab', 'grain', 'from', 'to'] as const;
+
+/**
+ * The record a result opens. On the map a result keeps map focus. From a line
+ * page another line opens on the same tab and period; the same for stops.
+ */
+export function searchHitHref(
+	hit: Pick<ChromeSearchResult, 'kind' | 'id'> &
+		Partial<Pick<ChromeSearchResult, 'label' | 'lat' | 'lon' | 'precision'>>,
+	from: SearchOrigin,
 ): string {
-	if (scope === 'route' && result.kind === 'route') {
-		return routeFor({ kind: 'line', id: result.id });
+	const record =
+		from.path === '/map'
+			? null
+			: hit.kind === 'route'
+				? { href: routeFor({ kind: 'line', id: hit.id }), page: '/lines/' }
+				: hit.kind === 'stop'
+					? { href: routeFor({ kind: 'stop', id: hit.id }), page: '/stop/' }
+					: null;
+	if (!record) return chromeSearchHref(hit, from.params, from.path === '/map' ? 'map' : 'all');
+	const view = new URLSearchParams();
+	if (from.path.startsWith(record.page)) {
+		for (const key of RECORD_VIEW_PARAMS) {
+			const value = from.params.get(key);
+			if (value != null) view.set(key, value);
+		}
 	}
-	if (scope === 'stop' && result.kind === 'stop') {
-		return routeFor({ kind: 'stop', id: result.id });
-	}
-	return chromeSearchHref(result, currentSearchParams, scope);
+	const search = view.toString();
+	return search ? `${record.href}?${search}` : record.href;
 }
 
 export function chromeSearchHref(

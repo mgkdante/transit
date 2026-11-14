@@ -53,7 +53,7 @@ export const navPillCopy = defineCopy({
 			all: 'Search a line, stop, or address…',
 		},
 		searchAria: { route: 'Search a line', stop: 'Search a stop', all: 'Search the network' },
-		searchKind: { route: 'Route', stop: 'Stop', address: 'Address', vehicle: 'Vehicle' },
+		searchKind: { route: 'Line', stop: 'Stop', address: 'Address', vehicle: 'Vehicle' },
 
 		searchCollectionNotice:
 			'Your searches are sent to our server and the Government of Canada Geo.ca service.',
