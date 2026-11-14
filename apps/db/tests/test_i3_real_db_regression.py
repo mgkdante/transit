@@ -299,6 +299,17 @@ def test_entity_extension_attaches_to_surviving_row(conn) -> None:
     }
 
 
+def test_redirect_keeps_first_child_values_and_adds_new_indexes(conn) -> None:
+    _load(conn, SNAP_IDS[0], [ALERT_A])
+    _load(conn, SNAP_IDS[1], [{**ALERT_A, "stops": ["changed-0", "changed-1", "S102"]}])
+
+    assert _entities(conn) == [
+        (SNAP_IDS[0], 0, 0, "51", "S100"),
+        (SNAP_IDS[0], 0, 1, "51", "S101"),
+        (SNAP_IDS[0], 0, 2, "51", "S102"),
+    ]
+
+
 def test_empty_payload_does_not_supersede(conn) -> None:
     _load(conn, SNAP_IDS[0], [ALERT_A, ALERT_B_V1])
     _load(conn, SNAP_IDS[1], [])
