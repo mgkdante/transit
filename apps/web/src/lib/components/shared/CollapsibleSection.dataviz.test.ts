@@ -45,10 +45,12 @@ describe('CollapsibleSection data-visualization interaction boundary', () => {
 		expect(trigger).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('still toggles when plain card-body prose is clicked', async () => {
+	it('keeps plain card-body prose open until the heading is clicked', async () => {
 		const { getByTestId, trigger } = renderHarness();
 
 		await fireEvent.click(getByTestId('plain-card-prose'));
+		expect(trigger).toHaveAttribute('aria-expanded', 'true');
+		await fireEvent.click(trigger);
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});
 });
