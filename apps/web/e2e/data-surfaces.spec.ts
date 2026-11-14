@@ -251,8 +251,7 @@ test('the status page stacks its coverage table on phones and says when data is 
 test('rankings name lines by number in both languages', async ({ page }) => {
 	for (const lang of PUBLISHED_LOCALES) {
 		await page.goto(localizeHref('/hotspots', lang));
-		const headline = page.locator('[data-slot="hotspots-verdict"]').getByRole('link');
-		await expect(headline).toContainText('1 · Confederation');
+		await expect(page.locator('[data-slot="hotspots-verdict"]')).toHaveCount(0);
 		await page.locator('[data-slot="hotspot-section"]').first().scrollIntoViewIfNeeded();
 		const unindexed = page.getByRole('button', {
 			name: `${lang === 'fr' ? 'Ligne' : 'Line'} Lansdowne`,

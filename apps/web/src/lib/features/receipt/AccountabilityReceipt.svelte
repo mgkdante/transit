@@ -481,7 +481,7 @@
 										footer={[{ label: t.issuedLabel, value: formatDateKey(r.date, locale) }]}
 									>
 										<div class="receipt-frame" data-slot="receipt-frame">
-											{#if dayVerdict}
+											{#if selectedClosed && dayVerdict}
 												<p
 													class="receipt-day-verdict"
 													data-slot="receipt-day-verdict"
