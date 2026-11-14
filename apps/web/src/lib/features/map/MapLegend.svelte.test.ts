@@ -12,13 +12,28 @@ describe('MapLegend', () => {
 		(locale) => {
 			const view = render(MapLegend, { props: { locale } });
 			const list = view.getByRole('list', { name: copy[locale].legend.title });
+			expect(view.getAllByRole('list')).toEqual([list]);
 			const entries = within(list).getAllByRole('listitem');
+			expect(Array.from(list.children)).toEqual(entries);
+			expect(entries.map((entry) => entry.getAttribute('data-legend-group'))).toEqual([
+				...STATUS_CODES.map(() => 'status'),
+				'symbols',
+				'symbols',
+				'symbols',
+			]);
+			expect(entries.map((entry) => entry.getAttribute('data-legend-entry'))).toEqual([
+				...STATUS_CODES.map(() => 'status'),
+				'heading',
+				'stop',
+				'not-reporting',
+			]);
 			const labels = STATUS_CODES.map((code) => STATUS_LABELS[locale][code]);
 
 			expect(entries.slice(0, STATUS_CODES.length).map((entry) => entry.textContent)).toEqual(
 				STATUS_CODES.map((code, index) => expect.stringContaining(labels[index])),
 			);
 			for (const [index, code] of STATUS_CODES.entries()) {
+				expect(entries[index]).toHaveAttribute('data-status', code);
 				expect(entries[index]).toHaveTextContent(STATUS_GLYPH[code]);
 			}
 

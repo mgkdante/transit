@@ -367,7 +367,7 @@ for (const provider of read('providers').providers) {
 			const lead = page.locator('.map-head [data-slot="map-lead"]');
 			if (geometry.width < 1024) {
 				await expect(lead).toBeHidden();
-				await page.getByTestId('map-filter-pill').click();
+				await page.getByTestId('map-legend-button').click();
 				await expect(page.locator('[data-slot="map-legend-lead"]:visible')).toHaveCount(1);
 				return;
 			}

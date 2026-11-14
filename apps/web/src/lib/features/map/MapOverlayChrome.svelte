@@ -13,6 +13,7 @@
 	import MapNearMeControl from './MapNearMeControl.svelte';
 	import MapNorthControl from './MapNorthControl.svelte';
 	import MapFilterPill from './MapFilterPill.svelte';
+	import MapLegendControl from './MapLegendControl.svelte';
 	import MapFreshness from './MapFreshness.svelte';
 	import MapFeedStallBanner from './MapFeedStallBanner.svelte';
 	import MapHoverPeek from './MapHoverPeek.svelte';
@@ -76,6 +77,9 @@
 
 	let desktopControlsMounted = $state(false);
 	let headHeight = $state(0);
+	let panelHeight = $state(0);
+	let controlsOpen = $state(false);
+	let legendOpen = $state(false);
 	$effect(() => {
 		if (isDesktop) desktopControlsMounted = true;
 	});
@@ -115,12 +119,37 @@
 />
 
 {#if isDesktop || desktopControlsMounted}
-	<div class="map-overlay map-filter-panel" style:--map-head-height="{headHeight}px">
-		{@render controls(undefined)}
+	<div
+		class="map-overlay map-controls-column"
+		style:--map-head-height="{headHeight}px"
+		style:--map-panel-height="{panelHeight}px"
+	>
+		<div class="map-filter-panel" bind:clientHeight={panelHeight}>
+			{@render controls(undefined)}
+		</div>
+		<MapLegendControl {locale} presentation="desktop" />
 	</div>
 {/if}
 
-<MapFilterPill store={filtersStore} {locale} hidden={detailOpen} {controls} />
+<MapFilterPill
+	store={filtersStore}
+	{locale}
+	hidden={detailOpen}
+	{controls}
+	bind:open={controlsOpen}
+	onopenchange={(open) => {
+		if (open) legendOpen = false;
+	}}
+/>
+<MapLegendControl
+	{locale}
+	presentation="phone"
+	hidden={detailOpen}
+	bind:open={legendOpen}
+	onopenchange={(open) => {
+		if (open) controlsOpen = false;
+	}}
+/>
 
 <MapFeedStallBanner {presentation} />
 
@@ -135,9 +164,32 @@
 		position: absolute;
 		z-index: var(--z-map-overlay);
 	}
-	.map-filter-panel {
+	.map-controls-column {
+		--legend-reserve: min(18rem, 32dvh);
+		--column-top: calc(var(--chrome-offset) + max(4rem, var(--map-head-height, 0px) + 0.75rem));
+		--column-room: calc(100dvh - var(--column-top) - 3rem);
+		--map-legend-body-room: max(
+			0px,
+			calc(var(--column-room) - var(--map-panel-height) - var(--size-tap-min) - var(--spacing) * 4)
+		);
+		display: flex;
+		flex-direction: column;
+		gap: calc(var(--spacing) * 3);
+		width: 300px;
+		max-height: var(--column-room);
 		top: calc(var(--chrome-offset) + max(4rem, var(--map-head-height, 0px) + 0.75rem));
 		left: calc(var(--app-left-rail-offset, 0rem) + 1rem);
+	}
+
+	.map-filter-panel {
+		min-height: 0;
+		flex: none;
+	}
+	.map-controls-column:has(:global(.map-legend-header[aria-expanded='false'])) {
+		--legend-reserve: var(--size-tap-min);
+	}
+	.map-controls-column :global(.map-filters) {
+		max-height: calc(var(--column-room) - var(--legend-reserve) - var(--spacing) * 4);
 	}
 
 	.map-peek {
@@ -167,7 +219,7 @@
 	}
 
 	@media (--desktop-max) {
-		.map-filter-panel {
+		.map-controls-column {
 			display: none;
 		}
 		.map-peek {

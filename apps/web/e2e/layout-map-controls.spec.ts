@@ -35,46 +35,94 @@ for (const provider of ['stm', 'octranspo'])
 		});
 	}
 
-// The legend opens first in every layout; on a laptop it must leave the Markers group in view.
 for (const locale of ['en', 'fr'])
-	test(`${locale} map legend opens first and stays compact at 1280x800 @layout`, async ({
-		page,
-	}) => {
-		const width = page.viewportSize()!.width;
-		if (width === 1280) await page.setViewportSize({ width: 1280, height: 800 });
+	test(`${locale} map legend has its own aligned surface @layout`, async ({ page }) => {
 		await page.goto(`${locale === 'fr' ? '/fr' : ''}/map`, { waitUntil: 'networkidle' });
-		if (width < 1024) await page.getByTestId('map-filter-pill').click();
-		const panel = page.locator('.map-filters:visible');
-		const first = panel.locator('[data-filter-group]').first();
-		await expect(first).toHaveAttribute('data-filter-group', 'legend');
-		await expect(first.locator('.mf-group-trigger')).toHaveAttribute('aria-expanded', 'true');
-		await expect(first.getByRole('list')).toBeVisible();
-		// The height budget is measured at the laptop size; other widths check placement above.
-		if (width !== 1280) return;
-		const measured = await panel.evaluate((root) => {
-			const body = root.querySelector('.mf-body')!;
-			const legend = root.querySelector('[data-filter-group="legend"]')!;
-			const markers = root.querySelector('[data-filter-group="markers"]')!;
-			const rows = [
-				markers.querySelector('.mf-group-trigger')!,
-				...markers.querySelectorAll('[role="checkbox"]'),
-			].slice(0, 3);
+		const phone = page.viewportSize()!.width < 1024;
+		const name = locale === 'fr' ? 'Légende' : 'Legend';
+		const card = phone
+			? page.locator('[data-slot="map-legend-sheet"]')
+			: page.locator('[data-slot="map-legend-card"]');
+		if (phone) {
+			const fab = page.getByTestId('map-legend-button');
+			const button = (await fab.boundingBox())!;
+			const controls = (await page.getByTestId('map-filter-pill').boundingBox())!;
+			expect(button.width).toBeGreaterThanOrEqual(44);
+			expect(button.height).toBeGreaterThanOrEqual(44);
+			expect(Math.abs(button.x - controls.x)).toBeLessThanOrEqual(1);
+			expect(controls.y - button.y - button.height).toBeCloseTo(10, 0);
+			for (const other of await page
+				.locator('.map-near-toggle, [data-slot="map-north"], .maplibregl-ctrl-attrib')
+				.all()) {
+				if (!(await other.isVisible())) continue;
+				const box = (await other.boundingBox())!;
+				expect(
+					button.x + button.width <= box.x ||
+						box.x + box.width <= button.x ||
+						button.y + button.height <= box.y ||
+						box.y + box.height <= button.y,
+				).toBe(true);
+			}
+			await fab.click();
+			await expect(fab).toHaveAttribute('aria-expanded', 'true');
+		} else {
+			const panel = (await page.locator('.map-filter-panel .map-filters').boundingBox())!;
+			const box = (await card.boundingBox())!;
+			expect(box.y).toBeGreaterThan(panel.y + panel.height);
+			expect(Math.abs(box.x - panel.x)).toBeLessThanOrEqual(1);
+			expect(Math.abs(box.width - panel.width)).toBeLessThanOrEqual(1);
+		}
+		await expect(card.getByRole('list', { name })).toBeVisible();
+		const geometry = await card.evaluate((root) => {
+			const box = root.getBoundingClientRect();
+			const rows = [...root.querySelectorAll('[data-legend-entry]')];
 			return {
-				legendHeight: legend.getBoundingClientRect().height,
-				scrollTop: body.scrollTop,
-				bodyBottom: body.getBoundingClientRect().bottom,
-				rowBottoms: rows.map((row) => row.getBoundingClientRect().bottom),
-				clipped: [...legend.querySelectorAll('li, p, [data-slot="status-badge"]')].filter(
-					(el) => el.scrollWidth > el.clientWidth + 1,
-				).length,
-				overflow: legend.scrollWidth > legend.clientWidth + 1,
+				x: box.x,
+				right: box.right,
+				top: box.top,
+				bottom: box.bottom,
+				centres: rows.map((row) => {
+					const mark = row.querySelector('.mf-legend-mark')!.getBoundingClientRect();
+					return mark.x + mark.width / 2;
+				}),
+				labels: rows.map(
+					(row) => row.querySelector('[data-slot="map-legend-label"]')!.getBoundingClientRect().x,
+				),
+				glyphs: [...root.querySelectorAll('.mf-legend-glyph')].map(
+					(el) => el.getBoundingClientRect().x,
+				),
+				clipped: [root, ...rows].some((row) => row.scrollWidth > row.clientWidth + 1),
 			};
 		});
-		expect(measured.legendHeight).toBeLessThanOrEqual(170);
-		expect(measured.scrollTop).toBe(0);
-		expect(measured.rowBottoms).toHaveLength(3);
-		for (const bottom of measured.rowBottoms)
-			expect(bottom).toBeLessThanOrEqual(measured.bodyBottom);
-		expect(measured.clipped).toBe(0);
-		expect(measured.overflow).toBe(false);
+		for (const value of geometry.centres)
+			expect(Math.abs(value - geometry.centres[0])).toBeLessThanOrEqual(1);
+		for (const value of geometry.labels)
+			expect(Math.abs(value - geometry.labels[0])).toBeLessThanOrEqual(1);
+		for (const value of geometry.glyphs)
+			expect(Math.abs(value - geometry.glyphs[0])).toBeLessThanOrEqual(1);
+		expect(geometry.clipped).toBe(false);
+		expect(geometry.x).toBeGreaterThanOrEqual(0);
+		expect(geometry.right).toBeLessThanOrEqual(page.viewportSize()!.width);
+		expect(geometry.top).toBeGreaterThanOrEqual(0);
+		expect(geometry.bottom).toBeLessThanOrEqual(page.viewportSize()!.height);
+		expect(
+			(
+				await new AxeBuilder({ page })
+					.include(phone ? '[data-slot="map-legend-sheet"]' : '[data-slot="map-legend-card"]')
+					.analyze()
+			).violations,
+		).toEqual([]);
+		if (phone) {
+			await page.getByTestId('map-legend-button').click();
+			await expect(card).toBeHidden();
+			await page.getByTestId('map-filter-pill').click();
+			await page.getByTestId('map-legend-button').click();
+			await expect(page.getByTestId('map-filter-drawer')).toBeHidden();
+			await expect(card).toBeVisible();
+		} else {
+			await card.getByRole('button', { name }).click();
+			await expect(card.getByRole('button', { name })).toHaveAttribute('aria-expanded', 'false');
+			await expect(card.getByRole('list')).toBeHidden();
+			await expect.poll(async () => (await card.boundingBox())!.height).toBeLessThanOrEqual(46);
+		}
 	});

@@ -2,19 +2,12 @@
 	import { Button } from '@yesid/ui/button';
 	import type { Snippet } from 'svelte';
 	import GaugeIcon from '@lucide/svelte/icons/gauge';
-	import InfoIcon from '@lucide/svelte/icons/info';
 	import MapPinnedIcon from '@lucide/svelte/icons/map-pinned';
 	import RouteIcon from '@lucide/svelte/icons/route';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import UsersRoundIcon from '@lucide/svelte/icons/users-round';
 
-	export type MapFilterGroupKind =
-		| 'legend'
-		| 'markers'
-		| 'alerts'
-		| 'active'
-		| 'status'
-		| 'crowding';
+	export type MapFilterGroupKind = 'markers' | 'alerts' | 'active' | 'status' | 'crowding';
 
 	interface Props {
 		kind: MapFilterGroupKind;
@@ -43,9 +36,7 @@
 		onclick={ontoggle}
 	>
 		<span class="mf-group-badge" data-icon={kind} aria-hidden="true">
-			{#if kind === 'legend'}
-				<InfoIcon size={14} strokeWidth={2.25} />
-			{:else if kind === 'markers'}
+			{#if kind === 'markers'}
 				<MapPinnedIcon size={14} strokeWidth={2.25} />
 			{:else if kind === 'alerts'}
 				<TriangleAlertIcon size={14} strokeWidth={2.25} />

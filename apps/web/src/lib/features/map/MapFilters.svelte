@@ -30,7 +30,6 @@
 	import MapFilterGroup from './MapFilterGroup.svelte';
 	import type { MapFilterGroupKind } from './MapFilterGroup.svelte';
 	import MapFilterRail from './MapFilterRail.svelte';
-	import MapLegend from './MapLegend.svelte';
 	import MarkerGlyph from './MarkerGlyph.svelte';
 	import { copy as MAP_COPY } from './map.copy';
 
@@ -66,7 +65,6 @@
 	let rootEl = $state<HTMLDivElement | null>(null);
 	let filterOpen = $state(true);
 	const groupOpen = $state<Record<MapFilterGroupKind, boolean>>({
-		legend: true,
 		markers: true,
 		alerts: true,
 		active: false,
@@ -298,14 +296,6 @@
 
 		<Separator decorative />
 		<div class="mf-body">
-			<MapFilterGroup
-				kind="legend"
-				label={t.legend.title}
-				open={groupOpen.legend}
-				{presentation}
-				ontoggle={() => toggleGroup('legend')}
-				><MapLegend {locale} lead={presentation === 'drawer'} /></MapFilterGroup
-			>
 			<MapFilterGroup
 				kind="markers"
 				label={t.legendTitle}
