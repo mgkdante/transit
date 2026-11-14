@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import os
@@ -9,8 +10,6 @@ from pathlib import Path
 from subprocess import PIPE, Popen
 
 import pytest
-
-
 from test_rescue_fact_day import fact_source  # noqa: F401
 
 SCRIPT = Path(__file__).parents[1] / "scripts/measure_fact_day.py"
@@ -81,7 +80,11 @@ def test_fact_measurement_reports_all_codec_order_and_row_group_candidates(tmp_p
 
 def test_fact_measurement_reads_full_query_results_and_counts_actual_bytes(tmp_path):
     for table in measure.rescue.SCHEMAS:
-        fixture_csv(tmp_path, table)
+        path = fixture_csv(tmp_path, table)
+        header, row = path.read_bytes().splitlines(keepends=True)
+        payload = header + row * 2056 + row.replace(b",42,1,", b",42,2,", 1)
+        path.write_bytes(payload)
+        assert measure.rescue.compress(path)["csv_bytes"] == len(payload)
     with measure.local_connection(tmp_path) as conn:
         for table in measure.rescue.SCHEMAS:
             measure.load_csv(conn, tmp_path, table)
@@ -89,7 +92,15 @@ def test_fact_measurement_reads_full_query_results_and_counts_actual_bytes(tmp_p
         assert len(result) == 3
         assert all(r["sha256"] == r["warm_sha256"] for r in result)
         assert result[2]["trip_outcome"] == "empty_string"
-        assert result[2]["rows"] == 1
+        assert result[2]["rows"] == 2057
+        expected = (
+            '["sample",42,1,20261101,"2026-11-01","2026-11-01 05:00:00+00",'
+            '"2026-11-01 05:00:00.123456+00",null,"",null,null,null,null,null,null,'
+            "0,null,null,0,null]\n"
+        )
+        expected = expected.encode()
+        expected = expected * 2056 + expected.replace(b",42,1,", b",42,2,", 1)
+        assert result[2]["sha256"] == hashlib.sha256(expected).hexdigest()
         conn.execute("UPDATE fact_trip_delay_snapshot SET trip_id=NULL")
         assert measure.queries(conn)[2]["trip_outcome"] == "null_only"
         conn.execute("DELETE FROM fact_trip_delay_snapshot")
@@ -174,12 +185,49 @@ sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
 
 
 def test_occupancy_family_sample_detects_one_changed_value(tmp_path):
-    left, right = tmp_path / "left", tmp_path / "right"
-    left.write_bytes(b'["sample","2026-11-01","route",1]\n')
-    right.write_bytes(b'["sample","2026-11-01","route",2]\n')
-    result = measure.compare(left, right, ["provider", "date", "route", "count"])
-    assert result["status"] == "different" and result["first_field"] == "count"
-    assert "route" not in result["safe_key_sha256"]
+    for table in measure.rescue.SCHEMAS:
+        fixture_csv(tmp_path, table)
+    params = dict(
+        p="sample",
+        start="2026-11-01T00:00:00Z",
+        end="2026-11-02T00:00:00Z",
+        day="2026-11-01",
+        key=20261101,
+        tz="America/Toronto",
+        built="2026-11-03T00:00:00Z",
+    )
+    left, right, reports = tmp_path / "left", tmp_path / "right", []
+    with measure.local_connection(tmp_path) as conn:
+        for table in measure.rescue.SCHEMAS:
+            measure.load_csv(conn, tmp_path, table)
+        conn.execute("UPDATE fact_vehicle_snapshot SET route_id='route',occupancy_status=2")
+        conn.execute(
+            "INSERT INTO fact_vehicle_snapshot SELECT * REPLACE "
+            "(captured_at_utc+INTERVAL '2 hours' AS captured_at_utc) FROM fact_vehicle_snapshot"
+        )
+        conn.execute("DELETE FROM fact_trip_delay_snapshot")
+        conn.execute(
+            "INSERT INTO fact_trip_delay_snapshot BY NAME SELECT 'sample' AS provider_id, "
+            "'route' AS route_id,2 AS occupancy_status,delay AS delay_seconds, "
+            "'2026-11-01 06:00:00+00'::timestamptz AS captured_at_utc "
+            "FROM (VALUES (-3601),(-3600),(3600),(3601)) AS delays(delay)"
+        )
+        crowd = measure.execute_family(conn, "crowding", params, local=True).fetchall()
+        assert len(crowd) == 1 and crowd[0][4:7] == (2, 0, 0)
+        for kind in ("route", "hourly", "stop", "crowding"):
+            cursor = measure.execute_family(conn, kind, params, local=True)
+            fields = [c[0] for c in cursor.description]
+            assert len(fields) == len(set(fields))
+            if kind != "hourly":
+                continue
+            measure.write_result(cursor, left)
+            for ordinal, field in enumerate(("few_seats_count", "standing_count")):
+                rows = [json.loads(row) for row in left.read_bytes().splitlines()]
+                rows[ordinal][fields.index(field)] += 1
+                right.write_bytes(b"".join(measure.rescue.encoded(row) + b"\n" for row in rows))
+                reports.append(measure.compare(left, right, fields, key_count=4))
+    assert [r["first_field"] for r in reports] == ["few_seats_count", "standing_count"]
+    assert reports[0]["safe_key_sha256"] != reports[1]["safe_key_sha256"]
 
 
 def test_fact_measurement_closes_database_before_parquet_work(measurement_db, monkeypatch):
@@ -208,24 +256,29 @@ def test_fact_measurement_cleans_scratch_and_redacts_failure(monkeypatch, capsys
         raise RuntimeError("postgresql://secret:password@host/private")
 
     monkeypatch.setattr(measure, "read_source", broken)
-    assert (
-        measure.main(
-            ["--provider", "sample", "--date", "2026-11-01", "--not-after", "2099-11-14T05:45:00Z"],
-            worker=True,
-        )
-        == 1
-    )
+    args = "--provider sample --date 2026-11-01 --not-after 2099-11-14T05:45:00Z".split()
+    assert measure.main(args, worker=True) == 1
     assert "secret" not in capsys.readouterr().out
     assert folders and not folders[0].exists()
 
 
-def test_fact_measurement_refuses_unclosed_day_before_copy(tmp_path, monkeypatch):
-    monkeypatch.setattr(measure.rescue, "copy_fact_table", lambda *a, **kw: pytest.fail("COPY"))
-    args = measure.options(
-        ["--provider", "sample", "--date", "2099-11-01", "--not-after", "2099-11-14T05:45:00Z"]
+def test_fact_measurement_refuses_unclosed_day_before_copy(monkeypatch, capsys):
+    from contextlib import nullcontext
+    from types import SimpleNamespace as NS
+
+    seen, now = [], measure.datetime(2026, 11, 2, 5, tzinfo=measure.UTC)
+    db = NS(
+        execute=lambda *a: NS(fetchone=lambda: seen.append(now) or (now, "test")),
+        transaction=lambda: nullcontext(),
+        prove_visibility=lambda: pytest.fail("source read before closure"),
     )
-    with pytest.raises(ValueError, match="day_not_closed"):
-        measure.rescue.bounds(args, measure.datetime(2099, 11, 2, 5, tzinfo=measure.UTC))
+    monkeypatch.setattr(measure.rescue, "connect", lambda: nullcontext(db))
+    monkeypatch.setattr(measure.rescue, "guarded", lambda *a: nullcontext(db))
+    monkeypatch.setattr(measure.rescue, "copy_fact_table", lambda *a, **kw: pytest.fail("COPY"))
+    args = "--provider sample --date 2026-11-01 --not-after 2099-11-14T05:45:00Z".split()
+    assert measure.main(args, worker=True) == 1
+    assert seen == [now]
+    assert json.loads(capsys.readouterr().out)["reason"] == "measurement_failed"
 
 
 @pytest.fixture
@@ -255,13 +308,14 @@ def measurement_db(real_db_engine, fact_source, monkeypatch):  # noqa: F811
                 if table == measure.TRIP
                 else ",CASE WHEN n%2=0 THEN NULL ELSE 'stop' END"
             )
+            occupancy = "n%6" if table == measure.TRIP else "n%8"
             conn.execute(
                 text(f"""INSERT INTO gold.{table}
               (provider_id,realtime_snapshot_id,entity_index,snapshot_date_key,snapshot_local_date,
                feed_timestamp_utc,captured_at_utc,route_id,occupancy_status{extra})
               SELECT provider_id,realtime_snapshot_id,100+n,20261101,'2026-11-01',
                 feed_timestamp_utc,CAST(:at AS timestamptz)+(4+n%3)*INTERVAL '1 hour',
-                CASE WHEN n%3=0 THEN NULL ELSE 'route' END,n%8{value}
+                CASE WHEN n IN (0,1,6,7,9) OR n%3<>0 THEN 'route' END,{occupancy}{value}
               FROM gold.{table} CROSS JOIN generate_series(0,14) AS n
               WHERE provider_id=:p AND entity_index=1"""),
                 dict(p=provider, at=start),
