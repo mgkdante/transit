@@ -47,7 +47,7 @@
 	import { historyRangeRequestFromSearchParams } from '#lib/v1/history/rangeResource.svelte.ts';
 	import { CollapsibleSection, useSectionJump, TocNav, type TocEntry } from '@yesid/ui/brand';
 	import SectionsToggle from '#lib/components/shared/SectionsToggle.svelte';
-	import { ArticleKeywords, ArticleSectionStack } from '#lib/components/layout/index.ts';
+	import { ArticleSectionStack } from '#lib/components/layout/index.ts';
 	import { EdgeState } from '#lib/components/edge/index.ts';
 	import { StateNotice } from '@yesid/ui/feedback';
 	import { VerdictBanner } from '#lib/components/brand/index.ts';
@@ -552,7 +552,6 @@
 			heading={t.rail.toc}
 		/>
 	</div>
-	<ArticleKeywords label={t.article.tagsAria} keywords={t.article.tags} />
 {/snippet}
 {#snippet railCell()}
 	<SurfaceRail
@@ -590,16 +589,6 @@
 			{#snippet actions()}
 				<div class="network-feed-health">
 					<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
-					{#if presentation.networkFeedAgeText != null}
-						<span
-							class="network-feed-age"
-							data-slot="feed-age"
-							aria-label={`${t.feedAge.a11yPrefix} ${presentation.networkFeedAgeText}`}
-						>
-							<span class="network-feed-age-label">{t.feedAge.label}</span>
-							<span class="network-feed-age-value">{presentation.networkFeedAgeText}</span>
-						</span>
-					{/if}
 					<ConformanceBadge conformance={provenance.data?.conformance} {locale} />
 				</div>
 			{/snippet}
@@ -776,21 +765,5 @@
 	}
 	.network-daily-change__mark {
 		line-height: 1;
-	}
-	.network-feed-age {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		font-family: var(--font-mono);
-		font-size: var(--text-small);
-		color: var(--muted-foreground);
-	}
-	.network-feed-age-label {
-		letter-spacing: 1px;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-	.network-feed-age-value {
-		color: var(--foreground);
 	}
 </style>

@@ -525,7 +525,7 @@ describe('NetworkSurface live cards (S9C)', () => {
 		expect(tile.querySelector('[data-slot="absent-value"]')).toBeNull();
 	});
 
-	it('gives the header sole ownership of snapshot freshness and keeps worker age distinct', () => {
+	it('the network header shows the live stamp and no feed age or keyword row', () => {
 		network.feed_freshness_s = 80;
 		const { container } = render(NetworkSurface);
 		const stamps = container.querySelectorAll('[data-slot="freshness-stamp"]');
@@ -533,7 +533,8 @@ describe('NetworkSurface live cards (S9C)', () => {
 		expect(stamps[0].closest('[data-slot="article-header"]')).not.toBeNull();
 		expect(stamps[0]).toHaveAttribute('data-age-seconds', '20');
 		expect(container.querySelectorAll(`time[datetime="${network.generated_utc}"]`)).toHaveLength(1);
-		expect(container.querySelector('[data-slot="feed-age"]')).toHaveTextContent('2 minutes ago');
+		expect(container.querySelector('[data-slot="feed-age"]')).toBeNull();
+		expect(container.querySelector('[data-slot="article-keywords"]')).toBeNull();
 	});
 
 	it('keeps a stale retained snapshot visible with a named refresh failure', () => {
@@ -544,32 +545,9 @@ describe('NetworkSurface live cards (S9C)', () => {
 		const stamp = container.querySelector('[data-slot="freshness-stamp"]');
 		expect(stamp).toHaveAttribute('data-stale', 'true');
 		expect(stamp).toHaveAttribute('data-degraded', 'true');
-		expect(stamp).toHaveTextContent(copy.snapshotRefreshFailed);
-		expect(stamp).toHaveTextContent('stale');
+		expect(stamp).toHaveTextContent('Live · updated 2 minutes ago · not current');
 		expect(stamp?.querySelector('time')).toHaveAttribute('datetime', network.generated_utc);
 		expect(container.querySelector('[data-slot="terminal-panel"]')).not.toBeNull();
-	});
-
-	it('surfaces the worker-feed-age chip near the FreshnessStamp', () => {
-		render(NetworkSurface);
-		const chip = screen.getByText('FEED').closest('[data-slot="feed-age"]');
-		expect(chip).not.toBeNull();
-		expect((chip as HTMLElement).getAttribute('aria-label')).toContain('Worker feed updated');
-	});
-
-	it('ticks the feed age between polls by adding the live shared-clock delta', () => {
-		live.ageSeconds = 40;
-		render(NetworkSurface);
-		const chip = screen.getByText('FEED').closest('[data-slot="feed-age"]') as HTMLElement;
-		const value = chip.querySelector('.network-feed-age-value')?.textContent ?? '';
-		expect(value).toMatch(/minute/i);
-		expect(value).not.toMatch(/20 seconds/i);
-	});
-
-	it('keeps the feed age null (no chip) when feed_freshness_s is null', () => {
-		network.feed_freshness_s = null;
-		render(NetworkSurface);
-		expect(document.querySelector('[data-slot="feed-age"]')).toBeNull();
 	});
 
 	it('does not understate worker feed age when the retained snapshot age is unknown', () => {

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { HistoricAvailabilityIndexSchema, ManifestSchema } from './schemas/index';
 import { formatDateKey } from '#lib/utils/time.ts';
-import { recordStamp, stampDate, stampText } from './stamp';
+import { liveStamp, recordStamp, stampDate, stampText } from './stamp';
 import { stampCopy } from './stamp.copy';
 
 const manifest = ManifestSchema.parse({
@@ -103,4 +103,56 @@ it.each(['en', 'fr'] as const)('uses the network current year for dates in %s', 
 	] as const) {
 		expect(stampDate(date, locale, manifest.tz)).toBe(formatDateKey(date, locale, includeYear));
 	}
+});
+
+it.each([
+	['en', 'Live · updated 30 seconds ago'],
+	['fr', 'En direct · mis à jour il y a 30 secondes'],
+] as const)('prints a current live stamp in %s', (locale, text) => {
+	expect(stampText(liveStamp({ ageSeconds: 30 }), locale, undefined)).toBe(text);
+});
+
+it.each([
+	[
+		'says live data is not current when it is behind',
+		{ ageSeconds: 240, isStale: true },
+		'Live · updated 4 minutes ago · not current',
+		'En direct · mis à jour il y a 4 minutes · pas à jour',
+	],
+	[
+		'says the update time is unknown',
+		{ ageSeconds: null, isStale: true },
+		'Live · update time unknown',
+		'En direct · heure de mise à jour inconnue',
+	],
+	[
+		'says the feed is not responding',
+		{ ageSeconds: null, notResponding: true },
+		'Live · not responding',
+		'En direct · ne répond pas',
+	],
+	[
+		'names alerts as the subject',
+		{ ageSeconds: 720, subject: 'alerts' },
+		'Live alerts · updated 12 minutes ago',
+		'Avis en direct · mis à jour il y a 12 minutes',
+	],
+	[
+		'keeps a relative age past one day',
+		{ ageSeconds: 172800 },
+		'Live · updated 2 days ago',
+		'En direct · mis à jour avant-hier',
+	],
+] as const)('%s', (_name, input, en, fr) => {
+	expect(stampText(liveStamp(input), 'en', undefined)).toBe(en);
+	expect(stampText(liveStamp(input), 'fr', undefined)).toBe(fr);
+});
+it('reads the state from a page presentation', () => {
+	for (const [facts, state] of [
+		[{ ageSeconds: 30, notResponding: true }, 'not-responding'],
+		[{ ageSeconds: null, isStale: true }, 'unknown'],
+		[{ ageSeconds: 30, isStale: true }, 'behind'],
+		[{ ageSeconds: 30, degraded: true }, 'current'],
+	] as const)
+		expect(liveStamp({ ...facts }).state).toBe(state);
 });

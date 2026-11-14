@@ -16,9 +16,9 @@ const frenchMessage = AlertMessageProvenanceSchema.parse({
 
 describe('MapDetailAlerts', () => {
 	it.each([
-		['en', 'Alerts checked 5 minutes ago'],
-		['fr', 'Alertes vérifiées il y a 5 minutes'],
-	] as const)('shows the separate alert age in %s', (locale, note) => {
+		['en', 'Live alerts · updated 5 minutes ago'],
+		['fr', 'Avis en direct · mis à jour il y a 5 minutes'],
+	] as const)('shows the alerts live stamp in %s', (locale, note) => {
 		render(MapDetailAlerts, {
 			props: { alerts: [], alertsAgeSeconds: 300, locale, t: MAP_SELECTION_DETAIL_COPY[locale] },
 		});
@@ -28,7 +28,7 @@ describe('MapDetailAlerts', () => {
 		render(MapDetailAlerts, {
 			props: { alerts: [], alertsAgeSeconds, locale: 'en', t: MAP_SELECTION_DETAIL_COPY.en },
 		});
-		expect(screen.queryByText(/Alerts checked/)).not.toBeInTheDocument();
+		expect(document.querySelector('[data-subject="alerts"]')).not.toBeInTheDocument();
 	});
 	it.each(['en', 'fr'] as const)(
 		'keeps an out-of-date empty alert list neutral in %s',

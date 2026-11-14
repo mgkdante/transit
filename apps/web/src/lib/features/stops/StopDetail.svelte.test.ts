@@ -497,6 +497,7 @@ describe('StopDetail article contract', () => {
 			};
 			const { container } = render(StopDetail, { props: { id: '57191' } });
 			expect(screen.getByText(alertUnavailableCopy[locale].body('OC Transpo'))).toBeVisible();
+			expect(container.querySelector('[data-subject="alerts"]')).toBeNull();
 			expect(screen.getByRole('link', { name: alertUnavailableCopy[locale].link })).toHaveAttribute(
 				'href',
 				stopDetailNav.page.data.provider.alert_links![locale],
@@ -507,10 +508,16 @@ describe('StopDetail article contract', () => {
 		},
 	);
 
-	it('renders the seeded identity, article head and tabs, recovering a name from an id-only seed', async () => {
+	it('the departures and alerts stamps name their subject and retain the seeded identity', async () => {
 		const { container, rerender } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Seeded station name' } },
 		});
+		expect(
+			container.querySelector('[data-source="alerts"] [data-subject="alerts"] time'),
+		).toHaveTextContent('Live alerts');
+		expect(
+			container.querySelector('[data-source="departures"] [data-subject="data"] time'),
+		).toHaveTextContent('Live ·');
 		expect(stopHistoryHarness.createLiveStore.mock.calls[0]?.[2]).toEqual({
 			families: ['departures'],
 		});

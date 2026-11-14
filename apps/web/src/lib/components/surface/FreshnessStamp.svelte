@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { stampText, type RecordStamp } from '#lib/v1/stamp.ts';
+	import { liveStamp, stampText, type LiveStamp, type RecordStamp } from '#lib/v1/stamp.ts';
 	import { cn } from '#lib/utils/index.ts';
 	import { type Locale } from '#lib/i18n/index.ts';
 	import type { StampPresentation } from '#lib/v1/live/livePresentation.ts';
@@ -10,7 +10,8 @@
 
 	export interface FreshnessStampProps {
 		presentation?: StampPresentation;
-		stamp?: RecordStamp;
+		stamp?: LiveStamp | RecordStamp;
+		subject?: 'data' | 'alerts';
 		timeZone?: string;
 		variant?: Variant;
 		locale: Locale;
@@ -21,6 +22,7 @@
 	let {
 		presentation,
 		stamp,
+		subject = 'data',
 		timeZone,
 		variant = 'live',
 		locale,
@@ -41,36 +43,47 @@
 	const displayLabel = $derived(
 		label ?? presentation?.label ?? (variant === 'live' ? t.live : t.updated),
 	);
+	const live = $derived(
+		stamp?.form === 'live'
+			? stamp
+			: presentation
+				? liveStamp({ ...presentation, subject, notResponding: presentation.ageLabel != null })
+				: null,
+	);
 </script>
 
-{#if variant === 'record' && stamp}
+{#if variant === 'record' && stamp?.form === 'record'}
 	{@const text = stampText(stamp, locale, timeZone)}
 	{#if text}<span
 			class={cn('freshness-stamp', className)}
 			data-slot="freshness-stamp"
 			data-form="record"><time datetime={stamp.publishedOn ?? undefined}>{text}</time></span
 		>{/if}
-{:else if variant === 'live' && presentation}
+{:else if variant === 'live' && live}
 	<span
 		class={cn('freshness-stamp freshness-stamp--live', className)}
 		data-slot="freshness-stamp"
 		data-variant="live"
 		data-form="live"
-		data-stale={presentation.isStale}
-		data-degraded={presentation.degraded ? 'true' : undefined}
-		data-age-seconds={presentation.ageSeconds ?? undefined}
+		data-subject={live.subject}
+		data-state={live.state}
+		data-stale={live.state === 'behind' ||
+			live.state === 'not-responding' ||
+			(presentation?.isStale ?? false)}
+		data-degraded={presentation?.degraded ? 'true' : undefined}
+		data-age-seconds={live.ageSeconds ?? undefined}
 	>
 		<StatusDot
-			color={presentation.isStale || presentation.degraded ? 'caution' : 'on_time'}
-			label={displayLabel}
+			color={live.state === 'unknown'
+				? 'unknown'
+				: live.state === 'current' && !presentation?.degraded
+					? 'on_time'
+					: 'caution'}
+			aria-hidden="true"
 		/>
-		<span class="freshness-stamp-label">{displayLabel}</span>
-		<time class="freshness-stamp-age" datetime={presentation.generatedUtc ?? undefined}
-			>{presentation.ageText}</time
+		<time class="freshness-stamp-age" datetime={live.generatedUtc ?? undefined}
+			>{stampText(live, locale, timeZone)}</time
 		>
-		{#if presentation.isStale}
-			<span class="freshness-stamp-stale">· {t.stale}</span>
-		{/if}
 	</span>
 {:else if presentation}
 	<span
@@ -98,24 +111,20 @@
 		font-size: var(--text-small);
 		color: var(--foreground);
 	}
-	.freshness-stamp--live .freshness-stamp-label {
-		letter-spacing: 1px;
-		text-transform: uppercase;
-		color: color-mix(in srgb, var(--accent-text) 70%, var(--foreground));
-	}
 	.freshness-stamp--updated .freshness-stamp-label {
 		letter-spacing: 1px;
 		text-transform: uppercase;
 		color: var(--muted-foreground);
 	}
+	.freshness-stamp--live .freshness-stamp-age {
+		min-inline-size: 0;
+		max-inline-size: 100%;
+	}
 	.freshness-stamp-age {
 		color: var(--muted-foreground);
 	}
-	.freshness-stamp--updated .freshness-stamp-age {
+	.freshness-stamp--updated .freshness-stamp-age,
+	.freshness-stamp--live .freshness-stamp-age {
 		color: var(--foreground);
-	}
-	.freshness-stamp-stale {
-		white-space: nowrap;
-		color: var(--dataviz-status-late);
 	}
 </style>

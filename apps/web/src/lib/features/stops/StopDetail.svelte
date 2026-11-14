@@ -303,13 +303,13 @@
 	$effect(() => clock.subscribe());
 </script>
 
-{#snippet liveStatus(source: LiveStore, family: LiveFamily, label: string)}
+{#snippet liveStatus(source: LiveStore, family: LiveFamily)}
 	{@const health = source.familyStates[family].health}
 	<div class="stop-report" data-source={family}>
 		<FreshnessStamp
 			variant="live"
 			presentation={feedPresentation(source.familyStates[family], locale)}
-			{label}
+			subject={family === 'alerts' ? 'alerts' : 'data'}
 			{locale}
 			class="stop-report-stamp"
 		/>
@@ -422,7 +422,7 @@
 				<SectionLabel text={t.report.alerts} variant="metric" />
 				<ResourceBoundary resource={alertReport} lang={locale}>
 					{#snippet children(_report)}
-						{@render liveStatus(alertLive, 'alerts', t.report.alerts)}
+						{@render liveStatus(alertLive, 'alerts')}
 						{#if stop.data == null}<StateNotice
 								title={t.alertState.limited}
 								presentation="silo"
@@ -514,7 +514,7 @@
 						<ResourceBoundary resource={departureReport} lang={locale}>
 							{#snippet children(_report)}
 								<div class="stop-next">
-									{@render liveStatus(live, 'departures', t.report.departures)}
+									{@render liveStatus(live, 'departures')}
 									{#if departures?.length === 0}
 										<StateNotice
 											title={t.next.none}
@@ -714,9 +714,6 @@
 	:global(.stop-report-stamp) {
 		max-width: 100%;
 		flex-wrap: wrap;
-	}
-	:global(.stop-report-stamp > *) {
-		white-space: nowrap;
 	}
 	.stop-report-note {
 		margin: 0;

@@ -66,6 +66,46 @@ for (const lang of PUBLISHED_LOCALES)
 		}
 	});
 
+for (const lang of PUBLISHED_LOCALES)
+	test(lang + ': live pages show only the live and record stamp forms', async ({ page }) => {
+		const manifest = fixture('manifest.json');
+		const line = fixture('routes-index.json').routes[0].id;
+		const trip = Object.keys(trips)[0];
+		const stopName = fixture('stops-index.json').stops[0].name;
+		const patterns = (['data', 'alerts'] as const).flatMap((subject) =>
+			(['current', 'behind', 'unknown', 'not-responding'] as const).map((state) =>
+				stampCopy[lang].live(subject, state, '\0').split('\0').join('.+'),
+			),
+		);
+		const pattern = new RegExp('^(?:' + patterns.join('|') + ')$');
+		let liveCount = 0;
+		for (const path of [
+			'/',
+			'/map',
+			'/network',
+			'/lines/' + line,
+			'/stop/' + stop,
+			'/trip/' + trip,
+			'/search?q=' + encodeURIComponent(stopName),
+		]) {
+			await page.goto(localizeHref(path, lang, manifest.provider));
+			await page.waitForLoadState('networkidle');
+			const stamps = page.locator('[data-slot="freshness-stamp"]');
+			for (const stamp of await stamps.all()) {
+				await expect(stamp).toHaveAttribute('data-form', /^(live|record)$/);
+				if ((await stamp.getAttribute('data-form')) === 'live') {
+					await expect(stamp.locator('time')).not.toHaveCSS('white-space', 'nowrap');
+					await expect(stamp.locator('time')).toHaveText(pattern);
+					liveCount++;
+				}
+			}
+			if (path === '/network') await expect(page.locator('[data-slot="feed-age"]')).toHaveCount(0);
+			if (path === '/network' || path.startsWith('/trip/'))
+				await expect(page.locator('[data-slot="article-keywords"]')).toHaveCount(0);
+		}
+		expect(liveCount).toBeGreaterThan(0);
+	});
+
 test.use({ bypassCSP: true });
 
 test.beforeEach(async ({ page }) => {
