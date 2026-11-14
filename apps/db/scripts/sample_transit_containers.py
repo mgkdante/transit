@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -34,6 +35,111 @@ FIELDS = {
     "cpu_period": ".HostConfig.CpuPeriod",
 }
 INSPECT = "{" + ",".join(f'"{key}":{{{{json ({value})}}}}' for key, value in FIELDS.items()) + "}"
+
+
+class OutputLimit(RuntimeError):
+    pass
+
+
+class Jsonl:
+    def __init__(self, out: Any, limit: int) -> None:
+        if not 128 <= limit <= 64 * 1024 * 1024:
+            raise ValueError("output limit must be between 128 and 67108864 bytes")
+        self.out, self.limit, self.used, self.truncated = out, limit, 0, False
+        self.finished = False
+
+    def append(self, row: dict[str, Any]) -> None:
+        data = (json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        self.out.write(data)
+        self.out.flush()
+        os.fsync(self.out.fileno())
+        self.used += len(data)
+
+    def __call__(self, row: dict[str, Any]) -> None:
+        if self.finished:
+            raise OutputLimit
+        size = len((json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8"))
+        summary = row["kind"] == "summary"
+        if self.used + size > self.limit - (0 if summary else 128):
+            if not self.truncated:
+                self.append(dict(kind="truncation", limit_bytes=self.limit))
+                self.truncated = True
+            if not summary:
+                raise OutputLimit
+            row = dict(kind="summary", truncated=True)
+        self.append(row)
+        self.finished = summary
+
+
+class Control:
+    def __init__(
+        self, deadline: float, clock: Callable[[], float], run: Callable[..., Any] | None
+    ) -> None:
+        self.deadline, self.clock, self.injected, self.signal = deadline, clock, run, 0
+
+    def __enter__(self) -> "Control":
+        self.previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+        for s in self.previous:
+            # Never unwind Popen construction; polling owns cancellation and reaping.
+            signal.signal(s, lambda number, frame: setattr(self, "signal", number))
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        for s, handler in self.previous.items():
+            signal.signal(s, handler)
+
+    def check(self) -> None:
+        if self.signal:
+            raise KeyboardInterrupt(self.signal)
+
+    def run(self, args: list[str], **kwargs: Any) -> Any:
+        self.check()
+        timeout = min(10, self.deadline - self.clock())
+        if timeout <= 0:
+            raise TimeoutError("sample deadline")
+        if self.injected is not None:
+            result = self.injected(args, **(kwargs | dict(timeout=timeout)))
+            self.check()
+            if self.clock() >= self.deadline:
+                raise TimeoutError("sample deadline")
+            return result
+        end = min(self.deadline, self.clock() + timeout)
+        child = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            while True:
+                self.check()
+                left = end - self.clock()
+                if left <= 0:
+                    raise subprocess.TimeoutExpired(args, timeout)
+                try:
+                    stdout, _ = child.communicate(timeout=min(0.1, left))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            self.check()
+            if self.clock() >= end:
+                raise subprocess.TimeoutExpired(args, timeout)
+            if child.returncode:
+                raise subprocess.CalledProcessError(child.returncode, args)
+            return subprocess.CompletedProcess(args, child.returncode, stdout)
+        finally:
+            if child.poll() is None:
+                try:
+                    child.terminate()
+                    child.wait(timeout=0.2)
+                except (subprocess.TimeoutExpired, OSError):
+                    child.kill()
+            child.wait()
+            for pipe in (child.stdout, child.stderr):
+                if pipe:
+                    pipe.close()
+
+    def sleep(self, seconds: float) -> None:
+        end = min(self.deadline, self.clock() + seconds)
+        while self.clock() < end:
+            self.check()
+            time.sleep(max(0, min(0.1, end - self.clock())))
+        self.check()
 
 
 def command(verb: str, project: str, ids: list[str]) -> list[str]:
@@ -76,7 +182,17 @@ def discover(project: str, run: Callable[..., Any]) -> dict[str, dict[str, Any]]
     ids = call("ps", project, [], run)
     if not ids or len(set(ids)) != len(ids):
         raise ValueError("missing or ambiguous project")
-    rows = [json.loads(row) for row in call("inspect", project, ids, run)]
+    rows = [
+        {k: v for k, v in json.loads(row).items() if k in FIELDS}
+        for row in call("inspect", project, ids, run)
+    ]
+    integers = {"restarts", "memory_limit", "nano_cpus", "cpu_quota", "cpu_period"}
+    if any(
+        type(v) is not (int if k in integers else bool if k == "oom" else str)
+        for row in rows
+        for k, v in row.items()
+    ):
+        raise ValueError("invalid inspect field type")
     if (
         len(rows) != len(SERVICES)
         or {r["id"] for r in rows} != set(ids)
@@ -105,6 +221,11 @@ def units(value: str) -> float | None:
 
 
 def metrics(row: dict[str, str]) -> dict[str, float | None]:
+    if any(
+        not isinstance(row.get(k, ""), str)
+        for k in ("MemUsage", "NetIO", "BlockIO", "CPUPerc", "PIDs")
+    ):
+        raise ValueError("invalid stats field type")
     values: dict[str, float | None] = {}
     for field, names in (
         ("MemUsage", ("memory_bytes", "memory_limit_bytes")),
@@ -118,7 +239,7 @@ def metrics(row: dict[str, str]) -> dict[str, float | None]:
     for field, name in (("CPUPerc", "cpu_percent"), ("PIDs", "pids")):
         raw = row.get(field, "").removesuffix("%")
         values[name] = float(raw) if re.fullmatch(r"\d+(\.\d+)?", raw) else None
-    return values
+    return {k: v if v is None or math.isfinite(v) else None for k, v in values.items()}
 
 
 def describe(values: list[float]) -> dict[str, float] | None:
@@ -137,40 +258,61 @@ def sample(
     duration: float,
     interval: float,
     emit: Callable[[dict[str, Any]], None],
-    run: Callable[..., Any] = subprocess.run,
+    run: Callable[..., Any] | None = None,
     clock: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-) -> bool:
+    sleep: Callable[[float], None] | None = None,
+) -> int:
     if not 0 < duration <= 86400 or not math.isfinite(interval) or interval < 60:
         raise ValueError("duration must be at most 86400 seconds; interval at least 60")
-    current = discover(project, run)
-    started, interrupted, slot = clock(), False, 0
+    started, status, slot = clock(), 1, 0
     history: dict[str, dict[str, Any]] = {
         s: {"samples": 0, "errors": 0, "restarts": 0, "values": {}} for s in SERVICES
     }
-    try:
-        while clock() - started < duration:
-            slot = tick(project, current, history, started, slot, interval, emit, run, clock)
-            sleep(max(0, min(duration, slot * interval) - (clock() - started)))
-    except KeyboardInterrupt:
-        interrupted = True
-    finally:
-        for summary in history.values():
-            summary["metrics"] = {k: describe(v) for k, v in summary.pop("values").items()}
-            summary["sample_fraction"] = summary["samples"] / math.ceil(duration / interval)
-        emit(
-            {
-                "kind": "summary",
-                "elapsed_seconds": clock() - started,
-                "interrupted": interrupted,
-                "services": history,
-                "expected_samples": math.ceil(duration / interval),
-                "percentiles": "nearest rank",
-                "memory_source": "docker stats MemUsage; not RSS",
-                "units": "rounded Docker byte counters, CPU percent (may exceed 100), PID count",
-            }
-        )
-    return interrupted
+    with Control(started + duration, clock, run) as control:
+        try:
+            current = discover(project, control.run)
+            while clock() - started < duration:
+                slot = tick(
+                    project, current, history, started, slot, interval, emit, control.run, clock
+                )
+                (sleep or control.sleep)(
+                    max(0, min(duration, slot * interval) - (clock() - started))
+                )
+                control.check()
+            status = 0
+        except KeyboardInterrupt as exc:
+            status = 128 + (exc.args[0] if exc.args else signal.SIGINT)
+        except OutputLimit:
+            status = 2
+        finally:
+            finish(history, duration, interval, emit, clock() - started, status)
+    return status
+
+
+def finish(
+    history: dict[str, Any],
+    duration: float,
+    interval: float,
+    emit: Callable[[dict[str, Any]], None],
+    elapsed: float,
+    status: int,
+) -> None:
+    for summary in history.values():
+        summary["metrics"] = {k: describe(v) for k, v in summary.pop("values").items()}
+        summary["sample_fraction"] = summary["samples"] / math.ceil(duration / interval)
+    emit(
+        {
+            "kind": "summary",
+            "elapsed_seconds": elapsed,
+            "interrupted": status >= 128,
+            "outcome": status,
+            "services": history,
+            "expected_samples": math.ceil(duration / interval),
+            "percentiles": "nearest rank",
+            "memory_source": "docker stats MemUsage; not RSS",
+            "units": "rounded Docker byte counters, CPU percent (may exceed 100), PID count",
+        }
+    )
 
 
 def record(
@@ -192,7 +334,6 @@ def record(
                 kind="sample",
                 service=service,
                 container=current[service],
-                raw=row,
                 metrics=values,
                 source="docker stats MemUsage",
                 **at,
@@ -248,20 +389,18 @@ def main() -> int:
     parser.add_argument("--duration-seconds", type=float, default=86400)
     parser.add_argument("--interval-seconds", type=float, default=60)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--max-output-bytes", type=int, default=64 * 1024 * 1024)
     args = parser.parse_args()
     try:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        with args.output.open("x", encoding="utf-8", newline="\n") as out:
-
-            def emit(row: dict[str, Any]) -> None:
-                out.write(json.dumps(row, sort_keys=True) + "\n")
-                out.flush()
-                os.fsync(out.fileno())
-
-            interrupted = sample(
+        with args.output.open("xb") as out:
+            emit = Jsonl(out, args.max_output_bytes)
+            status = sample(
                 args.compose_project, args.duration_seconds, args.interval_seconds, emit
             )
-        return 130 if interrupted else 0
+        return status or (2 if emit.truncated else 0)
+    except OutputLimit:
+        return 2
     except KeyboardInterrupt:
         return 130
     except (ValueError, OSError, subprocess.SubprocessError):

@@ -1,6 +1,11 @@
 import importlib.util
 import json
+import os
+import signal
 import subprocess
+import sys
+import time
+from contextlib import suppress
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,22 +28,11 @@ def test_command_builder_only_allows_three_read_only_verbs():
         assert isinstance(args, list) and args[:2] == ["docker", verb]
         assert "--format" in args
         assert "Env" not in " ".join(args)
-    for verb in (
-        "exec",
-        "logs",
-        "events",
-        "run",
-        "start",
-        "stop",
-        "restart",
-        "update",
-        "compose",
-        "prune",
-        "--help",
-        "stats;stop",
-    ):
+    for (
+        verb
+    ) in "exec logs events run start stop restart update compose prune --help stats;stop".split():
         with pytest.raises(ValueError):
-            sampler.command(verb, "transit", ["abc"])
+            sampler.command(verb, "transit", ["a" * 64])
     assert "--no-stream" in sampler.command("stats", "transit", ["a" * 64])
     assert "label=com.docker.compose.project=transit" in sampler.command("ps", "transit", [])
 
@@ -48,7 +42,9 @@ def fake_run(sampler, *, missing=False, wrong=False, interrupt=False):
 
     def run(args, **kwargs):
         calls.append(args)
-        assert kwargs == {"capture_output": True, "text": True, "check": True, "timeout": 10}
+        assert set(kwargs) == {"capture_output", "text", "check", "timeout"}
+        assert kwargs["capture_output"] and kwargs["text"] and kwargs["check"]
+        assert 0 < kwargs["timeout"] <= 10
         if interrupt and args[1] == "stats":
             raise KeyboardInterrupt
         if args[1] == "ps":
@@ -73,21 +69,15 @@ def fake_run(sampler, *, missing=False, wrong=False, interrupt=False):
                 for i, service in enumerate(sampler.SERVICES)
             ]
             return SimpleNamespace(stdout="\n".join(json.dumps(r) for r in rows))
-        return SimpleNamespace(
-            stdout="\n".join(
-                json.dumps(
-                    {
-                        "ID": container_id,
-                        "CPUPerc": "125%",
-                        "MemUsage": "10MiB / 1GiB",
-                        "NetIO": "2kB / 3kB",
-                        "BlockIO": "4kB / 5kB",
-                        "PIDs": "2",
-                    }
-                )
-                for container_id in args[args.index("--no-trunc") + 1 :]
-            )
+        values = dict(
+            CPUPerc="125%",
+            MemUsage="10MiB / 1GiB",
+            NetIO="2kB / 3kB",
+            BlockIO="4kB / 5kB",
+            PIDs="2",
         )
+        ids = args[args.index("--no-trunc") + 1 :]
+        return SimpleNamespace(stdout="\n".join(json.dumps(dict(ID=id, **values)) for id in ids))
 
     return run, calls
 
@@ -177,21 +167,6 @@ def test_sample_rejects_ambiguous_or_unrelated_containers():
         sampler.discover("transit", run)
 
 
-@pytest.mark.parametrize("stage", ("result", "discovery"))
-def test_sample_cli_returns_interrupt_status(tmp_path, monkeypatch, stage):
-    sampler = load()
-    monkeypatch.setattr("sys.argv", ["sampler", "--output", str(tmp_path / "samples.jsonl")])
-    if stage == "result":
-        monkeypatch.setattr(sampler, "sample", lambda *args: True)
-    else:
-
-        def interrupt(*args):
-            raise KeyboardInterrupt
-
-        monkeypatch.setattr(sampler, "discover", interrupt)
-    assert sampler.main() == 130
-
-
 def test_sample_rejects_option_ids_and_withholds_process_errors():
     sampler, rows, elapsed = load(), [], [0.0]
     for ids in ([], ["--all"], ["a; stop"]):
@@ -222,3 +197,156 @@ def test_sample_rejects_option_ids_and_withholds_process_errors():
     )
     assert rows[-1]["services"]["postgres"]["errors"] == 1
     assert "private-" not in json.dumps(rows)
+
+
+def test_extra_stats_and_inspect_fields_are_never_emitted():
+    sampler, rows, elapsed = load(), [], [0.0]
+    base, _ = fake_run(sampler)
+
+    def run(args, **kwargs):
+        result = base(args, **kwargs)
+        if args[1] != "ps":
+            result.stdout = "\n".join(
+                json.dumps(dict(json.loads(line), extra="EXTRA_SENTINEL"))
+                for line in result.stdout.splitlines()
+            )
+        return result
+
+    sampler.sample(
+        "transit",
+        60,
+        60,
+        rows.append,
+        run,
+        lambda: elapsed[0],
+        lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds),
+    )
+    assert "EXTRA_SENTINEL" not in json.dumps(rows)
+    assert all("raw" not in row for row in rows)
+
+
+def test_discovery_uses_the_same_deadline_and_reports_all_elapsed_time():
+    sampler, rows, elapsed, timeouts = load(), [], [0.0], []
+
+    def run(args, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        elapsed[0] += kwargs["timeout"]
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    with pytest.raises((TimeoutError, subprocess.TimeoutExpired)):
+        sampler.sample("transit", 1, 60, rows.append, run, lambda: elapsed[0], lambda _: None)
+    assert timeouts == [1] and elapsed[0] == 1
+    assert rows[-1]["kind"] == "summary" and rows[-1]["elapsed_seconds"] == 1
+
+
+@pytest.mark.parametrize("limit", (128, 256))
+def test_output_ceiling_keeps_a_marker_summary_and_nonzero_status(tmp_path, monkeypatch, limit):
+    sampler = load()
+    path = tmp_path / "bounded.jsonl"
+    monkeypatch.setattr(
+        "sys.argv", ["sampler", "--output", str(path), "--max-output-bytes", str(limit)]
+    )
+
+    run, _ = fake_run(sampler)
+    monkeypatch.setattr(sampler.Control, "run", lambda self, args, **kwargs: run(args, **kwargs))
+    assert sampler.main() == 2
+    rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+    assert path.stat().st_size <= limit
+    assert any(r["kind"] == "truncation" for r in rows) and rows[-1]["kind"] == "summary"
+
+
+SIGNAL_HARNESS = r"""
+import json, os, runpy, signal, subprocess, sys, threading, time
+from pathlib import Path
+test, folder, phase, signum = sys.argv[1:]
+folder, signum = Path(folder), int(signum)
+helpers = runpy.run_path(test)
+sampler = helpers['load']()
+base, _ = helpers['fake_run'](sampler)
+real_popen, children = subprocess.Popen, []
+original_run = sampler.Control.run
+def run(self, args, **kwargs):
+    if args[1] == phase:
+        return original_run(self, args, **kwargs)
+    self.check()
+    return base(args, **kwargs)
+sampler.Control.run = run
+def popen(args, **kwargs):
+    assert args[1] == phase
+    child = real_popen([sys.executable, str(folder/'docker.py'), str(folder/'ready')], **kwargs)
+    children.append(child)
+    return child
+sampler.subprocess.Popen = popen
+if phase == 'sleep':
+    original = sampler.Control.sleep
+    def sleep(self, seconds):
+        (folder/'ready').write_text('0')
+        return original(self, seconds)
+    sampler.Control.sleep = sleep
+if os.name == 'nt':
+    def deliver():
+        while not (folder/'trigger').exists(): time.sleep(.01)
+        signal.raise_signal(signum)
+    threading.Thread(target=deliver, daemon=True).start()
+sys.argv = ['sampler','--duration-seconds','30','--output',str(folder/'samples.jsonl')]
+status = sampler.main()
+reaped = all(p.returncode is not None for p in children)
+if os.name != 'nt':
+    for p in children:
+        try: os.waitpid(p.pid, os.WNOHANG); reaped = False
+        except ChildProcessError: pass
+(folder/'proof').write_text(json.dumps(dict(reaped=reaped, codes=[p.returncode for p in children])))
+sys.exit(status)
+"""
+
+
+@pytest.mark.parametrize("signum", (signal.SIGTERM, signal.SIGINT))
+@pytest.mark.parametrize("phase", ("ps", "inspect", "stats", "sleep"))
+def test_sample_cli_returns_interrupt_status(tmp_path, signum, phase):
+    fake = "import os,signal,sys,time;from pathlib import Path\n"
+    fake += "if os.name!='nt': signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
+    fake += "Path(sys.argv[1]).write_text(str(os.getpid()));time.sleep(30)\n"
+    (tmp_path / "docker.py").write_text(fake)
+    args = [
+        sys.executable,
+        "-c",
+        SIGNAL_HARNESS,
+        str(Path(__file__)),
+        str(tmp_path),
+        phase,
+        str(int(signum)),
+    ]
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        until = time.monotonic() + 8
+        while (
+            not (tmp_path / "ready").exists() and proc.poll() is None and time.monotonic() < until
+        ):
+            time.sleep(0.02)
+        if not (tmp_path / "ready").exists():
+            diagnostic = (
+                proc.communicate()[1].decode()
+                if proc.poll() is not None
+                else "harness still running"
+            )
+            pytest.fail(diagnostic)
+        if os.name == "nt":
+            (tmp_path / "trigger").touch()
+        else:
+            os.kill(proc.pid, signum)
+        proc.communicate(timeout=5)
+        assert proc.returncode == 128 + int(signum)
+        proof = json.loads((tmp_path / "proof").read_text())
+        assert proof["reaped"]
+        if os.name != "nt" and phase != "sleep":
+            assert -signal.SIGKILL in proof["codes"]
+        rows = [json.loads(line) for line in (tmp_path / "samples.jsonl").read_text().splitlines()]
+        assert rows[-1]["kind"] == "summary" and rows[-1]["interrupted"]
+    finally:
+        if not (tmp_path / "proof").exists() and (tmp_path / "ready").exists():
+            if pid := int((tmp_path / "ready").read_text()):
+                with suppress(OSError):
+                    os.kill(pid, signal.SIGTERM if os.name == "nt" else signal.SIGKILL)
+        if proc.poll() is None:
+            proc.kill()
+        proc.communicate()
