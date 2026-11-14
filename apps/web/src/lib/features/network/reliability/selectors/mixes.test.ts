@@ -7,6 +7,7 @@ import { networkReliabilityCopy } from '../network-reliability.copy';
 import { metricInfoFor } from '#lib/features/metrics/metrics.content.ts';
 import type { StatusDist, OccupancyMix } from '#lib/v1/schemas/index.ts';
 import type { NetworkFile, OccupancyCode, TrendPoint } from '#lib/v1/index.ts';
+import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
 
 const statusLabel = (c: string) => `S:${c}`;
 const occLabel = (c: OccupancyCode) => `O:${c}`;
@@ -73,10 +74,15 @@ describe('selectOccupancyTrend', () => {
 				} as unknown as OccupancyMix,
 			},
 		];
-		const days = selectOccupancyTrend(points, (d) => `L:${d}`, occLabel, {
-			locale: 'en',
-			titleFor: (label) => `Crowding · ${label}`,
-		});
+		const days = selectOccupancyTrend(
+			networkReliabilityView({ points }).points,
+			(d) => `L:${d}`,
+			occLabel,
+			{
+				locale: 'en',
+				titleFor: (label) => `Crowding · ${label}`,
+			},
+		);
 		expect(days).toHaveLength(1);
 		expect(days[0].date).toBe('2026-06-15');
 		expect(days[0].dateLabel).toBe('L:2026-06-15');
@@ -108,7 +114,7 @@ describe('selectHeadlineKpis', () => {
 	} as NetworkFile;
 
 	it('produces FOUR glance cards (otp/coverage/p50/p90) with the not-reported absence reason', () => {
-		const vm = selectHeadlineKpis(net, labels);
+		const vm = selectHeadlineKpis(networkReliabilityView({ live: net }).live!, labels);
 		expect(vm.headline).toHaveLength(4);
 		expect(vm.headline.map((c) => c.key)).toEqual([
 			'liveOtp',
@@ -121,7 +127,7 @@ describe('selectHeadlineKpis', () => {
 	});
 
 	it('moves vehicles + non_responding into the reporting row as required ints (no absence reason)', () => {
-		const vm = selectHeadlineKpis(net, labels);
+		const vm = selectHeadlineKpis(networkReliabilityView({ live: net }).live!, labels);
 		expect(vm.reporting).toHaveLength(2);
 		expect(vm.reporting[0]).toMatchObject({ value: '10', key: 'vehicleCount' });
 		expect(vm.reporting[1]).toMatchObject({ value: '3', key: 'silentTrip' });
@@ -139,7 +145,7 @@ describe('live headline explanations', () => {
 			delay_p90_min: 5,
 			non_responding: 1,
 		} as NetworkFile;
-		const vm = selectHeadlineKpis(net, {
+		const vm = selectHeadlineKpis(networkReliabilityView({ live: net }).live!, {
 			...networkReliabilityCopy[locale].metrics,
 			pctOrNull: (v) => (v == null ? null : `${v}%`),
 			minOrNull: (v) => (v == null ? null : `${v} min`),

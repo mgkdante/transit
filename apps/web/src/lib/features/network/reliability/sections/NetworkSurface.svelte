@@ -3,7 +3,8 @@
 	import { transitDisplay } from '#lib/site/transitDisplayContext.ts';
 	import { liveReader } from '#lib/v1/adapter/index.ts';
 	import { livePresentation } from '#lib/v1/live/livePresentation.ts';
-	import { LIVE_FAMILIES } from '#lib/v1/live/store.svelte.ts';
+	import { LIVE_FAMILIES, createLiveStore } from '#lib/v1/live/store.svelte.ts';
+	import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -21,15 +22,13 @@
 		fmtPct as sharedFmtPct,
 	} from '#lib/utils/index.ts';
 	import { getV1Context } from '#lib/v1/boot.ts';
-	import { createLiveStore } from '#lib/v1/live/store.svelte.ts';
 	import type { HistoricAvailabilityIndex } from '#lib/v1/schemas/history.ts';
 	import { trendClosedThrough } from '#lib/v1/closedWindow.ts';
 	import { closeNetworkTrend } from '../data/closedTrend';
 	import { selectDailyChange } from '../selectors/dailyChange';
 	import { getNetworkTrend, getHistoricAvailability } from '#lib/v1/repositories/historic.ts';
 	import { getProvenance } from '#lib/v1/repositories/provenance.ts';
-	import type { NetworkFile } from '#lib/v1/schemas/network.ts';
-	import type { NetworkTrend, TrendPoint } from '#lib/v1/schemas/network_trend.ts';
+	import type { NetworkFile, NetworkTrend, TrendPoint } from '#lib/v1/index.ts';
 	import type { Provenance } from '#lib/v1/schemas/provenance.ts';
 	import type { OccupancyCode, StatusCode } from '#lib/v1/schemas/types.ts';
 	import { createResource, type ResourceSeed } from '#lib/v1/resource.svelte.ts';
@@ -149,15 +148,11 @@
 		sharedFmtDelayMin(v, { suffix: t.units.min });
 	const fmtCancel = (v: number | null): string | null =>
 		sharedFmtPct(v, { rounding: 'fixed1', suffix: t.units.pct });
+	const liveView = $derived(networkReliabilityView({ live: live.network }).live);
 	const kpis = $derived.by(() =>
-		live.network
-			? selectHeadlineKpis(live.network, {
-					onTime: t.metrics.onTime,
-					coverage: t.metrics.coverage,
-					delayP50: t.metrics.delayP50,
-					delayP90: t.metrics.delayP90,
-					vehicles: t.metrics.vehicles,
-					notReporting: t.metrics.notReporting,
+		liveView
+			? selectHeadlineKpis(liveView, {
+					...t.metrics,
 					pctOrNull,
 					minOrNull,
 					fmtCount,
@@ -166,7 +161,7 @@
 	);
 	const statusSpec = $derived(
 		selectStatusMix(
-			live.network?.status_dist ?? null,
+			liveView?.statusDistribution ?? null,
 			(c: StatusCode) => STATUS_LABELS[locale][c],
 			{
 				title: t.statusBarLabel,
@@ -178,7 +173,7 @@
 	);
 	const occupancyMix = $derived(
 		selectOccupancyMix(
-			live.network?.occupancy_mix ?? null,
+			liveView?.occupancyMix ?? null,
 			(c: OccupancyCode) => OCCUPANCY_LABELS[locale][c],
 			{
 				title: t.occupancyBarLabel,
@@ -193,9 +188,9 @@
 	);
 	const delayHistogramSpec = $derived(
 		selectDelayHistogram(
-			live.network?.delay_histogram,
-			live.network?.delay_p50_min ?? null,
-			live.network?.delay_p90_min ?? null,
+			liveView?.delayBuckets,
+			liveView?.p50Min ?? null,
+			liveView?.p90Min ?? null,
 			locale,
 			{
 				title: t.delayHistogram.summary,
@@ -207,7 +202,7 @@
 		),
 	);
 	const silentRows = $derived(
-		selectSilentByRoute(live.network?.non_responding_by_route, {
+		selectSilentByRoute(liveView?.silentByLine, {
 			directory: display.directory,
 			rowLabel: t.nonResponding.rowLabel,
 			display: (rid, count) => `${fmtCount(count)} ${t.nonResponding.tripsUnit(count)}`,
@@ -230,7 +225,7 @@
 	const retainedReady = $derived(view.history.ready);
 	const selectedTrend = $derived(view.data);
 	const dailyChange = $derived(
-		selectDailyChange(selectedTrend?.series ?? [], {
+		selectDailyChange(networkReliabilityView({ points: selectedTrend?.series }).points, {
 			format: (points) =>
 				`${points > 0 ? '+' : ''}${sharedFmtNumber(points, { rounding: 'auto', locale })}`,
 			chip: t.verdictDelta.chip,
@@ -275,12 +270,15 @@
 	});
 	const windowed = $derived<readonly TrendPoint[]>(
 		explicitHistory
-			? grain === 'week'
-				? allSeries.weekly
-				: grain === 'month'
-					? allSeries.monthly
-					: allSeries.daily
+			? allSeries[grain === 'week' ? 'weekly' : grain === 'month' ? 'monthly' : 'daily']
 			: windowedSeries(grain, allSeries, windowDays),
+	);
+	const reliability = $derived(
+		networkReliabilityView({
+			points: windowed,
+			byShift: trend.data?.by_shift,
+			byDaytype: trend.data?.by_daytype,
+		}),
 	);
 	let retardKey = $state('p90');
 	const delayAvailabilityKnown = $derived(
@@ -290,10 +288,11 @@
 				view.history.state === 'no-data'),
 	);
 	const p90Available = $derived(
-		isDailyGrain && (!delayAvailabilityKnown || windowed.some((point) => point.p90_min != null)),
+		isDailyGrain &&
+			(!delayAvailabilityKnown || reliability.points.some((point) => point.p90Min != null)),
 	);
 	const avgAvailable = $derived(
-		!delayAvailabilityKnown || windowed.some((point) => point.avg_delay_min != null),
+		!delayAvailabilityKnown || reliability.points.some((point) => point.meanDelayMin != null),
 	);
 	const showRetardPicker = $derived(!delayAvailabilityKnown || p90Available || avgAvailable);
 	const showSecondaryControls = $derived((isDailyGrain && !explicitHistory) || showRetardPicker);
@@ -325,7 +324,7 @@
 		return formatDateKey(trendWindowEnd(last, grain), locale);
 	});
 	const trendSpec = $derived(
-		selectTrendChart(windowed, effectiveRetard, {
+		selectTrendChart(reliability.points, effectiveRetard, {
 			locale,
 			title: t.trend.summary,
 			onTimeLabel: t.trend.onTimeLabel,
@@ -339,34 +338,34 @@
 	);
 	const retainedDelayOnly = $derived(
 		explicitHistory &&
-			!windowed.some((point) => point.otp_pct != null) &&
-			windowed.some((point) =>
-				effectiveRetard === 'p90' ? point.p90_min != null : point.avg_delay_min != null,
+			!reliability.points.some((point) => point.onTimePct != null) &&
+			reliability.points.some((point) =>
+				effectiveRetard === 'p90' ? point.p90Min != null : point.meanDelayMin != null,
 			),
 	);
 	const trendMetricKey = $derived<MetricKey>(
 		retainedDelayOnly ? (effectiveRetard === 'p90' ? 'p50p90' : 'avgDelay') : 'otp',
 	);
 	const vehiclesSpark = $derived(
-		selectVehiclesSpark(windowed, {
+		selectVehiclesSpark(reliability.points, {
 			locale,
 			title: t.trend.vehiclesSpark,
 			label: t.trend.vehiclesSpark,
 		}),
 	);
 	const cancelTrend = $derived(
-		selectCancelTrend(windowed, {
+		selectCancelTrend(reliability.points, {
 			locale,
 			title: t.cancel.summary,
 			seriesLabel: t.cancel.seriesLabel,
 			pctUnit: t.units.pct,
 		}),
 	);
-	const completeness = $derived(selectCompleteness(windowed));
+	const completeness = $derived(selectCompleteness(reliability.points));
 	const completenessDisplay = $derived(fmtCancel(completeness.latest));
 	const occupancyDays = $derived(
 		selectOccupancyTrend(
-			windowed,
+			reliability.points,
 			(d) => formatDateKey(d, locale),
 			(c: OccupancyCode) => OCCUPANCY_LABELS[locale][c],
 			{ locale, titleFor: (dateLabel) => `${t.occupancySection} · ${dateLabel}` },
@@ -376,14 +375,14 @@
 	const pctOrNullSubtitle = (avg: number | null, severe: number | null): string =>
 		`${t.shift.avgLabel} ${fmtMin(avg)} · ${t.shift.severeLabel} ${sharedFmtPct(severe, { rounding: 'fixed1', suffix: t.units.pct, noData: noObservationLabel })}`;
 	const shiftRows = $derived(
-		selectShiftRank(trend.data?.by_shift ?? [], {
+		selectShiftRank(reliability.byShift, {
 			grainLabel: (g) => shiftLabel(g, locale),
 			pctOrNull,
 			subtitle: pctOrNullSubtitle,
 		}),
 	);
 	const dayTypeRows = $derived(
-		selectShiftRank(trend.data?.by_daytype ?? [], {
+		selectShiftRank(reliability.byDaytype, {
 			grainLabel: (g) => dayTypeLabel(g, locale),
 			pctOrNull,
 			subtitle: pctOrNullSubtitle,

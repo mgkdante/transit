@@ -1,6 +1,6 @@
 import type { AbsenceReasonKey } from '#lib/site/absence.ts';
 import type { MetricKey, SupplementalMetricKey } from '#lib/features/metrics/metrics.content.ts';
-import type { NetworkFile } from '#lib/v1/index.ts';
+import type { NetworkLiveView as NetworkFile } from '#lib/v1/reliabilityView.ts';
 
 export interface KpiCardVM {
 	readonly value: string | null;
@@ -30,25 +30,25 @@ export function selectHeadlineKpis(net: NetworkFile, labels: HeadlineKpisLabels)
 	return {
 		headline: [
 			{
-				value: labels.pctOrNull(net.on_time_pct),
+				value: labels.pctOrNull(net.onTimePct),
 				label: labels.onTime,
 				key: 'liveOtp',
 				absentReason: 'not-reported',
 			},
 			{
-				value: labels.pctOrNull(net.coverage_pct),
+				value: labels.pctOrNull(net.coveragePct),
 				label: labels.coverage,
 				key: 'coverage',
 				absentReason: 'not-reported',
 			},
 			{
-				value: labels.minOrNull(net.delay_p50_min),
+				value: labels.minOrNull(net.p50Min),
 				label: labels.delayP50,
 				key: 'liveDelayPercentiles',
 				absentReason: 'not-reported',
 			},
 			{
-				value: labels.minOrNull(net.delay_p90_min),
+				value: labels.minOrNull(net.p90Min),
 				label: labels.delayP90,
 				key: 'liveDelayPercentiles',
 				absentReason: 'not-reported',
@@ -56,12 +56,12 @@ export function selectHeadlineKpis(net: NetworkFile, labels: HeadlineKpisLabels)
 		],
 		reporting: [
 			{
-				value: labels.fmtCount(net.vehicles_in_service),
+				value: labels.fmtCount(net.vehicles),
 				label: labels.vehicles,
 				key: 'vehicleCount',
 			},
 			{
-				value: labels.fmtCount(net.non_responding),
+				value: labels.fmtCount(net.silentTrips),
 				label: labels.notReporting,
 				key: 'silentTrip',
 			},

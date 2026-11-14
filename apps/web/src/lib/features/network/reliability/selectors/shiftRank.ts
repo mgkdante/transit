@@ -1,5 +1,5 @@
 import { severeShareToSeverity } from '#lib/features/reliability/shiftGrains.ts';
-import type { NetworkShift } from '#lib/v1/index.ts';
+import type { NetworkShiftView as NetworkShift } from '#lib/v1/reliabilityView.ts';
 import type { SeverityCode } from '#lib/v1/schemas/index.ts';
 
 export interface ShiftRow {
@@ -22,26 +22,26 @@ export function selectShiftRank(
 	rows: readonly NetworkShift[] | null | undefined,
 	labels: ShiftRankLabels,
 ): ShiftRow[] {
-	const real = (rows ?? []).filter((r) => r.otp_pct != null || r.severe_pct != null);
+	const real = (rows ?? []).filter((r) => r.onTimePct != null || r.severePct != null);
 	return real
 		.slice()
 		.sort((a, b) => {
-			const aHas = a.otp_pct != null;
-			const bHas = b.otp_pct != null;
+			const aHas = a.onTimePct != null;
+			const bHas = b.onTimePct != null;
 			if (aHas !== bHas) return aHas ? -1 : 1;
-			if (aHas && bHas) return (a.otp_pct ?? 0) - (b.otp_pct ?? 0);
-			return (b.severe_pct ?? 0) - (a.severe_pct ?? 0);
+			if (aHas && bHas) return (a.onTimePct ?? 0) - (b.onTimePct ?? 0);
+			return (b.severePct ?? 0) - (a.severePct ?? 0);
 		})
 		.map((r, i) => {
-			const sev = r.severe_pct ?? null;
+			const sev = r.severePct ?? null;
 			return {
 				key: r.grain,
 				rank: i + 1,
 				title: labels.grainLabel(r.grain),
 				severity: severeShareToSeverity(sev),
 				value: sev,
-				display: labels.pctOrNull(r.otp_pct ?? null),
-				subtitle: labels.subtitle(r.avg_delay_min ?? null, sev),
+				display: labels.pctOrNull(r.onTimePct ?? null),
+				subtitle: labels.subtitle(r.meanDelayMin ?? null, sev),
 			};
 		});
 }

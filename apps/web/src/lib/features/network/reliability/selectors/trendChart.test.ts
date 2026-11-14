@@ -1,12 +1,25 @@
 import { isoUtc } from '#lib/v1/schemas/types.ts';
 import { describe, it, expect } from 'vitest';
-import { selectTrendChart, selectVehiclesSpark } from './trendChart';
+import {
+	selectTrendChart as projectedTrendChart,
+	selectVehiclesSpark as projectedVehiclesSpark,
+	type TrendChartOptions,
+	type VehiclesSparkOptions,
+} from './trendChart';
+import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
 import {
 	DELAY_DIST_DOMAIN,
 	OTP_TREND_MIN_SPAN,
 	OTP_TREND_REFERENCE,
 } from '#lib/features/reliability/shiftGrains.ts';
 import type { TrendPoint } from '#lib/v1/index.ts';
+const selectTrendChart = (
+	points: readonly TrendPoint[],
+	retard: 'p90' | 'avg',
+	options: TrendChartOptions,
+) => projectedTrendChart(networkReliabilityView({ points }).points, retard, options);
+const selectVehiclesSpark = (points: readonly TrendPoint[], options: VehiclesSparkOptions) =>
+	projectedVehiclesSpark(networkReliabilityView({ points }).points, options);
 
 const points: TrendPoint[] = [
 	{ date: '2026-06-14', otp_pct: 78, avg_delay_min: 2.1, p90_min: 5, vehicles: 9 },

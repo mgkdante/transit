@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { selectCompleteness } from './completeness';
+import { selectCompleteness as projectedCompleteness } from './completeness';
 import type { TrendPoint } from '#lib/v1/index.ts';
+import { networkReliabilityView } from '#lib/v1/reliabilityView.ts';
+const selectCompleteness = (points: readonly TrendPoint[]) =>
+	projectedCompleteness(networkReliabilityView({ points }).points);
 
 const pt = (date: string, rate: number | null): TrendPoint => ({
 	date,
