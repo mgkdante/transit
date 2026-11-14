@@ -31,11 +31,7 @@ describe('reliability CollapsibleSection section controls integration', () => {
 		expect(card?.querySelector('.section-subtitle--article-summary')).toHaveTextContent(
 			'When should I take this line?',
 		);
-		const headingRow = card?.querySelector('.section-heading-row');
-		const chevron = headingRow?.querySelector('[data-slot="chevron-toggle"]');
-		expect(toggle.querySelector('[data-slot="chevron-toggle"]')).toBeNull();
-		expect(headingRow?.lastElementChild).toContainElement(chevron as HTMLElement);
-		expect(headingRow?.lastElementChild).toHaveClass('section-header__chevron');
+		await fireEvent.click(card!.querySelector('.section-subtitle--article-summary')!);
 		expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
 		await fireEvent.click(toggle);

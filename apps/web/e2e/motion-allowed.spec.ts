@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { PUBLISHED_LOCALES } from '../src/lib/i18n/config';
 import { localizeHref } from '../src/lib/i18n/routing';
 import { navPillCopy } from '../src/lib/i18n/messages';
+import { errorPageCopy } from '../src/lib/site/errorPage';
 
 const read = (name: string) =>
 	JSON.parse(readFileSync(new URL(`./${name}.json`, import.meta.url), 'utf8'));
@@ -32,43 +33,35 @@ const paths = [
 ];
 
 const PRODUCT_LOOPS = ['[data-motion="refresh-busy"]'] as const;
-// Must be empty once v0.42.0 is adopted; PR 856 deletes this list.
-const SHARED_LOOPS_UNTIL_V0_42 = [
-	'[data-slot="footer"] [data-slot="status-dot"]',
-	'[data-slot="terminal-panel"] > div:first-child > div:first-child > span[aria-hidden="true"] > span:first-child',
-] as const;
 
 async function runningMotion(page: Page) {
-	return page.evaluate(
-		({ product, shared }) => {
-			return document.getAnimations().flatMap((animation) => {
-				if (animation.playState !== 'running' || !(animation.effect instanceof KeyframeEffect))
-					return [];
-				const timing = animation.effect.getTiming();
-				if (timing.iterations !== Infinity && Number(timing.duration) <= 10_000) return [];
-				const target = animation.effect.target;
-				const matches = (selector: string) => target instanceof Element && target.matches(selector);
-				return [
-					{
-						owner: shared.some(matches)
-							? 'shared'
-							: product.some(matches)
-								? 'product'
-								: 'unexpected',
-						target: target instanceof Element ? target.outerHTML.slice(0, 300) : String(target),
-					},
-				];
-			});
-		},
-		{ product: PRODUCT_LOOPS, shared: SHARED_LOOPS_UNTIL_V0_42 },
-	);
+	return page.evaluate((product) => {
+		return document.getAnimations().flatMap((animation) => {
+			if (animation.playState !== 'running' || !(animation.effect instanceof KeyframeEffect))
+				return [];
+			const timing = animation.effect.getTiming();
+			if (timing.iterations !== Infinity && Number(timing.duration) <= 10_000) return [];
+			const target = animation.effect.target;
+			const matches = (selector: string) => target instanceof Element && target.matches(selector);
+			return [
+				{
+					owner: product.some(matches) ? 'product' : 'unexpected',
+					animation:
+						animation instanceof CSSAnimation
+							? animation.animationName
+							: animation instanceof CSSTransition
+								? animation.transitionProperty
+								: animation.id,
+					target: target instanceof Element ? target.outerHTML.slice(0, 300) : String(target),
+				},
+			];
+		});
+	}, PRODUCT_LOOPS);
 }
 
 async function expectIdle(page: Page) {
 	await expect(page.locator('[data-refreshing="true"]')).toHaveCount(0);
-	await expect
-		.poll(async () => (await runningMotion(page)).filter((a) => a.owner !== 'shared'))
-		.toEqual([]);
+	await expect.poll(() => runningMotion(page)).toEqual([]);
 }
 
 async function expectStaticLiveIndicators(page: Page) {
@@ -77,22 +70,16 @@ async function expectStaticLiveIndicators(page: Page) {
 			'[data-variant="live"], [data-live-indicator], [data-motion="live-indicator"], [data-slot="status-dot"]',
 		)
 		.or(page.getByLabel(/^(?:live|en direct)(?: data| données)?$/i));
-	const running = await indicators.evaluateAll(
-		(elements, shared) =>
-			elements.flatMap((element) =>
-				element
-					.getAnimations({ subtree: true })
-					.filter((animation) => {
-						if (animation.playState !== 'running') return false;
-						const target =
-							animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-						return !(
-							target instanceof Element && shared.some((selector) => target.matches(selector))
-						);
-					})
-					.map(() => element.outerHTML.slice(0, 300)),
-			),
-		SHARED_LOOPS_UNTIL_V0_42,
+	const running = await indicators.evaluateAll((elements) =>
+		elements.flatMap((element) =>
+			element
+				.getAnimations({ subtree: true })
+				.filter((animation) => animation.playState === 'running')
+				.map((animation) => ({
+					target: element.outerHTML.slice(0, 300),
+					animation: animation instanceof CSSAnimation ? animation.animationName : animation.id,
+				})),
+		),
 	);
 	expect(running).toEqual([]);
 }
@@ -117,6 +104,22 @@ for (const locale of PUBLISHED_LOCALES) {
 	}
 
 	for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+		test(`${locale}: error-page decoration is still (${reducedMotion})`, async ({ page }) => {
+			await page.emulateMedia({ reducedMotion });
+			const response = await page.goto(localizeHref('/missing-motion-page', locale, provider));
+			expect(response?.status()).toBe(404);
+			const errorPage = page.locator('[data-slot="error-page"]');
+			await expect(
+				errorPage.getByRole('heading', {
+					name: errorPageCopy[locale].notFound.heading,
+					exact: true,
+				}),
+			).toBeVisible();
+			await page.waitForLoadState('networkidle');
+			await expectIdle(page);
+			await expectStaticLiveIndicators(page);
+		});
+
 		test(`${locale}: refresh motion is bounded by its request (${reducedMotion})`, async ({
 			page,
 		}) => {
@@ -147,7 +150,7 @@ for (const locale of PUBLISHED_LOCALES) {
 				await expect(refreshing).toHaveAttribute('data-refreshing', 'true');
 				await expect(refreshing).toBeDisabled();
 				await expect(busy).toBeVisible();
-				const motion = (await runningMotion(page)).filter((a) => a.owner !== 'shared');
+				const motion = await runningMotion(page);
 				expect(motion.map((a) => a.owner)).toEqual(reducedMotion === 'reduce' ? [] : ['product']);
 				await expectStaticLiveIndicators(page);
 			} finally {
