@@ -1,7 +1,9 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 import pytest
 
+from transit_ops.history import datasets
 from transit_ops.lake.table_export import (
     ExportRefused,
     WindowSpec,
@@ -10,7 +12,7 @@ from transit_ops.lake.table_export import (
     validate_timeout,
     window_predicate,
 )
-from transit_ops.lake.table_schema import TableSchema
+from transit_ops.lake.table_schema import TableSchema, UnsupportedColumnType
 
 
 def test_predicate_for_each_grain():
@@ -74,7 +76,9 @@ def test_undeclared_dataset_is_refused(dataset):
 
 
 @pytest.mark.parametrize(
-    "pg_type", ["text", "character varying", "character", "character(3)", "character varying(20)"]
+    "pg_type",
+    ["text", "character varying", "character", "character(3)", "character varying(20)"]
+    + ["citext", "name", '"char"', "bpchar", "text[]", "label_domain"],
 )
 def test_order_by_collates_only_text_key_columns(pg_type):
     schema = TableSchema.from_columns(
@@ -86,7 +90,9 @@ def test_order_by_collates_only_text_key_columns(pg_type):
         ],
         ["text_key", "number", "day", "stamp"],
     )
-    assert order_by(schema).as_string() == '"text_key" COLLATE "C", "number", "day", "stamp"'
+    text_keys = frozenset({"text_key"}) if pg_type == "label_domain" else frozenset()
+    ordering = order_by(schema, text_keys=text_keys)
+    assert ordering.as_string() == '"text_key" COLLATE "C", "number", "day", "stamp"'
 
 
 def test_copy_statement_keeps_columns_and_parameters_in_order():
@@ -151,6 +157,7 @@ def test_edition_statement_binds_resolved_id_and_preserves_postgres_text():
     schema = TableSchema.from_columns(
         [
             ("dataset_version_id", "bigint", True),
+            ("provider_id", "text", True),
             ("route_id", "text", True),
             ("amount", "numeric", False),
             ("bins", "smallint[]", False),
@@ -159,15 +166,67 @@ def test_edition_statement_binds_resolved_id_and_preserves_postgres_text():
         ["dataset_version_id", "route_id"],
     )
     statement, values = build_copy_statement(
-        WindowSpec("silver.routes", "_shared", "a" * 64), schema, dataset_version_id=42
+        WindowSpec("silver.routes", "network", "a" * 64), schema, dataset_version_id=42
     )
     assert statement.as_string() == (
-        'COPY (SELECT "dataset_version_id", "route_id", "amount", "bins", "metadata" '
-        'FROM "silver"."routes" WHERE "dataset_version_id" = %s '
+        'COPY (SELECT "dataset_version_id", "provider_id", "route_id", "amount", '
+        '"bins", "metadata" '
+        'FROM "silver"."routes" WHERE "provider_id" = %s AND "dataset_version_id" = %s '
         'ORDER BY "dataset_version_id", "route_id" COLLATE "C") '
         "TO STDOUT WITH (FORMAT csv, HEADER true, ENCODING 'UTF8')"
     )
-    assert values == (42,)
+    assert values == ("network", 42)
+
+
+@pytest.mark.parametrize(
+    "spec,edition",
+    [
+        (WindowSpec([], "network", "2026-11"), None),
+        (WindowSpec("gold.report_labels", 3, "2026-11"), None),
+        (WindowSpec("gold.report_labels", "_shared", None), None),
+        (WindowSpec("gold.report_labels", "_shared", "2026-11"), 42),
+    ],
+)
+def test_bad_input_types_have_named_refusals(spec, edition):
+    with pytest.raises(ExportRefused):
+        window_predicate(spec, dataset_version_id=edition)
+
+
+@pytest.mark.parametrize("pg_type", ["uuid_domain", "point"])
+def test_unknown_key_types_are_refused(pg_type):
+    with pytest.raises(UnsupportedColumnType, match="key"):
+        order_by(TableSchema.from_columns([("key", pg_type, True)], ["key"]))
+
+
+def test_unplanned_grain_is_refused(monkeypatch):
+    declared = datasets.get_dataset("gold.report_labels")
+    monkeypatch.setattr(
+        "transit_ops.history.datasets.HISTORY_DATASETS",
+        {declared.dataset_id: replace(declared, archive_grain="service_day")},
+    )
+    with pytest.raises(ExportRefused, match="window"):
+        window_predicate(WindowSpec(declared.dataset_id, "_shared", "2026-11-14"))
+
+
+@pytest.mark.parametrize(
+    "dataset,key,options",
+    [
+        ("gold.route_delay_spine", "2026-11", {}),
+        (
+            "gold.route_delay_spine",
+            "2026-11",
+            {
+                "schema": TableSchema.from_columns(
+                    [("provider_local_date", "integer", True)], ["provider_local_date"]
+                )
+            },
+        ),
+        *[("silver.routes", "a" * 64, {"dataset_version_id": value}) for value in [0, -1, True]],
+    ],
+)
+def test_missing_or_invalid_window_metadata_is_refused(dataset, key, options):
+    with pytest.raises(ExportRefused, match="window"):
+        window_predicate(WindowSpec(dataset, "network", key), **options)
 
 
 def test_fact_statement_has_the_rescue_shape():
