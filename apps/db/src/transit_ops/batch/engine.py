@@ -12,6 +12,8 @@ from sqlalchemy.sql.elements import TextClause
 from transit_ops.batch.results import BatchResult
 from transit_ops.sql_registry import query_name
 
+_IDENTIFIER_CASE = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
 
 class BatchEngineError(RuntimeError):
     pass
@@ -51,7 +53,7 @@ class BatchSession:
         if relation is None:
             return BatchResult((), [])
         columns = tuple(relation.columns)
-        if len(set(columns)) != len(columns):
+        if len({name.translate(_IDENTIFIER_CASE) for name in columns}) != len(columns):
             raise BatchEngineError(f"duplicate result column names: {columns}")
         for name, kind in zip(columns, relation.types, strict=True):
             if "TIMESTAMP WITH TIME ZONE" in str(kind) and str(kind) != "TIMESTAMP WITH TIME ZONE":

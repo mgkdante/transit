@@ -170,6 +170,9 @@ def test_glob_paths_are_refused_by_name(tmp_path, char):
     "expression",
     [
         "NULL::TIMESTAMPTZ AS stamp, CAST('2026-11-01' AS TIMESTAMPTZ) AS stamp",
+        "NULL::TIMESTAMPTZ AS stamp, CAST('2026-11-01' AS TIMESTAMPTZ) AS Stamp",
+        "CAST('2026-11-01' AS TIMESTAMPTZ) AS stamp, CAST('2026-11-02' AS TIMESTAMPTZ) AS Stamp",
+        "CAST('2026-11-01' AS TIMESTAMPTZ) AS stamp, 123 AS Stamp",
         "[CAST('2026-11-01' AS TIMESTAMPTZ)] AS nested",
         "{'a': CAST('2026-11-01' AS TIMESTAMPTZ)} AS nested",
         "map(['a'], [CAST('2026-11-01' AS TIMESTAMPTZ)]) AS nested",
