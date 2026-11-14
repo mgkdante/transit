@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KitNavigationSimulator } from '#lib/features/map/__fixtures__/KitNavigationSimulator.ts';
 import type { V1Context } from '#lib/v1/boot.ts';
 import type { IsoUtc } from '#lib/v1/schemas/index.ts';
+import type { ChromeSearchResult } from '#lib/search/transitSearch.ts';
 import { NAV_GROUPS } from '#lib/content/nav.ts';
 import { footerCopy } from '#lib/components/layout/footer.copy.ts';
 
@@ -164,13 +165,16 @@ vi.mock('@yesid/ui/state', async (importOriginal) => ({
 	},
 	desktop: { current: true },
 }));
-vi.mock('#lib/search/transitSearch.ts', () => ({
-	chromeSearchResultHref: () => '/map',
-	searchTransit: () => [],
+const headerResults = vi.hoisted(() => ({ current: [] as ChromeSearchResult[] }));
+vi.mock('#lib/search/transitSearch.ts', async (importOriginal) => ({
+	searchHitHref: (await importOriginal<typeof import('#lib/search/transitSearch.ts')>())
+		.searchHitHref,
+	searchTransit: () => headerResults.current,
 	scopeForPath: () => 'all',
 }));
 
 import RootLayout from './+layout.svelte';
+import { goto } from '$app/navigation';
 import RootLayoutMapRouteHarness from './__fixtures__/RootLayoutMapRouteHarness.svelte';
 
 const children = createRawSnippet(() => ({
@@ -504,4 +508,28 @@ describe('root layout data-independent legal routes', () => {
 		expect(view.getByTestId('legal-child')).toBeInTheDocument();
 		expect(harness.runViewTransition).toHaveBeenCalledWith(accepted.navigation);
 	});
+});
+
+it('a header result keeps the tab and period the reader sees, not the ones first requested', async () => {
+	headerResults.current = [{ kind: 'route', id: '1-373', label: '1 Confederation', priority: 0 }];
+	try {
+		const view = renderWithoutV1('/lines/24?tab=reliability&grain=month&from=2026-11-01', 'en');
+		// The record view mirrors its corrected state shallowly: page.url keeps the old query.
+		harness.shallowUrl('/lines/24?tab=schedule&grain=range&from=2026-11-02&to=2026-11-08');
+		await fireEvent.input(view.getByRole('searchbox', { name: 'Search the network' }), {
+			target: { value: '1' },
+		});
+		await fireEvent.click(view.getByRole('button', { name: 'Line 1 Confederation' }));
+		const href = new URL(String(vi.mocked(goto).mock.calls.at(-1)![0]), 'https://transit.local');
+		expect(href.pathname).toBe('/lines/1-373');
+		expect(['tab', 'grain', 'from', 'to'].map((key) => href.searchParams.get(key))).toEqual([
+			'schedule',
+			'range',
+			'2026-11-02',
+			'2026-11-08',
+		]);
+	} finally {
+		headerResults.current = [];
+		window.history.replaceState({}, '', '/');
+	}
 });

@@ -8,7 +8,7 @@ import {
 	type SearchSources,
 	type ChromeSearchOptions,
 	chromeSearchHref,
-	chromeSearchResultHref,
+	searchHitHref,
 	scopeForPath,
 	type ChromeSearchResult,
 } from './transitSearch';
@@ -117,8 +117,9 @@ describe('chromeSearchResults', () => {
 			kind: 'vehicle',
 			id: '40061',
 			label: '40061',
-			meta: 'Route 161',
+			line: '161',
 		});
+		expect(chromeSearchResults('40061', { routes, stops, vehicles })[0]?.meta).toBeUndefined();
 	});
 
 	it('includes address autocomplete suggestions after local route and stop matches', () => {
@@ -360,7 +361,7 @@ describe('chromeSearchResults scope', () => {
 	});
 });
 
-describe('chromeSearchResultHref', () => {
+describe('searchHitHref', () => {
 	const routeResult: ChromeSearchResult = {
 		kind: 'route',
 		id: '161',
@@ -374,27 +375,50 @@ describe('chromeSearchResultHref', () => {
 		meta: '52618',
 		priority: 4,
 	};
+	const from = (path: string, query = '') => ({ path, params: new URLSearchParams(query) });
 
-	it('deep-links a route pick to its detail page in route scope', () => {
-		expect(chromeSearchResultHref(routeResult, 'route')).toBe('/lines/161');
+	it('opens a line or a stop on its own page from every page but the map', () => {
+		for (const path of ['/', '/network', '/lines', '/stops', '/search', '/trip/9']) {
+			expect(searchHitHref(routeResult, from(path, 'route=24&x=1'))).toBe('/lines/161');
+			expect(searchHitHref(stopResult, from(path, 'route=24&x=1'))).toBe('/stop/52819');
+		}
 	});
 
-	it('deep-links a stop pick to its detail page in stop scope', () => {
-		expect(chromeSearchResultHref(stopResult, 'stop')).toBe('/stop/52819');
-	});
-
-	it('falls through to the map filter spine on map and all scope', () => {
-		expect(chromeSearchResultHref(routeResult, 'map')).toBe('/map?route=161&focus=route%3A161');
-		expect(chromeSearchResultHref(stopResult, 'all')).toBe('/map?stop=52819&focus=stop%3A52819');
-	});
-
-	it('drops foreign params when a non-map scope falls through to /map', () => {
-		const current = new URLSearchParams(
-			'x=1&x=&route=24&near=45.5000000%2C-73.5000000&nearLabel=Raw',
+	it('keeps map focus for a line or a stop chosen on the map', () => {
+		expect(searchHitHref(routeResult, from('/map'))).toBe('/map?route=161&focus=route%3A161');
+		expect(searchHitHref(stopResult, from('/map', 'x=1'))).toBe(
+			'/map?x=1&stop=52819&focus=stop%3A52819',
 		);
+	});
 
-		expect(chromeSearchResultHref(stopResult, 'all', current)).toBe(
-			'/map?route=24&stop=52819&near=45.500000%2C-73.500000&nearLabel=Raw&focus=stop%3A52819',
+	it('opens another line on the same tab and period, on line pages only', () => {
+		const view = 'tab=reliability&grain=range&from=2026-11-01&to=2026-11-07&route=17&x=1';
+		expect(searchHitHref(routeResult, from('/lines/17', view))).toBe(
+			'/lines/161?tab=reliability&grain=range&from=2026-11-01&to=2026-11-07',
+		);
+		expect(searchHitHref(routeResult, from('/lines', view))).toBe('/lines/161');
+		expect(searchHitHref(routeResult, from('/stop/52819', view))).toBe('/lines/161');
+	});
+
+	it('opens another stop on the same tab and period, on stop pages only', () => {
+		const view = 'grain=month&tab=schedule';
+		expect(searchHitHref(stopResult, from('/stop/1', view))).toBe(
+			'/stop/52819?tab=schedule&grain=month',
+		);
+		expect(searchHitHref(stopResult, from('/lines/17', view))).toBe('/stop/52819');
+	});
+
+	it('opens a live vehicle on the map, dropping foreign params, from any other page', () => {
+		const current = 'x=1&x=&route=24&near=45.5000000%2C-73.5000000&nearLabel=Raw';
+		const vehicle: ChromeSearchResult = {
+			kind: 'vehicle',
+			id: '40061',
+			label: '40061',
+			priority: 20,
+		};
+
+		expect(searchHitHref(vehicle, from('/lines/24', current))).toBe(
+			'/map?route=24&vehicle=40061&near=45.500000%2C-73.500000&nearLabel=Raw&focus=vehicle%3A40061',
 		);
 	});
 
@@ -408,13 +432,13 @@ describe('chromeSearchResultHref', () => {
 			priority: 30,
 		};
 
-		expect(chromeSearchResultHref(address, 'route')).toBe(
+		expect(searchHitHref(address, from('/'))).toBe(
 			'/map?near=45.525686%2C-73.594764&nearLabel=5333+Avenue+Casgrain%2C+Montr%C3%A9al%2C+Quebec',
 		);
 	});
 
 	it('URI-encodes the entity id through routeFor', () => {
-		expect(chromeSearchResultHref({ ...routeResult, id: '10 A' }, 'route')).toBe('/lines/10%20A');
+		expect(searchHitHref({ ...routeResult, id: '10 A' }, from('/lines'))).toBe('/lines/10%20A');
 	});
 });
 

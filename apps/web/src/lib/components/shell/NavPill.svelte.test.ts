@@ -145,14 +145,30 @@ describe('NavPill — search', () => {
 			},
 		});
 
-		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toHaveTextContent('Route');
-		await fireEvent.click(getByRole('button', { name: 'Route 161 Van Horne' }));
+		expect(getByRole('button', { name: 'Line 161 Van Horne' })).toHaveTextContent('Line');
+		await fireEvent.click(getByRole('button', { name: 'Line 161 Van Horne' }));
 		expect(onresultselect).toHaveBeenCalledWith({
 			kind: 'route',
 			id: '161',
 			label: '161 Van Horne',
 			priority: 0,
 		});
+	});
+
+	it.each([
+		['en', 'Vehicle 40061 Line 161'],
+		['fr', 'Véhicule 40061 Ligne 161'],
+	] as const)("names a live vehicle's line in %s", (locale, name) => {
+		const { getByRole } = render(NavPill, {
+			props: {
+				locale,
+				search: '40061',
+				searchResults: [
+					{ kind: 'vehicle', id: '40061', label: '40061', line: '161', priority: 20 },
+				],
+			},
+		});
+		expect(getByRole('button', { name })).toHaveTextContent(name.split(' ').slice(-2).join(' '));
 	});
 
 	it('turns browser autofill off on the in-pill search box', () => {
@@ -287,12 +303,12 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 				],
 			},
 		});
-		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Line 161 Van Horne' })).toBeInTheDocument();
 		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
 
 		await fireEvent.click(getByRole('tab', { name: /Lines \(1\)/ }));
 
-		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Line 161 Van Horne' })).toBeInTheDocument();
 		expect(queryByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeNull();
 	});
 
@@ -315,7 +331,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 		});
 		await fireEvent.click(getByRole('tab', { name: /Stops \(1\)/ }));
 		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
-		expect(queryByRole('button', { name: 'Route 161 Van Horne' })).toBeNull();
+		expect(queryByRole('button', { name: 'Line 161 Van Horne' })).toBeNull();
 
 		await rerender({
 			locale: 'en',
@@ -326,7 +342,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 
 		expect(container.querySelector('[data-slot="search-controls"]')).toBeNull();
 		expect(queryByRole('tablist', { name: 'Show' })).toBeNull();
-		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Line 161 Van Horne' })).toBeInTheDocument();
 
 		await rerender({
 			locale: 'en',
@@ -335,7 +351,7 @@ describe('NavPill — the focus dropdown that houses the disclosure (M6i F25/F26
 			searchResults: [route161, stop57191],
 		});
 		expect(getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
-		expect(getByRole('button', { name: 'Route 161 Van Horne' })).toBeInTheDocument();
+		expect(getByRole('button', { name: 'Line 161 Van Horne' })).toBeInTheDocument();
 		expect(getByRole('button', { name: /Stop Van Horne \/ Rockland/ })).toBeInTheDocument();
 	});
 
