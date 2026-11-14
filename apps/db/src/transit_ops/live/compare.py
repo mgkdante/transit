@@ -1,7 +1,11 @@
+import hashlib
 import json
+import math
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 
 @dataclass(frozen=True)
@@ -147,3 +151,73 @@ def compare_publications(
         if not found:
             differences.append(Difference(key, "<bytes>", left[:200], right[:200]))
     return differences[: max(0, limit)]
+
+
+def canonical_value(value: object) -> str:
+    """Render supported database values without rounding or filling missing data."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("Nonfinite floats cannot be compared")
+        return repr(value)
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    if isinstance(value, datetime):
+        if value.utcoffset() is None:
+            raise ValueError("Timestamps must be timezone-aware")
+        return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    raise TypeError(f"Unsupported database value type: {type(value).__name__}")
+
+
+def canonical_row(row: Sequence[object]) -> str:
+    return "[" + ",".join(canonical_value(value) for value in row) + "]"
+
+
+def _group_rows(
+    rows: Iterable[Sequence[object]], key_columns: Sequence[int]
+) -> dict[str, list[str]]:
+    groups: dict[str, list[str]] = {}
+    for row in rows:
+        key = canonical_row([row[column] for column in key_columns])
+        groups.setdefault(key, []).append(canonical_row(row))
+    return {key: sorted(values) for key, values in groups.items()}
+
+
+def compare_rows(
+    table: str,
+    key_columns: Sequence[int],
+    expected: Iterable[Sequence[object]],
+    actual: Iterable[Sequence[object]],
+    *,
+    limit: int = 50,
+) -> list[Difference]:
+    """Compare row multisets, reporting one difference per canonical key."""
+    left, right = _group_rows(expected, key_columns), _group_rows(actual, key_columns)
+    differences: list[Difference] = []
+    for key in sorted(left.keys() | right.keys()):
+        if len(differences) >= limit:
+            break
+        if left.get(key) != right.get(key):
+            differences.append(
+                Difference(
+                    f"table:{table}",
+                    f"row {key}",
+                    "\n".join(left[key]) if key in left else "<absent>",
+                    "\n".join(right[key]) if key in right else "<absent>",
+                )
+            )
+    return differences
+
+
+def rows_digest(rows: Iterable[Sequence[object]]) -> str:
+    canonical = "\n".join(sorted(canonical_row(row) for row in rows))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
