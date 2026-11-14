@@ -3,10 +3,10 @@ import json
 import os
 import signal
 import socket
-import subprocess
 import sys
 from itertools import product
 from pathlib import Path
+from subprocess import PIPE, Popen
 
 import pytest
 
@@ -14,6 +14,16 @@ SCRIPT = Path(__file__).parents[1] / "scripts/measure_fact_day.py"
 spec = importlib.util.spec_from_file_location("measure", SCRIPT)
 measure = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(measure)
+ACTIVE_WRITER = """import json,os,signal,socket,sys,time
+from pathlib import Path
+signal.signal(signal.SIGTERM,signal.SIG_IGN)
+s=socket.socket();s.bind(('127.0.0.1',0));s.listen()
+folder=Path(sys.argv[2]);(folder/'nested').mkdir()
+(folder/'nested/fact.csv.partial').write_bytes(b'private')
+ready=Path(sys.argv[3]);partial=ready.with_suffix('.partial')
+partial.write_text(json.dumps([os.getpid(),sys.argv[2],s.getsockname()[1]]));partial.replace(ready)
+while True: time.sleep(0.1)
+"""
 
 
 def fixture_csv(folder, table):
@@ -110,38 +120,30 @@ with r.guarded(source,Mock(db_phase_s=0.05)): time.sleep(10)
 
 
 @pytest.mark.parametrize(
-    "stop", ["SIGTERM", "SIGINT"] + (["SIGBREAK"] if hasattr(signal, "SIGBREAK") else [])
+    "stop", ["SIGTERM", "SIGINT", "abrupt"] + (["SIGBREAK"] if hasattr(signal, "SIGBREAK") else [])
 )
-def test_parent_stop_reaps_worker_and_preserves_outside_sentinel(tmp_path, stop):
+def test_parent_stop_reaps_worker_and_preserves_outside_sentinel(tmp_path, stop, capsys):
     sentinel, ready = tmp_path / "outside", tmp_path / "ready"
     sentinel.write_text("preserve")
-    worker = """import json,os,signal,socket,sys,time
-from pathlib import Path
-signal.signal(signal.SIGTERM,signal.SIG_IGN)
-s=socket.socket();s.bind(('127.0.0.1',0));s.listen()
-Path(sys.argv[2],'fact.csv.partial').write_bytes(b'private')
-Path(sys.argv[3]).write_text(json.dumps([os.getpid(),sys.argv[2],s.getsockname()[1]]))
-while True: time.sleep(0.1)
-"""
-    parent = """import runpy,signal,sys,tempfile,threading,time
+    parent = """import os,runpy,signal,sys,tempfile,threading,time
 from pathlib import Path
 m=runpy.run_path(sys.argv[1]);tempfile.tempdir=sys.argv[2]
 def stop():
  while not Path(sys.argv[3]).exists(): time.sleep(0.01)
- print('READY',flush=True)
- signal.raise_signal(getattr(signal,sys.argv[5]))
+ print('READY',os.getpid(),flush=True)
+ if sys.argv[5]!='abrupt': signal.raise_signal(getattr(signal,sys.argv[5]))
 threading.Thread(target=stop,daemon=True).start()
 sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
 """
-    paths = list(map(str, (SCRIPT, tmp_path, ready)))
+    command = [sys.executable, "-I", "-c", parent, SCRIPT, tmp_path, ready, ACTIVE_WRITER, stop]
     try:
-        with subprocess.Popen(
-            [sys.executable, "-I", "-c", parent, *paths, worker, stop],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        ) as result:
-            assert result.stdout.readline() == "READY\n"
+        with Popen(command, stdout=PIPE, stderr=PIPE, text=True) as result:
+            handshake = result.stdout.readline().split()
+            if handshake[:1] != ["READY"]:
+                output, error = result.communicate(timeout=8)
+                pytest.fail(error or output or "supervisor exited before READY")
+            if stop == "abrupt":
+                os.kill(int(handshake[1]), getattr(signal, "SIGKILL", signal.SIGTERM))
             try:
                 output, error = result.communicate(timeout=8)
             finally:
@@ -149,10 +151,17 @@ sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
                     result.kill()
         pid, directory, port = json.loads(ready.read_text())
         with socket.socket() as observer:
-            assert observer.connect_ex(("127.0.0.1", port)) != 0, "worker still alive"
-        assert not Path(directory).exists() and sentinel.read_text() == "preserve"
-        assert result.returncode == 128 + getattr(signal, stop)
-        assert json.loads(output)["reason"] == "measurement_failed" and not error
+            observer.settimeout(2)
+            if observer.connect_ex(("127.0.0.1", port)) == 0:
+                try:
+                    assert observer.recv(1) == b""
+                except ConnectionResetError:
+                    pass
+        assert not Path(directory).exists(), "owned scratch remains after worker exit"
+        assert sentinel.read_text() == "preserve"
+        if stop != "abrupt":
+            assert result.returncode == 128 + getattr(signal, stop)
+            assert json.loads(output)["reason"] == "measurement_failed" and not error
     finally:
         if ready.exists():
             pid, _, port = json.loads(ready.read_text())

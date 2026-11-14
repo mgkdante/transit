@@ -6,14 +6,16 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 import tracemalloc
 from datetime import UTC, datetime
 from pathlib import Path
-from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired
+from subprocess import PIPE, Popen, TimeoutExpired
 from types import SimpleNamespace
 from typing import Any
 
@@ -274,30 +276,69 @@ WORKER = (
     "import runpy,sys,tempfile; tempfile.tempdir=sys.argv[2]; "
     "n=runpy.run_path(sys.argv[1]); sys.exit(n['main'](sys.argv[3:],worker=True))"
 )
-LIFELINE = """import os,threading,time
-os.set_blocking(0,False)
-def parent_watch():
- while True:
-  try: os.read(0,1); os._exit(1)
-  except BlockingIOError: time.sleep(0.2)
-threading.Thread(target=parent_watch,daemon=True).start()\n"""
+BOOT = (
+    "import runpy,sys; n=runpy.run_path(sys.argv[1]); code=sys.argv.pop(4); "
+    "proof=sys.argv.pop(3); n['lifeline'](sys.argv[2],proof); exec(code)"
+)
+
+
+def lifeline(directory: str, proof: str) -> None:
+    root, marker = Path(directory), Path(directory) / ".owner"
+    if root.is_symlink() or marker.is_symlink() or root.resolve() != root:
+        raise ValueError("scratch_ownership_invalid")
+    data = json.loads(marker.read_text(encoding="utf-8"))
+    if (data.get("invocation"), data.get("path")) != (proof, str(root)):
+        raise ValueError("scratch_ownership_invalid")
+    os.set_blocking(0, False)
+
+    def watch() -> None:
+        while True:
+            try:
+                os.read(0, 1)
+            except BlockingIOError:
+                time.sleep(0.2)
+                continue
+            try:
+                try:
+                    shutil.rmtree(root)
+                except OSError:
+                    if root.exists() and root.resolve() == root and not marker.is_symlink():
+                        marker.write_text(json.dumps(data), encoding="utf-8")
+            finally:
+                try:
+                    if root.exists():
+                        os.write(
+                            2,
+                            (
+                                json.dumps(dict(status="failed", leftover_paths=[str(root)])) + "\n"
+                            ).encode(),
+                        )
+                finally:
+                    os._exit(1)
+
+    threading.Thread(target=watch, daemon=True).start()
 
 
 def supervise(argv: list[str], *, worker: str = WORKER) -> int:
-    status, previous = [], {}
+    status, previous, root = [], {}, None
     try:
         for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
             if hasattr(signal, name):
                 number = getattr(signal, name)
                 previous[number] = signal.signal(number, lambda n, f: status.append(128 + n))
         with tempfile.TemporaryDirectory(prefix="transit-measure-") as directory:
-            with (Path(directory) / "report.json").open("x+", encoding="utf-8") as report:
+            root, proof = Path(directory).resolve(), os.urandom(16).hex()
+            data = dict(invocation=proof, path=str(root), pid=os.getpid())
+            with (root / ".owner").open("x", encoding="utf-8") as marker:
+                json.dump(data, marker)
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as report:
                 script, base = str(Path(__file__).resolve()), vars(sys)["_base_executable"]
                 windows = sys.platform == "win32" and sys.executable != base
                 executable = base if windows else sys.executable
                 env = {**os.environ, "__PYVENV_LAUNCHER__": sys.executable} if windows else None
-                command = [executable, "-I", "-c", LIFELINE + worker, script, directory, *argv]
-                process = Popen(command, stdin=PIPE, stdout=report, stderr=DEVNULL, env=env)
+                payload = [str(root), proof, worker, *argv]
+                command = [executable, "-I", "-c", BOOT, script, *payload]
+                process = Popen(command, stdin=PIPE, stdout=report, env=env)
                 assert process.stdin is not None
                 try:
                     while not status:
