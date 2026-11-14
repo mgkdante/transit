@@ -4,8 +4,11 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from urllib.parse import unquote
 
-from sqlalchemy.engine import make_url
+from psycopg import ProgrammingError, pq
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -13,7 +16,10 @@ _POSTGRESQL_DEFAULT_PORT = 5432
 _DIAGNOSTIC_FIELD_LIMIT = 120
 _CONNECTION_IDENTITY_QUERY_KEYS = frozenset({"user", "dbname", "host", "hostaddr", "port"})
 _CREDENTIAL_QUERY_KEYS = frozenset({"password", "sslpassword"})
-_UNRESOLVABLE_TARGET_QUERY_KEYS = frozenset({"service", "servicefile"})
+_LIBPQ_OPTIONS = pq.Conninfo.parse(b"")
+_PERMITTED_TARGET_QUERY_KEYS = frozenset(
+    option.keyword.decode() for option in _LIBPQ_OPTIONS if option.keyword != b"service"
+)
 _INLINE_HOST_PORT = re.compile(r"^([a-zA-Z0-9\-.]*)(?::(\d*))?$")
 _DISPOSABLE_CONFIRMATION = "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE"
 _DISPOSABLE_TARGETS = frozenset(
@@ -191,6 +197,8 @@ def _parsing_policy_error() -> RuntimeError:
 
 def _parse_database_target(url: str, environment: Mapping[str, str]) -> DatabaseTarget:
     try:
+        if "\x00" in unquote(url):
+            raise ValueError
         if any(_environment_value(environment, key) for key in ("PGSERVICE", "PGSERVICEFILE")):
             raise ValueError
         parsed = make_url(url)
@@ -199,7 +207,7 @@ def _parse_database_target(url: str, environment: Mapping[str, str]) -> Database
             backend = "postgresql"
         if backend != "postgresql":
             raise ValueError
-        if _UNRESOLVABLE_TARGET_QUERY_KEYS.intersection(parsed.query):
+        if parsed.query.keys() - _PERMITTED_TARGET_QUERY_KEYS:
             raise ValueError
         username = _single_query_value(parsed.query, "user")
         if username is None:
@@ -248,6 +256,28 @@ def parse_database_target(url: str) -> DatabaseTarget:
     return _parse_database_target(url, {})
 
 
+def resolve_database_target(url: str, environment: Mapping[str, str]) -> DatabaseTarget:
+    """Resolve the driver's identity using its URL arguments and process environment."""
+    _parse_database_target(url, environment)
+    try:
+        parsed = make_url(url)
+        dialect_url = (
+            parsed if parsed.drivername != "postgres" else parsed.set(drivername="postgresql")
+        )
+        args, kwargs = dialect_url.get_dialect()().create_connect_args(parsed)
+        options = conninfo_to_dict(make_conninfo(*args, **kwargs))
+        for option in _LIBPQ_OPTIONS:
+            key = option.keyword.decode()
+            variable = option.envvar.decode() if option.envvar else ""
+            if not options.get(key) and environment.get(variable):
+                options[key] = environment[variable]
+        query = {k: str(v) for k, v in options.items() if v is not None}
+        resolved = URL.create(parsed.drivername, query=query).render_as_string(hide_password=False)
+    except (ArgumentError, ProgrammingError, TypeError, ValueError):
+        raise _parsing_policy_error() from None
+    return _parse_database_target(resolved, environment)
+
+
 def _display(value: object | None) -> str:
     if value is None or value == "":
         return "<unset>"
@@ -285,14 +315,14 @@ def _is_local_target(target: DatabaseTarget) -> bool:
 def assert_explicit_remote_url(url: str, environment: Mapping[str, str]) -> None:
     """Require an explicit, semantically matching process URL for remote migrations."""
 
-    target = _parse_database_target(url, environment)
+    target = resolve_database_target(url, environment)
     if _is_local_target(target):
         return
 
     process_url = environment.get("DATABASE_URL", "").strip()
     if process_url:
         try:
-            explicit_target = _parse_database_target(process_url, environment)
+            explicit_target = resolve_database_target(process_url, environment)
         except RuntimeError:
             explicit_target = None
         if explicit_target == target:
@@ -307,7 +337,7 @@ def assert_explicit_remote_url(url: str, environment: Mapping[str, str]) -> None
 def assert_disposable_test_url(url: str, environment: Mapping[str, str]) -> None:
     """Require a confirmed local PostgreSQL target with an approved test identity."""
 
-    target = _parse_database_target(url, environment)
+    target = resolve_database_target(url, environment)
     confirmed = environment.get("TRANSIT_TEST_DATABASE_DISPOSABLE") == _DISPOSABLE_CONFIRMATION
     database = target.database or ""
     worker = re.fullmatch(r"(.+)_xdist_[0-9a-f]{16}_gw[0-9]+", database)
