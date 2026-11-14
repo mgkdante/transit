@@ -54,6 +54,11 @@ def test_semantic_settings_match_the_batch_session(tmp_path):
             "current_setting('autoinstall_known_extensions'), "
             "current_setting('autoload_known_extensions')"
         ).fetchone() == ("UTC", 1, True, False, False)
+        with conn.cursor() as cursor:
+            assert cursor.execute("SELECT current_setting('TimeZone')").fetchone() == ("UTC",)
+            assert cursor.execute(
+                "SELECT epoch_us(TIMESTAMP '2026-01-02 03:04:05.123456'::TIMESTAMPTZ)"
+            ).fetchone() == (1767323045123456,)
 
 
 def test_missing_resource_settings_are_refused(tmp_path):
@@ -267,3 +272,60 @@ def test_caught_nested_failure_aborts_the_outer_transaction(tmp_path):
             with pytest.raises(LocalFileMismatch):
                 local.record_polls([replace(POLL, entity_count=0)], endpoint_key="vehicles")
         assert local.connection.execute("SELECT ingestion_run_id FROM polls").fetchall() == []
+
+
+@pytest.mark.parametrize(
+    "statement", ["INSERT INTO polls SELECT * FROM polls", "SELECT 'bad'::INT"]
+)
+def test_caught_engine_error_cannot_report_a_commit(tmp_path, statement):
+    with closing(opened(tmp_path / "worker.db")) as local:
+        with pytest.raises(duckdb.TransactionException, match="aborted"):
+            with local.transaction() as conn:
+                local.record_polls([POLL], endpoint_key="vehicles")
+                with pytest.raises(duckdb.Error):
+                    conn.execute(statement)
+        assert local.connection.execute("SELECT ingestion_run_id FROM polls").fetchall() == []
+        assert local.record_polls([POLL], endpoint_key="vehicles") == 1
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_empty_database_after_first_open_can_initialize(tmp_path, interrupted):
+    path = tmp_path / "worker.db"
+    if interrupted:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import duckdb, os, sys; c=duckdb.connect(sys.argv[1]); "
+                "c.execute('BEGIN'); c.execute('CREATE TABLE meta (schema_version INTEGER)'); "
+                "os._exit(17)",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 17, result.stderr
+    else:
+        duckdb.connect(str(path)).close()
+    with closing(opened(path)) as local:
+        assert local.record_polls([POLL], endpoint_key="vehicles") == 1
+    with closing(opened(path)) as local:
+        assert local.connection.execute("SELECT ingestion_run_id FROM polls").fetchall() == [(1,)]
+
+
+@pytest.mark.parametrize("constraint", ["CHECK (ingestion_run_id < 100)", "UNIQUE (endpoint_key)"])
+def test_constraint_drift_is_refused_without_changing_rows(tmp_path, constraint):
+    path = tmp_path / "worker.db"
+    with closing(opened(path)) as local:
+        local.record_polls([POLL], endpoint_key="vehicles")
+        conn = local.connection
+        ddl = conn.execute("SELECT sql FROM duckdb_tables() WHERE table_name='polls'").fetchone()[0]
+        conn.execute("CREATE TEMP TABLE retained AS SELECT * FROM polls")
+        conn.execute("DROP TABLE polls")
+        conn.execute(ddl.rstrip(";")[:-1] + ", " + constraint + ")")
+        conn.execute("INSERT INTO polls SELECT * FROM retained")
+    with pytest.raises(LocalFileMismatch, match="polls"):
+        opened(path).close()
+    with duckdb.connect(str(path)) as conn:
+        assert conn.execute("SELECT ingestion_run_id FROM polls").fetchall() == [(1,)]

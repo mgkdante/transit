@@ -56,7 +56,7 @@ def connect_live(
             raise LocalFileLocked(str(path)) from exc
         raise LocalFileUnreadable(str(path)) from exc
     try:
-        conn.execute("SET TimeZone = 'UTC'")
+        conn.execute("SET GLOBAL TimeZone = 'UTC'")
         conn.execute("SET max_temp_directory_size = ?", [f"{temp_max_mb}MB"])
         if conn.execute("SELECT current_setting('default_collation')").fetchone() != ("",):
             raise ValueError("live requires binary collation")
@@ -68,6 +68,8 @@ def connect_live(
 
 
 class LocalFile:
+    """Own one worker thread's connection; release it explicitly with close."""
+
     def __init__(self, connection: duckdb.DuckDBPyConnection):
         self.connection = connection
         self._path: Path | None = None
@@ -86,7 +88,6 @@ class LocalFile:
             path = path.resolve()
             if path in _OWNERS:
                 raise LocalFileLocked(str(path))
-            fresh = not path.exists()
             conn = connect_live(
                 path,
                 temp_directory=path.with_suffix(".tmp"),
@@ -98,7 +99,7 @@ class LocalFile:
             local._path = path
             _OWNERS.add(path)
             try:
-                local._initialize(provider_id, fresh)
+                local._initialize(provider_id)
                 return local
             except BaseException as exc:
                 local.close()
@@ -106,7 +107,7 @@ class LocalFile:
                     raise LocalFileUnreadable(str(path)) from exc
                 raise
 
-    def _initialize(self, provider: str, fresh: bool) -> None:
+    def _initialize(self, provider: str) -> None:
         tables = {"meta": "schema_version INTEGER, provider_id VARCHAR"}
         for table, kind, key in (
             ("polls", PollEntry, "ingestion_run_id"),
@@ -125,17 +126,15 @@ class LocalFile:
                 "SELECT table_name FROM duckdb_tables() "
                 "WHERE database_name=current_database() AND schema_name='main' AND NOT temporary"
             ).fetchall()
+            fresh = not existing
             for table, definition in tables.items():
                 if not fresh and (table,) not in existing:
                     raise LocalFileMismatch(f"{self._path}: {table} table missing")
                 conn.execute(f"CREATE TEMP TABLE _local_expected ({definition})")
-                expected = conn.execute("PRAGMA table_info('_local_expected')").fetchall()
+                expected = _table_shape(conn, "_local_expected")
                 if fresh:
                     conn.execute(f"CREATE TABLE {table} ({definition})")
-                if (
-                    conn.execute("SELECT * FROM pragma_table_info(?)", [table]).fetchall()
-                    != expected
-                ):
+                if _table_shape(conn, table) != expected:
                     raise LocalFileMismatch(f"{self._path}: {table} table shape differs")
                 conn.execute("DROP TABLE _local_expected")
             if fresh:
@@ -154,6 +153,8 @@ class LocalFile:
             if outer:
                 if self._failed:
                     raise RuntimeError("transaction aborted")
+                # DuckDB accepts COMMIT on an aborted transaction as a silent rollback.
+                self.connection.execute("SELECT 1")
                 self.connection.execute("COMMIT")
         except BaseException:
             self._failed = True
@@ -209,3 +210,16 @@ class LocalFile:
             if self._path is not None:
                 _OWNERS.remove(self._path)
                 self._path = None
+
+
+def _table_shape(conn: duckdb.DuckDBPyConnection, table: str) -> tuple[object, object]:
+    return (
+        conn.execute("SELECT * FROM pragma_table_info(?)", [table]).fetchall(),
+        conn.execute(
+            "SELECT constraint_type, constraint_text FROM duckdb_constraints() "
+            "WHERE table_name=? AND schema_name='main' "
+            "AND database_name IN (current_database(), 'temp') "
+            "ORDER BY constraint_type, constraint_text",
+            [table],
+        ).fetchall(),
+    )
