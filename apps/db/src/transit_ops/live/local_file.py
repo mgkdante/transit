@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Final, get_args, get_type_hints
 
 import duckdb
@@ -13,6 +14,8 @@ from transit_ops.history.poll_record import CaptureEntry, PollEntry
 from transit_ops.live.settings import LaneSettings
 
 SCHEMA_VERSION: Final = 1
+_OWNERS: set[Path] = set()
+_OWNER_LOCK = RLock()
 _TYPES = {int: "BIGINT", bool: "BOOLEAN", str: "VARCHAR", datetime: "TIMESTAMP"}
 
 
@@ -50,6 +53,10 @@ def connect_live(
         raise
     try:
         conn.execute("SET TimeZone = 'UTC'")
+        conn.execute("SET max_temp_directory_size = ?", [f"{temp_max_mb}MB"])
+        if conn.execute("SELECT current_setting('default_collation')").fetchone() != ("",):
+            raise ValueError("live requires binary collation")
+        conn.execute("SET lock_configuration = true")
         return conn
     except BaseException:
         conn.close()
@@ -59,6 +66,7 @@ def connect_live(
 class LocalFile:
     def __init__(self, connection: duckdb.DuckDBPyConnection):
         self.connection = connection
+        self._path: Path | None = None
 
     @classmethod
     def open(cls, path: Path, *, provider_id: str, settings: LaneSettings) -> "LocalFile":
@@ -69,41 +77,50 @@ class LocalFile:
         )
         if memory is None or threads is None or temp is None:
             raise ValueError("explicit memory, thread and temp limits required")
-        conn = connect_live(
-            path,
-            temp_directory=path.with_suffix(".tmp"),
-            memory_limit_mb=memory,
-            threads=threads,
-            temp_max_mb=temp,
-        )
-        local = cls(conn)
-        try:
-            with local.transaction():
+        with _OWNER_LOCK:
+            path = path.resolve()
+            if path in _OWNERS:
+                raise LocalFileLocked(str(path))
+            conn = connect_live(
+                path,
+                temp_directory=path.with_suffix(".tmp"),
+                memory_limit_mb=memory,
+                threads=threads,
+                temp_max_mb=temp,
+            )
+            local = cls(conn)
+            local._path = path
+            _OWNERS.add(path)
+            try:
+                local._initialize(provider_id)
+                return local
+            except BaseException:
+                local.close()
+                raise
+
+    def _initialize(self, provider_id: str) -> None:
+        with self.transaction() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS meta(schema_version INTEGER, provider_id VARCHAR)"
+            )
+            meta = conn.execute("SELECT * FROM meta").fetchall()
+            if not meta:
+                conn.execute("INSERT INTO meta VALUES (?, ?)", [SCHEMA_VERSION, provider_id])
+            elif meta != [(SCHEMA_VERSION, provider_id)]:
+                raise LocalFileMismatch(f"metadata mismatch: {meta!r}")
+            for table, kind, key in (
+                ("polls", PollEntry, "ingestion_run_id"),
+                ("captures", CaptureEntry, "capture_row_id"),
+            ):
+                columns = [
+                    f'"{name}" {_TYPES[(get_args(t) or (t,))[0]]}'
+                    for name, t in get_type_hints(kind).items()
+                ]
                 conn.execute(
-                    "CREATE TABLE IF NOT EXISTS meta(schema_version INTEGER, provider_id VARCHAR)"
+                    f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(columns)}, "
+                    f"endpoint_key VARCHAR, segment_seq BIGINT, "
+                    f"PRIMARY KEY(index_family, {key}))"
                 )
-                meta = conn.execute("SELECT * FROM meta").fetchall()
-                if not meta:
-                    conn.execute("INSERT INTO meta VALUES (?, ?)", [SCHEMA_VERSION, provider_id])
-                elif meta != [(SCHEMA_VERSION, provider_id)]:
-                    raise LocalFileMismatch(f"metadata mismatch: {meta!r}")
-                for table, kind, key in (
-                    ("polls", PollEntry, "ingestion_run_id"),
-                    ("captures", CaptureEntry, "capture_row_id"),
-                ):
-                    columns = [
-                        f'"{name}" {_TYPES[(get_args(t) or (t,))[0]]}'
-                        for name, t in get_type_hints(kind).items()
-                    ]
-                    conn.execute(
-                        f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(columns)}, "
-                        f"endpoint_key VARCHAR, segment_seq BIGINT, "
-                        f"PRIMARY KEY(index_family, {key}))"
-                    )
-            return local
-        except BaseException:
-            conn.close()
-            raise
 
     @contextmanager
     def transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
@@ -155,4 +172,8 @@ class LocalFile:
         return inserted
 
     def close(self) -> None:
-        self.connection.close()
+        with _OWNER_LOCK:
+            self.connection.close()
+            if self._path is not None:
+                _OWNERS.remove(self._path)
+                self._path = None
