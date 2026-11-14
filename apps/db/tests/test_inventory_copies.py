@@ -4,6 +4,9 @@ import io
 import json
 import re
 import sqlite3
+import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -501,7 +504,14 @@ def lock_catalog():
         locks.executescript("""
             CREATE TABLE pg_database (oid integer, datname text);
             INSERT INTO pg_database VALUES (1, 'inventory'), (2, 'other_worker');
-            CREATE TABLE pg_locks (database integer, relation integer, mode text, granted boolean);
+            CREATE TABLE pg_locks (database integer, relation integer, mode text,
+                                   granted boolean, locktype text DEFAULT 'relation');
+            CREATE TABLE pg_class (oid integer, reltoastrelid integer);
+            INSERT INTO pg_class VALUES (10, 11), (11, 0), (20, 0), (30, 31), (31, 0);
+            CREATE TABLE pg_index (indrelid integer, indexrelid integer);
+            INSERT INTO pg_index VALUES (10, 12), (11, 13), (30, 32), (31, 33);
+            CREATE TABLE pg_inherits (inhparent integer, inhrelid integer);
+            INSERT INTO pg_inherits VALUES (10, 25), (25, 30);
         """)
         locks.create_function("current_database", 0, lambda: "inventory")
         locks.create_function(
@@ -511,7 +521,13 @@ def lock_catalog():
 
 
 @pytest.mark.parametrize("lock_database", [1, 2])
-def test_database_continues_past_unrelated_queued_ddl(monkeypatch, lock_catalog, lock_database):
+@pytest.mark.parametrize(
+    "lock_relation,locktype",
+    [(oid, "relation") for oid in (10, 11, 12, 13, 25, 30, 31, 32, 33)] + [(10, "tuple")],
+)
+def test_database_continues_past_unrelated_queued_ddl(
+    monkeypatch, lock_catalog, lock_database, lock_relation, locktype
+):
     module, rows = load(), []
     fixed = datetime(2026, 11, 13, 9, tzinfo=UTC)
     monkeypatch.setattr(module, "utc_now", lambda: fixed)
@@ -530,7 +546,8 @@ def test_database_continues_past_unrelated_queued_ddl(monkeypatch, lock_catalog,
     ]
     editions = [dict(provider_id="inactive", dataset_version_id=i, row_count=1) for i in (1, 2)]
     lock_catalog.execute(
-        "INSERT INTO pg_locks VALUES (?, 10, 'AccessExclusiveLock', false)", (lock_database,)
+        "INSERT INTO pg_locks VALUES (?, ?, 'AccessExclusiveLock', false, ?)",
+        (lock_database, lock_relation, locktype),
     )
 
     def read(engine, end, clock, query, params=None, **kwargs):
@@ -554,8 +571,145 @@ def test_database_continues_past_unrelated_queued_ddl(monkeypatch, lock_catalog,
     assert all(r["row_count"] == 1 and r["row_count_basis"] == "exact count" for r in measured)
     refusals = [(r["table"], r["reason"]) for r in rows if r["kind"] == "not_measured"]
     assert refusals == (
-        [("fixture.blocked", "queued_exclusive_lock")] if lock_database == 1 else []
+        [("fixture.blocked", "queued_exclusive_lock")]
+        if lock_database == 1 and locktype == "relation"
+        else []
     )
+
+
+def wait_for_lock(engine, pid, locktype, relation):
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        with engine.connect() as conn:
+            if conn.execute(
+                text(
+                    "SELECT 1 FROM pg_locks WHERE pid=:pid AND NOT granted "
+                    "AND locktype=:kind AND relation=to_regclass(:relation) "
+                    "AND mode='AccessExclusiveLock'"
+                ),
+                dict(pid=pid, kind=locktype, relation=relation),
+            ).first():
+                return
+        time.sleep(0.02)
+    pytest.fail(f"backend {pid} did not queue {locktype} lock on {relation}")
+
+
+def execute_waiter(conn, statement):
+    try:
+        conn.execute(text("SET LOCAL lock_timeout='30s'"))
+        conn.execute(text(statement))
+    finally:
+        conn.rollback()
+
+
+def exercise_lock_queue(engine, module, monkeypatch, schema, kind):
+    fixed = datetime(2026, 11, 13, 9, tzinfo=UTC)
+    monkeypatch.setattr(module, "utc_now", lambda: fixed)
+    monkeypatch.setenv("LS03_STATIC_WARM_FINISHED_AT", fixed.isoformat())
+    read = module.read_only
+    catalog = list(read(engine, time.monotonic() + 30, time.monotonic, module.CATALOG))
+    # The catalog's size probes precede the guard; queue only after capturing it.
+    monkeypatch.setattr(
+        module,
+        "read_only",
+        lambda e, end, clock, query, *a, **kw: (
+            iter(r for r in catalog if r["schema"] == schema)
+            if query == module.CATALOG
+            else read(e, end, clock, query, *a, **kw)
+        ),
+    )
+    target = f'"{schema}".x'
+    with ExitStack() as stack:
+        holder = stack.enter_context(engine.connect())
+        waiters = [
+            stack.enter_context(engine.connect()) for _ in range(2 if kind == "tuple" else 1)
+        ]
+        holder.execute(
+            text(
+                f"SELECT * FROM {target} WHERE id=1 FOR UPDATE"
+                if kind == "tuple"
+                else f"LOCK TABLE {target} IN ACCESS SHARE MODE"
+            )
+        )
+        if kind == "index":
+            holder.execute(text(f"SELECT count(*) FROM {target}"))
+        run_queued_inventory(engine, module, schema, kind, holder, waiters, fixed)
+
+
+def run_queued_inventory(engine, module, schema, kind, holder, waiters, fixed):
+    target = f'"{schema}".x'
+    pids = [c.execute(text("SELECT pg_backend_pid()")).scalar_one() for c in waiters]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = []
+        try:
+            statement = (
+                f"SELECT * FROM {target} WHERE id=1 FOR UPDATE"
+                if kind == "tuple"
+                else f'REINDEX INDEX "{schema}".x_idx'
+                if kind == "index"
+                else f"LOCK TABLE {target} IN ACCESS EXCLUSIVE MODE"
+            )
+            futures.append(pool.submit(execute_waiter, waiters[0], statement))
+            if kind == "tuple":
+                wait_for_transaction_lock(engine, pids[0])
+                futures.append(pool.submit(execute_waiter, waiters[1], statement))
+            wait_for_lock(
+                engine,
+                pids[-1],
+                "tuple" if kind == "tuple" else "relation",
+                f'"{schema}".x_idx' if kind == "index" else target,
+            )
+            rows = []
+            module.database(
+                engine, Settings(_env_file=None), rows.append, fixed + timedelta(hours=1)
+            )
+            assert_lock_measurements(rows, schema, kind)
+        finally:
+            holder.rollback()
+            for future in futures:
+                future.result(timeout=35)
+
+
+def wait_for_transaction_lock(engine, pid):
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        with engine.connect() as conn:
+            if conn.execute(
+                text(
+                    "SELECT 1 FROM pg_locks WHERE pid=:pid "
+                    "AND locktype='transactionid' AND NOT granted"
+                ),
+                dict(pid=pid),
+            ).first():
+                return
+        time.sleep(0.02)
+    pytest.fail(f"backend {pid} did not wait for the row holder")
+
+
+def assert_lock_measurements(rows, schema, kind):
+    refusals = [(r["table"], r["reason"]) for r in rows if r["kind"] == "not_measured"]
+    assert refusals == ([] if kind == "tuple" else [(f"{schema}.x", "queued_exclusive_lock")])
+    measured = {r["table"]: r for r in rows if r["kind"] == "measurement"}
+    assert set(measured) == ({f"{schema}.x", f"{schema}.y"} if kind == "tuple" else {f"{schema}.y"})
+    assert all(
+        r["row_count"] == 1 and r["row_count_basis"] == "exact count" for r in measured.values()
+    )
+
+
+@pytest.mark.parametrize("kind", ["table", "index", "tuple"])
+def test_real_lock_queue_scope(real_db_engine, monkeypatch, kind):
+    schema = "ls03_locks_" + uuid4().hex
+    try:
+        with real_db_engine.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+            for name in ("x", "y"):
+                conn.execute(text(f'CREATE TABLE "{schema}".{name} (id int, value int)'))
+                conn.execute(text(f'INSERT INTO "{schema}".{name} VALUES (1, 0)'))
+            conn.execute(text(f'CREATE INDEX x_idx ON "{schema}".x (id)'))
+        exercise_lock_queue(real_db_engine, load(), monkeypatch, schema, kind)
+    finally:
+        with real_db_engine.begin() as conn:
+            conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
 
 
 def test_discovered_inactive_provider_and_source_rows_unchanged(

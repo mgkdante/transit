@@ -295,12 +295,19 @@ def measure_table(
     if row["relkind"] in ("f", "v"):
         raise Refusal("unsupported_relation")
     relation = quote(row["schema"]) + "." + quote(row["name"])
-    # pg_locks covers the cluster; unrelated DDL must not suppress this table.
+    # Include relations opened by planning, detoasting and inherited scans.
     if any(
         read(
-            "SELECT 1 FROM pg_locks WHERE mode='AccessExclusiveLock' AND NOT granted "
+            "WITH RECURSIVE children(oid) AS (SELECT CAST(to_regclass(:relation) AS oid) "
+            "UNION SELECT inhrelid FROM pg_inherits JOIN children ON inhparent=oid), "
+            "heaps(oid) AS (SELECT oid FROM children UNION SELECT reltoastrelid "
+            "FROM pg_class JOIN children USING (oid) WHERE reltoastrelid<>0), "
+            "relations(oid) AS (SELECT oid FROM heaps UNION SELECT indexrelid "
+            "FROM pg_index JOIN heaps ON indrelid=oid) "
+            "SELECT 1 FROM pg_locks WHERE locktype='relation' "
+            "AND mode='AccessExclusiveLock' AND NOT granted "
             "AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) "
-            "AND relation=to_regclass(:relation)",
+            "AND relation IN (SELECT oid FROM relations)",
             {"relation": relation},
         )
     ):
