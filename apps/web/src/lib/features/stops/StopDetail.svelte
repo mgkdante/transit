@@ -53,7 +53,7 @@
 	import { mapHrefFor } from '#lib/nav/index.ts';
 	import MetricDisplay from '#lib/components/brand/MetricDisplay.svelte';
 	import { Badge } from '@yesid/ui/badge';
-	import { formatDateKey } from '#lib/utils/time.ts';
+	import { stampDate } from '#lib/v1/stamp.ts';
 	import { StopReliabilitySurface } from './reliability';
 	import {
 		createStopHistoryResource,
@@ -169,7 +169,10 @@
 		if (stamp) values.push(stamp);
 		if (detailTabController.active === 'schedule' && stop.data?.generated_utc) {
 			const date = stop.data.generated_utc.slice(0, 10);
-			values.push({ text: t.schedule.loadedOn(formatDateKey(date, locale, true)), datetime: date });
+			values.push({
+				text: t.schedule.loadedOn(stampDate(date, locale, manifest.tz)),
+				datetime: date,
+			});
 		}
 		return values;
 	});

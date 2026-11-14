@@ -18,6 +18,7 @@ import StopDetail from './StopDetail.svelte';
 
 vi.mock('@testing-library/svelte', { spy: true });
 
+const stopTimeZone = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const stopDetailNav = vi.hoisted(() => {
 	const page = {
 		url: new URL('http://localhost/stop/57191'),
@@ -359,6 +360,7 @@ vi.mock('#lib/v1/boot.ts', () => ({
 	getV1Context: () => ({
 		manifest: {
 			short_name: 'STM',
+			tz: stopTimeZone.value,
 			display_name: 'Société de transport de Montréal',
 			files: { live: { ttl_s: 30 } },
 		},
@@ -398,6 +400,7 @@ vi.mock('#lib/v1/resource.svelte.ts', () => ({
 }));
 
 function resetStopSurfaceState() {
+	stopTimeZone.value = undefined;
 	stopDetailNav.page.data = {};
 	stopDetailNav.replaceState.mockReset().mockImplementation(stopDetailNav.defaultReplaceState);
 	useEmptyLive = false;
@@ -432,6 +435,7 @@ beforeEach(() => {
 	stopSurface.reset();
 });
 afterEach(() => {
+	vi.useRealTimers();
 	localStorage.removeItem('sections-choice');
 	delete document.documentElement.dataset.sectionsChoice;
 });
@@ -559,21 +563,34 @@ describe('StopDetail article contract', () => {
 		expect(summary).toHaveTextContent('2.7 min');
 	});
 
-	it('shows one date-only record on Reliability and the schedule date', async () => {
+	it('shows one date-only record and follows its year rule for the schedule date', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-11-13T12:00:00Z'));
+		stopTimeZone.value = 'America/Toronto';
 		const locale = 'en';
 		stopDetailNav.page.url = new URL('http://localhost/stop/57191?tab=reliability');
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 		const date = RELIABILITY.generated_utc.slice(0, 10);
-		const expected = stampCopy[locale].record(null, formatDateKey(date, locale, true), 'window');
+		const expected = stampCopy[locale].record(null, formatDateKey(date, locale, false), 'window');
 		const header = container.querySelector('[data-slot="article-header"]') as HTMLElement;
 		expect(within(header).getByText(expected)).toHaveAttribute('datetime', date);
 		expect(container.querySelector('[data-source="historic"] time')).toBeNull();
 		await fireEvent.click(screen.getByRole('tab', { name: detailCopy[locale].tabs.schedule }));
-		expect(header).toHaveTextContent(
-			detailCopy[locale].schedule.loadedOn(
-				formatDateKey(STOP_FILE.generated_utc.slice(0, 10), locale, true),
-			),
-		);
+		for (const [now, includeYear] of [
+			['2026-11-13T12:00:00Z', false],
+			['2027-11-13T12:00:00Z', true],
+		] as const) {
+			vi.setSystemTime(new Date(now));
+			await fireEvent.click(screen.getByRole('tab', { name: detailCopy[locale].tabs.detail }));
+			await fireEvent.click(screen.getByRole('tab', { name: detailCopy[locale].tabs.schedule }));
+			expect(
+				within(header).getByText(
+					detailCopy[locale].schedule.loadedOn(
+						formatDateKey(STOP_FILE.generated_utc.slice(0, 10), locale, includeYear),
+					),
+				),
+			).toHaveAttribute('datetime', STOP_FILE.generated_utc.slice(0, 10));
+		}
 	});
 
 	it('reserves no summary gap when this stop has no summary metrics', async () => {

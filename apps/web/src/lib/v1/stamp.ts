@@ -32,16 +32,18 @@ export function recordStamp(input: {
 		warning: false,
 	};
 }
+export function stampDate(key: string, locale: Locale, timeZone: string | undefined): string {
+	const year = timeZone
+		? new Intl.DateTimeFormat('en', { year: 'numeric', timeZone }).format(new Date())
+		: null;
+	return formatDateKey(key, locale, key.slice(0, 4) !== year);
+}
 export function stampText(
 	stamp: LiveStamp | RecordStamp,
 	locale: Locale,
 	timeZone: string | undefined,
 ): string {
 	if (stamp.form !== 'record' || (!stamp.dataThrough && !stamp.publishedOn)) return '';
-	const year = timeZone
-		? new Intl.DateTimeFormat('en', { year: 'numeric', timeZone }).format(new Date())
-		: null;
-	const date = (key: string | null) =>
-		key ? formatDateKey(key, locale, key.slice(0, 4) !== year) : null;
+	const date = (key: string | null) => (key ? stampDate(key, locale, timeZone) : null);
 	return stampCopy[locale].record(date(stamp.dataThrough), date(stamp.publishedOn), stamp.scope);
 }

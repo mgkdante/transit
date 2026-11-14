@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { HistoricAvailabilityIndexSchema, ManifestSchema } from './schemas/index';
 import { formatDateKey } from '#lib/utils/time.ts';
-import { recordStamp, stampText } from './stamp';
+import { recordStamp, stampDate, stampText } from './stamp';
 import { stampCopy } from './stamp.copy';
 
 const manifest = ManifestSchema.parse({
@@ -92,4 +92,15 @@ it('uses the network time zone to choose the current year', () => {
 	expect(stampText(stamp, 'en', 'Pacific/Auckland')).toBe(
 		stampCopy.en.record(null, formatDateKey('2026-11-11', 'en', true), 'window'),
 	);
+});
+
+it.each(['en', 'fr'] as const)('uses the network current year for dates in %s', (locale) => {
+	vi.useFakeTimers();
+	vi.setSystemTime(new Date('2027-01-01T00:30:00Z'));
+	for (const [date, includeYear] of [
+		['2026-11-04', false],
+		['2025-11-04', true],
+	] as const) {
+		expect(stampDate(date, locale, manifest.tz)).toBe(formatDateKey(date, locale, includeYear));
+	}
 });
