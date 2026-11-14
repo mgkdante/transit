@@ -136,7 +136,7 @@ beforeEach(() => {
 	vi.setSystemTime(base - 300000);
 	fixture.now = base;
 	fixture.epoch = 0;
-	fixture.page.url = new URL('http://localhost/stop/probe');
+	fixture.page.url = new URL('http://localhost/stop/probe?tab=detail');
 	fixture.visible = 'visible';
 	fixture.online = true;
 	Object.defineProperty(document, 'visibilityState', {

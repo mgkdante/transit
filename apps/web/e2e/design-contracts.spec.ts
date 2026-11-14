@@ -25,7 +25,10 @@ for (const locale of PUBLISHED_LOCALES) {
 				await page.setViewportSize({ width, height: 900 });
 				await page.goto(localizeHref(`/stop/${stop}`, locale));
 				const tabs = page.getByRole('tablist');
-				const first = tabs.getByRole('tab', { name: detailCopy[locale].tabs.detail, exact: true });
+				const first = tabs.getByRole('tab', {
+					name: detailCopy[locale].tabs.reliability,
+					exact: true,
+				});
 				await expect(first).toHaveAttribute('data-state', 'active');
 				await expect(tabs).toHaveClass(/station-tabs/);
 				await expect(async () => {

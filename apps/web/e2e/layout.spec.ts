@@ -19,7 +19,9 @@ const pages = [
 	'/stops?q=Fixture',
 	`/stops?route=${line}`,
 	`/lines/${line}`,
+	`/lines/${line}?tab=detail`,
 	`/stop/${stop}`,
+	`/stop/${stop}?tab=detail`,
 	'/network',
 	'/hotspots',
 	'/repeat-offenders',
@@ -81,6 +83,16 @@ for (const locale of ['en', 'fr'] as const)
 						await expect(page.locator('[data-slot="map-feed-stall"]')).toBeVisible();
 					if (state === 'missing')
 						await expect(page.locator('[data-slot="absent-value"]').first()).toBeVisible();
+				}
+				if (state === 'fresh' && path === `/lines/${line}` && page.viewportSize()!.width < 1024) {
+					// The phone view pill sits in its own lane above the record's first heading.
+					const pill = await page
+						.locator('[data-slot="surface-rail-mobile"] > button')
+						.boundingBox();
+					const heading = page.locator('[data-slot="reliability-rail-content"] :is(h2, h3)');
+					expect(pill!.y + pill!.height).toBeLessThanOrEqual(
+						(await heading.first().boundingBox())!.y,
+					);
 				}
 				const overlaps = path === '/network' ? await chartOverlaps(page) : [];
 				await expectLayout(page, info, overlaps);

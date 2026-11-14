@@ -105,4 +105,7 @@ it('never calls a record new when the earlier date was unknown', () => {
 it('prints the time in the network’s time zone', () => {
 	const summer = { kind: 'updated', atMs: Date.parse('2026-07-14T23:21:00Z') } as const;
 	expect(refreshMessage(summer, 'en', 'America/Vancouver')).toBe('Live data updated at 4:21 p.m.');
+	expect(refreshMessage(summer, 'fr', 'America/Vancouver')).toBe(
+		'Données en direct mises à jour à 16 h 21.',
+	);
 });

@@ -83,8 +83,8 @@ for (const lang of PUBLISHED_LOCALES)
 			'/',
 			'/map',
 			'/network',
-			'/lines/' + line,
-			'/stop/' + stop,
+			'/lines/' + line + '?tab=detail',
+			'/stop/' + stop + '?tab=detail',
 			'/trip/' + trip,
 			'/search?q=' + encodeURIComponent(stopName),
 		]) {
@@ -159,7 +159,7 @@ test('a trip page shows one heading without breadcrumbs', async ({ page }) => {
 });
 
 test('status chips filter the departures and report their pressed state', async ({ page }) => {
-	await page.goto(`/stop/${stop}`);
+	await page.goto(`/stop/${stop}?tab=detail`);
 	const t = detailCopy[locale].next;
 	const late = page
 		.getByRole('group', { name: t.filter.statusLabel })
@@ -212,7 +212,7 @@ for (const lang of PUBLISHED_LOCALES) {
 	}) => {
 		await page.goto(localizeHref(`/stop/${stop}`, lang));
 		const entries = await page.evaluate(() => history.length);
-		// Detail last, so the loop ends where the page started.
+		// The record last, so the loop ends where the bare URL started.
 		for (const [key, name] of Object.entries(detailCopy[lang].tabs).reverse()) {
 			const tab = page.getByRole('tab', { name, exact: true });
 			// Server markup shows the tabs before hydration wires them; retry until one responds.
@@ -221,10 +221,10 @@ for (const lang of PUBLISHED_LOCALES) {
 				await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 1_000 });
 			}).toPass();
 			await expect(page).toHaveURL(
-				(url) => url.searchParams.get('tab') === (key === 'detail' ? null : key),
+				(url) => url.searchParams.get('tab') === (key === 'reliability' ? null : key),
 			);
 			expect(await page.evaluate(() => history.length)).toBe(entries);
-			if (key === 'detail') continue;
+			if (key === 'reliability') continue;
 			await page.reload();
 			await expect(tab).toHaveAttribute('aria-selected', 'true');
 		}

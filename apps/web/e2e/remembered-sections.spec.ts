@@ -69,7 +69,7 @@ test.describe('local data fixture rendering', () => {
 			await action(page).click();
 		}
 		await page.clock.setFixedTime(Date.parse(departures.generated_utc) + 30_000);
-		await page.goto(`/stop/${stop}`);
+		await page.goto(`/stop/${stop}?tab=detail`);
 		const bulk = action(page);
 		if (await bulk.count()) {
 			await expect(bulk).toBeEnabled();
@@ -99,7 +99,7 @@ test.describe('local data fixture rendering', () => {
 			}
 			return route.fulfill({ json: payload });
 		});
-		await page.goto(`/stop/${stop}`);
+		await page.goto(`/stop/${stop}?tab=detail`);
 		await expect(action(page)).toHaveAccessibleName('Expand all');
 		await action(page).click();
 		const table = page.getByRole('table').first();
