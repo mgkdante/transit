@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from google.protobuf.message import DecodeError
+from google.transit import gtfs_realtime_pb2
+from test_alert_golden import ROOT, feed_bytes
 
 from transit_ops.providers.alert_record import (
     AlertIdentityInputs,
@@ -11,6 +14,7 @@ from transit_ops.providers.alert_record import (
     InformedEntity,
     alert_rows,
 )
+from transit_ops.providers.formats.alerts_gtfs_rt import gtfs_rt_alerts
 
 AT = datetime(2026, 11, 12, 12, tzinfo=UTC)
 START = datetime(2026, 3, 30, 2, 20, tzinfo=UTC)
@@ -219,3 +223,172 @@ def test_multi_period_identity_and_rows_match_golden():
     # The existing hash owner appends extra periods in source order (silver/i3.py:53).
     reordered = replace(identity, extra_active_periods=tuple(reversed(periods[1:])))
     assert reordered.content_hash() != "835237b4955db9b1b6a6d45300e9df9a"
+
+
+@pytest.mark.parametrize("case", sorted((ROOT / "corpus/gtfs-rt").glob("*")), ids=lambda p: p.stem)
+def test_gtfs_rt_rows_and_hashes_match_golden(case):
+    golden = json.loads((ROOT / "golden/gtfs-rt" / f"{case.stem}.json").read_text("utf-8"))
+    records = gtfs_rt_alerts(feed_bytes(case))
+    actual = json.loads(json.dumps(project(records), default=lambda dt: dt.isoformat()))
+    assert actual == [golden["alert_rows"], golden["entity_rows"], golden["period_rows"]]
+    assert [(r.occurrence_index, r.id, r.identity.content_hash()) for r in records] == [
+        (r["alert_index"], r["raw_alert_json"]["id"], r["content_hash"])
+        for r in golden["alert_rows"]
+    ]
+    assert [r.raw for r in records] == golden["converted_payload"]["alerts"]
+    for record, row in zip(records, golden["alert_rows"], strict=True):
+        for key in ("raw_alert_json",):
+            assert json.dumps(record.raw, sort_keys=True, ensure_ascii=False) == json.dumps(
+                row[key], sort_keys=True, ensure_ascii=False
+            )
+    if case.stem == "no_alert_entity":
+        assert records == ()
+        assert project(records) == ([], [], [])
+
+
+def edge_feed():
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.header.gtfs_realtime_version = "2.0"
+    entity = feed.entity.add(id=" edge ", is_deleted=True)
+    alert = entity.alert
+    translations = [
+        ("eng_CA", " English "),
+        ("en", "ignored"),
+        ("fra-CA", " Francais "),
+        ("fr", "ignored too"),
+        ("", " untagged "),
+        ("es", ""),
+        ("es", " "),
+    ]
+    for language, text in translations:
+        alert.header_text.translation.add(language=language, text=text)
+    alert.description_text.translation.add(text=" description ")
+    for language in ("en", "fr"):
+        alert.url.translation.add(language=language, text=f" https://example.org/{language} ")
+    alert.informed_entity.add()
+    alert.informed_entity.add(direction_id=1).trip.start_date = "20261112"
+    alert.informed_entity.add(agency_id=" agency ")
+    alert.informed_entity.add(route_type=0)
+    trip = alert.informed_entity.add().trip
+    trip.trip_id, trip.start_date, trip.start_time = " trip ", "20261112", "12:00:00"
+    alert.active_period.add()
+    alert.active_period.add(start=0)
+    alert.active_period.add(end=0)
+    return feed, translations
+
+
+def test_gtfs_rt_adapter_keeps_exactly_what_todays_converter_keeps():
+    feed, translations = edge_feed()
+    payload = feed.SerializeToString()
+    (value,) = gtfs_rt_alerts(payload)
+    assert feed.SerializeToString() == payload
+    assert value.header == {"en": "English", "fr": "Francais", "": "untagged"}
+    assert value.description == {"": "description"}
+    assert value.url == {"en": "https://example.org/en", "fr": "https://example.org/fr"}
+    assert (value.cause, value.effect, value.severity_level) == (None, None, None)
+    assert (value.cause_standard, value.effect_standard, value.published_at, value.updated_at) == (
+        None,
+        None,
+        None,
+        None,
+    )
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    assert value.active_periods == ((epoch, None), (None, epoch))
+    assert value.raw == {
+        "id": " edge ",
+        "header": [
+            {"text": text, **({"language": lang} if lang else {})}
+            for lang, text in translations
+            if text
+        ],
+        "description": [{"text": " description "}],
+        "url": [
+            {"text": f" https://example.org/{lang} ", "language": lang} for lang in ("en", "fr")
+        ],
+        "activePeriod": [{"start": 0}, {"end": 0}],
+        "informedEntities": [{"agencyId": " agency "}, {"routeType": 0}, {"tripId": " trip "}],
+    }
+    assert [
+        (s.agency_id, s.route_type, s.trip_id, s.area_id, s.raw) for s in value.informed_entities
+    ] == [
+        (" agency ", None, None, None, {"agencyId": " agency "}),
+        (None, 0, None, None, {"routeType": 0}),
+        (None, None, " trip ", None, {"tripId": " trip "}),
+    ]
+    assert (
+        value.identity.alert_id,
+        value.identity.alert_header_text,
+        value.identity.description_text,
+    ) == ("edge", "Francais", "description")
+    assert value.identity.extra_active_periods == ((None, epoch),)
+    _, entities, periods = project((value,))
+    assert [r["trip_id"] for r in entities] == [None, None, "trip"]
+    assert [(r["start_utc"], r["end_utc"]) for r in periods] == list(value.active_periods)
+
+
+def test_urls_do_not_change_identity():
+    feed, _ = edge_feed()
+    (value,) = gtfs_rt_alerts(feed.SerializeToString())
+    rows, _, _ = project((value,))
+    assert (rows[0]["url"], rows[0]["url_en"]) == (
+        "https://example.org/fr",
+        "https://example.org/en",
+    )
+    feed.entity[0].alert.url.Clear()
+    assert gtfs_rt_alerts(feed.SerializeToString())[0].identity == value.identity
+
+
+def test_missing_and_repeated_ids_keep_children_by_occurrence():
+    feed = gtfs_realtime_pb2.FeedMessage(header={"gtfs_realtime_version": "2.0"})
+    feed.entity.add(id="vehicle").vehicle.SetInParent()
+    inputs = [
+        ("", "a", ["A", "A"]),
+        ("", "b", ["B"]),
+        ("same", "c", ["C"]),
+        ("same", "d", ["D"]),
+        ("same", "c", ["discarded"]),
+        ("last", "e", ["E"]),
+    ]
+    for id_, text, stops in inputs:
+        alert = feed.entity.add(id=id_).alert
+        alert.header_text.translation.add(text=text)
+        alert.active_period.add(start=0)
+        for stop in stops:
+            alert.informed_entity.add(stop_id=stop)
+    records = gtfs_rt_alerts(feed.SerializeToString())
+    assert [(r.occurrence_index, r.id) for r in records] == [
+        (0, None),
+        (1, None),
+        (2, "same"),
+        (3, "same"),
+        (4, "same"),
+        (5, "last"),
+    ]
+    parents, entities, periods = project(records)
+    assert [(r["alert_index"], r["alert_id"], r["alert_header_text"]) for r in parents] == [
+        (0, None, "a"),
+        (1, None, "b"),
+        (2, "same", "c"),
+        (3, "same", "d"),
+        (5, "last", "e"),
+    ]
+    assert [
+        (r["alert_index"], r["entity_index"], r["stop_id"], r["raw_entity_json"]) for r in entities
+    ] == [
+        (0, 0, "A", {"stopId": "A"}),
+        (0, 1, "A", {"stopId": "A"}),
+        (1, 0, "B", {"stopId": "B"}),
+        (2, 0, "C", {"stopId": "C"}),
+        (3, 0, "D", {"stopId": "D"}),
+        (5, 0, "E", {"stopId": "E"}),
+    ]
+    assert [
+        (r["alert_index"], r["period_index"], r["start_utc"], r["end_utc"]) for r in periods
+    ] == [(i, 0, datetime(1970, 1, 1, tzinfo=UTC), None) for i in (0, 1, 2, 3, 5)]
+    assert records[4].informed_entities[0].raw == {"stopId": "discarded"}
+    assert records[2].identity == records[4].identity
+
+
+def test_invalid_protobuf_is_rejected():
+    with pytest.raises(DecodeError):
+        gtfs_rt_alerts(b"\xff")

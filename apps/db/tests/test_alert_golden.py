@@ -43,7 +43,7 @@ REQUIRED = {
 CASES = sorted((ROOT / "corpus").glob("*/*"))
 
 
-def _feed_bytes(case: Path) -> bytes:
+def feed_bytes(case: Path) -> bytes:
     if case.stem == "unknown_enum_value":
         # Text parsing rejects closed-enum unknowns. Extend an isolated descriptor to
         # encode the fixture; the converter still decodes with the unmodified bindings.
@@ -73,7 +73,7 @@ def _iso(value: object) -> str:
 def _current(case: Path) -> dict:
     converted = case.parent.name == "gtfs-rt"
     payload = (
-        convert_gtfs_rt_alerts_to_i3_payload(_feed_bytes(case))
+        convert_gtfs_rt_alerts_to_i3_payload(feed_bytes(case))
         if converted
         else json.loads(case.read_text(encoding="utf-8"))
     )
@@ -104,7 +104,7 @@ def _golden(case: Path) -> Path:
 
 def test_unknown_enum_fixture_preserves_wire_value() -> None:
     case = ROOT / "corpus" / "gtfs-rt" / "unknown_enum_value.textproto"
-    assert _feed_bytes(case) == bytes.fromhex("0a050a03322e3012080a01782a03308f4e")
+    assert feed_bytes(case) == bytes.fromhex("0a050a03322e3012080a01782a03308f4e")
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: f"{case.parent.name}/{case.stem}")
