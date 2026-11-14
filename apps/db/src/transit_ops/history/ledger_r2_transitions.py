@@ -20,6 +20,7 @@ from transit_ops.history.ledger_r2_documents import (
 from transit_ops.history.ledger_r2_documents import Transition as Transition
 from transit_ops.history.ledger_r2_readers import LedgerContention as LedgerContention
 from transit_ops.history.ledger_r2_readers import (
+    WindowCursor,
     confirm_committed,
     recover_step,
 )
@@ -65,26 +66,10 @@ def apply_transition(
             if committed is not None:
                 return confirm_committed(objects, identity, committed, cursor.doc)
             now = clock()
-            transition = change(cursor.doc, now)
-            if transition is None or (transition.after is None and not transition.records):
+            draft = _draft(change(cursor.doc, now), cursor, identity, now, operation_id)
+            if draft is None:
                 return cursor.doc
-            after = normalize_candidate(transition.after, cursor.doc, identity, cursor.next_seq)
-            if (
-                not transition.records
-                and cursor.doc
-                and after
-                and replace(after, seq=cursor.doc.seq) == cursor.doc
-            ):
-                return cursor.doc
-            after, envelope = prepare_transition(
-                after,
-                transition.records,
-                identity,
-                cursor.next_seq,
-                cursor.body,
-                now,
-                operation_id=operation_id,
-            )
+            after, envelope = draft
             _create(objects, transition_key(identity, cursor.next_seq), envelope, after)
             if after is None:
                 return None
@@ -109,6 +94,30 @@ def apply_transition(
     raise LedgerContention("window transition attempts exhausted")
 
 
+def _draft(
+    transition: Transition | None,
+    cursor: WindowCursor,
+    identity: Identity,
+    at: datetime,
+    operation_id: str,
+) -> tuple[WindowDocument | None, dict[str, Any]] | None:
+    if transition is None or (transition.after is None and not transition.records):
+        return None
+    after = normalize_candidate(transition.after, cursor.doc, identity, cursor.next_seq)
+    unchanged = cursor.doc and after and replace(after, seq=cursor.doc.seq) == cursor.doc
+    if not transition.records and unchanged:
+        return None
+    return prepare_transition(
+        after,
+        transition.records,
+        identity,
+        cursor.next_seq,
+        cursor.body,
+        at,
+        operation_id=operation_id,
+    )
+
+
 def _create(
     objects: ConditionalObjects,
     key: str,
@@ -121,17 +130,7 @@ def _create(
     except ObjectCollision:
         raise
     except Exception:
-        _resolve(objects, key, envelope, after)
-        return
-    _resolve(objects, key, envelope, after)
-
-
-def _resolve(
-    objects: ConditionalObjects,
-    key: str,
-    envelope: dict[str, Any],
-    after: WindowDocument | None,
-) -> None:
+        pass
     operation_id = str(envelope["operation_id"])
     try:
         stored = objects.read(key)
