@@ -128,19 +128,25 @@ for (const locale of PUBLISHED_LOCALES) {
 			const held = new Promise<void>((resolve) => {
 				release = resolve;
 			});
-			const request = page.waitForRequest('**/historic/hotspots.json*');
-			await page.route('**/historic/hotspots.json*', async (route) => {
+			await page.route('**/*.json*', async (route) => {
+				// The app and fixture data server use different ports on the same host.
+				if (new URL(route.request().url()).hostname !== new URL(page.url()).hostname) {
+					await route.fallback();
+					return;
+				}
 				await held;
 				await route.continue();
 			});
-			await page.getByRole('button', { name: navPillCopy[locale].refresh, exact: true }).click();
-			await request;
 			const busy = page.locator('[data-motion="refresh-busy"]');
 			try {
+				await page.getByRole('button', { name: navPillCopy[locale].refresh, exact: true }).click();
+				const refreshing = page.getByRole('button', {
+					name: navPillCopy[locale].refreshing,
+					exact: true,
+				});
+				await expect(refreshing).toHaveAttribute('data-refreshing', 'true');
+				await expect(refreshing).toBeDisabled();
 				await expect(busy).toBeVisible();
-				await expect(
-					page.getByRole('button', { name: navPillCopy[locale].refreshing, exact: true }),
-				).toBeDisabled();
 				const motion = (await runningMotion(page)).filter((a) => a.owner !== 'shared');
 				expect(motion.map((a) => a.owner)).toEqual(reducedMotion === 'reduce' ? [] : ['product']);
 				await expectStaticLiveIndicators(page);
