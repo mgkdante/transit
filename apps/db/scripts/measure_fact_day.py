@@ -5,13 +5,15 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import subprocess
+import os
+import signal
 import sys
 import tempfile
 import time
 import tracemalloc
 from datetime import UTC, datetime
 from pathlib import Path
+from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired
 from types import SimpleNamespace
 from typing import Any
 
@@ -107,17 +109,10 @@ def queries(conn: Any) -> list[dict[str, Any]]:
     for index, query in enumerate(definitions):
         params = [trip[0] if trip else None] if index == 2 else None
         first, warm = timed_query(conn, query, params), timed_query(conn, query, params)
-        result.append(
-            dict(
-                **first,
-                definition=query,
-                units="seconds; delay_seconds",
-                warm_seconds=warm["seconds"],
-                warm_sha256=warm["sha256"],
-                cache_state="uncontrolled",
-                **({"trip_outcome": outcome} if index == 2 else {}),
-            )
-        )
+        first.update(definition=query, units="seconds; delay_seconds", cache_state="uncontrolled")
+        first.update({f"warm_{key}": warm[key] for key in ("seconds", "sha256")})
+        result.append(first)
+    result[-1]["trip_outcome"] = outcome
     return result
 
 
@@ -271,7 +266,6 @@ def options(argv: list[str] | None = None) -> Any:
         db_phase_s=180,
         inventory=False,
         as_of=None,
-        upload=False,
         spool_dir="temporary",
     )
 
@@ -280,17 +274,57 @@ WORKER = (
     "import runpy,sys,tempfile; tempfile.tempdir=sys.argv[2]; "
     "n=runpy.run_path(sys.argv[1]); sys.exit(n['main'](sys.argv[3:],worker=True))"
 )
+LIFELINE = """import os,threading,time
+os.set_blocking(0,False)
+def parent_watch():
+ while True:
+  try: os.read(0,1); os._exit(1)
+  except BlockingIOError: time.sleep(0.2)
+threading.Thread(target=parent_watch,daemon=True).start()\n"""
 
 
 def supervise(argv: list[str], *, worker: str = WORKER) -> int:
-    with tempfile.TemporaryDirectory(prefix="transit-measure-") as directory:
-        result = subprocess.run(
-            [sys.executable, "-I", "-c", worker, str(Path(__file__).resolve()), directory, *argv],
-            capture_output=True,
-            text=True,
-        )
-    sys.stdout.write(result.stdout or '{"status":"failed","reason":"measurement_failed"}\n')
-    return result.returncode
+    status, previous = [], {}
+    try:
+        for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+            if hasattr(signal, name):
+                number = getattr(signal, name)
+                previous[number] = signal.signal(number, lambda n, f: status.append(128 + n))
+        with tempfile.TemporaryDirectory(prefix="transit-measure-") as directory:
+            with (Path(directory) / "report.json").open("x+", encoding="utf-8") as report:
+                script, base = str(Path(__file__).resolve()), vars(sys)["_base_executable"]
+                windows = sys.platform == "win32" and sys.executable != base
+                executable = base if windows else sys.executable
+                env = {**os.environ, "__PYVENV_LAUNCHER__": sys.executable} if windows else None
+                command = [executable, "-I", "-c", LIFELINE + worker, script, directory, *argv]
+                process = Popen(command, stdin=PIPE, stdout=report, stderr=DEVNULL, env=env)
+                assert process.stdin is not None
+                try:
+                    while not status:
+                        try:
+                            process.wait(timeout=0.2)
+                            break
+                        except TimeoutExpired:
+                            pass
+                finally:
+                    try:
+                        if process.poll() is None:
+                            process.terminate()
+                            try:
+                                process.wait(timeout=2)
+                            except TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=2)
+                    finally:
+                        process.stdin.close()
+                report.seek(0)
+                stdout = "" if status else report.read()
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+    code = status[0] if status else process.wait()
+    sys.stdout.write(stdout or '{"status":"failed","reason":"measurement_failed"}\n')
+    return code if code >= 0 else 128 - code
 
 
 def main(argv: list[str] | None = None, *, worker: bool = False) -> int:

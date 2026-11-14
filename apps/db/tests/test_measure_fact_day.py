@@ -1,7 +1,14 @@
 import importlib.util
 import json
+import os
+import signal
+import socket
+import subprocess
+import sys
 from itertools import product
 from pathlib import Path
+
+import pytest
 
 SCRIPT = Path(__file__).parents[1] / "scripts/measure_fact_day.py"
 spec = importlib.util.spec_from_file_location("measure", SCRIPT)
@@ -13,17 +20,13 @@ def fixture_csv(folder, table):
     schema = measure.rescue.SCHEMAS[table]
     path = folder / (table + ".csv")
     values = dict(
-        provider_id="sample",
-        realtime_snapshot_id=42,
-        entity_index=1,
-        snapshot_date_key=20261101,
-        snapshot_local_date="2026-11-01",
-        captured_at_utc="2026-11-01 05:00:00.123456+00",
-        feed_timestamp_utc="2026-11-01 05:00:00+00",
-        trip_id="",
-        stop_time_update_count=0,
-        skipped_stop_count=0,
-        latitude=1.23456789012345,
+        token.split("=", 1)
+        for token in (
+            "provider_id=sample realtime_snapshot_id=42 entity_index=1 snapshot_date_key=20261101 "
+            "snapshot_local_date=2026-11-01 captured_at_utc=2026-11-01T05:00:00.123456+00 "
+            "feed_timestamp_utc=2026-11-01T05:00:00+00 trip_id= stop_time_update_count=0 "
+            "skipped_stop_count=0 latitude=1.23456789012345"
+        ).split()
     )
     payload = ",".join(row[0] for row in schema) + "\n"
     # COPY quotes empty strings, leaving unquoted empty fields for SQL NULL.
@@ -91,26 +94,68 @@ def test_arguments_redact_rejected_credentials(capsys):
 
 def test_guard_hard_exit_removes_partial_scratch(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(measure.tempfile, "tempdir", str(tmp_path))
-    probe = """import runpy,sys,time
-from pathlib import Path
-from types import SimpleNamespace as NS
+    probe = """import os,runpy,sys,time
+from unittest.mock import Mock
 r=runpy.run_path(sys.argv[1])['rescue']
-Path(sys.argv[2],'fact.csv.partial').write_bytes(b'private')
-def fail(*a,**kw): raise OSError('unreachable')
-class Monitor:
- def execute(self,q,*a): self.identity='SELECT backend_start' in q; return self
- def fetchone(self): return (None,'transit-ls04-rescue-'+'a'*32) if self.identity else (False,)
- def close(self): pass
-terminator=NS(execute=lambda q,*a: None if q.startswith('SET') else fail(),close=lambda:None)
-channels=iter([Monitor(),terminator])
-def connect():
- try: return next(channels)
- except StopIteration: raise OSError('recovery unavailable')
-r.connect=connect
-source=NS(info=NS(backend_pid=42),cancel_safe=fail)
-with r.guarded(source,NS(db_phase_s=0.05)): time.sleep(10)
+with open(os.path.join(sys.argv[2],'fact.csv.partial'),'wb') as f: f.write(b'private')
+source=Mock();source.info.backend_pid=42;source.cancel_safe.side_effect=OSError()
+source.execute.return_value.fetchone.return_value=(None,'transit-ls04-rescue-'+'a'*32)
+r.connect=Mock(side_effect=[source,Mock(execute=Mock(side_effect=[None,OSError()])),OSError()])
+with r.guarded(source,Mock(db_phase_s=0.05)): time.sleep(10)
 """
     assert measure.supervise([], worker=probe) == 75
     assert not list(tmp_path.glob("transit-measure-*"))
     output = capsys.readouterr()
     assert json.loads(output.out)["reason"] == "measurement_failed" and not output.err
+
+
+@pytest.mark.parametrize(
+    "stop", ["SIGTERM", "SIGINT"] + (["SIGBREAK"] if hasattr(signal, "SIGBREAK") else [])
+)
+def test_parent_stop_reaps_worker_and_preserves_outside_sentinel(tmp_path, stop):
+    sentinel, ready = tmp_path / "outside", tmp_path / "ready"
+    sentinel.write_text("preserve")
+    worker = """import json,os,signal,socket,sys,time
+from pathlib import Path
+signal.signal(signal.SIGTERM,signal.SIG_IGN)
+s=socket.socket();s.bind(('127.0.0.1',0));s.listen()
+Path(sys.argv[2],'fact.csv.partial').write_bytes(b'private')
+Path(sys.argv[3]).write_text(json.dumps([os.getpid(),sys.argv[2],s.getsockname()[1]]))
+while True: time.sleep(0.1)
+"""
+    parent = """import runpy,signal,sys,tempfile,threading,time
+from pathlib import Path
+m=runpy.run_path(sys.argv[1]);tempfile.tempdir=sys.argv[2]
+def stop():
+ while not Path(sys.argv[3]).exists(): time.sleep(0.01)
+ print('READY',flush=True)
+ signal.raise_signal(getattr(signal,sys.argv[5]))
+threading.Thread(target=stop,daemon=True).start()
+sys.exit(m['supervise']([sys.argv[3]],worker=sys.argv[4]))
+"""
+    paths = list(map(str, (SCRIPT, tmp_path, ready)))
+    try:
+        with subprocess.Popen(
+            [sys.executable, "-I", "-c", parent, *paths, worker, stop],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as result:
+            assert result.stdout.readline() == "READY\n"
+            try:
+                output, error = result.communicate(timeout=8)
+            finally:
+                if result.poll() is None:
+                    result.kill()
+        pid, directory, port = json.loads(ready.read_text())
+        with socket.socket() as observer:
+            assert observer.connect_ex(("127.0.0.1", port)) != 0, "worker still alive"
+        assert not Path(directory).exists() and sentinel.read_text() == "preserve"
+        assert result.returncode == 128 + getattr(signal, stop)
+        assert json.loads(output)["reason"] == "measurement_failed" and not error
+    finally:
+        if ready.exists():
+            pid, _, port = json.loads(ready.read_text())
+            with socket.socket() as observer:
+                if observer.connect_ex(("127.0.0.1", port)) == 0:
+                    os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
