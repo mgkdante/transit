@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
+import { readProviderFile } from './provider-file';
 import { PublicProviderSchema } from '../src/lib/v1/schemas/providers';
 
 const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../static/og');
@@ -25,28 +25,12 @@ let drift = false;
 mkdirSync(OUT_DIR, { recursive: true });
 
 const providerDir = resolve(OUT_DIR, '../../../db/config/providers');
-const providerConfig = z.object({
-	provider: z.object({ provider_id: PublicProviderSchema.shape.id, is_active: z.boolean() }),
-	public: z
-		.object({ enabled: z.boolean(), labels: PublicProviderSchema.shape.labels.optional() })
-		.optional(),
-});
 const providers = readdirSync(providerDir)
 	.filter((file) => file.endsWith('.yaml'))
 	.sort()
-	.map((file) =>
-		providerConfig.parse(Bun.YAML.parse(readFileSync(resolve(providerDir, file), 'utf8'))),
-	)
-	.flatMap((config) =>
-		config.provider.is_active && config.public?.enabled
-			? [
-					PublicProviderSchema.pick({ id: true, labels: true }).parse({
-						id: config.provider.provider_id,
-						labels: config.public.labels,
-					}),
-				]
-			: [],
-	);
+	.map((file) => readProviderFile(resolve(providerDir, file)))
+	.filter((config) => config.active && config.publicEnabled)
+	.map((config) => PublicProviderSchema.pick({ id: true, labels: true }).parse(config));
 if (new Set(providers.map((provider) => provider.id)).size !== providers.length)
 	throw new Error('Duplicate public provider IDs');
 const outputs: Record<string, string> = {};

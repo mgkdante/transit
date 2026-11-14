@@ -5,14 +5,23 @@ from pathlib import Path
 import yaml
 
 from transit_ops.core.models import ProviderManifest, ProviderPublicConfig
+from transit_ops.providers.compat import manifest_from_declaration
+from transit_ops.providers.declaration import DeclarationError, load_declaration
 from transit_ops.settings import Settings, get_settings
 
 
 def load_provider_manifest(path: Path) -> ProviderManifest:
 
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError):
+        raise DeclarationError(f"{path.name}: file: must be readable UTF-8 YAML") from None
     if not isinstance(payload, dict):
         raise ValueError(f"Provider manifest at {path} must contain a YAML mapping.")
+    if "declaration" in payload or "id" in payload:
+        if "provider" in payload:
+            raise DeclarationError(f"{path.name}: file: mixed provider formats are not supported")
+        return manifest_from_declaration(load_declaration(path))
     return ProviderManifest.model_validate(payload)
 
 
