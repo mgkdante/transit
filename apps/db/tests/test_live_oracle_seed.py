@@ -10,7 +10,6 @@ from sqlalchemy import create_engine, event, text
 from test_static_silver import (
     _minimal_compliant_members,
     _write_members_zip,
-    _write_minimal_compliant_gtfs_zip,
 )
 
 from transit_ops.cli import _seed_feed_endpoints, _seed_provider
@@ -52,7 +51,9 @@ def registry(config, settings):
 @pytest.fixture
 def case(tmp_path):
     path = tmp_path / "schedule.zip"
-    _write_minimal_compliant_gtfs_zip(path)
+    members = _minimal_compliant_members()
+    members["stops.txt"] = members["stops.txt"].replace("node-1,,", "node-1,Generic node,")
+    _write_members_zip(path, members)
     payload = path.read_bytes()
     at = datetime(2026, 3, 24, 12, 0, 0, 123456, tzinfo=UTC)
     edition = EditionInput(
@@ -157,6 +158,7 @@ def test_seed_static_loads_the_edition_and_its_source_version_is_set(
     case.registry.get_provider(case.window.provider_id).provider.strict_gtfs = provider_strict
     case.settings.STRICT_GTFS = settings_strict
     members = _minimal_compliant_members()
+    members["stops.txt"] = members["stops.txt"].replace("node-1,,", "node-1,Generic node,")
     members["agency.txt"] = "agency_name,agency_url\nFixture,https://fixture.test\n"
     path = case.bronze("local").root / "schedule.zip"
     _write_members_zip(path, members)
