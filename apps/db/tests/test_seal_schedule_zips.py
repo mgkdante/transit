@@ -91,6 +91,14 @@ def test_schedule_archive_requires_transaction(tmp_path):
     connection.execute.assert_not_called()
 
 
+@pytest.mark.parametrize("digest", [SHA.upper(), SHA[:63]], ids=["uppercase", "short"])
+def test_schedule_archive_refuses_noncanonical_digest(tmp_path, digest):
+    connection, store = setup(tmp_path, checksum_sha256=digest)
+    with pytest.raises(ValueError, match="Invalid edition checksum"):
+        archive(connection, store)
+    assert not store.exists(KEY)
+
+
 def test_archived_zip_is_read_back_and_matches(tmp_path):
     class Damaged(LocalBronzeStorage):
         def put_if_absent(self, path, key):
@@ -107,10 +115,13 @@ def test_archived_zip_is_read_back_and_matches(tmp_path):
 
 def test_archiving_the_same_zip_again_writes_nothing(tmp_path):
     connection, store = setup(tmp_path, byte_size=None)
-    assert archive(connection, store).outcome == "created"
-    assert archive(connection, store).outcome == "already_equal"
+    result = archive(connection, store)
+    assert (result.outcome, result.byte_size) == ("created", 22)
+    result = archive(connection, store)
+    assert (result.outcome, result.byte_size) == ("already_equal", 22)
     (tmp_path / "original.zip").unlink()
-    assert archive(connection, store).outcome == "already_equal"
+    result = archive(connection, store)
+    assert (result.outcome, result.byte_size) == ("already_equal", 22)
     assert store.read_bytes(KEY) == ZIP
 
 

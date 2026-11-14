@@ -102,18 +102,26 @@ def test_archived_zip_is_read_back_and_matches(edition):
         seal(edition)
 
 
-@pytest.mark.parametrize("checksum", [None, SHA.upper()])
-def test_edition_identity_uses_provider_and_checksum_fallback(edition, checksum):
+@pytest.mark.parametrize(
+    "checksum,content_hash,refuses",
+    [(None, SHA, False), (SHA, "legacy", False), (SHA.upper(), SHA, True), (SHA[:63], SHA, True)],
+    ids=["fallback", "precedence", "uppercase", "short"],
+)
+def test_edition_identity_uses_provider_and_checksum_fallback(
+    edition, checksum, content_hash, refuses
+):
     connection, store, selection = edition
     connection.execute(
         text(
             "UPDATE core.dataset_versions SET checksum_sha256=:s, content_hash=:h, byte_size=NULL "
             "WHERE dataset_version_id=:v"
         ),
-        dict(
-            s=checksum, h=SHA if checksum is None else "legacy", v=selection["dataset_version_id"]
-        ),
+        dict(s=checksum, h=content_hash, v=selection["dataset_version_id"]),
     )
+    if refuses:
+        with pytest.raises(ValueError, match="Invalid edition checksum"):
+            seal(edition)
+        return
     assert seal(edition).checksum_sha256 == SHA
     with pytest.raises(ValueError, match="not found"):
         archive_schedule_zip(connection, lambda _: store, **(selection | {"provider_id": "other"}))

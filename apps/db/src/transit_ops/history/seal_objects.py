@@ -54,7 +54,7 @@ def _edition(connection: Connection, provider: str, edition: int) -> RowMapping:
 
 
 def _metadata(row: RowMapping) -> tuple[str, int | None, str, str]:
-    checksum = str(row["checksum_sha256"]).lower()
+    checksum = str(row["checksum_sha256"])
     if not re.fullmatch(r"[0-9a-f]{64}", checksum):
         raise ValueError("Invalid edition checksum")
     if row["source_ingestion_object_id"] is not None and row["raw_id"] is None:
