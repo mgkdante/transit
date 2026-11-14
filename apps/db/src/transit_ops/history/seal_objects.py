@@ -14,6 +14,10 @@ from transit_ops.lake.archive_keys import validate_provider_id
 from transit_ops.lake.objects import object_digest, put_create_only
 
 
+class ScheduleEditionChanged(ValueError):
+    """The verified bytes no longer describe the selected edition."""
+
+
 @dataclass(frozen=True)
 class ScheduleZipArchive:
     provider_id: str
@@ -29,7 +33,8 @@ def _edition(connection: Connection, provider: str, edition: int) -> RowMapping:
     row = (
         connection.execute(
             text("""
-        SELECT COALESCE(dv.checksum_sha256, dv.content_hash) AS checksum_sha256,
+        SELECT dv.provider_id, dv.dataset_version_id,
+               COALESCE(dv.checksum_sha256, dv.content_hash) AS checksum_sha256,
                dv.byte_size, dv.storage_backend, dv.storage_path,
                dv.source_ingestion_object_id, io.ingestion_object_id AS raw_id,
                io.checksum_sha256 AS raw_checksum, io.byte_size AS raw_size,
@@ -41,7 +46,6 @@ def _edition(connection: Connection, provider: str, edition: int) -> RowMapping:
          AND io.ingestion_run_id = dv.source_ingestion_run_id
         WHERE dv.provider_id = :provider_id AND dv.dataset_version_id = :edition
           AND dv.dataset_kind = 'static_schedule'
-        FOR SHARE OF dv
     """),
             dict(provider_id=provider, edition=edition),
         )
@@ -97,7 +101,11 @@ def archive_schedule_zip(
     dataset_version_id: int,
     archive_backend: str,
 ) -> ScheduleZipArchive:
-    """Archive an edition in the caller's transaction; return only verified bytes."""
+    """Archive verified bytes without taking a row lock.
+
+    The caller should not hold a long transaction around this operation. The
+    edition identity is re-read after verification; commit/rollback remain theirs.
+    """
     if not connection.in_transaction():
         raise ValueError("An active caller transaction is required")
     validate_provider_id(provider_id)
@@ -118,6 +126,16 @@ def archive_schedule_zip(
     actual, measured = object_digest(destination, key)
     if actual != checksum or (size is not None and measured != size):
         raise ValueError("Destination digest or size mismatch")
+    try:
+        latest = _edition(connection, provider_id, dataset_version_id)
+    except ValueError as exc:
+        raise ScheduleEditionChanged("Schedule edition changed: row is gone") from exc
+    if (latest["provider_id"], latest["dataset_version_id"], latest["checksum_sha256"]) != (
+        provider_id,
+        dataset_version_id,
+        checksum,
+    ):
+        raise ScheduleEditionChanged("Schedule edition changed: identity no longer matches")
     return ScheduleZipArchive(
         provider_id, dataset_version_id, checksum, measured, archive_backend, key, outcome
     )

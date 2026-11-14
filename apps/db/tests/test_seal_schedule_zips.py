@@ -14,6 +14,8 @@ def setup(tmp_path, **changes):
     store = LocalBronzeStorage("local", tmp_path)
     (tmp_path / "original.zip").write_bytes(ZIP)
     row = dict(
+        provider_id="network",
+        dataset_version_id=7,
         checksum_sha256=SHA,
         byte_size=22,
         storage_backend="local",
@@ -177,6 +179,9 @@ def test_schedule_archive_handles_two_equal_writers(tmp_path):
 def test_equal_bytes_have_provider_scoped_keys(tmp_path):
     connection, store = setup(tmp_path)
     first = archive(connection, store)
+    connection.execute.return_value.mappings.return_value.one_or_none.return_value.update(
+        provider_id="second", dataset_version_id=8
+    )
     second = archive_schedule_zip(
         connection,
         lambda _: store,
@@ -186,3 +191,29 @@ def test_equal_bytes_have_provider_scoped_keys(tmp_path):
     )
     assert second.storage_path == f"archive/v1/schedules/second/{SHA}.zip"
     assert store.read_bytes(first.storage_path) == store.read_bytes(second.storage_path) == ZIP
+
+
+def test_schedule_archive_takes_no_row_lock(tmp_path):
+    connection, store = setup(tmp_path)
+    archive(connection, store)
+    for call in connection.execute.call_args_list:
+        assert "FOR SHARE" not in str(call.args[0])
+        assert "FOR UPDATE" not in str(call.args[0])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [None, {"checksum_sha256": "a" * 64}, {"provider_id": "other"}],
+    ids=["gone", "digest", "provider"],
+)
+def test_schedule_archive_refuses_edition_changed_after_transfer(tmp_path, change):
+    connection, store = setup(tmp_path)
+    result = connection.execute.return_value.mappings.return_value.one_or_none
+    selected = result.return_value
+    result.side_effect = [selected, None if change is None else selected | change]
+    with pytest.raises(ValueError, match="Schedule edition changed") as error:
+        archive(connection, store)
+    assert type(error.value).__name__ == "ScheduleEditionChanged"
+    assert store.read_bytes(KEY) == store.read_bytes("original.zip") == ZIP
+    connection.commit.assert_not_called()
+    connection.rollback.assert_not_called()
