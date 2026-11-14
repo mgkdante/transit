@@ -1,5 +1,7 @@
+import json
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -111,30 +113,18 @@ def test_selectors_keep_order_raw_and_repeated_indexes():
     raw = {"agencyId": " agency ", "routeType": 0, "stopId": " S1 "}
     selector = InformedEntity(" agency ", None, 0, " S1 ", None, None, raw)
     value = replace(record(), informed_entities=(selector, selector))
-    assert project((value,))[1] == [
-        {
-            "i3_alert_snapshot_id": 1,
-            "alert_index": 0,
-            "entity_index": 0,
-            "provider_id": "fixture_city",
-            "route_id": None,
-            "stop_id": "S1",
-            "trip_id": None,
-            "area_id": None,
-            "raw_entity_json": {"agencyId": " agency ", "routeType": 0, "stopId": " S1 "},
-        },
-        {
-            "i3_alert_snapshot_id": 1,
-            "alert_index": 0,
-            "entity_index": 1,
-            "provider_id": "fixture_city",
-            "route_id": None,
-            "stop_id": "S1",
-            "trip_id": None,
-            "area_id": None,
-            "raw_entity_json": {"agencyId": " agency ", "routeType": 0, "stopId": " S1 "},
-        },
-    ]
+    expected = {
+        "i3_alert_snapshot_id": 1,
+        "alert_index": 0,
+        "entity_index": 0,
+        "provider_id": "fixture_city",
+        "route_id": None,
+        "stop_id": "S1",
+        "trip_id": None,
+        "area_id": None,
+        "raw_entity_json": {"agencyId": " agency ", "routeType": 0, "stopId": " S1 "},
+    }
+    assert project((value,))[1] == [expected, {**expected, "entity_index": 1}]
     assert raw == {"agencyId": " agency ", "routeType": 0, "stopId": " S1 "}
 
 
@@ -183,3 +173,49 @@ def test_untagged_text_and_epoch_periods_remain_present():
             "end_utc": END,
         },
     ]
+
+
+def test_multi_period_identity_and_rows_match_golden():
+    path = Path(__file__).parent / "fixtures/alerts/golden/gtfs-rt/several_periods_with_url.json"
+    golden = json.loads(path.read_text(encoding="utf-8"))
+    raw = golden["converted_payload"]["alerts"][0]
+    periods = tuple(
+        (datetime.fromtimestamp(p["start"], UTC), datetime.fromtimestamp(p["end"], UTC))
+        for p in raw["activePeriod"]
+    )
+    identity = AlertIdentityInputs(
+        raw["id"],
+        "Fermeture fictive du weekend",
+        None,
+        None,
+        None,
+        None,
+        *periods[0],
+        None,
+        None,
+        periods[1:],
+    )
+    value = AlertRecord(
+        0,
+        raw["id"],
+        {"fr": "Fermeture fictive du weekend"},
+        {},
+        {"fr": "https://example.invalid/fr/multi", "en": "https://example.invalid/en/multi"},
+        None,
+        None,
+        None,
+        None,
+        None,
+        periods,
+        (),
+        None,
+        None,
+        identity,
+        raw,
+    )
+    assert identity.content_hash() == "835237b4955db9b1b6a6d45300e9df9a"
+    actual = json.loads(json.dumps(project((value,)), default=lambda dt: dt.isoformat()))
+    assert actual == [golden["alert_rows"], golden["entity_rows"], golden["period_rows"]]
+    # The existing hash owner appends extra periods in source order (silver/i3.py:53).
+    reordered = replace(identity, extra_active_periods=tuple(reversed(periods[1:])))
+    assert reordered.content_hash() != "835237b4955db9b1b6a6d45300e9df9a"
