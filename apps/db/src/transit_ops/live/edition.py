@@ -88,3 +88,65 @@ def loaded_edition(duck: duckdb.DuckDBPyConnection) -> EditionId | None:
         "SELECT provider_id, dataset_version_id, source_version FROM edition_meta"
     ).fetchone()
     return None if row is None else EditionId(*row)
+
+
+_EDITION_SOURCES = {
+    "edition_stop_times": ("silver.stop_times", "trip_id, stop_sequence"),
+    "edition_trips": ("silver.trips", "trip_id"),
+    "edition_calendar": ("silver.calendar", "service_id"),
+    "edition_calendar_dates": ("silver.calendar_dates", "service_id, service_date"),
+    "edition_trip_service_span": ("gold.trip_service_span", "trip_id"),
+    "edition_routes": ("gold.dim_route", "route_id"),
+    "edition_stops": ("gold.dim_stop", "stop_id"),
+}
+
+
+def _copy_edition_relation(
+    duck: duckdb.DuckDBPyConnection, pg: Connection, edition: EditionId, table: str
+) -> int:
+    source, key = _EDITION_SOURCES[table]
+    columns = EDITION_TABLES[table]
+    names = ", ".join(name for name, _ in columns)
+    rows = pg.execute(
+        text(
+            f"SELECT {names} FROM {source} "
+            "WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id "
+            f"ORDER BY {key}"
+        ),
+        {"provider_id": edition.provider_id, "dataset_version_id": edition.dataset_version_id},
+    ).fetchall()
+    arrays = [[row[index] for row in rows] for index in range(len(columns))]
+    projections = ", ".join(f"UNNEST(CAST(? AS {kind}[]))" for _, kind in columns)
+    duck.execute(f"DELETE FROM {table}")
+    duck.execute(f"INSERT INTO {table} ({names}) SELECT {projections}", arrays)
+    return len(rows)
+
+
+def load_edition_from_postgres(
+    duck: duckdb.DuckDBPyConnection, pg: Connection, edition: EditionId
+) -> dict[str, int]:
+    """Replace the edition atomically, using an idle non-autocommit PostgreSQL connection."""
+    if pg.in_transaction() or getattr(pg.connection.dbapi_connection, "autocommit", True):
+        raise ValueError("Edition loading requires an idle non-autocommit PostgreSQL connection")
+    with pg.begin():
+        pg.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+        duck.execute("BEGIN TRANSACTION")
+        try:
+            create_edition_tables(duck)
+            counts = {
+                table: _copy_edition_relation(duck, pg, edition, table)
+                for table in _EDITION_SOURCES
+            }
+            duck.execute("DELETE FROM edition_meta")
+            duck.execute(
+                "INSERT INTO edition_meta (provider_id, dataset_version_id, source_version) "
+                "SELECT UNNEST(CAST(? AS VARCHAR[])), UNNEST(CAST(? AS BIGINT[])), "
+                "UNNEST(CAST(? AS VARCHAR[]))",
+                [[edition.provider_id], [edition.dataset_version_id], [edition.source_version]],
+            )
+            counts["edition_meta"] = 1
+            duck.execute("COMMIT")
+        except BaseException:
+            duck.execute("ROLLBACK")
+            raise
+    return counts
