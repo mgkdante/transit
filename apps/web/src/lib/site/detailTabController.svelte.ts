@@ -1,4 +1,4 @@
-import { detailTabFromSearchParams, type DetailTab } from './detailTabs';
+import { detailTabFromSearchParams, detailTabQueryValue, type DetailTab } from './detailTabs';
 import { mirrorSearchParam } from './urlMirror';
 
 export interface DetailTabController {
@@ -14,7 +14,7 @@ export function createDetailTabController(initialUrl: URL): DetailTabController 
 		const next = detailTabFromSearchParams(url.searchParams);
 		active = next;
 
-		const canonicalValue = next === 'detail' ? null : next;
+		const canonicalValue = detailTabQueryValue(next);
 		const values = url.searchParams.getAll('tab');
 		const isCanonical =
 			canonicalValue === null
@@ -29,7 +29,7 @@ export function createDetailTabController(initialUrl: URL): DetailTabController 
 		},
 		set active(next: DetailTab) {
 			active = next;
-			mirrorSearchParam('tab', next === 'detail' ? null : next);
+			mirrorSearchParam('tab', detailTabQueryValue(next));
 		},
 		syncFromUrl,
 	};

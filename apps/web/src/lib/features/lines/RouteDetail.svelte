@@ -15,7 +15,6 @@
 	const clock = getV1Runtime().clock;
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import type { DetailTab } from '#lib/site/detailTabs.ts';
 	import { createDetailTabController } from '#lib/site/detailTabController.svelte.ts';
 	import { getLocale, getLocalizeHref, type Locale } from '#lib/i18n/index.ts';
 	import { fmtDelayMin as sharedFmtDelayMin } from '#lib/utils/index.ts';
@@ -106,11 +105,9 @@
 	const locale = getLocale();
 	const t = $derived(detailCopy[locale]);
 
-	const tabs = $derived<{ key: DetailTab; label: string }[]>([
-		{ key: 'detail', label: t.tabs.detail },
-		{ key: 'schedule', label: t.tabs.schedule },
-		{ key: 'reliability', label: t.tabs.reliability },
-	]);
+	const tabs = $derived(
+		(['reliability', 'detail', 'schedule'] as const).map((key) => ({ key, label: t.tabs[key] })),
+	);
 	const detailTabController = createDetailTabController(new URL(page.url.href));
 	$effect(() => detailTabController.syncFromUrl(new URL(page.url.href)));
 
@@ -165,6 +162,7 @@
 
 	const v1 = getV1Context();
 	const manifest = v1.manifest;
+	const l10n = { locale, timeZone: manifest.tz };
 	const live = createLiveStore(manifest, liveReader, {
 		families: providerHasAlerts(v1.provider)
 			? ['vehicles', 'trips', 'alerts', 'network']
@@ -438,7 +436,7 @@
 											class="route-absence-note"
 										/>
 									{/if}
-									<LineDirections directions={file.directions} {predictions} {locale} copy={t} />
+									<LineDirections directions={file.directions} {predictions} {...l10n} copy={t} />
 								</div>
 							</CollapsibleSection>
 

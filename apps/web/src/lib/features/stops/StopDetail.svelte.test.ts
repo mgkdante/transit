@@ -313,7 +313,7 @@ let reliabilityResourceState: {
 } | null = null;
 const stopSurface = createSurfaceHarness({
 	url: {
-		initial: '/stop/57191',
+		initial: '/stop/57191?tab=detail',
 		origin: 'http://localhost',
 		set: (url) => {
 			stopDetailNav.page.url = url;
@@ -475,7 +475,7 @@ function articleCardFor(body: Element | null): HTMLElement {
 function renderReliability(locale: 'en' | 'fr' = currentLocale) {
 	currentLocale = locale;
 	const view = render(StopDetail, { props: { id: '57191' } });
-	fireEvent.click(screen.getByRole('tab', { name: locale === 'fr' ? 'Fiabilité' : 'Reliability' }));
+	fireEvent.click(screen.getByRole('tab', { name: locale === 'fr' ? 'Bilan' : 'Record' }));
 	return view;
 }
 
@@ -529,9 +529,9 @@ describe('StopDetail article contract', () => {
 		expect(container.querySelectorAll('[data-slot="article-header"]')).toHaveLength(1);
 		expect(container.querySelector('.surface-head')).toBeNull();
 		expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual([
-			'Detail',
+			'Record',
+			'Live now',
 			'Schedule',
-			'Reliability',
 		]);
 		await rerender({ id: '57191', seed: { id: '57191', name: '57191' } });
 		expect(screen.getByRole('heading', { level: 1, name: 'Test stop' })).toBeInTheDocument();
@@ -552,7 +552,7 @@ describe('StopDetail article contract', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
 		expect(summaries()).toHaveLength(1);
 		expect(summary().closest('[data-slot="detail-shell-summary"]')).not.toBeNull();
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		expect(summaries()).toHaveLength(1);
 		expect(summary().closest('[data-slot="reliability-rail-summary"]')).not.toBeNull();
 		expect(container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
@@ -607,7 +607,7 @@ describe('StopDetail article contract', () => {
 		expect(container.querySelector('[data-slot="stop-reliability-summary"]')).toBeNull();
 		expect(container.querySelector('[data-slot="detail-shell-summary"]')).toBeNull();
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		expect(container.querySelector('[data-slot="reliability-rail-summary"]')).toBeNull();
 		expect(container.querySelector('[data-slot="reliability-rail-layout"]')).not.toBeNull();
 	});
@@ -626,6 +626,7 @@ describe('StopDetail article contract', () => {
 
 	it('localizes the article identity labels without replacing their real values', () => {
 		currentLocale = 'fr';
+		stopSurface.setUrl('/stop/57191');
 		const { container } = render(StopDetail, {
 			props: { id: '57191', seed: { id: '57191', name: 'Station test' } },
 		});
@@ -640,7 +641,10 @@ describe('StopDetail article contract', () => {
 		expect(container.querySelector('[data-slot="article-header"]')).not.toHaveTextContent(
 			detailCopy.fr.info.code,
 		);
-		fireEvent.click(screen.getByRole('tab', { name: detailCopy.fr.tabs.reliability }));
+		const tabs = screen.getAllByRole('tab');
+		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Bilan', 'En direct', 'Horaire']);
+		expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+		expect(container.querySelector('[data-toc="stop-detail-departures"]')).toBeNull();
 		expect(
 			within(container.querySelector('[data-slot="article-header"]') as HTMLElement).getByText(
 				stampCopy.fr.record(
@@ -653,6 +657,7 @@ describe('StopDetail article contract', () => {
 		expect(
 			screen.getByRole('link', { name: /Voir l’arrêt Station test sur la carte/ }),
 		).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('tab', { name: detailCopy.fr.tabs.detail }));
 		expect(
 			screen.getByText(detailCopy.fr.info.feedId).closest('[data-slot="metric-display"]'),
 		).toHaveTextContent('57191');
@@ -660,12 +665,13 @@ describe('StopDetail article contract', () => {
 	});
 
 	it.each(['next', 'info', 'unknown'])(
-		'normalizes the legacy/unknown %s tab to a clean Detail URL without dropping range filters',
+		'normalizes the legacy/unknown %s tab to a clean record URL without dropping range filters',
 		async (legacy) => {
 			stopDetailNav.page.url = new URL(
 				`http://localhost/stop/57191?tab=${legacy}&from=2026-01-31&to=2026-02-01&line=51`,
 			);
 			render(StopDetail, { props: { id: '57191' } });
+			expect(screen.getAllByRole('tab')[0]).toHaveAttribute('aria-selected', 'true');
 
 			await waitFor(() => expect(stopDetailNav.replaceState).toHaveBeenCalled());
 			const normalized = stopDetailNav.replaceState.mock.calls
@@ -681,24 +687,23 @@ describe('StopDetail article contract', () => {
 		},
 	);
 
-	it('does not let the inactive reliability pane restore a legacy tab while shallow state lags', async () => {
-		const initial = new URL(
-			'http://localhost/stop/57191?tab=next&from=2026-01-31&to=2026-02-01&line=51',
-		);
+	it('does not let the inactive record pane undo the selected tab while shallow state lags', async () => {
+		const initial = new URL('http://localhost/stop/57191?from=2026-01-31&to=2026-02-01&line=51');
 		stopDetailNav.page.url = initial;
 		window.history.replaceState({}, '', `${initial.pathname}${initial.search}`);
 		stopDetailNav.replaceState.mockImplementation(() => undefined);
 
 		try {
 			render(StopDetail, { props: { id: '57191' } });
-			await waitFor(() => expect(stopDetailNav.replaceState).toHaveBeenCalled());
+			expect(screen.getByRole('tab', { name: 'Record' })).toHaveAttribute('aria-selected', 'true');
+			await fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 			await Promise.resolve();
 
 			const finalWrite = new URL(
 				stopDetailNav.replaceState.mock.calls.at(-1)?.[0] as string | URL,
 				window.location.origin,
 			);
-			expect(finalWrite.searchParams.has('tab')).toBe(false);
+			expect(finalWrite.searchParams.get('tab')).toBe('detail');
 			expect(finalWrite.searchParams.get('from')).toBe('2026-01-31');
 			expect(finalWrite.searchParams.get('to')).toBe('2026-02-01');
 			expect(finalWrite.searchParams.get('line')).toBe('51');
@@ -710,14 +715,14 @@ describe('StopDetail article contract', () => {
 		}
 	});
 
-	it('keeps the default Detail URL clean and preserves mounted panes while new panes use the bulk choice', async () => {
+	it('keeps the explicit Detail URL and preserves mounted panes while new panes use the bulk choice', async () => {
 		stopFileData = {
 			...STOP_FILE,
 			scheduled: [{ route: '51', headsign: 'Nord', times: ['08:00'] }],
 		} as unknown as StopFile;
 		const { container } = render(StopDetail, { props: { id: '57191' } });
 
-		expect(stopDetailNav.page.url.searchParams.has('tab')).toBe(false);
+		expect(stopDetailNav.page.url.searchParams.get('tab')).toBe('detail');
 		const tabs = container.querySelector<HTMLElement>('[data-slot="entity-detail-tabs"]');
 		expect(container.querySelector('[data-slot="detail-shell-toolbar"]')).toContainElement(
 			tabs as HTMLElement,
@@ -750,7 +755,7 @@ describe('StopDetail article contract', () => {
 			'false',
 		);
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 		for (const card of detailCards) {
 			expect(card.querySelector('[data-section-trigger]')).toHaveAttribute(
 				'aria-expanded',
@@ -758,7 +763,7 @@ describe('StopDetail article contract', () => {
 			);
 		}
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		expect(container.querySelector('[data-slot="detail-shell-toolbar"]')).toContainElement(tabs);
 		expect(container.querySelector('[data-slot="reliability-pane"]')).not.toBeNull();
 	});
@@ -827,7 +832,7 @@ describe('StopDetail article contract', () => {
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
 		expect(screen.getByTestId('sections-toggle')).toBeVisible();
-		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 	});
 
@@ -857,7 +862,7 @@ describe('StopDetail retained-history ownership', () => {
 
 		expect(getStopSpy).toHaveBeenCalledWith('57191');
 		expect(getStopReliabilitySpy).toHaveBeenCalledWith('57191');
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		const pane = view.container.querySelector('[data-slot="reliability-pane"]') as HTMLElement;
 		expect(pane).not.toBeNull();
 		expect(within(pane).getByText('Day')).toBeInTheDocument();
@@ -916,7 +921,7 @@ describe('StopDetail retained-history singleton boundary', () => {
 		reliabilityData = HABITS_ONLY_RELIABILITY;
 		const view = render(StopDetail, { props: { id: '57191' } });
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		const habits = view.container.querySelector('[data-slot="stop-habits"]');
 		expect(habits).not.toBeNull();
 		expect(
@@ -955,7 +960,7 @@ describe('StopDetail retained-history singleton boundary', () => {
 			reliabilityData = value;
 			const view = render(StopDetail, { props: { id: '57191' } });
 
-			await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+			await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 			await waitFor(() =>
 				expect(
 					view.container.querySelector('[data-slot="edge-state"][data-variant="empty"]'),
@@ -1379,7 +1384,7 @@ describe('StopDetail live departures — HONEST ABSENCE (empty board)', () => {
 describe('StopDetail — service alerts affecting this stop', () => {
 	it('surfaces alerts that list this stop OR a route it serves, and hides unrelated ones', () => {
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(alerts).not.toBeNull();
@@ -1398,7 +1403,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 	it('localizes the alerts section + headlines in FR', () => {
 		currentLocale = 'fr';
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Détail' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'En direct' }));
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(within(alerts).getByText('Avis de service')).toBeInTheDocument();
@@ -1412,7 +1417,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 	it('stands the alerts section down when no live alert affects this stop', () => {
 		useEmptyLive = true;
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 
 		expect(document.querySelector('[data-testid="stop-alerts"]')).toBeNull();
 	});
@@ -1421,7 +1426,7 @@ describe('StopDetail — service alerts affecting this stop', () => {
 		stopFileData = STOP_FILE_BY_CODE;
 		alertsData = { generated_utc: '2026-06-15T12:00:00Z', alerts: ALERTS_BY_CODE as typeof ALERTS };
 		render(StopDetail, { props: { id: 'STATION-1' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 
 		const alerts = document.querySelector('[data-testid="stop-alerts"]') as HTMLElement;
 		expect(alerts).not.toBeNull();
@@ -1521,7 +1526,7 @@ describe('StopDetail schedule — semantic timetable + honest gaps', () => {
 describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', () => {
 	it('lays the Info pane out as facts (left) + alerts (right)', () => {
 		const { container } = render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 		const info = container.querySelector('.stop-info') as HTMLElement;
 		expect(info).not.toBeNull();
 		expect(info.querySelector('.stop-info-facts')).not.toBeNull();
@@ -1535,7 +1540,7 @@ describe('StopDetail info — 2-col layout + tri-state accessibility (S8B/A3)', 
 	] as const)('renders tri-state accessibility for %s', (wheelchair, expected) => {
 		if (wheelchair !== undefined) stopFileData = { ...STOP_FILE, wheelchair } as StopFile;
 		render(StopDetail, { props: { id: '57191' } });
-		fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 		expect(screen.getByText(expected)).toBeInTheDocument();
 		if (wheelchair === undefined) {
 			expect(screen.queryByText('Wheelchair accessible')).not.toBeInTheDocument();

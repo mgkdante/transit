@@ -8,6 +8,8 @@
 		predictions: ReadonlyMap<string, StopPrediction>;
 		locale: Locale;
 		copy: RouteDetailCopy;
+		/** The network's zone (the manifest's `tz`); predicted arrivals read in it. */
+		timeZone?: string;
 	}
 </script>
 
@@ -20,20 +22,19 @@
 	import { getLocalizeHref } from '#lib/i18n/index.ts';
 	import { routeFor } from '#lib/nav/index.ts';
 	import { stopNameFallback } from '#lib/site/absence.ts';
-	import { formatUtc } from '#lib/utils/time.ts';
+	import { formatLocalClock } from '#lib/utils/time.ts';
 	import { delayLabel, delayTone } from '#lib/site/delayPresentation.ts';
 	import { AbsentValue } from '#lib/components/edge/index.ts';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	const localizeHref = getLocalizeHref();
 
-	let { directions, predictions, locale, copy }: LineDirectionsProps = $props();
+	let { directions, predictions, locale, copy, timeZone }: LineDirectionsProps = $props();
 
 	const stopHref = (stopId: string): string =>
 		localizeHref(routeFor({ kind: 'stop', id: stopId }), locale);
 
-	const timeLabel = (iso: string): string =>
-		formatUtc(iso, locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+	const timeLabel = (iso: string): string => formatLocalClock(new Date(iso), locale, timeZone);
 </script>
 
 {#if (directions ?? []).length > 0}

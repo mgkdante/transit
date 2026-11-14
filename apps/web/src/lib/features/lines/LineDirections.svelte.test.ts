@@ -20,15 +20,19 @@ const PREDICTIONS = new Map<string, StopPrediction>([
 ]);
 
 describe('LineDirections', () => {
-	it.each(['en', 'fr'] as const)(
+	it.each([
+		['en', '8:05 a.m.'],
+		['fr', '8 h 05'],
+	] as const)(
 		'preserves prediction delay and explains an absent prediction in %s',
-		(locale) => {
+		(locale, clock) => {
 			render(LineDirections, {
 				props: {
 					directions: DIRECTIONS,
 					predictions: PREDICTIONS,
 					locale,
 					copy: detailCopy[locale],
+					timeZone: 'America/Toronto',
 				},
 			});
 
@@ -38,6 +42,7 @@ describe('LineDirections', () => {
 			const action = locale === 'en' ? 'View stop' : 'Voir l’arrêt';
 			expect(screen.getByTitle('First stop')).toHaveTextContent('First stop');
 			const predicted = screen.getByRole('link', { name: /First stop/ });
+			expect(predicted.querySelector('time')?.textContent?.trim()).toBe(clock);
 			expect(predicted).toHaveAccessibleName(
 				`${action} 1 First stop ${predicted.querySelector('time')!.textContent} ${locale === 'en' ? '2 min late' : '2 min en retard'}`,
 			);

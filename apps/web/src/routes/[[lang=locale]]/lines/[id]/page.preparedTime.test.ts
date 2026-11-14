@@ -37,7 +37,7 @@ describe('line article time preparation', () => {
 		const timer = vi.spyOn(globalThis, 'setTimeout');
 		const result = await load({
 			data,
-			url: new URL('https://transit.yesid.dev/fr/lines/24?tab=reliability'),
+			url: new URL('https://transit.yesid.dev/fr/lines/24'),
 			parent,
 		} as unknown as Parameters<typeof load>[0]);
 

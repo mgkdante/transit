@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe('/stop/[id] server identity seed', () => {
-	it.each(['next', 'info', 'unknown', 'detail'])(
+	it.each(['next', 'info', 'unknown', 'reliability'])(
 		'redirects the noncanonical %s tab before fetching data and preserves unrelated params',
 		async (tab) => {
 			const request = event();
@@ -54,6 +54,14 @@ describe('/stop/[id] server identity seed', () => {
 			expect(harness.getStop).not.toHaveBeenCalled();
 		},
 	);
+
+	it('keeps an explicit Detail tab without redirecting', async () => {
+		const request = event();
+		Object.assign(request, { url: new URL('https://transit.yesid.dev/stop/1234?tab=detail') });
+		harness.getStop.mockResolvedValue(null);
+		await expect(load(request)).resolves.toMatchObject({ seed: { id: '1234' } });
+		expect(harness.getStop).toHaveBeenCalledOnce();
+	});
 
 	it('serializes the accepted stop once so hydration does not fetch it again', async () => {
 		const stop = {

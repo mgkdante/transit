@@ -90,7 +90,7 @@ export const detailCopy = defineCopy({
 		),
 		detailLede:
 			'Parcours en direct, horaire prévu et fiabilité historique de cette ligne. Mesuré à partir du contrat /v1.',
-		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
+		tabs: { reliability: 'Bilan', detail: 'En direct', schedule: 'Horaire' },
 		profile: {
 			title: 'Profil de service',
 			summary: 'Où passe cette ligne, et à quelles heures ?',
@@ -120,7 +120,7 @@ export const detailCopy = defineCopy({
 		servicePeriods: 'Périodes de service',
 		headways: 'Intervalles',
 		scheduleIntro:
-			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les départs pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Fiabilité ». Les heures suivent la journée de service : 25:30 signifie 01:30 le lendemain.',
+			'Les horaires prévus de cette ligne : le premier et le dernier départ, puis l’intervalle prévu entre les départs pour chaque période de la journée. C’est l’offre PLANIFIÉE. Pour la ponctualité réelle, voyez l’onglet « Bilan ». Les heures suivent la journée de service : 25:30 signifie 01:30 le lendemain.',
 		scheduleTable: {
 			caption: 'Périodes de service planifiées',
 			period: 'Période',
@@ -192,7 +192,7 @@ export const detailCopy = defineCopy({
 		),
 		detailLede:
 			'Live route, planned schedule and historic reliability for this line. Measured from the /v1 contract.',
-		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
+		tabs: { reliability: 'Record', detail: 'Live now', schedule: 'Schedule' },
 		profile: {
 			title: 'Service profile',
 			summary: 'Where does this line run, and when?',
@@ -222,7 +222,7 @@ export const detailCopy = defineCopy({
 		servicePeriods: 'Service periods',
 		headways: 'Headways',
 		scheduleIntro:
-			'This line’s planned schedule: the first and last departure, then the planned time between departures for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Reliability” tab. Times follow the service day: 25:30 means 01:30 the next day.',
+			'This line’s planned schedule: the first and last departure, then the planned time between departures for each period of the day. This is the PLANNED service. For real-world punctuality, see the “Record” tab. Times follow the service day: 25:30 means 01:30 the next day.',
 		scheduleTable: {
 			caption: 'Planned service periods',
 			period: 'Period',

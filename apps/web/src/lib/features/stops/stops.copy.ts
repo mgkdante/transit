@@ -128,7 +128,7 @@ export const detailCopy = defineCopy({
 		},
 		viewOnMap: 'Voir sur la carte',
 		viewStopOnMap: (stop: string) => `Voir l’arrêt ${stop} sur la carte`,
-		tabs: { detail: 'Détail', schedule: 'Horaire', reliability: 'Fiabilité' },
+		tabs: { reliability: 'Bilan', detail: 'En direct', schedule: 'Horaire' },
 		detailCard: {
 			title: 'Informations sur l’arrêt',
 			summary: 'Où est cet arrêt, et quels services y sont offerts ?',
@@ -232,7 +232,7 @@ export const detailCopy = defineCopy({
 		},
 		viewOnMap: 'View on map',
 		viewStopOnMap: (stop) => `View stop ${stop} on map`,
-		tabs: { detail: 'Detail', schedule: 'Schedule', reliability: 'Reliability' },
+		tabs: { reliability: 'Record', detail: 'Live now', schedule: 'Schedule' },
 		detailCard: {
 			title: 'Stop information',
 			summary: 'Where is this stop, and what service can you use here?',

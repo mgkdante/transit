@@ -289,7 +289,7 @@ function resetRouteSurfaceState(): void {
 
 const routeSurface = createSurfaceHarness({
 	url: {
-		initial: '/lines/161',
+		initial: '/lines/161?tab=detail',
 		origin: 'http://localhost',
 		set: (url) => {
 			routeDetailNav.page.url = url;
@@ -493,15 +493,20 @@ describe('RouteDetail article cover and focus scope', () => {
 		expect(screen.getByRole('link', { name: /View line 1 on map/ })).toBeInTheDocument();
 	});
 
-	it('keeps exactly the Detail, Schedule, and Reliability tabs', () => {
-		const view = renderRoute();
+	it.each([
+		['en', ['Record', 'Live now', 'Schedule']],
+		['fr', ['Bilan', 'En direct', 'Horaire']],
+	] as const)('opens a bare line URL on its record first in %s', (locale, names) => {
+		routeSurface.setUrl('/lines/161');
+		const view = routeSurface.mount(RouteDetail, {
+			props: { id: '161', seed: routeSeed() },
+			context: new Map([[Symbol.for('@yesid/ui/locale'), () => locale]]),
+		});
 
-		expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.trim())).toEqual([
-			'Detail',
-			'Schedule',
-			'Reliability',
-		]);
-		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
+		const tabs = screen.getAllByRole('tab');
+		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(names);
+		expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+		expect(view.container.querySelector('[data-slot="line-directions"]')).toBeNull();
 	});
 
 	it('shows a date-only record only on Reliability and ignores prepared publication times', async () => {
@@ -532,7 +537,7 @@ describe('RouteDetail article cover and focus scope', () => {
 			),
 		).toHaveAttribute('datetime', date);
 		expect(header).not.toHaveTextContent('Prepared current timestamp');
-		for (const name of ['Detail', 'Schedule']) {
+		for (const name of ['Live now', 'Schedule']) {
 			await fireEvent.click(screen.getByRole('tab', { name }));
 			expect(header.querySelector('time')).toBeNull();
 		}
@@ -542,11 +547,11 @@ describe('RouteDetail article cover and focus scope', () => {
 		routeDetailNav.page.url = new URL('http://localhost/lines/161?window=am');
 		renderRoute();
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Schedule' }));
-		await waitFor(() => expect(routeDetailNav.page.url.searchParams.get('tab')).toBe('schedule'));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
+		await waitFor(() => expect(routeDetailNav.page.url.searchParams.get('tab')).toBe('detail'));
 		expect(routeDetailNav.page.url.searchParams.get('window')).toBe('am');
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		await waitFor(() => expect(routeDetailNav.page.url.searchParams.has('tab')).toBe(false));
 		expect(routeDetailNav.page.url.searchParams.get('window')).toBe('am');
 	});
@@ -589,7 +594,7 @@ describe('RouteDetail article cover and focus scope', () => {
 			);
 		}
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		expect(view.container.querySelector('[data-slot="detail-shell-toolbar"]')).toContainElement(
 			tabs,
 		);
@@ -673,7 +678,7 @@ describe('RouteDetail article cover and focus scope', () => {
 		expect(screen.getByTestId('sections-toggle')).toBeVisible();
 		expect(profile).toHaveAttribute('aria-expanded', 'true');
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Detail' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Live now' }));
 		await fireEvent.click(screen.getByTestId('sections-toggle'));
 		await waitFor(() => expect(profile).toHaveAttribute('aria-expanded', 'false'));
 		await view.rerender({ id: 'A/B', seed: routeSeed('A/B') });
@@ -764,7 +769,7 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
 		const view = renderRoute();
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
 		await waitFor(() =>
 			expect(view.container.querySelector('[data-variant="skeleton"]')).not.toBeNull(),
@@ -782,7 +787,7 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
 		const view = renderRoute();
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
 		const error = await screen.findByRole('alert');
 		expect(error).toHaveTextContent('Data unavailable');
@@ -797,7 +802,7 @@ describe('RouteDetail reliability boundary with history-only fallback', () => {
 		lineHistoryHarness.getLineHistoryIndex.mockResolvedValue(HISTORY_INDEX);
 		const view = renderRoute();
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		await waitFor(() => expect(lineHistoryHarness.getLineHistoryIndex).toHaveBeenCalledOnce());
 		expect(view.container.querySelector('[data-slot="reliability-clusters"]')).toBeNull();
 		expect(view.container.querySelector('[data-slot="edge-state"]')).not.toBeNull();
@@ -865,7 +870,7 @@ describe('RouteDetail always-visible verdict history scope', () => {
 		expect(view.container.querySelector('.verdict__ban')).toBeNull();
 		expect(view.container.querySelector('[data-slot="detail-shell-summary"]')).not.toBeNull();
 
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		await import('./reliability/RouteReliabilityClusters.svelte');
 		await tick();
 		await waitFor(() =>
@@ -898,7 +903,7 @@ describe('RouteDetail always-visible verdict history scope', () => {
 		expect(
 			view.container.querySelector('[data-slot="detail-shell-summary"] .route-verdict-banner'),
 		).not.toBeNull();
-		await fireEvent.click(screen.getByRole('tab', { name: 'Reliability' }));
+		await fireEvent.click(screen.getByRole('tab', { name: 'Record' }));
 		await waitFor(() => {
 			expect(view.container.querySelectorAll('.route-verdict-banner')).toHaveLength(1);
 			expect(
@@ -998,6 +1003,7 @@ describe('RouteDetail Detail tab: clickable stops + live readout', () => {
 		renderRoute();
 
 		expect(screen.getByText('2 min late')).toBeInTheDocument();
+		expect(screen.getByText('8:05 a.m.')).toHaveAttribute('datetime', '2026-06-15T12:05:00Z');
 
 		const stop = screen.getByRole('link', { name: /^View stop 2 Second stop / });
 		const absence = stop.querySelector('[data-slot="absent-value"]');

@@ -31,7 +31,7 @@ test.beforeEach(async ({ page }) => {
 for (const locale of PUBLISHED_LOCALES) {
 	const t = detailCopy[locale];
 
-	test(`${locale}: a line page names its line and keeps the open tab in the URL`, async ({
+	test(`${locale}: a line page opens on its record and keeps the open tab in the URL`, async ({
 		page,
 	}) => {
 		await page.goto(localizeHref(`/lines/${line.id}`, locale, provider));
@@ -39,7 +39,10 @@ for (const locale of PUBLISHED_LOCALES) {
 			`${line.short} · ${route.long}`,
 		);
 
-		for (const [key, name] of Object.entries(t.tabs)) {
+		await expect(page.getByRole('tab')).toHaveText(Object.values(t.tabs));
+		await expect(page.getByRole('tab', { selected: true })).toHaveText(t.tabs.reliability);
+		// The record last, so the header shows its stamp below.
+		for (const [key, name] of Object.entries(t.tabs).reverse()) {
 			const tab = page.getByRole('tab', { name, exact: true });
 			// Server markup shows the tabs before hydration wires them; retry until one responds.
 			await expect(async () => {
@@ -47,7 +50,7 @@ for (const locale of PUBLISHED_LOCALES) {
 				await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 1_000 });
 			}).toPass();
 			await expect(page).toHaveURL(
-				(url) => url.searchParams.get('tab') === (key === 'detail' ? null : key),
+				(url) => url.searchParams.get('tab') === (key === 'reliability' ? null : key),
 			);
 		}
 		const date = intl
@@ -70,6 +73,11 @@ for (const locale of PUBLISHED_LOCALES) {
 	test(`${locale}: a stop on the line opens its page`, async ({ page }) => {
 		const [first] = route.directions[0].stops;
 		await page.goto(localizeHref(`/lines/${line.id}`, locale, provider));
+		const live = page.getByRole('tab', { name: t.tabs.detail, exact: true });
+		await expect(async () => {
+			if ((await live.getAttribute('aria-selected')) !== 'true') await live.click();
+			await expect(live).toHaveAttribute('aria-selected', 'true', { timeout: 1_000 });
+		}).toPass();
 		await page
 			.getByRole('link', {
 				name: new RegExp(`^${escapeRegExp(`${t.viewStop} ${first.seq} ${first.name} `)}`),

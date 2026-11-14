@@ -84,6 +84,15 @@ export function formatClock(
 	return `${hh}:${minute.padStart(2, '0')}`;
 }
 
+/**
+ * A clock time for readers: the locale's own form (`7:21 p.m.`, `19 h 21`) in the network's zone,
+ * or the host's zone when none is given. Not for parsing; `formatClock` stays the `HH:mm` form.
+ */
+export function formatLocalClock(date: Date, locale: TimeLang, timeZone?: string): string {
+	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '·';
+	return intl.dateTime(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(date);
+}
+
 export function minutesSinceMidnight(date: Date = new Date()): number {
 	if (!(date instanceof Date) || Number.isNaN(date.getTime())) return Number.NaN;
 	const parts = intl

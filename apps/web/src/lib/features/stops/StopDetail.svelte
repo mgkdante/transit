@@ -85,9 +85,9 @@
 	const SCHEDULE_CAP = 30;
 
 	const tabs = $derived([
+		{ key: 'reliability', label: t.tabs.reliability },
 		{ key: 'detail', label: t.tabs.detail },
 		{ key: 'schedule', label: t.tabs.schedule },
-		{ key: 'reliability', label: t.tabs.reliability },
 	] as const satisfies readonly { key: DetailTab; label: string }[]);
 	const detailTocEntries = $derived<TocEntry[]>([
 		{

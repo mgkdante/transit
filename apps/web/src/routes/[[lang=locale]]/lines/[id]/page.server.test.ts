@@ -134,9 +134,7 @@ describe('/lines/[id] server identity seed', () => {
 	it('loads only explicitly selected reliability history through the same request context', async () => {
 		const request = event('A/B');
 		Object.assign(request, {
-			url: new URL(
-				'https://transit.yesid.dev/lines/A%2FB?tab=reliability&from=2026-01-31&to=2026-02-01',
-			),
+			url: new URL('https://transit.yesid.dev/lines/A%2FB?from=2026-01-31&to=2026-02-01'),
 		});
 		const history = {
 			entityId: 'A/B',
@@ -159,9 +157,7 @@ describe('/lines/[id] server identity seed', () => {
 		async (status) => {
 			const request = event();
 			Object.assign(request, {
-				url: new URL(
-					'https://transit.yesid.dev/lines/24?tab=reliability&from=2026-01-10&to=2026-01-20',
-				),
+				url: new URL('https://transit.yesid.dev/lines/24?from=2026-01-10&to=2026-01-20'),
 			});
 			const history = {
 				entityId: '24',
@@ -184,12 +180,13 @@ describe('/lines/[id] server identity seed', () => {
 		},
 	);
 
-	it.each(['', '?tab=schedule', '?tab=reliability', '?from=2026-01-31&to=2026-02-01'])(
+	it.each(['', '?tab=schedule', '?tab=detail&from=2026-01-31&to=2026-02-01'])(
 		'does not add server range reads to %s',
 		async (query) => {
 			const request = event();
 			Object.assign(request, { url: new URL('https://transit.yesid.dev/lines/24' + query) });
 			await load(request);
+			expect(harness.getRoute).toHaveBeenCalledOnce();
 			expect(harness.loadLineHistorySeed).not.toHaveBeenCalled();
 		},
 	);
@@ -197,9 +194,7 @@ describe('/lines/[id] server identity seed', () => {
 	it('keeps current resource seeds when server history fails instead of inventing a successful empty range', async () => {
 		const request = event();
 		Object.assign(request, {
-			url: new URL(
-				'https://transit.yesid.dev/lines/24?tab=reliability&from=2026-01-31&to=2026-02-01',
-			),
+			url: new URL('https://transit.yesid.dev/lines/24?from=2026-01-31&to=2026-02-01'),
 		});
 		const reliability = { id: '24', generated_utc: '2026-02-02T12:00:00Z' };
 		harness.getRouteReliability.mockResolvedValue(reliability);
@@ -209,9 +204,9 @@ describe('/lines/[id] server identity seed', () => {
 		expect(result?.reliabilitySeed).toEqual({ key: '24', data: reliability });
 	});
 
-	it.each(['detail', 'schedule', 'reliability'])(
-		'resolves the universal constructor only for the initial %s tab',
-		async (tab) => {
+	it.each(['?tab=detail', '?tab=schedule', '?tab=reliability', ''])(
+		'resolves the universal constructor only for the initial record view: %s',
+		async (query) => {
 			const data = {
 				seed: { id: '24', name: '24 · Sherbrooke' },
 				routeSeed: null,
@@ -220,17 +215,17 @@ describe('/lines/[id] server identity seed', () => {
 			};
 			const result = await loadUniversal({
 				data,
-				url: new URL('https://transit.yesid.dev/lines/24?tab=' + tab),
+				url: new URL('https://transit.yesid.dev/lines/24' + query),
 			} as Parameters<typeof loadUniversal>[0]);
 			expect(result).toEqual({
 				...data,
-				initialClusters: tab === 'reliability' ? harness.Clusters : undefined,
+				initialClusters: /detail|schedule/.test(query) ? undefined : harness.Clusters,
 				initialImportFailed: false,
 			});
 		},
 	);
 
-	it.each(['unknown', 'detail'])(
+	it.each(['unknown', 'reliability'])(
 		'redirects the noncanonical %s tab before fetching data and preserves unrelated params',
 		async (tab) => {
 			const request = event();
