@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 import duckdb
 import pytest
 from sqlalchemy import TIMESTAMP, Date, Integer, bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 
 from transit_ops.batch.engine import (
     BatchEngineError,
@@ -38,10 +39,11 @@ def parquet(path, sql="SELECT 7 AS id"):
     return path
 
 
-def test_inputs_are_views_over_parquet_and_other_files_are_refused(tmp_path):
+@pytest.mark.parametrize("other_dir", ["input", "other"])
+def test_inputs_are_views_over_parquet_and_other_files_are_refused(tmp_path, other_dir):
     declared = parquet(tmp_path / "input" / "one.parquet")
     second = parquet(tmp_path / "input" / "second.parquet")
-    other = parquet(tmp_path / "other" / "two.parquet")
+    other = parquet(tmp_path / other_dir / "two.parquet")
     with open_batch_session(
         [BatchInput("gold.t", (declared, second))], workdir=tmp_path / "work"
     ) as s:
@@ -61,6 +63,13 @@ def test_inputs_are_views_over_parquet_and_other_files_are_refused(tmp_path):
             )
         with pytest.raises(duckdb.InvalidInputException):
             s.execute(named_query("batch_test.set", "SET threads=2"))
+        workfile = parquet(tmp_path / "work" / "output.parquet")
+        assert (
+            s.execute(
+                text("-- q:test.work\nSELECT id FROM read_parquet(:p)"), {"p": str(workfile)}
+            ).fetchall()[0][0]
+            == 7
+        )
 
 
 @pytest.mark.parametrize(
@@ -173,6 +182,8 @@ def test_glob_paths_are_refused_by_name(tmp_path, char):
         "NULL::TIMESTAMPTZ AS stamp, CAST('2026-11-01' AS TIMESTAMPTZ) AS Stamp",
         "CAST('2026-11-01' AS TIMESTAMPTZ) AS stamp, CAST('2026-11-02' AS TIMESTAMPTZ) AS Stamp",
         "CAST('2026-11-01' AS TIMESTAMPTZ) AS stamp, 123 AS Stamp",
+        "TIMESTAMPTZ '2026-11-01 05:30+00' AS t, 1 AS x, 2 AS X",
+        "NULL::TIMESTAMPTZ AS stamp, TIMESTAMPTZ '2026-11-01 06:30:00.5+00' AS Stamp",
         "[CAST('2026-11-01' AS TIMESTAMPTZ)] AS nested",
         "{'a': CAST('2026-11-01' AS TIMESTAMPTZ)} AS nested",
         "map(['a'], [CAST('2026-11-01' AS TIMESTAMPTZ)]) AS nested",
@@ -180,7 +191,7 @@ def test_glob_paths_are_refused_by_name(tmp_path, char):
 )
 def test_ambiguous_or_nested_timestamps_are_refused_by_name(tmp_path, expression):
     with open_batch_session([], workdir=tmp_path) as s:
-        with pytest.raises(BatchEngineError, match="stamp|nested"):
+        with pytest.raises(BatchEngineError, match="stamp|nested|duplicate"):
             s.execute(text("-- q:test.refused\nSELECT " + expression))
 
 
@@ -205,3 +216,10 @@ def test_typed_and_expanding_binds_preserve_values(tmp_path, ids, expected):
             expected,
             7,
         )
+
+
+def test_jsonb_bind_is_refused_by_name(tmp_path):
+    query = text("-- q:test.jsonb\nSELECT :payload").bindparams(bindparam("payload", type_=JSONB))
+    with open_batch_session([], workdir=tmp_path) as s:
+        with pytest.raises(BatchEngineError, match="JSONB.*payload"):
+            s.execute(query, {"payload": {"x": 1}})

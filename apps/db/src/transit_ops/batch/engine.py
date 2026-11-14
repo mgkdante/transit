@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
-from sqlalchemy.dialects.postgresql import psycopg
+from sqlalchemy.dialects.postgresql import JSONB, psycopg
 from sqlalchemy.sql.elements import TextClause
 
 from transit_ops.batch.results import BatchResult
@@ -45,6 +45,9 @@ class BatchSession:
         compiled = statement.compile(
             dialect=psycopg.dialect(paramstyle="numeric_dollar")  # type: ignore[no-untyped-call]
         )
+        for bind in compiled.binds.values():
+            if isinstance(bind.type, JSONB):
+                raise BatchEngineError(f"JSONB bind refused: {bind.key}")
         expanded = compiled.construct_expanded_state(dict(params or {}))
         relation = self._connection.sql(
             expanded.statement,
@@ -60,13 +63,12 @@ class BatchSession:
                 raise BatchEngineError(f"nested TIMESTAMPTZ refused: {name}")
         zoned = [str(kind) == "TIMESTAMP WITH TIME ZONE" for kind in relation.types]
         if any(zoned):
-            expressions = []
-            for name, is_zoned in zip(columns, zoned, strict=True):
-                quoted = '"' + name.replace('"', '""') + '"'
-                expressions.append(
-                    f"CAST({quoted} AS TIMESTAMP) AS {quoted}" if is_zoned else quoted
+            relation = relation.project(
+                ", ".join(
+                    f"CAST(#{index} AS TIMESTAMP)" if is_zoned else f"#{index}"
+                    for index, is_zoned in enumerate(zoned, 1)
                 )
-            relation = relation.project(", ".join(expressions))
+            )
         rows = [
             tuple(
                 value.replace(tzinfo=UTC) if is_zoned and isinstance(value, datetime) else value
@@ -134,10 +136,9 @@ def open_batch_session(inputs: Sequence[BatchInput], *, workdir: Path) -> Iterat
                 f"read_parquet([{files}], hive_partitioning=false, union_by_name=false)"
             )
         connection.execute("SET temp_directory = ?", [str(workdir / "duckdb-tmp")])
-        directories = sorted(
-            {str(workdir), *(str(p.resolve().parent) for i in inputs for p in i.files)}
-        )
-        connection.execute("SET allowed_directories = ?", [directories])
+        paths = sorted({str(p.resolve()) for item in inputs for p in item.files})
+        connection.execute("SET allowed_paths = ?", [paths])
+        connection.execute("SET allowed_directories = ?", [[str(workdir)]])
         connection.execute("SET enable_external_access=false")
         connection.execute("SET lock_configuration=true")
         yield BatchSession(connection)
