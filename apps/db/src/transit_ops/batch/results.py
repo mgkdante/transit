@@ -1,3 +1,4 @@
+from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -26,19 +27,21 @@ class BatchRow:
 class BatchResult:
     def __init__(self, columns: tuple[str, ...], rows: list[tuple[object, ...]]) -> None:
         self.columns = columns
-        self._rows = [
+        self._rows = deque(
             BatchRow(row, MappingProxyType(dict(zip(columns, row, strict=True)))) for row in rows
-        ]
+        )
 
     def fetchall(self) -> list[BatchRow]:
-        rows, self._rows = self._rows, []
+        rows = list(self._rows)
+        self._rows.clear()
         return rows
 
     def __iter__(self) -> Iterator[BatchRow]:
-        return iter(self.fetchall())
+        while (row := self.fetchone()) is not None:
+            yield row
 
     def fetchone(self) -> BatchRow | None:
-        return self._rows.pop(0) if self._rows else None
+        return self._rows.popleft() if self._rows else None
 
     def first(self) -> BatchRow | None:
         rows = self.fetchall()
@@ -74,5 +77,18 @@ class _Values[T]:
     def __init__(self, result: BatchResult, convert: Callable[[BatchRow], T]) -> None:
         self._result, self._convert = result, convert
 
-    def all(self) -> list[T]:
+    def fetchone(self) -> T | None:
+        row = self._result.fetchone()
+        return self._convert(row) if row is not None else None
+
+    def first(self) -> T | None:
+        row = self._result.first()
+        return self._convert(row) if row is not None else None
+
+    def __iter__(self) -> Iterator[T]:
+        return map(self._convert, self._result)
+
+    def fetchall(self) -> list[T]:
         return [self._convert(row) for row in self._result.fetchall()]
+
+    all = fetchall

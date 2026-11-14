@@ -122,6 +122,16 @@ def _validate(inputs: Sequence[BatchInput]) -> None:
             raise InputRefused("inputs must be existing absolute files")
 
 
+def _check_schema(conn: duckdb.DuckDBPyConnection, files: tuple[Path, ...]) -> None:
+    expected = None
+    for path in files:
+        scan = conn.read_parquet(str(path.resolve()), hive_partitioning=False)
+        actual = list(zip(scan.columns, map(str, scan.types), strict=True))
+        if expected is not None and actual != expected:
+            raise InputRefused(f"{path}: schema {actual!r} differs from {expected!r}")
+        expected = actual
+
+
 @contextmanager
 def open_batch_session(
     inputs: Sequence[BatchInput],
@@ -153,13 +163,7 @@ def open_batch_session(
         for item in inputs:
             schema, name = item.relation.split(".")
             connection.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-            expected = None
-            for path in item.files:
-                scan = connection.read_parquet(str(path.resolve()), hive_partitioning=False)
-                actual = list(zip(scan.columns, map(str, scan.types), strict=True))
-                if expected is not None and actual != expected:
-                    raise InputRefused(f"{path}: schema {actual!r} differs from {expected!r}")
-                expected = actual
+            _check_schema(connection, item.files)
             files = ", ".join(
                 "'" + str(path.resolve()).replace("'", "''") + "'" for path in item.files
             )
