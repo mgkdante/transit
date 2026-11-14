@@ -142,8 +142,9 @@ def test_changed_primary_key_is_refused(source, owned, tmp_path):
         recheck(source, owned)
 
 
-def test_lock_failure_leaves_no_file_and_same_destination_can_retry(source, owned, tmp_path):
-    with psycopg.connect(source.info.dsn) as blocker, blocker.transaction():
+def test_lock_failure_cleans_files_and_allows_retry(source, owned, tmp_path, real_db_engine):
+    arguments = real_db_engine.url.translate_connect_args(username="user", database="dbname")
+    with psycopg.connect(**arguments) as blocker, blocker.transaction():
         blocker.execute(f"LOCK TABLE {owned.dataset_id} IN ACCESS EXCLUSIVE MODE")
         with pytest.raises(psycopg.errors.LockNotAvailable):
             export(source, owned, tmp_path / "retry.csv")
