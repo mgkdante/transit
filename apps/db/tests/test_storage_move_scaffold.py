@@ -170,7 +170,7 @@ def test_lighter_storage_settings_are_empty_by_default(monkeypatch):
     for key in Settings.model_fields:
         monkeypatch.delenv(key, raising=False)
     settings = Settings(_env_file=None)
-    assert settings.LIGHTER_STORAGE.model_dump() == dict.fromkeys(KEYS, {})
+    assert settings.LIGHTER_STORAGE.model_dump(exclude_none=True) == dict.fromkeys(KEYS, {})
     digest = "bcc76314f94600369bb408c954ba1c00a216fc0666a4a452dce429b133f7353c"
     for values in (settings.model_dump(exclude={"LIGHTER_STORAGE"}), settings.display_dict()):
         assert hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest() == digest
@@ -184,7 +184,9 @@ def test_lighter_storage_settings_reject_unknown_nested_keys(lane, monkeypatch):
     with pytest.raises(ValidationError, match="extra_forbidden"):
         Settings(_env_file=None)
     monkeypatch.setenv("LIGHTER_STORAGE", json.dumps(dict.fromkeys(KEYS, {})))
-    assert Settings(_env_file=None).LIGHTER_STORAGE.model_dump() == dict.fromkeys(KEYS, {})
+    assert Settings(_env_file=None).LIGHTER_STORAGE.model_dump(exclude_none=True) == dict.fromkeys(
+        KEYS, {}
+    )
 
 
 def test_family_registry_names_the_twelve_planned_packets():
