@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import time
@@ -67,7 +67,7 @@ def load_csv(conn: Any, folder: Path, table: str) -> None:
 
 
 def consume(cursor: Any) -> dict[str, Any]:
-    started, count, digest = time.monotonic(), 0, hashlib.sha256()
+    count, digest = 0, hashlib.sha256()
     while rows := cursor.fetchmany(1024):
         for row in rows:
             digest.update(
@@ -75,9 +75,7 @@ def consume(cursor: Any) -> dict[str, Any]:
                 + b"\n"
             )
             count += 1
-    return dict(
-        rows=count, sha256=digest.hexdigest(), consumption_seconds=time.monotonic() - started
-    )
+    return dict(rows=count, sha256=digest.hexdigest())
 
 
 def timed_query(conn: Any, query: str, params: Any = None) -> dict[str, Any]:
@@ -95,27 +93,19 @@ def queries(conn: Any) -> list[dict[str, Any]]:
     if not trip and not conn.execute(f"SELECT 1 FROM {TRIP} LIMIT 1").fetchone():
         outcome = "no_rows"
     definitions = [
-        (
-            f"SELECT route_id, CAST(date_trunc('hour', captured_at_utc) AS VARCHAR), "
-            f"quantile_cont(delay_seconds, 0.9) FROM {TRIP} GROUP BY 1,2 ORDER BY 1,2",
-            None,
-        ),
-        (
-            "SELECT CAST(date_trunc('hour', captured_at_utc) AS VARCHAR), "
-            "count(DISTINCT vehicle_id) "
-            f"FROM {VEHICLE} GROUP BY 1 ORDER BY 1",
-            None,
-        ),
-        (
-            f"SELECT * REPLACE (CAST(captured_at_utc AS VARCHAR) AS captured_at_utc, "
-            f"CAST(feed_timestamp_utc AS VARCHAR) AS feed_timestamp_utc) FROM {TRIP} "
-            "WHERE trip_id = ? ORDER BY captured_at_utc, "
-            "realtime_snapshot_id, entity_index",
-            [trip[0] if trip else None],
-        ),
+        f"SELECT route_id, CAST(date_trunc('hour', captured_at_utc) AS VARCHAR), "
+        f"quantile_cont(delay_seconds, 0.9) FROM {TRIP} GROUP BY 1,2 ORDER BY 1,2",
+        "SELECT CAST(date_trunc('hour', captured_at_utc) AS VARCHAR), "
+        "count(DISTINCT vehicle_id) "
+        f"FROM {VEHICLE} GROUP BY 1 ORDER BY 1",
+        f"SELECT * REPLACE (CAST(captured_at_utc AS VARCHAR) AS captured_at_utc, "
+        f"CAST(feed_timestamp_utc AS VARCHAR) AS feed_timestamp_utc) FROM {TRIP} "
+        "WHERE trip_id = ? ORDER BY captured_at_utc, "
+        "realtime_snapshot_id, entity_index",
     ]
     result = []
-    for index, (query, params) in enumerate(definitions):
+    for index, query in enumerate(definitions):
+        params = [trip[0] if trip else None] if index == 2 else None
         first, warm = timed_query(conn, query, params), timed_query(conn, query, params)
         result.append(
             dict(
@@ -204,21 +194,12 @@ def read_source(args: Any, folder: Path) -> dict[str, Any]:
     with rescue.connect() as source, rescue.guarded(source, args) as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            settings = dict(
-                TimeZone="UTC",
-                DateStyle="ISO, YMD",
-                IntervalStyle="iso_8601",
-                extra_float_digits="1",
-                bytea_output="hex",
-                client_encoding="UTF8",
-                lock_timeout="1s",
-                idle_in_transaction_session_timeout="15s",
-                work_mem="16MB",
-                max_parallel_workers_per_gather="0",
-                statement_timeout="60s",
-            )
-            for key, value in settings.items():
-                conn.execute("SELECT set_config(%s, %s, true)", (key, value))
+            conn.execute("""SET LOCAL TimeZone='UTC'; SET LOCAL DateStyle='ISO, YMD';
+                SET LOCAL IntervalStyle='iso_8601'; SET LOCAL extra_float_digits=1;
+                SET LOCAL bytea_output='hex'; SET LOCAL client_encoding='UTF8';
+                SET LOCAL lock_timeout='1s'; SET LOCAL idle_in_transaction_session_timeout='15s';
+                SET LOCAL work_mem='16MB'; SET LOCAL max_parallel_workers_per_gather=0;
+                SET LOCAL statement_timeout='60s'""")
             now, version = conn.execute(
                 "SELECT clock_timestamp(), current_setting('server_version')"
             ).fetchone()
@@ -280,13 +261,12 @@ def measure(args: Any) -> dict[str, Any]:
             tracemalloc.stop()
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def options(argv: list[str] | None = None) -> Any:
+    parser = rescue.SafeParser(description=__doc__)
     for name in ("provider", "date", "not-after"):
         parser.add_argument("--" + name, required=True)
-    parsed = parser.parse_args(argv)
-    args = SimpleNamespace(
-        **vars(parsed),
+    return SimpleNamespace(
+        **vars(parser.parse_args(argv)),
         statement_timeout_s=60,
         db_phase_s=180,
         inventory=False,
@@ -294,8 +274,35 @@ def main(argv: list[str] | None = None) -> int:
         upload=False,
         spool_dir="temporary",
     )
+
+
+WORKER = (
+    "import runpy,sys,tempfile; tempfile.tempdir=sys.argv[2]; "
+    "n=runpy.run_path(sys.argv[1]); sys.exit(n['main'](sys.argv[3:],worker=True))"
+)
+
+
+def supervise(argv: list[str], *, worker: str = WORKER) -> int:
+    with tempfile.TemporaryDirectory(prefix="transit-measure-") as directory:
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", worker, str(Path(__file__).resolve()), directory, *argv],
+            capture_output=True,
+            text=True,
+        )
+    sys.stdout.write(result.stdout or '{"status":"failed","reason":"measurement_failed"}\n')
+    return result.returncode
+
+
+def main(argv: list[str] | None = None, *, worker: bool = False) -> int:
+    try:
+        args = options(argv)
+    except ValueError:
+        sys.stdout.write(json.dumps(dict(status="failed", reason="invalid_arguments")) + "\n")
+        return 2
     try:
         rescue.bounds(args, datetime.now(UTC))
+        if not worker:
+            return supervise(sys.argv[1:] if argv is None else argv)
         result = measure(args)
     except Exception:
         sys.stdout.write(json.dumps(dict(status="failed", reason="measurement_failed")) + "\n")
