@@ -292,9 +292,11 @@ def test_migration_failure_drops_the_created_database(real_db_engine, clock, mon
 
 
 def test_clock_refusal_names_are_sorted_and_in_the_message():
-    error = UnpinnableClockError(("gold.z", "core.a"))
+    expressions = (("gold.z", "pg_catalog.now()"), ("core.a", "CURRENT_DATE"))
+    error = UnpinnableClockError(("gold.z", "core.a"), expressions=expressions)
     assert error.objects == ("core.a", "gold.z")
-    assert "core.a" in str(error) and "gold.z" in str(error)
+    assert error.expressions == tuple(reversed(expressions))
+    assert "core.a: CURRENT_DATE" in str(error) and "gold.z: pg_catalog.now()" in str(error)
 
 
 @pytest.fixture
@@ -314,6 +316,7 @@ def test_a_view_reading_a_keyword_clock_is_refused(guard_oracle, keyword):
         with pytest.raises(UnpinnableClockError) as caught:
             assert_clock_pinned(conn)
         assert caught.value.objects == ("gold.oracle_probe",)
+        assert keyword in dict(caught.value.expressions)["gold.oracle_probe"]
 
 
 @pytest.mark.parametrize(
@@ -328,6 +331,7 @@ def test_a_view_naming_the_catalog_clock_is_refused(guard_oracle, function):
         with pytest.raises(UnpinnableClockError) as caught:
             assert_clock_pinned(conn)
         assert caught.value.objects == ("gold.oracle_default.at", "gold.oracle_probe")
+        assert all(function in expression for _, expression in caught.value.expressions)
 
 
 def test_a_function_with_its_own_search_path_is_refused(guard_oracle):
@@ -339,6 +343,7 @@ def test_a_function_with_its_own_search_path_is_refused(guard_oracle):
         with pytest.raises(UnpinnableClockError) as caught:
             assert_clock_pinned(conn)
         assert caught.value.objects == ("gold.oracle_probe",)
+        assert "search_path=public" in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -348,19 +353,58 @@ def test_a_function_with_its_own_search_path_is_refused(guard_oracle):
         "LANGUAGE plpgsql AS $$BEGIN RETURN CURRENT_DATE; END$$",
         "LANGUAGE sql BEGIN ATOMIC SELECT pg_catalog.now()::date; END",
         'LANGUAGE sql AS $$SELECT "pg_catalog"."now"()::date$$',
+        "LANGUAGE sql AS $$SELECT public.now()::date$$",
     ],
 )
 def test_function_clock_reads_are_refused(guard_oracle, body):
     with guard_oracle.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE FUNCTION public.now() RETURNS timestamptz "
+            "LANGUAGE sql AS $$SELECT pg_catalog.now()$$"
+        )
         conn.exec_driver_sql(f"CREATE FUNCTION gold.oracle_probe() RETURNS date {body}")
         with pytest.raises(UnpinnableClockError) as caught:
             assert_clock_pinned(conn)
         assert caught.value.objects == ("gold.oracle_probe",)
+        assert dict(caught.value.expressions)["gold.oracle_probe"]
 
 
 def test_a_fresh_oracle_database_passes(guard_oracle):
     with guard_oracle.connect() as conn:
         assert_clock_pinned(conn)
+
+
+def test_a_check_constraint_reading_a_clock_is_refused(guard_oracle):
+    with guard_oracle.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE gold.oracle_check (at timestamptz, "
+            "CONSTRAINT live_clock CHECK (at < pg_catalog.now()))"
+        )
+        with pytest.raises(UnpinnableClockError) as caught:
+            assert_clock_pinned(conn)
+        assert caught.value.objects == ("gold.oracle_check.live_clock",)
+        assert "pg_catalog.now()" in str(caught.value)
+
+
+def test_a_generated_column_reading_another_schema_clock_is_refused(guard_oracle):
+    with guard_oracle.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE FUNCTION gold.now() RETURNS int LANGUAGE sql IMMUTABLE AS $$SELECT 1$$"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE gold.oracle_generated (at int GENERATED ALWAYS AS (gold.now()) STORED)"
+        )
+        with pytest.raises(UnpinnableClockError) as caught:
+            assert_clock_pinned(conn)
+        assert caught.value.objects == ("gold.oracle_generated.at",)
+        assert "gold.now()" in str(caught.value)
+
+
+def test_a_pinned_view_passes(guard_oracle, clock):
+    with guard_oracle.begin() as conn:
+        conn.exec_driver_sql("CREATE VIEW gold.oracle_pinned AS SELECT now() AS at")
+        assert_clock_pinned(conn)
+        assert value(conn, "SELECT at FROM gold.oracle_pinned") == clock.instant
 
 
 def test_guard_failure_before_yield_drops_the_database(real_db_engine, clock, monkeypatch):

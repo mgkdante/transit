@@ -29,6 +29,11 @@ _CLOCK_FUNCTIONS = (
 _CLOCK_KEYWORDS = re.compile(
     r"\b(current_date|current_time|current_timestamp|localtime|localtimestamp)\b", re.IGNORECASE
 )
+_CLOCK_CALLS = re.compile(
+    r'(?<![\w$])(?:(?P<schema>"(?:[^"]|"")+"|[\w$]+)\s*\.\s*)?'
+    r'(?P<name>"?(?:' + "|".join(_CLOCK_FUNCTIONS) + r')"?)(?![\w$])\s*\(',
+    re.IGNORECASE,
+)
 _CLOCK_OBJECTS_SQL = """
 WITH objects AS (
     SELECT n.nspname AS schema, format('%I.%I', n.nspname, c.relname) AS name,
@@ -44,10 +49,19 @@ WITH objects AS (
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.adnum
     UNION ALL
+    SELECT n.nspname,
+           format('%I.%I.%I', n.nspname, COALESCE(c.relname, t.typname), d.conname),
+           'pg_constraint'::regclass, d.oid, d.conbin::text,
+           pg_get_constraintdef(d.oid), false
+    FROM pg_constraint d JOIN pg_namespace n ON n.oid = d.connamespace
+    LEFT JOIN pg_class c ON c.oid = d.conrelid LEFT JOIN pg_type t ON t.oid = d.contypid
+    WHERE d.contype = 'c'
+    UNION ALL
     SELECT n.nspname, format('%I.%I', n.nspname, p.proname), 'pg_proc'::regclass, p.oid,
            p.prosqlbody::text,
            CASE WHEN l.lanname IN ('sql', 'plpgsql')
-                THEN COALESCE(NULLIF(p.prosrc, ''), pg_get_functiondef(p.oid)) ELSE '' END,
+                THEN COALESCE(NULLIF(p.prosrc, ''), pg_get_functiondef(p.oid)) ELSE '' END
+                || ' ' || COALESCE(array_to_string(p.proconfig, '; '), ''),
            EXISTS (SELECT FROM unnest(p.proconfig) setting WHERE setting LIKE 'search_path=%')
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang WHERE p.prokind = 'f'
@@ -56,7 +70,8 @@ SELECT o.name, o.expression, o.source, o.own_path, EXISTS (
     SELECT FROM pg_depend d JOIN pg_proc p ON p.oid = d.refobjid
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE d.classid = o.classid AND d.objid = o.objid AND d.refclassid = 'pg_proc'::regclass
-      AND n.nspname = 'pg_catalog' AND p.proname = ANY(:functions)
+      AND p.proname = ANY(:functions)
+      AND (n.nspname <> :clock_schema OR p.proname = 'timeofday')
 ) AS catalog_dependency
 FROM objects o WHERE o.schema = ANY(:schemas)
 """
@@ -64,32 +79,49 @@ FROM objects o WHERE o.schema = ANY(:schemas)
 
 class UnpinnableClockError(RuntimeError):
     objects: tuple[str, ...]
+    expressions: tuple[tuple[str, str], ...]
 
-    def __init__(self, objects: tuple[str, ...]) -> None:
+    def __init__(
+        self, objects: tuple[str, ...], *, expressions: tuple[tuple[str, str], ...] = ()
+    ) -> None:
         self.objects = tuple(sorted(set(objects)))
-        super().__init__("Unpinnable clock in: " + ", ".join(self.objects))
+        self.expressions = tuple(sorted(set(expressions)))
+        details = self.expressions or tuple((name, "") for name in self.objects)
+        super().__init__("Unpinnable clock in:\n" + "\n".join(f"{n}: {e}" for n, e in details))
+
+
+def _identifier(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value[1:-1].replace('""', '"') if value.startswith('"') else value.lower()
+
+
+def _has_unpinned_call(source: str) -> bool:
+    return any(
+        _identifier(match["schema"]) not in (None, CLOCK_SCHEMA)
+        or _identifier(match["name"]) not in _CLOCK_FUNCTIONS[:-1]
+        for match in _CLOCK_CALLS.finditer(source)
+    )
 
 
 def assert_clock_pinned(connection: Connection) -> None:
     params = {
         "functions": list(_CLOCK_FUNCTIONS),
         "schemas": ["core", "gold", "silver", "raw", "ops"],
+        "clock_schema": CLOCK_SCHEMA,
     }
     ids = connection.execute(
         text("""
         SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'pg_catalog' AND p.proname = ANY(:functions)
+        WHERE p.proname = ANY(:functions)
+          AND (n.nspname <> :clock_schema OR p.proname = 'timeofday')
     """),
         params,
     ).scalars()
     # Dependencies on pinned built-ins are omitted; stored trees retain bound function OIDs.
     bound = re.compile(r":funcid (?:" + "|".join(str(oid) for oid in ids) + r")\b")
-    catalog_call = re.compile(
-        r'\b"?pg_catalog"?\s*\.\s*"?(?:' + "|".join(_CLOCK_FUNCTIONS) + r')"?\s*\(',
-        re.IGNORECASE,
-    )
-    objects = tuple(
-        str(name)
+    expressions = tuple(
+        (str(name), str(source))
         for name, expression, source, own_path, dependency in connection.execute(
             text(_CLOCK_OBJECTS_SQL), params
         )
@@ -97,10 +129,10 @@ def assert_clock_pinned(connection: Connection) -> None:
         or dependency
         or bound.search(expression or "")
         or _CLOCK_KEYWORDS.search(source)
-        or catalog_call.search(source)
+        or _has_unpinned_call(source)
     )
-    if objects:
-        raise UnpinnableClockError(objects)
+    if expressions:
+        raise UnpinnableClockError(tuple(n for n, _ in expressions), expressions=expressions)
 
 
 class OracleDatabaseRefused(RuntimeError):
