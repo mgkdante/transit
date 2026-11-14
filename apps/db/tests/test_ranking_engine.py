@@ -9,6 +9,7 @@ from transit_ops.ranking import (
     EntityWindow,
     MeasureSpec,
     RankingRules,
+    measure_state,
     rank_entities,
     shown_units,
 )
@@ -23,6 +24,11 @@ IDS = (
     "id_code_point",
     "code_point_beyond_bmp",
     "operands_past_2_53",
+    "state_per_measure",
+    "scheduled_with_no_reading",
+    "capped_floor",
+    "unresolved_is_not_measured",
+    "network_without_late_reading",
 )
 
 
@@ -57,30 +63,52 @@ def rules_from(data):
     return RankingRules(**result)
 
 
+def row_from(data):
+    data = dict(data)
+    assert set(data) == {field.name for field in fields(EntityWindow)}
+    for key in ("scheduled_days", "reading_days"):
+        data[key] = int(data[key])
+    for key in ("counts", "measured_days"):
+        data[key] = {k: int(v) for k, v in data[key].items()}
+    data["groups"] = tuple(data["groups"])
+    return EntityWindow(**data)
+
+
 def check_vector(vector_id):
     document = json.loads(VECTORS.read_bytes())
-    case = next(case for case in document["vectors"] if case["id"] == vector_id)
+    group = next(case for case in document["vectors"] if case["id"] == vector_id)
+    for case in group.get("cases", [group]):
+        check_case(case, rules_from(document["rules"]))
+
+
+def check_case(case, rules):
     spec = spec_from(case["spec"])
-    rules = rules_from(document["rules"])
-    rows = [
-        EntityWindow(row["entity_id"], {k: int(v) for k, v in row["counts"].items()})
-        for row in case["rows"]
-    ]
+    rows = [row_from(row) for row in case["rows"]]
+    network = case["network"]
+    network = None if network is None else {k: int(v) for k, v in network.items()}
     for ordered in (rows, list(reversed(rows))):
         actual = rank_entities(
             ordered,
             spec=spec,
             window_days=int(case["window_days"]),
             rules=rules,
-            network=case["network"],
+            network=network,
         )
         assert integers([asdict(row) for row in actual]) == case["expected"]
         for row in actual:
-            assert shown_units(row.numerator, row.denominator or 1, spec) == row.shown_units
+            source = next(item for item in rows if item.entity_id == row.entity_id)
+            assert (
+                measure_state(
+                    source, spec, window_days=int(case["window_days"]), rules=rules, network=network
+                )
+                == row.state
+            )
+            if row.shown_units is not None:
+                assert shown_units(row.numerator, row.denominator or 1, spec) == row.shown_units
     assert [dict(row.counts) for row in rows] == [
         {k: int(v) for k, v in row["counts"].items()} for row in case["rows"]
     ]
-    if vector_id == "half_negative":
+    if case.get("id") == "half_negative":
         assert shown_units(-13500, 100, spec, precision=0) == -2
 
 
@@ -96,12 +124,20 @@ def test_vectors_file_is_current():
     data = json.loads(raw, parse_int=no_number, parse_float=no_number, parse_constant=no_number)
     assert tuple(case["id"] for case in data["vectors"]) == IDS
     assert data["rules"] == integers(asdict(rules_from(data["rules"]))) == integers(asdict(RULES))
-    for case in data["vectors"]:
-        assert set(case) == {"id", "both", "spec", "window_days", "network", "rows", "expected"}
-        assert case["both"] is True and case["network"] is None
-        assert case["spec"] == integers(asdict(spec_from(case["spec"])))
-        assert case["window_days"] == str(int(case["window_days"]))
-        check_vector(case["id"])
+    for group in data["vectors"]:
+        assert group["both"] is True
+        if "cases" in group:
+            assert set(group) == {"id", "both", "cases"}
+        for case in group.get("cases", [group]):
+            identity = {"name"} if "cases" in group else {"id", "both"}
+            assert set(case) == identity | {"spec", "window_days", "network", "rows", "expected"}
+            assert case["spec"] == integers(asdict(spec_from(case["spec"])))
+            assert case["window_days"] == str(int(case["window_days"]))
+            for row in case["rows"]:
+                assert row == integers(asdict(row_from(row)))
+            if case["network"] is not None:
+                assert all(v == str(int(v)) for v in case["network"].values())
+        check_vector(group["id"])
 
     def compact(value):
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -146,11 +182,7 @@ def test_operands_beyond_2_to_the_53_stay_exact():
 
 def test_exact_ties_use_descending_trips_then_code_point_id():
     spec = spec_from(json.loads(VECTORS.read_bytes())["vectors"][5]["spec"])
-    rows = [
-        EntityWindow("a", {"on_time": 90, "n": 100, "trips": 30}),
-        EntityWindow("z", {"on_time": 90, "n": 100, "trips": 60}),
-        EntityWindow("Z", {"on_time": 90, "n": 100, "trips": 60}),
-    ]
+    rows = [eligible_row("a", 30), eligible_row("z", 60), eligible_row("Z", 60)]
     for ordered in (rows, list(reversed(rows))):
         actual = rank_entities(ordered, spec=spec, window_days=1, rules=RULES)
         assert [(row.entity_id, row.shown_units, row.rank) for row in actual] == [
@@ -162,6 +194,13 @@ def test_exact_ties_use_descending_trips_then_code_point_id():
 
 def test_supplied_pair_is_rejected():
     spec = spec_from(json.loads(VECTORS.read_bytes())["vectors"][5]["spec"])
-    rows = [EntityWindow("a", {"on_time": 90, "n": 100, "trips": 30})]
+    rows = [eligible_row("a", 30)]
     with pytest.raises(NotImplementedError):
         rank_entities(rows, spec=replace(spec, pair=spec), window_days=1, rules=RULES)
+
+
+def eligible_row(entity_id, trips):
+    data = json.loads(VECTORS.read_bytes())["vectors"][0]["rows"][0]
+    return replace(
+        row_from(data), entity_id=entity_id, counts={"on_time": 90, "n": 100, "trips": trips}
+    )
