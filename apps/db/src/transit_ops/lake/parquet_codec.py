@@ -11,6 +11,7 @@ from typing import Final, Literal
 
 import duckdb
 
+from transit_ops.lake.csv_validation import CSV_OPTIONS, validate_csv
 from transit_ops.lake.table_schema import TableSchema
 
 
@@ -78,10 +79,9 @@ def read_canonical_csv(
     connection: duckdb.DuckDBPyConnection, csv_path: Path, schema: TableSchema
 ) -> duckdb.DuckDBPyRelation:
     _literal_path(csv_path)
+    validate_csv(connection, csv_path, schema)
     return connection.sql(
-        "SELECT * FROM read_csv(?, columns=?, auto_detect=false, header=true, "
-        "delim=',', quote='\"', escape='\"', nullstr='', allow_quoted_nulls=false, "
-        "strict_mode=true, ignore_errors=false, hive_partitioning=false)",
+        f"SELECT * FROM read_csv(?, columns=?, {CSV_OPTIONS})",
         params=[str(csv_path), schema.duckdb_types()],
     )
 
