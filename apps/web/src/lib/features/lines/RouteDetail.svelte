@@ -426,7 +426,7 @@
 								anchor="line-detail-directions"
 							>
 								<div class="route-section">
-									{#if presentation.stamp.generatedUtc != null || presentation.stamp.ageSeconds != null}
+									{#if absenceReason?.key !== 'metro-no-realtime' && (presentation.stamp.generatedUtc != null || presentation.stamp.ageSeconds != null)}
 										<div class="route-section-head route-section-head--meta">
 											<FreshnessStamp variant="live" presentation={presentation.stamp} {locale} />
 										</div>
