@@ -47,7 +47,7 @@ def test_roll_forward_and_bad_chain(objects):
         "seq": 2,
         "at_utc": "2026-01-02T03:04:05.123456Z",
         "before_sha256": sha256(objects.read(m.window_key(ID)).body).hexdigest(),
-        "records": [m.encode_event(RECORD)],
+        "records": [m.encode_event(replace(RECORD, sequence=(2, 0)))],
         "after": m.encode_window(replace(DOC, seq=2)),
     }
     objects.create(t.transition_key(ID, 2), second)
@@ -174,3 +174,22 @@ def test_committed_replace_failure_does_not_report_uncommitted(objects, monkeypa
     assert decisions == [1]
     assert advance(objects, lambda doc, now: None) == result
     assert result.seq == 2 and t.rebuild_window(objects, ID) == result
+
+
+def test_event_only_records_leave_state_absent_and_continue_sequence(objects):
+    records = (RECORD, replace(RECORD, kind="close_runs"))
+    for seq in (1, 2):
+        assert advance(objects, lambda doc, now: t.Transition(None, records)) is None
+        assert objects.read(m.window_key(ID)) is None
+        assert t.rebuild_window(objects, ID) is None
+        envelope = json.loads(objects.read(m.transition_key(ID, seq)).body)
+        assert envelope["after"] is None
+        assert [m.decode_event(r).sequence for r in envelope["records"]] == [(seq, 0), (seq, 1)]
+        assert [r.sequence for r in t.events(objects, ID) if r.kind == "close_runs"] == [
+            (n, 1) for n in range(1, seq + 1)
+        ]
+    result = advance(objects)
+    assert result.seq == 3 and t.rebuild_window(objects, ID) == result
+    record = json.loads(objects.read(m.transition_key(ID, 3)).body)["records"][0]
+    assert m.decode_event(record).sequence == (3, 0)
+    assert [r.sequence for r in t.events(objects, ID, kinds={"close_runs"})] == [(1, 1), (2, 1)]

@@ -5,11 +5,10 @@ failure; callers must not repeat the change. At most one transition is pending.
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
-from hashlib import sha256
-from typing import Any, cast
+from typing import cast
 
 from transit_ops.control.objects import ConditionalObjects, ObjectConflict
 from transit_ops.history.ledger_r2_documents import (
@@ -18,13 +17,13 @@ from transit_ops.history.ledger_r2_documents import (
     LedgerDocumentInvalid,
     WindowDocument,
     _identity,
-    _json,
     _path,
     _require,
     decode_event,
+    decode_transition,
     decode_window,
-    encode_event,
     encode_window,
+    prepare_transition,
     transition_key,
     window_key,
 )
@@ -45,28 +44,8 @@ class LedgerContention(RuntimeError):
 
 @dataclass(frozen=True)
 class Transition:
-    after: WindowDocument
+    after: WindowDocument | None
     records: tuple[EventRecord, ...]
-
-
-def _decode_envelope(
-    raw: bytes, identity: Identity, seq: int, before: bytes | None
-) -> WindowDocument:
-    try:
-        event = json.loads(raw)
-        _require(type(event["format"]) is int and event["format"] == 1 and event["seq"] == seq)
-        _require(event["before_sha256"] == (sha256(before).hexdigest() if before else None))
-        _require(
-            datetime.fromisoformat(event["at_utc"].replace("Z", "+00:00")).utcoffset() is not None
-        )
-        _require(isinstance(event["records"], list))
-        for record in event["records"]:
-            decode_event(record)
-        doc = decode_window(event["after"])
-        _require(_identity(doc) == identity and doc.seq == seq)
-        return doc
-    except (KeyError, TypeError, ValueError, AttributeError) as exc:
-        raise LedgerDocumentInvalid("invalid window event") from exc
 
 
 def apply_transition(
@@ -85,23 +64,21 @@ def apply_transition(
             if committed is not None:
                 return _recover(objects, identity, committed)
             doc, before, token = _read_window(objects, identity)
-            seq = (doc.seq if doc else 0) + 1
-            pending = objects.read(transition_key(identity, seq))
-            if pending:
-                after = _decode_envelope(pending.body, identity, seq, before)
-                objects.replace(window_key(identity), encode_window(after), expected=token)
+            seq, pending = _pending(objects, identity, (doc.seq if doc else 0) + 1, before)
+            if pending is not None:
+                objects.replace(window_key(identity), encode_window(pending), expected=token)
                 continue
             now = clock()
             transition = change(doc, now)
-            if transition is None:
+            if transition is None or (transition.after is None and not transition.records):
                 return doc
-            after = decode_window({"format": 1, **asdict(transition.after)})
-            if not transition.records and doc and replace(after, seq=doc.seq) == doc:
+            after = _candidate(transition.after, doc, identity, seq)
+            if not transition.records and doc and after and replace(after, seq=doc.seq) == doc:
                 return doc
-            if after.seq != seq or _identity(after) != identity:
-                raise ValueError("transition must advance one event with unchanged identity")
-            after, event = _prepare(after, transition.records, before, now)
+            after, event = prepare_transition(after, transition.records, identity, seq, before, now)
             objects.create(transition_key(identity, seq), event)
+            if after is None:
+                return None
             committed = after
         except ObjectConflict:
             continue
@@ -114,6 +91,37 @@ def apply_transition(
     if committed is not None:
         raise LedgerTransitionCommitted(committed)
     raise LedgerContention("window transition attempts exhausted")
+
+
+def _pending(
+    objects: ConditionalObjects,
+    identity: Identity,
+    seq: int,
+    before: bytes | None,
+) -> tuple[int, WindowDocument | None]:
+    while (entry := objects.read(transition_key(identity, seq))) is not None:
+        after = decode_transition(entry.body, identity, seq, before)
+        if after is not None:
+            return seq, after
+        seq += 1
+    return seq, None
+
+
+def _candidate(
+    after: WindowDocument | None,
+    current: WindowDocument | None,
+    identity: Identity,
+    seq: int,
+) -> WindowDocument | None:
+    if after is None:
+        _require(current is None)
+        return None
+    after = decode_window({"format": 1, **asdict(after)})
+    if current is None and after.seq == 1:
+        after = replace(after, seq=seq)  # First state follows any event-only history.
+    if after.seq != seq or _identity(after) != identity:
+        raise ValueError("transition must advance one event with unchanged identity")
+    return after
 
 
 def _read_window(
@@ -143,29 +151,6 @@ def _publish(
         raise LedgerTransitionCommitted(after) from exc
 
 
-def _prepare(
-    after: WindowDocument,
-    records: tuple[EventRecord, ...],
-    before: bytes | None,
-    at: datetime,
-) -> tuple[WindowDocument, dict[str, Any]]:
-    for record in records:
-        if record.kind == "trim":
-            fingerprint = record.details.get("remainder_fingerprint")
-            after = replace(after, remainder_fingerprint=cast(str | None, fingerprint))
-    event = {
-        "format": 1,
-        "seq": after.seq,
-        "at_utc": _json(at),
-        "before_sha256": sha256(before).hexdigest() if before else None,
-        "records": [encode_event(decode_event(encode_event(r))) for r in records],
-        "after": encode_window(after),
-    }
-    after = _decode_envelope(snapshot_json_bytes(event), _identity(after), after.seq, before)
-    event["after"] = encode_window(after)
-    return after, event
-
-
 def _recover(
     objects: ConditionalObjects, identity: Identity, after: WindowDocument
 ) -> WindowDocument:
@@ -177,20 +162,48 @@ def _recover(
         following = objects.read(transition_key(identity, number))
         if following is None:
             raise LedgerDocumentInvalid("missing applied event")
-        after = _decode_envelope(
-            following.body, identity, number, snapshot_json_bytes(encode_window(after))
+        after = cast(
+            WindowDocument,
+            decode_transition(
+                following.body, identity, number, snapshot_json_bytes(encode_window(after))
+            ),
         )
     _require(encode_window(after) == encode_window(result))
     return result
 
 
 def rebuild_window(objects: ConditionalObjects, identity: Identity) -> WindowDocument | None:
-    doc, before = None, None
+    result = None
+    for doc, _ in _history(objects, identity):
+        result = doc
+    return result
+
+
+def events(
+    objects: ConditionalObjects,
+    identity: Identity,
+    *,
+    kinds: Collection[str] | None = None,
+) -> list[EventRecord]:
+    """Read public records in sequence without writing or requiring window state."""
+    return [
+        r
+        for _, records in _history(objects, identity)
+        for r in records
+        if kinds is None or r.kind in kinds
+    ]
+
+
+def _history(
+    objects: ConditionalObjects,
+    identity: Identity,
+) -> Iterator[tuple[WindowDocument | None, list[EventRecord]]]:
+    before = None
     for seq, key in enumerate(sorted(objects.list_keys(f"transitions/{_path(identity)}/")), 1):
         _require(key == transition_key(identity, seq))
         event = objects.read(key)
         _require(event is not None)
         assert event is not None
-        doc = _decode_envelope(event.body, identity, seq, before)
-        before = snapshot_json_bytes(encode_window(doc))
-    return doc
+        doc = decode_transition(event.body, identity, seq, before)
+        before = snapshot_json_bytes(encode_window(doc)) if doc is not None else None
+        yield doc, [decode_event(r) for r in json.loads(event.body)["records"]]
