@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal, cast
 
 from sqlalchemy.engine import Connection
@@ -143,7 +143,7 @@ def publish(
     if _historic_run is not None:
         _historic_run.run_instant_utc = as_of_utc
     if stamp is None:
-        stamp = as_of_utc.strftime("%Y-%m-%dT00:00:00Z")
+        stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     concurrency = uploads.concurrency(settings)
     with uploads.provider_executor(concurrency):
         _historic._activate_historic_phase(_historic_run, "parent_compose")
@@ -426,7 +426,7 @@ def collect(
 ) -> HistoricValidationInputs:
     as_of_utc = resolve_as_of(conn, utc_now() if as_of_utc is None else as_of_utc)
     if stamp is None:
-        stamp = as_of_utc.strftime("%Y-%m-%dT00:00:00Z")
+        stamp = as_of_utc.astimezone(UTC).strftime("%Y-%m-%dT00:00:00Z")
     compatibility = historic_compatibility.build(
         conn, provider_id=provider_id, settings=settings, stamp=stamp
     )

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -135,3 +135,27 @@ def test_one_publish_reads_one_instant(monkeypatch, explicit):
     assert seen == [(seed.HISTORY_CLOCK, "2025-09-02T00:00:00Z")] * 3
     assert run.run_instant_utc == seed.HISTORY_CLOCK
     assert clock.call_count == (0 if explicit else 1)
+
+
+@pytest.mark.parametrize("operation", ["publish", "collect"])
+@pytest.mark.parametrize("utc_hour,offset_hours", [(0, -4), (23, 4)])
+def test_equivalent_aware_instants_keep_publication_identity(
+    monkeypatch, tmp_path, operation, utc_hour, offset_hours
+):
+    from test_partitioned_history_publish import _patch_minimal_historic
+
+    _patch_minimal_historic(monkeypatch)
+    conn = SimpleNamespace(execute=lambda *a, **k: None)
+    settings = seed.settings_for(tmp_path)
+    utc_instant = datetime(2026, 7, 13, utc_hour, 30, tzinfo=UTC)
+    offset_instant = utc_instant.astimezone(timezone(timedelta(hours=offset_hours)))
+
+    def build(instant):
+        kwargs = dict(provider_id="stm", settings=settings, as_of_utc=instant)
+        if operation == "publish":
+            store = MemorySnapshotStore()
+            historic_tier.publish(conn, store, force=True, **kwargs)
+            return store.objects
+        return historic_tier.collect(conn, include={"network", "lines", "stops"}, **kwargs).stamp
+
+    assert build(offset_instant) == build(utc_instant)
