@@ -11,13 +11,18 @@ from transit_ops.history import ledger_r2_documents as m
 from transit_ops.history import ledger_r2_readers as r
 
 
-def test_audit_reader_repairs_pending_state_without_new_records(pair):
+@pytest.mark.parametrize("reader", [r.events, r.current_window, r.rebuild_window])
+def test_audit_reader_repairs_pending_state_without_new_records(pair, reader):
     client, obj, _ = pair
     seed(obj, DOC, 1)
     before = list(obj.list_keys("transitions/"))
     fresh = remote(client)
     assert fresh.read(m.window_key(ID)) is None
-    assert [record.kind for record in r.events(fresh, ID)] == ["changed"]
+    result = reader(fresh, ID)
+    if isinstance(result, list):
+        assert [record.kind for record in result] == ["changed"]
+    else:
+        assert result == DOC
     assert m.decode_window(json.loads(fresh.read(m.window_key(ID)).body)) == DOC
     assert list(obj.list_keys("transitions/")) == before
 

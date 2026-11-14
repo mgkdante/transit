@@ -113,7 +113,7 @@ def confirm_committed(
     return result
 
 
-def history(
+def _history(
     objects: ConditionalObjects,
     identity: Identity,
 ) -> Iterator[tuple[WindowDocument | None, list[RecordedEvent]]]:
@@ -131,10 +131,11 @@ def history(
 
 
 def rebuild_window(objects: ConditionalObjects, identity: Identity) -> WindowDocument | None:
-    """Reconstruct immutable journal state for reconciliation."""
+    """Reconstruct and repair journal state for reconciliation."""
     result = None
-    for doc, _ in history(objects, identity):
+    for doc, _ in _history(objects, identity):
         result = doc
+    recover(objects, identity)
     return result
 
 
@@ -147,7 +148,7 @@ def events(
 ) -> list[RecordedEvent]:
     records = [
         r
-        for _, batch in history(objects, identity)
+        for _, batch in _history(objects, identity)
         for r in batch
         if kinds is None or r.kind in kinds
     ]
