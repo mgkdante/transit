@@ -487,6 +487,8 @@ def prepare_recovered_archive_record(
     month = _date(row.get("archive_month"))
     if not isinstance(identity, str) or not identity.strip() or month is None or month.day != 1:
         raise ValueError("identity and month-start archive_month required")
+    if identity != identity.strip():
+        raise ValueError("recovery_identity_whitespace")
     timestamps = [
         row.get(name) for name in ("first_seen_utc", "last_seen_utc", "start_utc", "end_utc")
     ]

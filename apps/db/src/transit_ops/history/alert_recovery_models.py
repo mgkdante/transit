@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 from transit_ops.gold.alert_archive import prepare_recovered_archive_record
@@ -72,6 +72,12 @@ def select_candidates(
             {k: v for k, v in c.record.items() if k not in {"content_hash", "updated_at_utc"}}
             for c in tied
         ]
+        for row in semantics:
+            if row["message"] is not None:
+                row["message"] = dict(row["message"])
+                row["message"]["captured_utc"] = datetime.fromisoformat(
+                    row["message"]["captured_utc"]
+                ).astimezone(UTC)
         if any(row != semantics[0] for row in semantics[1:]):
             conflicts.append(identity)
         else:

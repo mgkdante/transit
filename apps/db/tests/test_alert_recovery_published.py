@@ -1,11 +1,16 @@
+import json
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 import pytest
 
+from transit_ops.gold.alert_archive import prepare_recovered_archive_record
+from transit_ops.history import alert_recovery_models as recovery
+from transit_ops.history.alert_recovery_models import SourceReport
 from transit_ops.history.alert_recovery_published import read_published_candidates
 from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.contract import AlertArchiveIndex, AlertArchivePage
-from transit_ops.snapshots.serialization import snapshot_sha256
+from transit_ops.snapshots.serialization import snapshot_json_bytes, snapshot_sha256
 from transit_ops.snapshots.storage import LocalSnapshotStorage
 
 NOW = datetime(2026, 11, 14, tzinfo=UTC)
@@ -33,9 +38,14 @@ def page(storage, identity, *, message=True):
     return path, payload
 
 
-def index(storage, path, payload):
-    from transit_ops.snapshots.serialization import snapshot_json_bytes
+@pytest.fixture
+def published_candidates(tmp_path):
+    storage = LocalSnapshotStorage(str(tmp_path), "v1/p")
+    page(storage, "a")
+    return read_published_candidates(storage, provider_id="p", recovered_at_utc=NOW)
 
+
+def index(storage, path, payload):
     ref = dict(
         path=path,
         page=1,
@@ -77,10 +87,8 @@ def test_incomplete_on_corrupt_or_unreadable_evidence(tmp_path, fault):
     storage = LocalSnapshotStorage(str(tmp_path), "v1/p")
     path, payload = page(storage, "a")
     if fault == "checksum":
-        storage.put_bytes(path, b"{}", tier="historic")
+        storage.put_bytes(path, b" " + snapshot_json_bytes(payload), tier="historic")
     else:
-        import json
-
         index(storage, path, payload)
         key = "historic/alerts/index.json"
         value = json.loads(storage.read_bytes(key))
@@ -98,9 +106,11 @@ def test_incomplete_on_corrupt_or_unreadable_evidence(tmp_path, fault):
         basis = {k: value[k] for k in ("first_available_date", "last_available_date", "months")}
         value["collection_generation_id"] = snapshot_sha256(basis)
         storage.put_json(key, value, tier="historic")
-    _, report = read_published_candidates(storage, provider_id="p", recovered_at_utc=NOW)
+    candidates, report = read_published_candidates(storage, provider_id="p", recovered_at_utc=NOW)
     assert not report.complete
     assert report.errors or report.missing
+    if fault == "checksum":
+        assert candidates == ()
 
 
 def test_orphan_is_eligible_with_explicit_coverage_limit(tmp_path):
@@ -112,25 +122,20 @@ def test_orphan_is_eligible_with_explicit_coverage_limit(tmp_path):
     assert report.complete and f"orphan:{path}" in report.coverage
 
 
-def test_selection_is_order_independent_and_reports_conflicts(tmp_path):
-    from dataclasses import replace
-
-    from transit_ops.history.alert_recovery_models import SourceReport, select_candidates
-
-    storage = LocalSnapshotStorage(str(tmp_path), "v1/p")
-    page(storage, "a")
-    candidates, _ = read_published_candidates(storage, provider_id="p", recovered_at_utc=NOW)
+def test_selection_is_order_independent_and_reports_conflicts(published_candidates):
+    candidates, _ = published_candidates
     a = candidates[0]
     backup = replace(a, source_kind="backup")
-    assert select_candidates([a, backup], provider_id="p") == ([backup], ())
-    assert select_candidates([backup, a], provider_id="p") == ([backup], ())
+    assert recovery.select_candidates([a, backup], provider_id="p") == ([backup], ())
+    assert recovery.select_candidates([backup, a], provider_id="p") == ([backup], ())
     changed = replace(a, record={**a.record, "description_text": "Different"})
-    assert select_candidates([a, changed], provider_id="p") == ([], ("a",))
+    assert recovery.select_candidates([a, changed], provider_id="p") == ([], ("a",))
     newer = replace(changed, record={**changed.record, "last_seen_utc": NOW})
-    selected, conflicts = select_candidates([a, newer], provider_id="p")
+    selected, conflicts = recovery.select_candidates([a, newer], provider_id="p")
     assert not conflicts and selected[0].record["description_text"] == "Different"
+    assert all(c.alert_id == c.record["alert_id"] for c in selected)
     with pytest.raises(ValueError):
-        select_candidates([a], provider_id="other")
+        recovery.select_candidates([a], provider_id="other")
     assert not SourceReport("capture").complete
     assert SourceReport("capture").coverage == ("not read",)
 
@@ -139,22 +144,50 @@ def test_selection_is_order_independent_and_reports_conflicts(tmp_path):
     "field,value",
     [
         ("alert_id", ""),
+        ("alert_id", " a "),
         ("route_ids", [1]),
         ("first_seen_utc", "2020-01-01"),
         ("active_periods", [{"start_utc": "2020-01-01"}]),
     ],
 )
-def test_preparation_refuses_invalid_evidence(tmp_path, field, value):
-    from transit_ops.gold.alert_archive import prepare_recovered_archive_record
-    from transit_ops.history.alert_recovery_models import SourceReport, unrecovered_ids
-
-    storage = LocalSnapshotStorage(str(tmp_path), "v1/p")
-    page(storage, "a")
-    candidates, report = read_published_candidates(storage, provider_id="p", recovered_at_utc=NOW)
-    with pytest.raises(ValueError):
+def test_preparation_refuses_invalid_evidence(published_candidates, field, value):
+    candidates, report = published_candidates
+    with pytest.raises(
+        ValueError, match="recovery_identity_whitespace" if value == " a " else None
+    ):
         prepare_recovered_archive_record(
             {**candidates[0].record, field: value}, provider_id="p", recovered_at_utc=NOW
         )
-    assert unrecovered_ids(["a", "lost"], ["a"], [report]) == ("lost",)
-    assert unrecovered_ids(None, ["a"], [report]) is None
-    assert unrecovered_ids(["lost"], [], [SourceReport("backup")]) is None
+    if value == " a ":
+        spaced = replace(
+            candidates[0], alert_id=value, record={**candidates[0].record, field: value}
+        )
+        with pytest.raises(ValueError, match="recovery_identity_whitespace"):
+            recovery.select_candidates([spaced], provider_id="p")
+    assert recovery.unrecovered_ids(["a", "lost"], ["a"], [report]) == ("lost",)
+    assert recovery.unrecovered_ids(None, ["a"], [report]) is None
+    assert recovery.unrecovered_ids(["lost"], [], [SourceReport("backup")]) is None
+
+
+@pytest.mark.parametrize(
+    "captured,conflict",
+    [
+        ("2026-11-01T00:00:00+00:00", False),
+        ("2026-10-31T20:00:00-04:00", False),
+        ("2026-11-01T00:00:01Z", True),
+    ],
+)
+def test_provenance_instants_preserve_message(published_candidates, captured, conflict):
+    candidates, _ = published_candidates
+    a = candidates[0]
+    message = {**a.record["message"], "captured_utc": captured}
+    backup = replace(a, source_kind="backup", record={**a.record, "message": message})
+    for inputs in ([a, backup], [backup, a]):
+        selected, conflicts = recovery.select_candidates(inputs, provider_id="p")
+        assert conflicts == (("a",) if conflict else ())
+        if not conflict:
+            assert selected[0].source_kind == "backup" and selected[0].record["message"] == message
+        else:
+            assert selected == []
+    assert a.record["message"]["captured_utc"] == "2026-11-01T00:00:00Z"
+    assert backup.record["message"]["captured_utc"] == captured
