@@ -17,6 +17,7 @@ from test_static_silver_copy_real_db import (
     _zip_bytes,
 )
 
+import transit_ops.live.edition as edition_module
 from transit_ops.gold.marts import INSERT_DIM_ROUTE, INSERT_DIM_STOP
 from transit_ops.live.edition import (
     EDITION_TABLES,
@@ -63,8 +64,12 @@ def test_create_is_idempotent():
         )
         create_edition_tables(duck)
         assert loaded_edition(duck) == EditionId("network", 42, None)
-        duck.execute("UPDATE edition_meta SET source_version = 'édition'")
+        duck.execute(
+            "UPDATE edition_meta SET source_version = 'édition', "
+            "routes_dataset_version_id = 11, stops_dataset_version_id = 12"
+        )
         assert loaded_edition(duck) == EditionId("network", 42, "édition")
+        assert loaded_edition(duck).dimension_versions == (11, 12)
 
 
 def test_current_edition_follows_the_old_rule(real_db_engine, seed_provider):
@@ -130,7 +135,7 @@ SOURCES = {
 
 
 @pytest.fixture
-def editions(real_db_engine, seed_provider):
+def editions(real_db_engine, seed_provider, request):
     provider, base = "live_edition_load", 998_350_000
     try:
         with real_db_engine.begin() as pg:
@@ -139,38 +144,34 @@ def editions(real_db_engine, seed_provider):
             for suffix in ("first", "second"):
                 members = {
                     name: rows.replace("N1,,,,,3", "N1,Entrance,,,,3")
-                    .replace("S1", f"駅é-{suffix}")
+                    .replace("S1", getattr(request, "param", f"駅é-{suffix}"))
                     .replace("R1", f"R-{suffix}")
                     .replace("T1", f"T-{suffix}")
                     .replace("N1", f"N-{suffix}")
                     for name, rows in _edge_members().items()
                 }
                 members["calendar_dates.txt"] = "service_id,date,exception_type\nWK,20260325,2\n"
+                if hasattr(request, "param"):
+                    entrance = f"N-{suffix},Entrance,,,,3\n"
+                    members["stops.txt"] = members["stops.txt"].replace(entrance, "")
                 payload = _zip_bytes(members)
                 archive = _archive(provider_id=provider, base=base, payload=payload)
                 result = load_static_zip_to_silver(
                     pg, archive=archive, bronze_storage=MemoryBronzeStorage(payload)
                 )
-                params = {"p": provider, "d": result.dataset_version_id}
+                dataset = result.dataset_version_id
+                params = dict(provider_id=provider, dataset_version_id=dataset)
                 if suffix == "first":
                     for statement in (INSERT_DIM_ROUTE, INSERT_DIM_STOP):
-                        pg.execute(
-                            statement,
-                            {
-                                "provider_id": provider,
-                                "dataset_version_id": result.dataset_version_id,
-                            },
-                        )
+                        pg.execute(statement, params)
                 pg.execute(
                     text(
                         "UPDATE silver.stop_times SET departure_time = '' "
-                        "WHERE dataset_version_id = :d"
+                        "WHERE dataset_version_id = :dataset_version_id"
                     ),
                     params,
                 )
-                versions.append(
-                    EditionId(provider, result.dataset_version_id, archive.storage_path)
-                )
+                versions.append(EditionId(provider, dataset, archive.storage_path))
         yield real_db_engine, versions
     finally:
         with real_db_engine.begin() as pg:
@@ -187,7 +188,7 @@ def _local_rows(duck):
 
 
 def test_loaded_rows_equal_postgres_rows(editions):
-    engine, (older, first) = editions
+    engine, (dims_version, loaded) = editions
     with engine.begin() as pg:
         pg.execute(
             text("""
@@ -199,15 +200,14 @@ def test_loaded_rows_equal_postgres_rows(editions):
             FROM silver.stop_times CROSS JOIN generate_series(13, 20013) AS n
             WHERE dataset_version_id = :d
         """),
-            {"d": first.dataset_version_id},
+            {"d": loaded.dataset_version_id},
         )
     with engine.connect() as pg, duckdb.connect() as duck:
-        load_edition_from_postgres(duck, pg, first)
-        assert (
-            duck.execute(
-                "SELECT routes_dataset_version_id, stops_dataset_version_id FROM edition_meta"
-            ).fetchone()
-            == (older.dataset_version_id,) * 2
+        load_edition_from_postgres(duck, pg, loaded)
+        assert loaded_edition(duck).dimension_versions == (dims_version.dataset_version_id,) * 2
+        assert edition_module.current_dim_versions(pg, provider_id=loaded.provider_id) == (
+            dims_version.dataset_version_id,
+            dims_version.dataset_version_id,
         )
         for table, source in SOURCES.items():
             predicate = "" if source.startswith("gold.dim_") else " AND dataset_version_id = :d"
@@ -215,10 +215,10 @@ def test_loaded_rows_equal_postgres_rows(editions):
             selected = ", ".join(columns)
             expected = pg.execute(
                 text(f"SELECT {selected} FROM {source} WHERE provider_id = :p {predicate}"),
-                {"p": first.provider_id, "d": first.dataset_version_id},
+                {"p": loaded.provider_id, "d": loaded.dataset_version_id},
             ).all()
             assert _local_rows(duck)[table] == sorted(map(tuple, expected), key=repr)
-        assert loaded_edition(duck) == first
+        assert loaded_edition(duck) == loaded
         assert duck.execute(
             "SELECT arrival_time, departure_time FROM edition_stop_times"
         ).fetchone() == ("25:35:00", "")
@@ -232,6 +232,9 @@ def test_reload_replaces_the_edition_atomically(editions, tmp_path):
     with engine.connect() as pg, duckdb.connect(str(tmp_path / "live.duckdb")) as duck:
         load_edition_from_postgres(duck, pg, first)
         before = _local_rows(duck)
+        with pytest.raises(EditionMissing, match=first.provider_id):
+            load_edition_from_postgres(duck, pg, EditionId(first.provider_id, -1, None))
+        assert _local_rows(duck) == before
         duck.execute("DROP TABLE edition_meta")
         duck.execute(
             "CREATE TABLE edition_meta (provider_id VARCHAR, dataset_version_id BIGINT "
@@ -261,16 +264,9 @@ def test_reload_replaces_the_edition_atomically(editions, tmp_path):
 def test_counts_are_returned_per_table(editions):
     engine, (first, _) = editions
     with engine.connect() as pg, duckdb.connect() as duck:
-        assert load_edition_from_postgres(duck, pg, first) == {
-            "edition_stop_times": 1,
-            "edition_trips": 1,
-            "edition_calendar": 1,
-            "edition_calendar_dates": 1,
-            "edition_trip_service_span": 1,
-            "edition_routes": 1,
-            "edition_stops": 2,
-            "edition_meta": 1,
-        }
+        expected = dict.fromkeys((*SOURCES, "edition_meta"), 1)
+        expected["edition_stops"] = 2
+        assert load_edition_from_postgres(duck, pg, first) == expected
 
 
 @pytest.mark.parametrize("active, autocommit", [(True, False), (False, True)])
@@ -299,8 +295,9 @@ def _source_pg(rows, *, failure=None):
         result = MagicMock()
         result.__enter__.return_value = result
         version = (parameters or {}).get("dataset_version_id")
-        identity = (version, "wrong" if failure == "mismatch" else None, None, None)
+        identity = (version, "wrong" if failure == "mismatch" else None)
         result.one_or_none.return_value = None if failure == "missing" else identity
+        result.one.return_value = (None, None)
         result.fetchmany.side_effect = AssertionError("COPY required; no Python row conversion")
         return result
 
@@ -383,3 +380,21 @@ def test_create_refuses_incompatible_schema(definition):
         duck.execute(f"CREATE TABLE edition_trips ({definition})")
         with pytest.raises(ValueError, match="edition_trips"):
             create_edition_tables(duck)
+
+
+@pytest.mark.parametrize("editions", ["\ufeffstop", "Ã©"], indirect=True)
+@pytest.mark.parametrize("encoding", ["UTF8", "LATIN1"])
+def test_copy_text_and_coordinate_join(editions, encoding):
+    engine, (version, _) = editions
+    with engine.connect() as pg, duckdb.connect() as duck:
+        pg.detach()
+        stop_id = pg.execute(
+            text("SELECT stop_id FROM gold.dim_stop WHERE provider_id = :p"),
+            {"p": version.provider_id},
+        ).scalar_one()
+        pg.exec_driver_sql(f"SET client_encoding TO '{encoding}'")
+        pg.commit()
+        load_edition_from_postgres(duck, pg, version)
+        assert duck.execute(
+            "SELECT stop_id, stop_lat FROM edition_stop_times JOIN edition_stops USING (stop_id)"
+        ).fetchall() == [(stop_id, 45.5001)]

@@ -1,7 +1,7 @@
 """The schedule edition relations read by the local live engine."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
@@ -64,6 +64,7 @@ class EditionId:
     provider_id: str
     dataset_version_id: int
     source_version: str | None
+    dimension_versions: tuple[int | None, int | None] = field(default=(None, None), compare=False)
 
 
 def create_edition_tables(duck: duckdb.DuckDBPyConnection) -> None:
@@ -93,10 +94,8 @@ def current_edition_id(pg: Connection, *, provider_id: str) -> EditionId:
 
 
 def loaded_edition(duck: duckdb.DuckDBPyConnection) -> EditionId | None:
-    row = duck.execute(
-        "SELECT provider_id, dataset_version_id, source_version FROM edition_meta"
-    ).fetchone()
-    return None if row is None else EditionId(*row)
+    row = duck.execute("SELECT * FROM edition_meta").fetchone()
+    return None if row is None else EditionId(row[0], row[1], row[2], (row[3], row[4]))
 
 
 _EDITION_SOURCES = {
@@ -129,7 +128,11 @@ def _copy_edition_relation(
             raise ValueError("Edition staging path must not contain glob characters")
         connection = cast(PsycopgConnection[tuple[object, ...]], pg.connection.dbapi_connection)
         with connection.cursor() as cursor, path.open("wb") as output:
-            with cursor.copy(f"COPY ({query}) TO STDOUT (FORMAT csv)", parameters) as stream:
+            with cursor.copy(
+                f"COPY ({query}) TO STDOUT "
+                "(FORMAT csv, HEADER false, FORCE_QUOTE *, ENCODING 'UTF8')",
+                parameters,
+            ) as stream:
                 for block in stream:
                     output.write(block)
         if not path.stat().st_size:
@@ -143,13 +146,22 @@ def _copy_edition_relation(
         return int(row[0])
 
 
+def current_dim_versions(pg: Connection, *, provider_id: str) -> tuple[int | None, int | None]:
+    """Return the provider's (route, stop) Gold versions in the caller's snapshot."""
+    row = pg.execute(
+        text("""
+        SELECT (SELECT max(dataset_version_id) FROM gold.dim_route WHERE provider_id = :p),
+               (SELECT max(dataset_version_id) FROM gold.dim_stop WHERE provider_id = :p)
+    """),
+        {"p": provider_id},
+    ).one()
+    return row[0], row[1]
+
+
 def _edition_metadata(pg: Connection, edition: EditionId) -> list[str | int | None]:
     row = pg.execute(
         text("""
-        SELECT dataset_version_id, source_version,
-            (SELECT max(dataset_version_id) FROM gold.dim_route WHERE provider_id = :provider_id),
-            (SELECT max(dataset_version_id) FROM gold.dim_stop WHERE provider_id = :provider_id)
-        FROM core.dataset_versions
+        SELECT dataset_version_id, source_version FROM core.dataset_versions
         WHERE provider_id = :provider_id AND dataset_version_id = :dataset_version_id
           AND dataset_kind = 'static_schedule'
     """),
@@ -159,7 +171,8 @@ def _edition_metadata(pg: Connection, edition: EditionId) -> list[str | int | No
         raise EditionMissing(
             f"Edition {edition.provider_id}/{edition.dataset_version_id} missing or changed"
         )
-    return [edition.provider_id, *row]
+    versions = current_dim_versions(pg, provider_id=edition.provider_id)
+    return [edition.provider_id, *row, *versions]
 
 
 def load_edition_from_postgres(
