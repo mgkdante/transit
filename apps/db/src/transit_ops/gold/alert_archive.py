@@ -467,6 +467,59 @@ def _record_from_source(
     return record
 
 
+def prepare_recovered_archive_record(
+    row: Mapping[str, Any], *, provider_id: str, recovered_at_utc: datetime
+) -> dict[str, Any]:
+    """Prepare evidence without synthesizing identity or replacing supplied provenance."""
+    from transit_ops.snapshots.contract import AlertArchiveEntry
+
+    aliases = {
+        "id": "alert_id",
+        "description": "description_text",
+        "description_en": "description_text_en",
+        "routes": "route_ids",
+        "stops": "stop_ids",
+        "severity_level": "severity",
+    }
+    if row.get("provider_id", provider_id) != provider_id or not provider_id:
+        raise ValueError("provider mismatch")
+    identity = row.get("alert_id")
+    month = _date(row.get("archive_month"))
+    if not isinstance(identity, str) or not identity.strip() or month is None or month.day != 1:
+        raise ValueError("identity and month-start archive_month required")
+    if identity != identity.strip():
+        raise ValueError("recovery_identity_whitespace")
+    timestamps = [
+        row.get(name) for name in ("first_seen_utc", "last_seen_utc", "start_utc", "end_utc")
+    ]
+    timestamps += [v for p in row.get("active_periods", []) for v in p.values()]
+    timestamps += [row["message"]["captured_utc"]] if row.get("message") else []
+    for value in timestamps:
+        parsed = (
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if isinstance(value, str)
+            else value
+        )
+        if parsed is not None and (not isinstance(parsed, datetime) or parsed.utcoffset() is None):
+            raise ValueError("aware evidence timestamp required")
+    if recovered_at_utc.utcoffset() is None:
+        raise ValueError("aware recovery timestamp required")
+    public = {
+        name: row.get(aliases.get(name, name))
+        for name in AlertArchiveEntry.model_fields
+        if name not in {"severity", "duration_min", "impact_passages"}
+    }
+    for name in ("first_seen_utc", "last_seen_utc", "start_utc", "end_utc"):
+        public[name] = _iso(row.get(name))
+    AlertArchiveEntry.model_validate(public, strict=True)
+    record = _record_from_source(row, provider_id=provider_id, synced_at_utc=recovered_at_utc)
+    if record["first_seen_utc"] > record["last_seen_utc"]:
+        raise ValueError("inverted seen bounds")
+    record["message"] = public["message"]
+    record["content_hash"] = _content_hash(record)
+    return record
+
+
 def _merge_record(
     source: dict[str, Any], existing: Mapping[str, Any], *, synced_at_utc: datetime
 ) -> dict[str, Any]:
