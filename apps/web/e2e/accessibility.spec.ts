@@ -28,6 +28,7 @@ const pages = [
 	...LEGAL_NAV.map(({ href }) => href),
 	`/stop/${Object.keys(departures.stops)[0]}`,
 	`/lines/${lineId}`,
+	`/lines/${lineId}?tab=detail`,
 	`/trip/${tripId}`,
 	'/trip/TEmpty',
 	`/search?q=${encodeURIComponent(fixture('stops-index.json').stops[0].name)}`,
@@ -51,7 +52,7 @@ test.describe('accessibility', { tag: '@theme' }, () => {
 				// As in the layout audit below, scan after client-side fixture data settles.
 				await page.goto(url, { waitUntil: 'networkidle' });
 				await expect(page.getByRole('main')).toBeVisible();
-				if (path === `/lines/${line.id}`) {
+				if (path === `/lines/${line.id}?tab=detail`) {
 					await expect(page.locator('.line-stop-link')).toHaveCount(lineStopCount);
 					// Axe's label-in-name check needs the text on screen, not merely in the DOM.
 					for (const [index, link] of (await page.locator('.line-stop-link').all()).entries()) {

@@ -35,25 +35,25 @@
 			"fixture": "rich",
 			"locale": "en",
 			"surface": "line",
-			"path": "/lines/24?tab=reliability&from=2026-08-27&to=2026-08-29"
+			"path": "/lines/24?from=2026-08-27&to=2026-08-29"
 		},
 		{
 			"fixture": "rich",
 			"locale": "fr",
 			"surface": "line",
-			"path": "/fr/lines/24?tab=reliability&grain=day"
+			"path": "/fr/lines/24?grain=day"
 		},
 		{
 			"fixture": "rich",
 			"locale": "en",
 			"surface": "stop",
-			"path": "/stop/52095?tab=reliability"
+			"path": "/stop/52095"
 		},
 		{
 			"fixture": "rich",
 			"locale": "fr",
 			"surface": "stop",
-			"path": "/fr/stop/52095?tab=reliability"
+			"path": "/fr/stop/52095"
 		},
 		{
 			"fixture": "rich",
@@ -71,13 +71,13 @@
 			"fixture": "sparse",
 			"locale": "en",
 			"surface": "line",
-			"path": "/lines/24?tab=reliability&grain=day"
+			"path": "/lines/24?grain=day"
 		},
 		{
 			"fixture": "sparse",
 			"locale": "en",
 			"surface": "stop",
-			"path": "/stop/52095?tab=reliability"
+			"path": "/stop/52095"
 		},
 		{
 			"fixture": "sparse",
