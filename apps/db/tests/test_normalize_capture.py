@@ -36,6 +36,8 @@ from importlib import import_module
 from transit_ops.providers.formats import decode_gtfs_rt
 assert not any(m.startswith(("transit_ops.live", "transit_ops.silver")) for m in sys.modules)
 import transit_ops.providers as providers
+assert set(providers.__all__) <= set(dir(providers))
+assert not any(m.startswith(("transit_ops.live", "transit_ops.silver")) for m in sys.modules)
 groups = {
     "registry": "ProviderRegistry load_provider_manifest",
     "declaration": "SITE_LOCALES DeclarationError Feed Provider Providers load_providers",
@@ -46,6 +48,7 @@ for owner, names in groups.items():
     for name in names.split():
         module = import_module("transit_ops.providers." + owner)
         assert getattr(providers, name) is getattr(module, name)
+assert set(providers.__all__) <= set(dir(providers))
 """
     subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
 
@@ -116,6 +119,8 @@ def test_decode_error_parity(tmp_path, payload):
     with pytest.raises(type(oracle.value)) as decoded:
         decode_gtfs_rt(payload)
     assert type(decoded.value) is type(oracle.value) and str(decoded.value) == str(oracle.value)
+    assert decoded.value.__cause__ is oracle.value.__cause__ is None
+    assert decoded.value.__context__ is oracle.value.__context__ is None
     ref = CaptureRef(
         "fixture_city", "trip_updates", 42, AT, AT, len(payload), sha256(payload).hexdigest()
     )
@@ -131,9 +136,11 @@ def test_decode_error_parity(tmp_path, payload):
             bronze_storage=FakeBronzeStorage(payload),
         )
     assert str(silver.value) == f"Failed to parse GTFS-RT Bronze snapshot: {oracle.value}"
+    assert type(live.value) is CaptureParseError and type(silver.value) is ValueError
     for error in (live.value, silver.value):
         assert type(error.__cause__) is type(oracle.value)
         assert str(error.__cause__) == str(oracle.value)
+        assert error.__cause__.__cause__ is error.__cause__.__context__ is None
 
 
 @pytest.mark.parametrize("payload", [b"", b"\x0a\x05\x0a\x03" + b"2.0"])
