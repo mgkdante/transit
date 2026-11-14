@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ArticleHeader from '#lib/components/layout/TransitArticleHeader.svelte';
 	import OutOfServiceVehicles from './OutOfServiceVehicles.svelte';
+	import HealthSummary from './HealthSummary.svelte';
 	import type { Manifest } from '#lib/v1/schemas/index.ts';
 	import { getV1Runtime } from '#lib/v1/runtime.ts';
 	const clock = getV1Runtime().clock;
@@ -360,7 +361,7 @@
 			open={true}
 		>
 			<div class="health-overview">
-				<p class="health-lede">{t.lede}</p>
+				<HealthSummary {manifest} dataHealth={dh} historyIndex={historyRoot} {gaps} {locale} />
 				{#if manifest}{#key manifest.provider}<OutOfServiceVehicles
 							{manifest}
 							{locale}
@@ -513,12 +514,6 @@
 		gap: 1.5rem;
 		min-width: 0;
 	}
-	.health-lede {
-		margin: 0;
-		font-size: var(--text-reading);
-		line-height: 1.7;
-		color: var(--secondary-foreground);
-	}
 	.health-resource-state {
 		display: flex;
 		flex-direction: column;
@@ -590,11 +585,5 @@
 		font-size: var(--text-small);
 		line-height: 1.45;
 		color: var(--muted-foreground);
-	}
-
-	@media (--desktop-min) {
-		.health-lede {
-			font-size: var(--text-reading-desktop);
-		}
 	}
 </style>

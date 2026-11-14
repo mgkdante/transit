@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { HistoricAvailabilityIndexSchema, ManifestSchema } from './schemas/index';
+import { DataHealthSchema, HistoricAvailabilityIndexSchema, ManifestSchema } from './schemas/index';
 import { formatDateKey } from '#lib/utils/time.ts';
 import { liveStamp, recordStamp, stampDate, stampText } from './stamp';
 import { stampCopy } from './stamp.copy';
@@ -155,4 +155,24 @@ it('reads the state from a page presentation', () => {
 		[{ ageSeconds: 30, degraded: true }, 'current'],
 	] as const)
 		expect(liveStamp({ ...facts }).state).toBe(state);
+});
+
+it('flags a record whose last publication carried a warning, and only then', () => {
+	const health = (rollup: string | null) =>
+		DataHealthSchema.parse({
+			generated_utc: '2026-11-14T00:00:00Z',
+			lanes: [
+				{ lane: 'live', gate: { verdict: 'fail' } },
+				{ lane: 'rollup', gate: rollup ? { verdict: rollup } : null },
+			],
+		});
+	const warning = (dataHealth: ReturnType<typeof health> | null) =>
+		recordStamp({ manifest, historyIndex: null, dataHealth }).warning;
+	expect([health('warn'), health('fail'), health('pass'), health(null), null].map(warning)).toEqual(
+		[true, true, false, false, false],
+	);
+	expect(stampCopy.en.warning).toBe('This record was published with a warning. See Data health.');
+	expect(stampCopy.fr.warning).toBe(
+		'Ce bilan a été publié avec un avertissement. Voir Santé des données.',
+	);
 });

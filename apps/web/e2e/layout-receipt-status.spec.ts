@@ -32,7 +32,12 @@ for (const provider of ['stm', 'octranspo'])
 					await expect(page.getByRole('heading', { level: 1 })).toHaveText(
 						healthCopy[locale].heading,
 					);
-					await expect(page.getByText(healthCopy[locale].lede, { exact: true })).toBeVisible();
+					const summary = page.locator('[data-slot="health-summary"]');
+					await expect(summary).toHaveAttribute('aria-busy', 'false');
+					for (const line of await summary.locator('p:not(:empty)').all()) {
+						const fits = await line.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+						expect(fits, await line.textContent()).toBe(true);
+					}
 					for (const title of await page.locator('.health-detail .section-title:visible').all()) {
 						const fits = await title.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
 						expect(fits, await title.textContent()).toBe(true);

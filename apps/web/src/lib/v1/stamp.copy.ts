@@ -18,6 +18,7 @@ export const stampCopy = {
 			]
 				.filter(Boolean)
 				.join(' · '),
+		warning: 'This record was published with a warning. See Data health.',
 	},
 	fr: {
 		live: (subject: 'data' | 'alerts', state: LiveState, age: string | null) =>
@@ -36,5 +37,6 @@ export const stampCopy = {
 			]
 				.filter(Boolean)
 				.join(' · '),
+		warning: 'Ce bilan a été publié avec un avertissement. Voir Santé des données.',
 	},
 };
