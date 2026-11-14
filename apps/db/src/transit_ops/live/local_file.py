@@ -14,9 +14,9 @@ from transit_ops.history.poll_record import CaptureEntry, PollEntry
 from transit_ops.live.settings import LaneSettings
 
 SCHEMA_VERSION: Final = 1
+_TYPES = {int: "BIGINT", bool: "BOOLEAN", str: "VARCHAR", datetime: "TIMESTAMP"}
 _OWNERS: set[Path] = set()
 _OWNER_LOCK = RLock()
-_TYPES = {int: "BIGINT", bool: "BOOLEAN", str: "VARCHAR", datetime: "TIMESTAMP"}
 
 
 class LocalFileLocked(RuntimeError):
@@ -24,6 +24,10 @@ class LocalFileLocked(RuntimeError):
 
 
 class LocalFileMismatch(RuntimeError):
+    pass
+
+
+class LocalFileUnreadable(RuntimeError):
     pass
 
 
@@ -47,12 +51,12 @@ def connect_live(
                 "max_temp_directory_size": f"{temp_max_mb}MB",
             },
         )
-    except duckdb.IOException as exc:
-        if "lock" in str(exc).lower() or "being used by another process" in str(exc):
+    except duckdb.Error as exc:
+        if "could not set lock" in str(exc).lower() or "being used by another process" in str(exc):
             raise LocalFileLocked(str(path)) from exc
-        raise
+        raise LocalFileUnreadable(str(path)) from exc
     try:
-        conn.execute("SET TimeZone = 'UTC'")
+        conn.execute("SET GLOBAL TimeZone = 'UTC'")
         conn.execute("SET max_temp_directory_size = ?", [f"{temp_max_mb}MB"])
         if conn.execute("SELECT current_setting('default_collation')").fetchone() != ("",):
             raise ValueError("live requires binary collation")
@@ -64,9 +68,12 @@ def connect_live(
 
 
 class LocalFile:
+    """Own one worker thread's connection; release it explicitly with close."""
+
     def __init__(self, connection: duckdb.DuckDBPyConnection):
         self.connection = connection
         self._path: Path | None = None
+        self._active = self._failed = False
 
     @classmethod
     def open(cls, path: Path, *, provider_id: str, settings: LaneSettings) -> "LocalFile":
@@ -94,43 +101,69 @@ class LocalFile:
             try:
                 local._initialize(provider_id)
                 return local
-            except BaseException:
+            except BaseException as exc:
                 local.close()
+                if isinstance(exc, duckdb.Error):
+                    raise LocalFileUnreadable(str(path)) from exc
                 raise
 
-    def _initialize(self, provider_id: str) -> None:
-        with self.transaction() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS meta(schema_version INTEGER, provider_id VARCHAR)"
+    def _initialize(self, provider: str) -> None:
+        tables = {"meta": "schema_version INTEGER, provider_id VARCHAR"}
+        for table, kind, key in (
+            ("polls", PollEntry, "ingestion_run_id"),
+            ("captures", CaptureEntry, "capture_row_id"),
+        ):
+            columns = [
+                f'"{name}" {_TYPES[(get_args(t) or (t,))[0]]}'
+                for name, t in get_type_hints(kind).items()
+            ]
+            tables[table] = (
+                f"{', '.join(columns)}, endpoint_key VARCHAR, segment_seq BIGINT, "
+                f"PRIMARY KEY(index_family, {key})"
             )
-            meta = conn.execute("SELECT * FROM meta").fetchall()
-            if not meta:
-                conn.execute("INSERT INTO meta VALUES (?, ?)", [SCHEMA_VERSION, provider_id])
-            elif meta != [(SCHEMA_VERSION, provider_id)]:
-                raise LocalFileMismatch(f"metadata mismatch: {meta!r}")
-            for table, kind, key in (
-                ("polls", PollEntry, "ingestion_run_id"),
-                ("captures", CaptureEntry, "capture_row_id"),
-            ):
-                columns = [
-                    f'"{name}" {_TYPES[(get_args(t) or (t,))[0]]}'
-                    for name, t in get_type_hints(kind).items()
-                ]
-                conn.execute(
-                    f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(columns)}, "
-                    f"endpoint_key VARCHAR, segment_seq BIGINT, "
-                    f"PRIMARY KEY(index_family, {key}))"
-                )
+        with self.transaction() as conn:
+            existing = conn.execute(
+                "SELECT table_name FROM duckdb_tables() "
+                "WHERE database_name=current_database() AND schema_name='main' AND NOT temporary"
+            ).fetchall()
+            fresh = not existing
+            for table, definition in tables.items():
+                if not fresh and (table,) not in existing:
+                    raise LocalFileMismatch(f"{self._path}: {table} table missing")
+                conn.execute(f"CREATE TEMP TABLE _local_expected ({definition})")
+                expected = _table_shape(conn, "_local_expected")
+                if fresh:
+                    conn.execute(f"CREATE TABLE {table} ({definition})")
+                if _table_shape(conn, table) != expected:
+                    raise LocalFileMismatch(f"{self._path}: {table} table shape differs")
+                conn.execute("DROP TABLE _local_expected")
+            if fresh:
+                conn.execute("INSERT INTO meta VALUES (?, ?)", [SCHEMA_VERSION, provider])
+            if conn.execute("SELECT * FROM meta").fetchall() != [(SCHEMA_VERSION, provider)]:
+                raise LocalFileMismatch(f"{self._path}: meta provider or schema version differs")
 
     @contextmanager
     def transaction(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        self.connection.execute("BEGIN")
+        outer = not self._active
+        if outer:
+            self.connection.execute("BEGIN")
+        self._active = True
         try:
             yield self.connection
-            self.connection.execute("COMMIT")
+            if outer:
+                if self._failed:
+                    raise RuntimeError("transaction aborted")
+                # DuckDB accepts COMMIT on an aborted transaction as a silent rollback.
+                self.connection.execute("SELECT 1")
+                self.connection.execute("COMMIT")
         except BaseException:
-            self.connection.execute("ROLLBACK")
+            self._failed = True
+            if outer:
+                self.connection.execute("ROLLBACK")
             raise
+        finally:
+            if outer:
+                self._active = self._failed = False
 
     def record_polls(self, polls: Sequence[PollEntry], *, endpoint_key: str) -> int:
         return self._record("polls", "ingestion_run_id", polls, endpoint_key)
@@ -177,3 +210,16 @@ class LocalFile:
             if self._path is not None:
                 _OWNERS.remove(self._path)
                 self._path = None
+
+
+def _table_shape(conn: duckdb.DuckDBPyConnection, table: str) -> tuple[object, object]:
+    return (
+        conn.execute("SELECT * FROM pragma_table_info(?)", [table]).fetchall(),
+        conn.execute(
+            "SELECT constraint_type, constraint_text FROM duckdb_constraints() "
+            "WHERE table_name=? AND schema_name='main' "
+            "AND database_name IN (current_database(), 'temp') "
+            "ORDER BY constraint_type, constraint_text",
+            [table],
+        ).fetchall(),
+    )

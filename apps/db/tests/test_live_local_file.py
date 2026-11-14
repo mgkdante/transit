@@ -54,6 +54,11 @@ def test_semantic_settings_match_the_batch_session(tmp_path):
             "current_setting('autoinstall_known_extensions'), "
             "current_setting('autoload_known_extensions')"
         ).fetchone() == ("UTC", 1, True, False, False)
+        with conn.cursor() as cursor:
+            assert cursor.execute("SELECT current_setting('TimeZone')").fetchone() == ("UTC",)
+            assert cursor.execute(
+                "SELECT epoch_us(TIMESTAMP '2026-01-02 03:04:05.123456'::TIMESTAMPTZ)"
+            ).fetchone() == (1767323045123456,)
 
 
 def test_missing_resource_settings_are_refused(tmp_path):
@@ -73,15 +78,12 @@ def test_missing_resource_settings_are_refused(tmp_path):
 
 
 def test_non_utc_timestamp_round_trips_as_utc(tmp_path):
-    local = opened(tmp_path / "worker.db")
-    try:
+    with closing(opened(tmp_path / "worker.db")) as local:
         eastern = AT.astimezone(ZoneInfo("America/Toronto"))
         local.record_polls([replace(POLL, time_utc=eastern)], endpoint_key="vehicles")
         with local.transaction() as conn:
             value = conn.execute("SELECT time_utc FROM polls").fetchone()[0]
             assert value.isoformat() == "2026-01-02T03:04:05.123456"
-    finally:
-        local.close()
 
 
 def test_other_provider_or_schema_is_refused(tmp_path):
@@ -93,6 +95,26 @@ def test_other_provider_or_schema_is_refused(tmp_path):
         conn.execute("UPDATE meta SET schema_version = 99")
     with pytest.raises(LocalFileMismatch):
         opened(path)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "DROP TABLE meta",
+        "DELETE FROM meta",
+        "ALTER TABLE polls DROP COLUMN missing_reason",
+        "ALTER TABLE captures ALTER byte_size TYPE VARCHAR",
+    ],
+)
+def test_damaged_identity_or_shape_is_refused(tmp_path, change):
+    path = tmp_path / "worker.db"
+    with closing(opened(path)) as local:
+        local.record_polls([POLL], endpoint_key="vehicles")
+        local.connection.execute(change)
+    with pytest.raises(LocalFileMismatch, match="meta|polls|captures"):
+        opened(path)
+    with duckdb.connect(str(path)) as conn:
+        assert conn.execute("SELECT ingestion_run_id FROM polls").fetchall() == [(1,)]
 
 
 def test_second_open_in_the_same_process_is_refused(tmp_path):
@@ -137,8 +159,7 @@ def test_configuration_is_locked_and_spill_is_capped(tmp_path):
 
 
 def test_recording_is_idempotent_and_refuses_changed_rows(tmp_path):
-    local = opened(tmp_path / "worker.db")
-    try:
+    with closing(opened(tmp_path / "worker.db")) as local:
         for record, entry, table in (
             (local.record_polls, POLL, "polls"),
             (local.record_captures, CAPTURE, "captures"),
@@ -161,8 +182,6 @@ def test_recording_is_idempotent_and_refuses_changed_rows(tmp_path):
                 (AT.replace(tzinfo=None),)
             ]
             assert conn.execute("SELECT storage_path FROM captures").fetchall() == [("é/车辆",)]
-    finally:
-        local.close()
 
 
 CHILD = """
@@ -180,13 +199,12 @@ if sys.argv[3] == 'lock':
         raise AssertionError('second writer admitted')
 else:
     local = ns['opened'](Path(sys.argv[2]))
-    if sys.argv[3] == 'uncommitted':
-        tx = local.transaction()
-        conn = tx.__enter__()
-        conn.execute("INSERT INTO polls (index_family, ingestion_run_id, endpoint_key) "
-                     "VALUES ('realtime_snapshot', 1, 'vehicles')")
-    else:
-        local.record_polls([ns['POLL']], endpoint_key='vehicles')
+    tx = local.transaction()
+    tx.__enter__()
+    local.record_polls([ns['POLL']], endpoint_key='vehicles')
+    local.record_captures([ns['CAPTURE']], endpoint_key='vehicles')
+    if sys.argv[3] == 'committed':
+        tx.__exit__(None, None, None)
     print('ready', flush=True)
     sys.stdin.read()
 """
@@ -194,8 +212,7 @@ else:
 
 def test_second_writer_is_refused(tmp_path):
     path = tmp_path / "worker.db"
-    local = opened(path)
-    try:
+    with closing(opened(path)):
         result = subprocess.run(
             [sys.executable, "-c", CHILD, __file__, str(path), "lock"],
             capture_output=True,
@@ -203,8 +220,6 @@ def test_second_writer_is_refused(tmp_path):
             timeout=30,
         )
         assert result.returncode == 0, result.stderr
-    finally:
-        local.close()
 
 
 def killed_rows(tmp_path, mode):
@@ -222,19 +237,95 @@ def killed_rows(tmp_path, mode):
     finally:
         child.kill()
         child.communicate(timeout=30)
-    local = opened(path)
-    try:
+    with closing(opened(path)) as local:
         with local.transaction() as conn:
             return conn.execute(
-                "SELECT ingestion_run_id, entity_count, time_utc FROM polls"
+                "SELECT p.ingestion_run_id, c.capture_row_id FROM polls p "
+                "FULL JOIN captures c ON p.ingestion_run_id=c.ingestion_run_id"
             ).fetchall()
-    finally:
-        local.close()
 
 
 def test_committed_polls_survive_a_killed_process(tmp_path):
-    assert killed_rows(tmp_path, "committed") == [(1, None, AT.replace(tzinfo=None))]
+    assert killed_rows(tmp_path, "committed") == [(1, 2)]
 
 
 def test_uncommitted_rows_are_gone_after_a_kill(tmp_path):
     assert killed_rows(tmp_path, "uncommitted") == []
+
+
+def test_corrupt_file_is_typed_and_releases_ownership(tmp_path):
+    from transit_ops.live.local_file import LocalFileUnreadable
+
+    path = tmp_path / "worker.db"
+    path.write_bytes(b"not a DuckDB file")
+    with pytest.raises(LocalFileUnreadable, match="worker.db"):
+        opened(path)
+    assert path.read_bytes() == b"not a DuckDB file"
+    path.unlink()
+    opened(path).close()
+
+
+def test_caught_nested_failure_aborts_the_outer_transaction(tmp_path):
+    with closing(opened(tmp_path / "worker.db")) as local:
+        with pytest.raises(RuntimeError, match="aborted"), local.transaction():
+            local.record_polls([POLL], endpoint_key="vehicles")
+            with pytest.raises(LocalFileMismatch):
+                local.record_polls([replace(POLL, entity_count=0)], endpoint_key="vehicles")
+        assert local.connection.execute("SELECT ingestion_run_id FROM polls").fetchall() == []
+
+
+@pytest.mark.parametrize(
+    "statement", ["INSERT INTO polls SELECT * FROM polls", "SELECT 'bad'::INT"]
+)
+def test_caught_engine_error_cannot_report_a_commit(tmp_path, statement):
+    with closing(opened(tmp_path / "worker.db")) as local:
+        with pytest.raises(duckdb.TransactionException, match="aborted"):
+            with local.transaction() as conn:
+                local.record_polls([POLL], endpoint_key="vehicles")
+                with pytest.raises(duckdb.Error):
+                    conn.execute(statement)
+        assert local.connection.execute("SELECT ingestion_run_id FROM polls").fetchall() == []
+        assert local.record_polls([POLL], endpoint_key="vehicles") == 1
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_empty_database_after_first_open_can_initialize(tmp_path, interrupted):
+    path = tmp_path / "worker.db"
+    if interrupted:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import duckdb, os, sys; c=duckdb.connect(sys.argv[1]); "
+                "c.execute('BEGIN'); c.execute('CREATE TABLE meta (schema_version INTEGER)'); "
+                "os._exit(17)",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 17, result.stderr
+    else:
+        duckdb.connect(str(path)).close()
+    with closing(opened(path)) as local:
+        assert local.record_polls([POLL], endpoint_key="vehicles") == 1
+    with closing(opened(path)) as local:
+        assert local.connection.execute("SELECT ingestion_run_id FROM polls").fetchall() == [(1,)]
+
+
+@pytest.mark.parametrize("constraint", ["CHECK (ingestion_run_id < 100)", "UNIQUE (endpoint_key)"])
+def test_constraint_drift_is_refused_without_changing_rows(tmp_path, constraint):
+    path = tmp_path / "worker.db"
+    with closing(opened(path)) as local:
+        local.record_polls([POLL], endpoint_key="vehicles")
+        conn = local.connection
+        ddl = conn.execute("SELECT sql FROM duckdb_tables() WHERE table_name='polls'").fetchone()[0]
+        conn.execute("CREATE TEMP TABLE retained AS SELECT * FROM polls")
+        conn.execute("DROP TABLE polls")
+        conn.execute(ddl.rstrip(";")[:-1] + ", " + constraint + ")")
+        conn.execute("INSERT INTO polls SELECT * FROM retained")
+    with pytest.raises(LocalFileMismatch, match="polls"):
+        opened(path).close()
+    with duckdb.connect(str(path)) as conn:
+        assert conn.execute("SELECT ingestion_run_id FROM polls").fetchall() == [(1,)]
