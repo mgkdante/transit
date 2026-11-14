@@ -293,3 +293,34 @@ def test_utc_days_cover_dst_days_and_declared_offsets(day, expected, expanded):
     for offsets in [{"lookback_days": -1}, {"after_days": -1}, {"after_days": 1.5}]:
         with pytest.raises(ValueError, match="offset"):
             utc_days(local, **offsets)
+
+
+@pytest.mark.parametrize("outside", [False, True])
+def test_hardlinked_other_window_is_refused(tmp_path, outside):
+    root = tmp_path / "inputs"
+    target_root = tmp_path / "outside" if outside else root / "gold.toy"
+    target = parquet(target_root / "2026-11-02.parquet", 999)
+    declared = root / "gold.toy" / "2026-11-01.parquet"
+    declared.parent.mkdir(parents=True, exist_ok=True)
+    os.link(target, declared)
+    assert declared.samefile(target) and declared.stat().st_nlink > 1
+    with pytest.raises(InputRefused, match="gold.toy.*2026-11-01"):
+        resolve_inputs((InputNeed("gold.toy", "2026-11-01"),), root)
+
+
+@pytest.mark.parametrize(
+    "zone,day,expanded",
+    [
+        ("Pacific/Apia", "2011-12-30", ("2011-12-29", "2011-12-30", "2011-12-31")),
+        ("Pacific/Kwajalein", "1993-08-21", ("1993-08-20", "1993-08-21", "1993-08-22")),
+        ("Pacific/Kiritimati", "1994-12-31", ("1994-12-30", "1994-12-31", "1995-01-01")),
+    ],
+)
+def test_skipped_local_date_contributes_only_expanded_intervals(zone, day, expanded):
+    from transit_ops.batch.build import utc_days
+
+    local = replace(request(), timezone=zone, local_dates=(date.fromisoformat(day),))
+    assert utc_days(local) == ()
+    assert utc_days(local, lookback_days=1) == expanded[:2]
+    assert utc_days(local, after_days=1) == expanded[1:]
+    assert utc_days(local, lookback_days=1, after_days=1) == expanded

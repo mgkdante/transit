@@ -66,6 +66,8 @@ def utc_days(
     for day in request.local_dates:
         start = datetime.combine(day - timedelta(days=lookback_days), time(), zone).astimezone(UTC)
         end = datetime.combine(day + timedelta(days=after_days + 1), time(), zone).astimezone(UTC)
+        if start >= end:
+            continue
         current = start.date()
         while current <= (end - timedelta(microseconds=1)).date():
             days.add(current.isoformat())

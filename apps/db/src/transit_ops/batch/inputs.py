@@ -23,6 +23,8 @@ def resolve_inputs(needs: Sequence[InputNeed], inputs_root: Path) -> tuple[Batch
             raise InputRefused(f"input outside declared layout: {label}")
         if not path.is_file():
             raise InputRefused(f"missing input: {label}")
+        if path.stat().st_nlink > 1:
+            raise InputRefused(f"multiply-linked input: {label}")
         files = grouped.setdefault(need.relation, {})
         kind = (
             need.window.split(":")[0]
