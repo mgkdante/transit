@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
-from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.sql.elements import TextClause
 
 from transit_ops.batch.results import BatchResult
@@ -41,15 +41,21 @@ class BatchSession:
         if not query_name(statement):
             raise UnnamedQueryRefused("batch SQL requires a query name")
         compiled = statement.compile(
-            dialect=postgresql.dialect(paramstyle="numeric_dollar")  # type: ignore[no-untyped-call]
+            dialect=psycopg.dialect(paramstyle="numeric_dollar")  # type: ignore[no-untyped-call]
         )
-        values = compiled.construct_params(dict(params or {}))
+        expanded = compiled.construct_expanded_state(dict(params or {}))
         relation = self._connection.sql(
-            str(compiled), params=[values[name] for name in compiled.positiontup or ()]
+            expanded.statement,
+            params=[expanded.parameters[name] for name in expanded.positiontup or ()],
         )
         if relation is None:
             return BatchResult((), [])
         columns = tuple(relation.columns)
+        if len(set(columns)) != len(columns):
+            raise BatchEngineError(f"duplicate result column names: {columns}")
+        for name, kind in zip(columns, relation.types, strict=True):
+            if "TIMESTAMP WITH TIME ZONE" in str(kind) and str(kind) != "TIMESTAMP WITH TIME ZONE":
+                raise BatchEngineError(f"nested TIMESTAMPTZ refused: {name}")
         zoned = [str(kind) == "TIMESTAMP WITH TIME ZONE" for kind in relation.types]
         if any(zoned):
             expressions = []
@@ -76,7 +82,14 @@ def _validate(inputs: Sequence[BatchInput]) -> None:
             raise InputRefused(f"invalid relation: {item.relation!r}")
         if item.relation in names or not item.files:
             raise InputRefused("duplicate relation or empty files")
+        if item.relation.split(".")[0] in {"pg_catalog", "information_schema", "temp"}:
+            raise InputRefused(f"reserved relation: {item.relation}")
         names.add(item.relation)
+        for path in item.files:
+            if any(char in str(path) + str(path.resolve()) for char in "*?[]{}"):
+                raise InputRefused(f"glob path refused: {path}")
+        if len(set(path.resolve() for path in item.files)) != len(item.files):
+            raise InputRefused(f"duplicate files: {item.files}")
         if any(not path.is_absolute() or not path.is_file() for path in item.files):
             raise InputRefused("inputs must be existing absolute files")
 
@@ -104,11 +117,19 @@ def open_batch_session(inputs: Sequence[BatchInput], *, workdir: Path) -> Iterat
         for item in inputs:
             schema, name = item.relation.split(".")
             connection.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+            expected = None
+            for path in item.files:
+                scan = connection.read_parquet(str(path.resolve()), hive_partitioning=False)
+                actual = list(zip(scan.columns, map(str, scan.types), strict=True))
+                if expected is not None and actual != expected:
+                    raise InputRefused(f"{path}: schema {actual!r} differs from {expected!r}")
+                expected = actual
             files = ", ".join(
                 "'" + str(path.resolve()).replace("'", "''") + "'" for path in item.files
             )
             connection.execute(
-                f'CREATE VIEW "{schema}"."{name}" AS SELECT * FROM read_parquet([{files}])'
+                f'CREATE VIEW "{schema}"."{name}" AS SELECT * FROM '
+                f"read_parquet([{files}], hive_partitioning=false, union_by_name=false)"
             )
         connection.execute("SET temp_directory = ?", [str(workdir / "duckdb-tmp")])
         directories = sorted(
