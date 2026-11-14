@@ -34,12 +34,6 @@ _CAST = re.compile(
     rf"(?P<value>'(?:''|[^'])*')(?P<text>(?:\s*\)*\s*::\s*text)*)\s*\)*\s*::\s*(?P<type>{_TYPE})",
     re.I,
 )
-_CALL = re.compile(
-    rf'(?<![\w$])(?:(?P<schema>{_IDENT})\s*\.\s*)?(?P<name>"?(?:'
-    + "|".join(_CLOCK_FUNCTIONS)
-    + r')"?)\s*\(',
-    re.I,
-)
 _CLOCK_OBJECTS_SQL = """
 WITH objects AS (
  SELECT n.nspname AS schema, format('%I.%I',n.nspname,c.relname) AS name,
@@ -64,20 +58,31 @@ WITH objects AS (
  FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
  WHERE t.typtype='d' AND t.typdefaultbin IS NOT NULL
  UNION ALL
- SELECT n.nspname,format('%I.%I',n.nspname,p.proname),'pg_proc'::regclass,p.oid,
+ SELECT n.nspname,format('%I.%I(%s)',n.nspname,p.proname,
+        pg_catalog.oidvectortypes(p.proargtypes)),'pg_proc'::regclass,p.oid,
         pg_catalog.pg_get_expr(p.proargdefaults,0),'expr'
  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.proargdefaults IS NOT NULL
  UNION ALL
- SELECT n.nspname,format('%I.%I',n.nspname,p.proname),'pg_proc'::regclass,p.oid,
+ SELECT n.nspname,format('%I.%I(%s)',n.nspname,p.proname,
+        pg_catalog.oidvectortypes(p.proargtypes)),'pg_proc'::regclass,p.oid,
         pg_catalog.pg_get_functiondef(p.oid),'sql'
  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.prosqlbody IS NOT NULL
  UNION ALL
- SELECT n.nspname,format('%I.%I',n.nspname,p.proname),'pg_proc'::regclass,p.oid,
+ SELECT n.nspname,format('%I.%I(%s)',n.nspname,p.proname,
+        pg_catalog.oidvectortypes(p.proargtypes)),'pg_proc'::regclass,p.oid,
         array_to_string(p.proconfig,'; '),'config'
  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
  WHERE EXISTS(SELECT FROM unnest(p.proconfig) s WHERE s LIKE 'search_path=%')
+ UNION ALL
+ SELECT n.nspname,format('%I.%I(%s)',n.nspname,p.proname,pg_catalog.oidvectortypes(p.proargtypes)),
+        'pg_proc'::regclass,p.oid,p.prosrc,'body:'||COALESCE((
+          SELECT split_part(s,'=',2) FROM unnest(p.proconfig) s
+          WHERE s LIKE 'standard_conforming_strings=%'), '')
+ FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ JOIN pg_language l ON l.oid=p.prolang
+ WHERE p.prosqlbody IS NULL AND p.prokind IN ('f','p') AND l.lanname IN ('sql','plpgsql')
 )
-SELECT o.name,o.source,o.kind,EXISTS(
+SELECT o.name,o.source,o.kind,o.kind NOT LIKE 'body%' AND EXISTS(
  SELECT FROM pg_depend d JOIN pg_proc p ON p.oid=d.refobjid
  JOIN pg_namespace n ON n.oid=p.pronamespace
  WHERE d.classid=o.classid AND d.objid=o.objid AND d.refclassid='pg_proc'::regclass
@@ -115,14 +120,107 @@ def _identifier(token: str) -> str:
 
 def _code_reason(source: str) -> str:
     tokens = [m[0] for m in _TOKEN.finditer(source)]
-    code = " ".join(t for t in tokens if not t.startswith("'"))
     if any(t.lower() in _KEYWORDS for t in tokens if not t.startswith(('"', "'"))):
         return "clock expression"
-    for call in _CALL.finditer(code):
-        schema = _identifier(call["schema"]) if call["schema"] else None
-        if schema not in (None, CLOCK_SCHEMA) or _identifier(call["name"]) not in _PINNED:
+    for index, token in enumerate(tokens[:-1]):
+        name = _identifier(token)
+        if token.startswith("'") or name not in _CLOCK_FUNCTIONS or tokens[index + 1] != "(":
+            continue
+        schema = _identifier(tokens[index - 2]) if index >= 2 and tokens[index - 1] == "." else None
+        if schema not in (None, CLOCK_SCHEMA) or name not in _PINNED:
             return "clock expression"
     return ""
+
+
+def _body_tokens(source: str, standard: bool) -> Iterator[str]:
+    plain = r"'(?:''|[^'])*'" if standard else r"'(?:\\.|''|[^'\\])*'"
+    pattern = re.compile(
+        r"\s+|--[^\n]*|(?P<tag>\$(?:[^\W\d]|[^\x00-\x7f])(?:\w|[^\x00-\x7f])*\$|\$\$).*?(?P=tag)"
+        r"|[eE]'(?:\\.|''|[^'\\])*'|[uU]&'(?:''|[^'])*'|[uU]&\"(?:\"\"|[^\"])*\"|"
+        + plain
+        + r'|"(?:""|[^"])*"|[\w$]+|::|[^\s]',
+        re.S,
+    )
+    position = 0
+    while position < len(source):
+        if source.startswith("/*", position):
+            depth, position = 1, position + 2
+            while depth:
+                marker = re.search(r"/\*|\*/", source[position:])
+                if marker is None:
+                    raise ValueError("Unterminated comment")
+                depth += 1 if marker[0] == "/*" else -1
+                position += marker.end()
+            continue
+        token = pattern.match(source, position)
+        assert token is not None
+        position = token.end()
+        if token[0] in ("'", '"'):
+            raise ValueError("Unterminated quote")
+        if not token[0].isspace() and not token[0].startswith("--"):
+            yield token[0]
+
+
+def _escapes(value: str) -> str:
+    def decode(match: re.Match[str]) -> str:
+        part = match[1]
+        if part[0] in "01234567":
+            return chr(int(part, 8))
+        if part[0] in "xuU" and len(part) > 1:
+            return chr(int(part[1:], 16))
+        return {"n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f"}.get(part, part)
+
+    return re.sub(
+        r"\\([0-7]{1,3}|x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)", decode, value
+    )
+
+
+def _quoted_value(token: str, standard: bool, escape: str) -> tuple[str, bool]:
+    unicode = token[:2].lower() == "u&"
+    quoted = token[2:] if unicode else token[1:] if token[:2].lower() == "e'" else token
+    identifier = quoted[0] == '"'
+    value = quoted[1:-1].replace(quoted[0] * 2, quoted[0])
+    if unicode:
+        pattern = re.escape(escape) + r"(\+[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|" + re.escape(escape) + ")"
+        value = re.sub(
+            pattern, lambda m: escape if m[1] == escape else chr(int(m[1].lstrip("+"), 16)), value
+        )
+    elif not identifier and (not standard or token[:2].lower() == "e'"):
+        value = _escapes(value)
+    return value, identifier
+
+
+def function_clock_reason(source: str, *, standard_strings: bool = True) -> str:
+    """Classify stored SQL/PLpgSQL source without executing its statements."""
+    try:
+        tokens, code = list(_body_tokens(source, standard_strings)), []
+        index = 0
+        while index < len(tokens):
+            token, escape = tokens[index], "\\"
+            index += 1
+            if (
+                token[:2].lower() == "u&"
+                and index < len(tokens)
+                and tokens[index].upper() == "UESCAPE"
+            ):
+                escape, _ = _quoted_value(tokens[index + 1], standard_strings, "\\")
+                if len(escape) != 1:
+                    raise ValueError("Invalid Unicode escape")
+                index += 2
+            tag = re.match(r"\$[^$]*\$", token)
+            if tag:
+                value, identifier = token[len(tag[0]) : -len(tag[0])], False
+            elif token.startswith(("'", '"')) or token[:2].lower() in ("e'", "u&"):
+                value, identifier = _quoted_value(token, standard_strings, escape)
+            else:
+                code.append(token)
+                continue
+            if not identifier and value.strip().lower() in _WORDS:
+                return "clock literal in function body"
+            code.append('"' + value.replace('"', '""') + '"' if identifier else "''")
+        return _code_reason(" ".join(code))
+    except (ValueError, IndexError):
+        return "unsupported function body SQL"
 
 
 def _date_kind(connection: Connection, typename: str, cache: dict[str, str | None]) -> str | None:
@@ -208,7 +306,18 @@ def assert_clock_pinned(
             if dependency
             else ("function search_path" if kind == "config" else "")
         )
-        reason = reason or _code_reason(scan) or _literal_reason(connection, scan, starts, cache)
+        if kind.startswith("body:"):
+            setting = kind.partition(":")[2].lower()
+            if not setting:
+                setting = connection.execute(text("SHOW standard_conforming_strings")).scalar_one()
+            standard = (
+                setting in ("1", "on") or "true".startswith(setting) or "yes".startswith(setting)
+            )
+            reason = function_clock_reason(source, standard_strings=standard)
+        else:
+            reason = (
+                reason or _code_reason(scan) or _literal_reason(connection, scan, starts, cache)
+            )
         if reason:
             findings.append((str(name), f"{reason}: {source}"))
     if findings:
