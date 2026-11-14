@@ -283,6 +283,23 @@ class BronzeRealtimeSnapshot:
 
 
 @dataclass(frozen=True)
+class RealtimeNormalizationContext:
+    provider_id: str
+    endpoint_key: str
+    feed_timestamp_utc: datetime
+    captured_at_utc: datetime
+
+    @classmethod
+    def from_snapshot(cls, snapshot: BronzeRealtimeSnapshot) -> RealtimeNormalizationContext:
+        return cls(
+            snapshot.provider_id,
+            snapshot.endpoint_key,
+            snapshot.feed_timestamp_utc,
+            snapshot.captured_at_utc,
+        )
+
+
+@dataclass(frozen=True)
 class RealtimeSilverLoadResult:
     provider_id: str
     endpoint_key: str
@@ -360,7 +377,7 @@ def _has_field(message, field_name: str) -> bool:  # noqa: ANN001
         return False
 
 
-def _manifest_provider_bounds(manifest: ProviderManifest) -> ProviderBounds | None:
+def manifest_provider_bounds(manifest: ProviderManifest) -> ProviderBounds | None:
     bounds = manifest.provider.bounds
     if bounds is None:
         return None
@@ -638,7 +655,7 @@ def _insert_rt_feed_snapshot(
 def _normalize_rt_entities(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    snapshot: BronzeRealtimeSnapshot | RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
 ) -> list[dict[str, object]]:
     return [
@@ -658,7 +675,7 @@ def _normalize_rt_entities(
 def _normalize_rt_trip_updates(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    snapshot: BronzeRealtimeSnapshot | RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     trip_update_rows: list[dict[str, object]] = []
@@ -723,7 +740,7 @@ def _normalize_rt_trip_updates(
 def _normalize_rt_vehicle_positions(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    snapshot: BronzeRealtimeSnapshot | RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
     provider_bounds: ProviderBounds | None = None,
     max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
@@ -789,6 +806,38 @@ def _normalize_rt_vehicle_positions(
     return vehicle_rows
 
 
+def normalize_realtime_message(
+    message: gtfs_realtime_pb2.FeedMessage,
+    *,
+    context: RealtimeNormalizationContext,
+    rt_feed_snapshot_id: int,
+    provider_bounds: ProviderBounds | None = None,
+    max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
+) -> dict[str, list[dict[str, object]]]:
+    """Return the Silver child rows for one capture, keyed by table name."""
+    if context.endpoint_key not in {"trip_updates", "vehicle_positions"}:
+        raise ValueError(f"Unsupported realtime endpoint '{context.endpoint_key}'.")
+    rows = {
+        "rt_entities": _normalize_rt_entities(
+            message, snapshot=context, rt_feed_snapshot_id=rt_feed_snapshot_id
+        )
+    }
+    if context.endpoint_key == "trip_updates":
+        trips, stops = _normalize_rt_trip_updates(
+            message, snapshot=context, rt_feed_snapshot_id=rt_feed_snapshot_id
+        )
+        rows.update(rt_trip_updates=trips, rt_trip_update_stop_times=stops)
+    else:
+        rows["rt_vehicle_positions"] = _normalize_rt_vehicle_positions(
+            message,
+            snapshot=context,
+            rt_feed_snapshot_id=rt_feed_snapshot_id,
+            provider_bounds=provider_bounds,
+            max_vehicle_speed_kmh=max_vehicle_speed_kmh,
+        )
+    return rows
+
+
 def _read_bronze_realtime_message(
     *,
     snapshot: BronzeRealtimeSnapshot,
@@ -826,31 +875,10 @@ def _expected_realtime_row_counts(
     *,
     snapshot: BronzeRealtimeSnapshot,
 ) -> dict[str, int]:
-    rt_entity_count = len(message.entity)
-    if snapshot.endpoint_key == "trip_updates":
-        trip_update_rows, stop_time_rows = _normalize_rt_trip_updates(
-            message,
-            snapshot=snapshot,
-            rt_feed_snapshot_id=0,
-        )
-        return {
-            "rt_feed_snapshots": 1,
-            "rt_entities": rt_entity_count,
-            "rt_trip_updates": len(trip_update_rows),
-            "rt_trip_update_stop_times": len(stop_time_rows),
-        }
-    if snapshot.endpoint_key == "vehicle_positions":
-        vehicle_rows = _normalize_rt_vehicle_positions(
-            message,
-            snapshot=snapshot,
-            rt_feed_snapshot_id=0,
-        )
-        return {
-            "rt_feed_snapshots": 1,
-            "rt_entities": rt_entity_count,
-            "rt_vehicle_positions": len(vehicle_rows),
-        }
-    raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
+    rows = normalize_realtime_message(
+        message, context=RealtimeNormalizationContext.from_snapshot(snapshot), rt_feed_snapshot_id=0
+    )
+    return {"rt_feed_snapshots": 1, **{table: len(values) for table, values in rows.items()}}
 
 
 def _actual_realtime_row_counts(
@@ -979,51 +1007,42 @@ def _load_realtime_message_to_silver(
         snapshot=snapshot,
         message=message,
     )
-    rt_entity_rows = _normalize_rt_entities(
+    rows = normalize_realtime_message(
         message,
-        snapshot=snapshot,
+        context=RealtimeNormalizationContext.from_snapshot(snapshot),
         rt_feed_snapshot_id=rt_feed_snapshot_id,
+        provider_bounds=provider_bounds,
+        max_vehicle_speed_kmh=max_vehicle_speed_kmh,
     )
     row_counts = {
         "rt_feed_snapshots": 1,
         "rt_entities": execute_batched_insert(
             connection,
             statement=RT_ENTITIES_INSERT,
-            rows=rt_entity_rows,
+            rows=rows["rt_entities"],
             chunk_size=CHUNK_SIZE,
         ),
     }
 
     if snapshot.endpoint_key == "trip_updates":
-        rt_trip_update_rows, rt_stop_time_rows = _normalize_rt_trip_updates(
-            message,
-            snapshot=snapshot,
-            rt_feed_snapshot_id=rt_feed_snapshot_id,
-        )
         row_counts.update(
             {
                 "rt_trip_updates": execute_batched_insert(
                     connection,
                     statement=RT_TRIP_UPDATES_INSERT,
-                    rows=rt_trip_update_rows,
+                    rows=rows["rt_trip_updates"],
                     chunk_size=CHUNK_SIZE,
                 ),
                 "rt_trip_update_stop_times": execute_batched_insert(
                     connection,
                     statement=RT_TRIP_UPDATE_STOP_TIMES_INSERT,
-                    rows=rt_stop_time_rows,
+                    rows=rows["rt_trip_update_stop_times"],
                     chunk_size=CHUNK_SIZE,
                 ),
             }
         )
     elif snapshot.endpoint_key == "vehicle_positions":
-        rt_vehicle_rows = _normalize_rt_vehicle_positions(
-            message,
-            snapshot=snapshot,
-            rt_feed_snapshot_id=rt_feed_snapshot_id,
-            provider_bounds=provider_bounds,
-            max_vehicle_speed_kmh=max_vehicle_speed_kmh,
-        )
+        rt_vehicle_rows = rows["rt_vehicle_positions"]
         row_counts.update(
             {
                 "rt_vehicle_positions": execute_batched_insert(
@@ -1194,7 +1213,7 @@ def _load_realtime_to_silver(
     )
     manifest = registry.get_provider(provider_id)
     realtime_feed = manifest.realtime_feed(endpoint_key)
-    provider_bounds = _manifest_provider_bounds(manifest)
+    provider_bounds = manifest_provider_bounds(manifest)
     engine = engine or make_engine(settings)
 
     with engine.connect() as connection:
@@ -1314,7 +1333,7 @@ def replay_realtime_silver_window(
         settings=settings,
     )
     manifest = registry.get_provider(provider_id)
-    provider_bounds = _manifest_provider_bounds(manifest)
+    provider_bounds = manifest_provider_bounds(manifest)
     engine = engine or make_engine(settings)
 
     with closing(BronzeStorageScope(settings, project_root=_project_root())) as storage:
