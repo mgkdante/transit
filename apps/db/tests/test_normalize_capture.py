@@ -1,20 +1,53 @@
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from shutil import copyfile
 
 import pytest
+from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2 as pb
+from test_realtime_silver import FakeBronzeStorage, RecordingConnection, _build_snapshot
 
+from transit_ops.live.captures import CaptureParseError, CaptureRef, ParsePolicy, parse_capture
 from transit_ops.providers import DeclarationError, RawCapture, load_providers, normalize_capture
+from transit_ops.providers.formats import decode_gtfs_rt
 from transit_ops.providers.modes import (
     PASS_MODES,
     WORKER_MODES,
     normalizer_fingerprint,
     serialize_modes,
 )
+from transit_ops.silver.realtime_gtfs import (
+    RealtimeNormalizationContext,
+    load_realtime_snapshot_to_silver,
+    normalize_realtime_message,
+)
 
 AT = datetime(2026, 6, 20, 12, tzinfo=UTC)
+
+
+def test_decoder_import_is_isolated_and_exports_keep_identity():
+    code = """
+import sys
+from importlib import import_module
+from transit_ops.providers.formats import decode_gtfs_rt
+assert not any(m.startswith(("transit_ops.live", "transit_ops.silver")) for m in sys.modules)
+import transit_ops.providers as providers
+groups = {
+    "registry": "ProviderRegistry load_provider_manifest",
+    "declaration": "SITE_LOCALES DeclarationError Feed Provider Providers load_providers",
+    "normalize": "Fill NormalizedCapture RawCapture RuleOutcome ScheduleIdentity normalize_capture",
+}
+assert set(providers.__all__) == {name for names in groups.values() for name in names.split()}
+for owner, names in groups.items():
+    for name in names.split():
+        module = import_module("transit_ops.providers." + owner)
+        assert getattr(providers, name) is getattr(module, name)
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
 
 
 @pytest.fixture
@@ -38,32 +71,22 @@ def capture(family="trip_updates", payload=None):
         if family == "trip_updates":
             entity.trip_update.stop_time_update.add(stop_id="√2").arrival.time = 0
             entity.trip_update.stop_time_update.add(stop_id="last").departure.delay = 12
-    return RawCapture(
-        family,
-        "gtfs-rt",
-        message.SerializeToString() if payload is None else payload,
-        AT,
-        "private-label",
-    )
+    payload = message.SerializeToString() if payload is None else payload
+    return RawCapture(family, "gtfs-rt", payload, AT, "private-label")
 
 
 @pytest.mark.parametrize("family", ["trip_updates", "vehicle_positions"])
 def test_worker_modes_return_the_message_as_sent_and_read_no_schedule(provider, family):
     class NoSchedule:
-        @property
-        def context_id(self):
-            raise AssertionError("schedule was read")
+        context_id = property(lambda _: pytest.fail("schedule was read"))
 
     raw = capture(family)
     result = normalize_capture(provider, raw, NoSchedule(), modes=WORKER_MODES)
     assert result.status == "ok" and result.rejected_reason is None
     assert result.message.SerializeToString() == raw.payload
     assert [e.id for e in result.message.entity] == ["Côte-Vertu", "second"]
-    trip = (
-        result.message.entity[0].trip_update.trip
-        if family == "trip_updates"
-        else result.message.entity[0].vehicle.trip
-    )
+    entity = result.message.entity[0]
+    trip = entity.trip_update.trip if family == "trip_updates" else entity.vehicle.trip
     assert trip.trip_id == "√2" and not trip.HasField("route_id")
     assert not trip.HasField("start_date")
     assert result.message.header.timestamp == 0
@@ -78,15 +101,39 @@ def test_worker_modes_return_the_message_as_sent_and_read_no_schedule(provider, 
     assert result.evidence is result.schedule_context_id is None
 
 
-def test_undecodable_payload_is_rejected_not_raised(provider):
-    result = normalize_capture(provider, capture(payload=b"\xff"), modes=WORKER_MODES)
-    assert (result.status, result.rejected_reason, result.message) == (
-        "rejected",
-        "undecodable",
-        None,
-    )
+@pytest.mark.parametrize("payload", [b"\xff", b"\x0a\x05\x0a\x032."])
+def test_undecodable_payload_is_rejected_not_raised(provider, payload):
+    result = normalize_capture(provider, capture(payload=payload), modes=WORKER_MODES)
+    assert (result.status, result.rejected_reason) == ("rejected", "undecodable")
+    assert result.message is result.evidence is None
     assert result.fills == result.outcomes == result.alerts == ()
-    assert result.evidence is None
+
+
+@pytest.mark.parametrize("payload", [b"\xff", b"\x0a\x05\x0a\x03" + b"2."])
+def test_decode_error_parity(tmp_path, payload):
+    with pytest.raises(DecodeError) as oracle:
+        pb.FeedMessage().ParseFromString(payload)
+    with pytest.raises(type(oracle.value)) as decoded:
+        decode_gtfs_rt(payload)
+    assert type(decoded.value) is type(oracle.value) and str(decoded.value) == str(oracle.value)
+    ref = CaptureRef(
+        "fixture_city", "trip_updates", 42, AT, AT, len(payload), sha256(payload).hexdigest()
+    )
+    with pytest.raises(CaptureParseError) as live:
+        parse_capture(payload, ref, ParsePolicy(None, 100))
+    assert str(live.value) == "Failed to parse GTFS-RT capture"
+    path = tmp_path / "capture.pb"
+    path.write_bytes(payload)
+    with pytest.raises(ValueError) as silver:
+        load_realtime_snapshot_to_silver(
+            RecordingConnection(),
+            snapshot=_build_snapshot(path, "trip_updates"),
+            bronze_storage=FakeBronzeStorage(payload),
+        )
+    assert str(silver.value) == f"Failed to parse GTFS-RT Bronze snapshot: {oracle.value}"
+    for error in (live.value, silver.value):
+        assert type(error.__cause__) is type(oracle.value)
+        assert str(error.__cause__) == str(oracle.value)
 
 
 @pytest.mark.parametrize("payload", [b"", b"\x0a\x05\x0a\x03" + b"2.0"])
@@ -98,9 +145,8 @@ def test_empty_feed_is_ok(provider, payload):
 
 def test_apply_mode_without_a_schedule_never_raises(provider):
     result = normalize_capture(provider, capture(), modes=PASS_MODES, collect=True)
-    assert (
-        result.status == "ok" and result.message.header.incrementality == pb.FeedHeader.DIFFERENTIAL
-    )
+    assert result.status == "ok"
+    assert result.message.header.incrementality == pb.FeedHeader.DIFFERENTIAL
     assert result.fills == result.outcomes == result.alerts == ()
     assert result.evidence is result.schedule_context_id is None
 
@@ -110,6 +156,12 @@ def test_modes_serialization_is_stable():
     assert serialize_modes(dict(reversed(list(WORKER_MODES.items())))) == expected
     assert normalizer_fingerprint(WORKER_MODES) == "1:" + expected
     assert normalizer_fingerprint(PASS_MODES) == "1:" + expected.replace("count", "apply")
+    n1, n6 = dict(WORKER_MODES, N1="apply"), dict(WORKER_MODES, N6="apply")
+    n1_expected = "1:N1=apply;N2=count;N3=count;N5=count;N6=count;N7=count;N8=count;N9=count"
+    n6_expected = "1:N1=count;N2=count;N3=count;N5=count;N6=apply;N7=count;N8=count;N9=count"
+    assert normalizer_fingerprint(n1) == n1_expected
+    assert normalizer_fingerprint(n6) == n6_expected
+    assert normalizer_fingerprint(dict(reversed(list(n6.items())))) == n6_expected
     with pytest.raises(TypeError):
         WORKER_MODES["N1"] = "apply"
 
@@ -177,14 +229,6 @@ def test_results_do_not_share_mutable_messages(provider):
 
 @pytest.mark.parametrize("family", ["trip_updates", "vehicle_positions"])
 def test_normalized_message_keeps_existing_row_semantics(provider, family):
-    from hashlib import sha256
-
-    from transit_ops.live.captures import CaptureRef, ParsePolicy, parse_capture
-    from transit_ops.silver.realtime_gtfs import (
-        RealtimeNormalizationContext,
-        normalize_realtime_message,
-    )
-
     raw = capture(family)
     result = normalize_capture(provider, raw, modes=WORKER_MODES)
     ref = CaptureRef(
