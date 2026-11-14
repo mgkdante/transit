@@ -26,6 +26,16 @@ def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
+def _text(value: object, name: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise InvalidSchema(f"Column {name!r} needs a nonempty string name and type")
+    try:
+        value.encode()
+    except UnicodeEncodeError as error:
+        raise InvalidSchema(f"Column {name!r} contains a lone surrogate") from error
+    return value
+
+
 @dataclass(frozen=True)
 class TableSchema:
     columns: tuple[Column, ...]
@@ -36,24 +46,27 @@ class TableSchema:
         cls, rows: Sequence[Sequence[object]], primary_key: Sequence[str]
     ) -> "TableSchema":
         columns = []
+        names: dict[str, bool] = {}
         for row in rows:
             if isinstance(row, (str, bytes)) or len(row) != 3:
                 raise InvalidSchema("Each column needs a name, PostgreSQL type and not_null")
             name, pg_type, not_null = row
-            if (
-                not isinstance(name, str)
-                or not isinstance(pg_type, str)
-                or type(not_null) is not bool
-            ):
-                raise InvalidSchema(
-                    "Column name and type must be strings; not_null must be boolean"
-                )
+            name = _text(name, name)
+            pg_type = _text(pg_type, name)
+            if name in names or type(not_null) is not bool:
+                raise InvalidSchema(f"Column {name!r} is duplicated or has non-boolean not_null")
+            names[name] = not_null
             columns.append(Column(name, pg_type, not_null))
-        names = {column.name for column in columns}
-        if not columns or len(names) != len(columns):
-            raise InvalidSchema("Columns must be nonempty and have unique names")
-        if not primary_key or any(name not in names for name in primary_key):
-            raise InvalidSchema("Primary key must be nonempty and name existing columns")
+        if not columns or not primary_key:
+            raise InvalidSchema("Columns and primary key must be nonempty")
+        if isinstance(primary_key, (str, bytes)):
+            raise InvalidSchema(f"Primary key {primary_key!r} must be a sequence of names")
+        seen = set()
+        for name in primary_key:
+            name = _text(name, name)
+            if name in seen or not names.get(name, False):
+                raise InvalidSchema(f"Key column {name!r} is duplicated, missing or nullable")
+            seen.add(name)
         return cls(tuple(columns), tuple(primary_key))
 
     @classmethod
@@ -83,7 +96,13 @@ class TableSchema:
         return [[column.name, column.pg_type, column.not_null] for column in self.columns]
 
     def duckdb_types(self) -> dict[str, str]:
-        return {column.name: _duckdb_type(column) for column in self.columns}
+        """Constrained numeric maps to DECIMAL(p,s) for finite values only."""
+        return {column.name: _storage_type(column)[0] for column in self.columns}
+
+    @property
+    def postgres_text_columns(self) -> tuple[str, ...]:
+        """Column names held as PostgreSQL text, in table order."""
+        return tuple(column.name for column in self.columns if _storage_type(column)[1])
 
 
 _TYPES = {
@@ -95,9 +114,6 @@ _TYPES = {
     "bigint": "BIGINT",
     "real": "FLOAT",
     "double precision": "DOUBLE",
-    "numeric": "VARCHAR",
-    "json": "VARCHAR",
-    "jsonb": "VARCHAR",
     "date": "DATE",
     "timestamp with time zone": "TIMESTAMPTZ",
     "timestamp without time zone": "TIMESTAMP",
@@ -105,13 +121,16 @@ _TYPES = {
 }
 
 
-def _duckdb_type(column: Column) -> str:
+def _storage_type(column: Column) -> tuple[str, bool]:
     pg_type = column.pg_type
     if pg_type in _TYPES:
-        return _TYPES[pg_type]
-    if pg_type.endswith("[]") or re.fullmatch(r"character(?: varying)?\([0-9]+\)", pg_type):
-        return "VARCHAR"
+        return _TYPES[pg_type], False
+    if pg_type in {"numeric", "json", "jsonb"} or pg_type.endswith("[]"):
+        return "VARCHAR", True
+    if re.fullmatch(r"character(?: varying)?\([0-9]+\)", pg_type):
+        return "VARCHAR", False
     if match := re.fullmatch(r"numeric\(([0-9]+),([0-9]+)\)", pg_type):
         precision, scale = match.groups()
-        return f"DECIMAL({precision},{scale})" if int(precision) <= 38 else "VARCHAR"
+        if 0 <= int(scale) <= int(precision) <= 38 and int(precision) > 0:
+            return f"DECIMAL({precision},{scale})", False
     raise UnsupportedColumnType(f"Column {column.name!r} has unsupported type {pg_type!r}")
