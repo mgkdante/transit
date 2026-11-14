@@ -2,8 +2,28 @@ import type { HistoryRangeResourceState } from './history/rangeResource.svelte';
 import type { HistoricAvailabilityIndex, Manifest } from './schemas/index';
 import { getHistoricAvailability } from './repositories/historic';
 import { createResource } from './resource.svelte';
-import { recordStamp, stampText } from './stamp';
+import { recordStamp, stampText, type RecordStamp } from './stamp';
+import { browser } from '$app/env';
 import type { Locale } from '#lib/i18n/copy.ts';
+
+let shown: { readonly stamp: RecordStamp } | null = null;
+export function showRecord(read: () => RecordStamp): void {
+	if (!browser) return;
+	const entry = {
+		get stamp() {
+			return read();
+		},
+	};
+	$effect(() => {
+		shown = entry;
+		return () => {
+			if (shown === entry) shown = null;
+		};
+	});
+}
+export function shownRecord(): { readonly stamp: RecordStamp } | null {
+	return browser ? shown : null;
+}
 
 export function createRecordStamp(
 	manifest: () => Manifest | null | undefined,
@@ -31,6 +51,7 @@ export function createRecordStamp(
 			fileGeneratedUtc: fileGeneratedUtc(),
 		}),
 	);
+	showRecord(() => stamp);
 	return {
 		get pending() {
 			return (

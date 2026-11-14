@@ -7,7 +7,7 @@ import {
 	installBrowserAdapterManifest,
 	clearBrowserAdapterManifestForTests,
 } from './adapter/browserManifest';
-import { createRecordStamp } from './recordStamp.svelte';
+import { createRecordStamp, showRecord, shownRecord } from './recordStamp.svelte';
 import {
 	createLineHistoryResource,
 	loadLineHistorySeed,
@@ -16,6 +16,33 @@ import { createStopHistoryResource } from '#lib/features/stops/reliability/data/
 import { historyRangeRequestFromSearchParams } from './history/rangeResource.svelte';
 
 const manifest = ManifestSchema.parse(fixture.files['manifest.json']);
+it('a mounted record stamp is the shown record until it unmounts', () => {
+	let generatedUtc = $state('2026-11-11T00:00:00Z');
+	const dispose = $effect.root(() => {
+		createRecordStamp(
+			() => null,
+			() => generatedUtc,
+		);
+	});
+	flushSync();
+	const page = shownRecord();
+	expect(page?.stamp.form).toBe('record');
+	expect(shownRecord()).toBe(page);
+	generatedUtc = '2026-11-18T00:00:00Z';
+	flushSync();
+	expect(shownRecord()).toBe(page);
+	expect(page?.stamp.publishedOn).toBe('2026-11-18');
+	const other = recordStamp({ manifest: null, historyIndex: null, day: '2026-11-11' });
+	const disposeOther = $effect.root(() => {
+		showRecord(() => other);
+	});
+	flushSync();
+	expect(shownRecord()?.stamp).toBe(other);
+	dispose();
+	expect(shownRecord()?.stamp).toBe(other);
+	disposeOther();
+	expect(shownRecord()).toBeNull();
+});
 afterEach(() => {
 	vi.unstubAllGlobals();
 	clearBrowserAdapterManifestForTests();
