@@ -128,15 +128,15 @@ for (const locale of PUBLISHED_LOCALES) {
 			const held = new Promise<void>((resolve) => {
 				release = resolve;
 			});
-			await page.route('**/*.json*', async (route) => {
-				// The app and fixture data server use different ports on the same host.
-				if (new URL(route.request().url()).hostname !== new URL(page.url()).hostname) {
-					await route.fallback();
-					return;
-				}
-				await held;
-				await route.continue();
-			});
+			const pageOrigin = new URL(page.url()).origin;
+			// invalidateAll reloads server data through SvelteKit, not a snapshot endpoint.
+			await page.route(
+				(url) => url.origin === pageOrigin && url.pathname.endsWith('/__data.json'),
+				async (route) => {
+					await held;
+					await route.continue();
+				},
+			);
 			const busy = page.locator('[data-motion="refresh-busy"]');
 			try {
 				await page.getByRole('button', { name: navPillCopy[locale].refresh, exact: true }).click();
