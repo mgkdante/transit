@@ -105,6 +105,10 @@ _Avoid_: degraded, freshness
 How old a published report is. A newly prepared report can still contain old agency data.
 _Avoid_: feed age, capture age
 
+**Build stamp**:
+The one instant a build or publish reads as now; every window and age in it is measured from that instant.
+_Avoid_: publication stamp (the day-truncated `generated_utc`).
+
 **Serving capture age**:
 How old the feed capture accepted into the report's serving data is. A newer download that could not be processed does not make that data current.
 _Avoid_: latest download age, publication age

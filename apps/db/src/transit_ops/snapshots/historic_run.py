@@ -362,6 +362,8 @@ def _build_historic_history_plans[NetworkPlanT, LinePlanT, StopPlanT](
     build_network: Callable[..., NetworkPlanT],
     build_lines: Callable[..., LinePlanT],
     build_stops: Callable[..., StopPlanT],
+    *,
+    as_of_utc: datetime | None = None,
 ) -> tuple[NetworkPlanT, LinePlanT, StopPlanT]:
     phase_context = run.ledger.phase if run is not None else None
     with _historic_phase_context(run, "build"):
@@ -371,18 +373,21 @@ def _build_historic_history_plans[NetworkPlanT, LinePlanT, StopPlanT](
                 provider_id=provider_id,
                 generated_utc=stamp,
                 phase_context=phase_context,
+                as_of_utc=as_of_utc,
             ),
             build_lines(
                 conn,
                 provider_id=provider_id,
                 generated_utc=stamp,
                 phase_context=phase_context,
+                as_of_utc=as_of_utc,
             ),
             build_stops(
                 conn,
                 provider_id=provider_id,
                 generated_utc=stamp,
                 phase_context=phase_context,
+                as_of_utc=as_of_utc,
             ),
         )
 

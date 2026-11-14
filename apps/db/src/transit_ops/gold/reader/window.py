@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
+
+from sqlalchemy.engine import Connection
+
+from transit_ops.sql_registry import named_query
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import ItemsView, Iterator
@@ -41,3 +45,14 @@ class GrainWindows:
 
 def current_date_trailing_clause(col: str, *, days: int = 30, tz_alias: str = "dp") -> str:
     return f"{col} >= (now() AT TIME ZONE {tz_alias}.timezone)::date - {days}"
+
+
+_AS_OF_SQL = named_query("history.build.as_of", "SELECT now()")
+
+
+def resolve_as_of(conn: Connection, as_of_utc: datetime | None) -> datetime:
+    if as_of_utc is None:
+        as_of_utc = conn.execute(_AS_OF_SQL).scalar_one()
+    if as_of_utc.tzinfo is None or as_of_utc.utcoffset() is None:
+        raise ValueError("as_of_utc must be timezone-aware")
+    return as_of_utc

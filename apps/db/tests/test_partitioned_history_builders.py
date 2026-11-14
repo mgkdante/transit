@@ -572,13 +572,14 @@ def test_network_history_builder_executes_each_full_retention_source_once():
 
         def execute(self, statement, params=None):  # noqa: ANN001
             self.names.append(query_name(statement))
-            self.params.append(dict(params or {}))
+            self.params.append({k: v for k, v in (params or {}).items() if k != "as_of_utc"})
             return super().execute(statement, params)
 
     conn = RecordingConn()
     bundle = build_network_history(
         conn,
         provider_id="stm",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
         generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -617,7 +618,10 @@ def test_network_history_builder_executes_each_full_retention_source_once():
     assert "provider_local_date <" in str(_NETWORK_HISTORY_DELAY_SQL)
     assert "timezone(dp.timezone, fts.captured_at_utc)::date <" in str(_NETWORK_HISTORY_FACT_SQL)
     assert "timezone(dp.timezone, fts.captured_at_utc)::date >" in str(_NETWORK_HISTORY_FACT_SQL)
-    assert "now() - make_interval(days => :fact_retention_days)" in str(_NETWORK_HISTORY_FACT_SQL)
+    assert (
+        "CAST(:as_of_utc AS timestamptz) - make_interval(days => :fact_retention_days)"
+        in str(_NETWORK_HISTORY_FACT_SQL)
+    )
     assert "SUM(rob.observation_count)" in str(_NETWORK_HISTORY_OCCUPANCY_SQL)
 
 
@@ -1130,13 +1134,14 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
 
         def execute(self, statement, params=None):  # noqa: ANN001
             self.names.append(query_name(statement))
-            self.params.append(dict(params or {}))
+            self.params.append({k: v for k, v in (params or {}).items() if k != "as_of_utc"})
             return super().execute(statement, params)
 
     conn = RecordingConn()
     bundle = module.build_line_history(
         conn,
         provider_id="stm",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
         generated_utc="2026-07-13T00:00:00Z",
         entity_batch_size=25,
     )
@@ -1194,8 +1199,8 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
     ):
         sql = str(statement)
         assert ":warm_retention_days" in sql
-        assert "timezone(dp.timezone, now())::date" in sql
-        assert "< timezone(dp.timezone, now())::date" in sql
+        assert "timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date" in sql
+        assert "< timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date" in sql
         assert "MAX(" in sql and "built_at_utc" in sql
     for statement in (
         module._LINE_HISTORY_PERCENTILES_SQL,
@@ -1203,7 +1208,7 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
     ):
         sql = str(statement)
         assert ":warm_retention_days" in sql
-        assert "< timezone(dp.timezone, now())::date" in sql
+        assert "< timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date" in sql
         assert "GROUP BY" not in sql
         assert "built_at_utc AS source_generated_utc" in sql
     ids_sql = str(module._LINE_HISTORY_IDS_SQL)
@@ -1219,7 +1224,7 @@ def test_line_history_builder_batches_six_sources_once_per_entity_batch():
     assert "__unrouted__" in ids_sql
     assert "gold.dim_route" not in ids_sql
     assert ":warm_retention_days" in ids_sql
-    assert "< timezone(dp.timezone, now())::date" in ids_sql
+    assert "< timezone(dp.timezone, CAST(:as_of_utc AS timestamptz))::date" in ids_sql
 
 
 def test_line_history_builder_is_exported_through_both_builder_facades():
@@ -1437,13 +1442,14 @@ def test_stop_history_plan_batches_three_sources_and_retains_no_payload_models()
 
         def execute(self, statement, params=None):  # noqa: ANN001
             self.names.append(query_name(statement))
-            self.params.append(dict(params or {}))
+            self.params.append({k: v for k, v in (params or {}).items() if k != "as_of_utc"})
             return super().execute(statement, params)
 
     conn = RecordingConn()
     plan = module.build_stop_history_plan(
         conn,
         provider_id="stm",
+        as_of_utc=datetime(2026, 7, 13, tzinfo=UTC),
         generated_utc="2026-07-13T00:00:00Z",
     )
 
@@ -1636,7 +1642,7 @@ def test_line_and_stop_history_sql_text_is_frozen():
         "stop.percentiles": stop._STOP_HISTORY_PERCENTILES_SQL,
         "stop.occupancy": stop._STOP_HISTORY_OCCUPANCY_SQL,
     }
-    expected = {
+    old_expected = {
         "line.ids": "0fe294ad9c6eb9a4bf6dec6741e627a2ccd14d83730ca26cdc67d72db8a36c18",
         "line.delay": "2cd87c85c0d8b3eac6e5f4e8ac25ece1885dd14d0cb99e494d87a4e4ffc3f7df",
         "line.percentiles": "21315ae7e30a6562c669d7b18d9e66e9579a298643385817daa7109739382640",
@@ -1662,6 +1668,29 @@ def test_line_and_stop_history_sql_text_is_frozen():
         "stop.delay": "history.stops.delay",
         "stop.percentiles": "history.stops.percentiles",
         "stop.occupancy": "history.stops.occupancy",
+    }
+
+    # Undo only the clock substitution: every other SQL byte stays frozen.
+    assert {
+        name: hashlib.sha256(
+            (f"-- q:{public_query_names[name]}\n" + str(statement).split("\n", 1)[1])
+            .replace("CAST(:as_of_utc AS timestamptz)", "now()").encode()
+        ).hexdigest()
+        for name, statement in statements.items()
+    } == old_expected
+
+    expected = {
+        "line.ids": "a835afe7b5cf6d7de57f9440eb5aa1c68b8f38dba60caafe441d2ccc9e026ae9",
+        "line.delay": "d774adb16acd3a7c81a8c049d541c4162e45aa1417af69c228bedb84a76e9f9c",
+        "line.percentiles": "129ec5bc1497d47f6f5011afb8edd7779e93b66123e52ec1e61ec9eda6699dca",
+        "line.cancellation": "3151e118bf53c4f502dd9e15dd41ba87adbe4b56848348476ca5ea9ebd2b7448",
+        "line.occupancy": "ee7490a0c57a8ed9494cea8d76a4d9f2685e2d0f46495d757a1244cf4118129e",
+        "line.service_span": "694a830cc76ac66f97f1a214e81c2ba4f2ee64fb1b87358ae7e08d5246722ddc",
+        "line.skipped": "1560a0612d34469a47beb2a2f2cf260ed95afd5e51f65e2f90baffdcf9dbb0e7",
+        "stop.ids": "eb5f6ccde6bfa8b6419cee2e2f7d3291ef89fb600821e6002c971b91ee590363",
+        "stop.delay": "55e2bcc0d2a605c76fcf82b3be46c324fee687323f4d991804aed8ddf45be8de",
+        "stop.percentiles": "ef26227dfbd99dd5e57d053b8c7e031edccf35d122c04599c5603788d499fd4d",
+        "stop.occupancy": "fe21189b5ddc5d0c762750d7e76dfd3d0abecad889a88fd408f28b534d3e373b",
     }
 
     assert {

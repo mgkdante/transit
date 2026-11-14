@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from transit_ops.gold.reader.window import resolve_as_of
 from transit_ops.settings import get_settings
 from transit_ops.snapshots import historic_tree
 from transit_ops.snapshots.builders.historic.history_common import (
@@ -55,54 +57,56 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 _group_rows = group_history_entity_date_rows
 
 
+NOW = "CAST(:as_of_utc AS timestamptz)"
+
 LINE_HISTORY_ENTITY_BATCH_SIZE = 25
 LINE_HISTORY_METRICS = historic_tree.LINE_HISTORY_METRICS
 
 _LINE_HISTORY_IDS_SQL = named_query(
     "history.lines.ids.inner",
-    """
+    f"""
     WITH retained_ids AS (
         SELECT sp.route_id
         FROM gold.route_delay_spine AS sp
         JOIN gold.dim_provider AS dp ON dp.provider_id = sp.provider_id
         WHERE sp.provider_id = :provider_id
-          AND sp.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND sp.provider_local_date < timezone(dp.timezone, now())::date
+          AND sp.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND sp.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT pct.route_id
         FROM gold.route_delay_percentile_daily AS pct
         JOIN gold.dim_provider AS dp ON dp.provider_id = pct.provider_id
         WHERE pct.provider_id = :provider_id
-          AND pct.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND pct.provider_local_date < timezone(dp.timezone, now())::date
+          AND pct.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND pct.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT can.route_id
         FROM gold.route_cancellation_daily AS can
         JOIN gold.dim_provider AS dp ON dp.provider_id = can.provider_id
         WHERE can.provider_id = :provider_id
-          AND can.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND can.provider_local_date < timezone(dp.timezone, now())::date
+          AND can.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND can.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT occ.route_id
         FROM gold.route_occupancy_band_daily AS occ
         JOIN gold.dim_provider AS dp ON dp.provider_id = occ.provider_id
         WHERE occ.provider_id = :provider_id
-          AND occ.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND occ.provider_local_date < timezone(dp.timezone, now())::date
+          AND occ.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND occ.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT span.route_id
         FROM gold.route_service_span_daily AS span
         JOIN gold.dim_provider AS dp ON dp.provider_id = span.provider_id
         WHERE span.provider_id = :provider_id
-          AND span.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND span.provider_local_date < timezone(dp.timezone, now())::date
+          AND span.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND span.provider_local_date < timezone(dp.timezone, {NOW})::date
         UNION
         SELECT skip.route_id
         FROM gold.route_skipped_stop_daily AS skip
         JOIN gold.dim_provider AS dp ON dp.provider_id = skip.provider_id
         WHERE skip.provider_id = :provider_id
-          AND skip.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-          AND skip.provider_local_date < timezone(dp.timezone, now())::date
+          AND skip.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+          AND skip.provider_local_date < timezone(dp.timezone, {NOW})::date
     ), inventory AS (
         SELECT route_id FROM retained_ids
         WHERE route_id IS NOT NULL AND route_id <> '' AND route_id <> '__unrouted__'
@@ -117,7 +121,7 @@ _LINE_HISTORY_IDS_SQL = named_query(
 
 _LINE_HISTORY_DELAY_SQL = named_query(
     "history.lines.delay.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY sp.route_id, date_trunc('month', sp.provider_local_date)
            ) AS __history_scope_count,
@@ -136,8 +140,8 @@ _LINE_HISTORY_DELAY_SQL = named_query(
     WHERE sp.provider_id = :provider_id
       AND sp.route_id = ANY(:entity_ids)
       AND sp.route_id <> '__unrouted__'
-      AND sp.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND sp.provider_local_date < timezone(dp.timezone, now())::date
+      AND sp.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND sp.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY sp.route_id, sp.provider_local_date
     ORDER BY sp.route_id, sp.provider_local_date
     """,
@@ -145,7 +149,7 @@ _LINE_HISTORY_DELAY_SQL = named_query(
 
 _LINE_HISTORY_PERCENTILES_SQL = named_query(
     "history.lines.percentiles.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY pct.route_id, date_trunc('month', pct.provider_local_date)
            ) AS __history_scope_count,
@@ -160,15 +164,15 @@ _LINE_HISTORY_PERCENTILES_SQL = named_query(
     WHERE pct.provider_id = :provider_id
       AND pct.route_id = ANY(:entity_ids)
       AND pct.route_id <> '__unrouted__'
-      AND pct.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND pct.provider_local_date < timezone(dp.timezone, now())::date
+      AND pct.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND pct.provider_local_date < timezone(dp.timezone, {NOW})::date
     ORDER BY pct.route_id, pct.provider_local_date
     """,
 )
 
 _LINE_HISTORY_CANCELLATION_SQL = named_query(
     "history.lines.cancellation.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY can.route_id, date_trunc('month', can.provider_local_date)
            ) AS __history_scope_count,
@@ -189,8 +193,8 @@ _LINE_HISTORY_CANCELLATION_SQL = named_query(
     WHERE can.provider_id = :provider_id
       AND can.route_id = ANY(:entity_ids)
       AND can.route_id <> '__unrouted__'
-      AND can.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND can.provider_local_date < timezone(dp.timezone, now())::date
+      AND can.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND can.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY can.route_id, can.provider_local_date
     ORDER BY can.route_id, can.provider_local_date
     """,
@@ -198,7 +202,7 @@ _LINE_HISTORY_CANCELLATION_SQL = named_query(
 
 _LINE_HISTORY_OCCUPANCY_SQL = named_query(
     "history.lines.occupancy.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY occ.route_id, date_trunc('month', occ.provider_local_date)
            ) AS __history_scope_count,
@@ -217,8 +221,8 @@ _LINE_HISTORY_OCCUPANCY_SQL = named_query(
     WHERE occ.provider_id = :provider_id
       AND occ.route_id = ANY(:entity_ids)
       AND occ.route_id <> '__unrouted__'
-      AND occ.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND occ.provider_local_date < timezone(dp.timezone, now())::date
+      AND occ.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND occ.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY occ.route_id, occ.provider_local_date
     ORDER BY occ.route_id, occ.provider_local_date
     """,
@@ -226,7 +230,7 @@ _LINE_HISTORY_OCCUPANCY_SQL = named_query(
 
 _LINE_HISTORY_SERVICE_SPAN_SQL = named_query(
     "history.lines.service_span.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY span.route_id, date_trunc('month', span.provider_local_date)
            ) AS __history_scope_count,
@@ -243,15 +247,15 @@ _LINE_HISTORY_SERVICE_SPAN_SQL = named_query(
     WHERE span.provider_id = :provider_id
       AND span.route_id = ANY(:entity_ids)
       AND span.route_id <> '__unrouted__'
-      AND span.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND span.provider_local_date < timezone(dp.timezone, now())::date
+      AND span.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND span.provider_local_date < timezone(dp.timezone, {NOW})::date
     ORDER BY span.route_id, span.provider_local_date
     """,
 )
 
 _LINE_HISTORY_SKIPPED_STOPS_SQL = named_query(
     "history.lines.skipped_stops.inner",
-    """
+    f"""
     SELECT COUNT(*) OVER (
                PARTITION BY skip.route_id, date_trunc('month', skip.provider_local_date)
            ) AS __history_scope_count,
@@ -266,8 +270,8 @@ _LINE_HISTORY_SKIPPED_STOPS_SQL = named_query(
     WHERE skip.provider_id = :provider_id
       AND skip.route_id = ANY(:entity_ids)
       AND skip.route_id <> '__unrouted__'
-      AND skip.provider_local_date >= timezone(dp.timezone, now())::date - :warm_retention_days
-      AND skip.provider_local_date < timezone(dp.timezone, now())::date
+      AND skip.provider_local_date >= timezone(dp.timezone, {NOW})::date - :warm_retention_days
+      AND skip.provider_local_date < timezone(dp.timezone, {NOW})::date
     GROUP BY skip.route_id, skip.provider_local_date
     ORDER BY skip.route_id, skip.provider_local_date
     """,
@@ -652,14 +656,17 @@ def build_line_history_plan(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
     entity_batch_size: int = LINE_HISTORY_ENTITY_BATCH_SIZE,
     phase_context: HistoryPhaseContext | None = None,
 ) -> LineHistoryPlan:
     if entity_batch_size <= 0:
         raise ValueError("Line history entity_batch_size must be positive")
+    as_of_utc = resolve_as_of(conn, as_of_utc)
     settings = get_settings()
     base_params = {
         "provider_id": provider_id,
+        "as_of_utc": as_of_utc,
         "warm_retention_days": settings.GOLD_WARM_ROLLUP_RETENTION_DAYS,
     }
     with history_phase(phase_context, "source_digest"):
@@ -699,12 +706,14 @@ def build_line_history(
     *,
     provider_id: str,
     generated_utc: str,
+    as_of_utc: datetime | None = None,
     entity_batch_size: int = LINE_HISTORY_ENTITY_BATCH_SIZE,
 ) -> LineHistoryBundle:
     return build_line_history_plan(
         conn,
         provider_id=provider_id,
         generated_utc=generated_utc,
+        as_of_utc=as_of_utc,
         entity_batch_size=entity_batch_size,
     ).materialize()
 
