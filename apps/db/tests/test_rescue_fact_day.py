@@ -283,7 +283,7 @@ def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
             assert meta["csv_sha256"] == compressed["csv_sha256"]
             assert connection.execute("SHOW transaction_read_only").fetchone() == ("on",)
             assert connection.execute("SHOW transaction_isolation").fetchone() == (
-                "repeatable read"
+                "repeatable read",
             )
 
 
