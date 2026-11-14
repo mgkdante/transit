@@ -329,7 +329,59 @@ def test_recovery_evidence_values_survive_projection(inventory_reader, monkeypat
         and str(r["last_scope_end"]) == "2026-11-13"
         for r in receipts
     )
-    assert any(datetime.fromisoformat(r["at_utc"]) == fixed for r in evidence("core.history_event"))
+    assert any(
+        datetime.fromisoformat(r["at_utc"]) == fixed and r["source_kind"] == "hold"
+        for r in evidence("core.history_event")
+    )
+
+
+def test_database_preserves_source_columns_that_collide_with_receipt_fields(monkeypatch):
+    module, rows = load(), []
+    fixed = datetime(2026, 11, 13, 9, tzinfo=UTC)
+    source = dict(
+        event_id=42,
+        at_utc=fixed.isoformat(),
+        kind="hold",
+        dataset_id="capture.vehicle_positions",
+        provider_id="offline",
+        revision=0,
+        window_key="2026-11-13",
+        table="source-table",
+        watermark="source-watermark",
+        source_kind="already-named",
+    )
+    catalog = dict(
+        schema="core",
+        name="history_event",
+        relkind="r",
+        indexes=[],
+        columns={k: "text" for k in source},
+        row_count=None,
+        byte_size=None,
+    )
+
+    def read(engine, end, clock, sql, *args, **kwargs):
+        if sql == module.CATALOG:
+            return iter([catalog])
+        return iter(()) if "pg_locks" in sql else iter([source])
+
+    monkeypatch.setattr(module, "read_only", read)
+    monkeypatch.setattr(module, "utc_now", lambda: fixed)
+    monkeypatch.setenv("LS03_STATIC_WARM_FINISHED_AT", fixed.isoformat())
+    engine = SimpleNamespace(
+        dialect=SimpleNamespace(
+            identifier_preparer=SimpleNamespace(quote_identifier=lambda s: '"' + s + '"')
+        )
+    )
+    module.database(engine, Settings(_env_file=None), rows.append, fixed + timedelta(hours=1))
+    measured = [r for r in rows if r["kind"] == "measurement"]
+    assert len(measured) == 1
+    record = measured[0]
+    assert record["table"] == "core.history_event" and record["watermark"] == fixed
+    assert record["event_id"] == 42 and datetime.fromisoformat(record["at_utc"]) == fixed
+    assert record["source_kind"] == "hold" and record["source_source_kind"] == "already-named"
+    assert record["source_table"] == "source-table"
+    assert record["source_watermark"] == "source-watermark"
 
 
 def test_inventory_distinguishes_estimates_counts_unknowns_and_expiry_rules():
@@ -593,6 +645,24 @@ def test_partial_then_disappeared_is_reconciled_and_counted(tmp_path):
     assert not result["complete"] and not result["stable"] and result["failures"] == 1
     assert result["HEAD"] == 1
     assert any(r.get("verification") == "disappeared" for r in rows)
+
+
+@pytest.mark.parametrize("missing", (True, False))
+def test_same_cursor_pending_observation_prevents_false_completion(tmp_path, missing):
+    store = Store()
+    store.items = {"orphan/partial": b"abcdef"}
+    first, _, _ = scan(tmp_path, store, max_bytes=2)
+    assert first["get_bytes"] == 2 and not first["complete"]
+    if missing:
+        store.items.clear()
+    else:
+        store.list_objects_v2 = lambda **kwargs: {"Contents": [], "IsTruncated": False}
+    result, rows, _ = scan(tmp_path, store, max_bytes=2)
+    assert not result["complete"] and not result["stable"] and result["failures"] >= 1
+    assert result["HEAD"] == 1
+    delta = next(r for r in rows if r["kind"] == "delta")
+    assert delta["prior_hashing_status"] == "partial_get"
+    assert delta["verification"] == ("disappeared" if missing else "partial_get")
 
 
 @pytest.mark.parametrize("name", ("objects.jsonl", "cursor.part"))

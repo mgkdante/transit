@@ -328,6 +328,15 @@ def snapshot(settings: Settings, tables: list[Row], now: datetime) -> Row:
     )
 
 
+def envelope(source: Row, **fields: Any) -> Row:
+    for key in sorted(source, key=len):
+        name = key
+        while name in fields:
+            name = "source_" + name
+        fields[name] = source[key]
+    return fields
+
+
 def database(
     engine: Engine,
     settings: Settings,
@@ -365,7 +374,7 @@ def database(
             ):
                 basis = "exact count" if "row_count" in measured else "source row"
                 measured.setdefault("row_count_basis", basis)
-                emit(dict(kind="measurement", table=table, watermark=utc_now(), **measured))
+                emit(envelope(measured, kind="measurement", table=table, watermark=utc_now()))
         except EvidenceLimit:
             raise
         except Exception as exc:
@@ -605,12 +614,18 @@ class ObjectScan:
         return True
 
     def delta(self) -> None:
-        for index, previous in enumerate(records(self.rescan)):
+        observations = (
+            (path, row)
+            for path in (self.rescan, self.output)
+            for row in records(path)
+            if path != self.output or row.get("kind") == "pending"
+        )
+        for index, (path, previous) in enumerate(observations):
             if index < self.state.get("delta_offset", 0):
                 continue
             if (
                 previous.get("kind") in ("object", "pending")
-                and previous == recent(self.rescan, {previous["key"]}, False)[previous["key"]]
+                and previous == recent(path, {previous["key"]}, False)[previous["key"]]
             ):
                 if self.counts["keys"] >= self.limits["keys"]:
                     return
@@ -618,6 +633,8 @@ class ObjectScan:
                 try:
                     current = identity(self.request("HEAD", Key=previous["key"]))
                     status = "unchanged" if current == previous.get("identity") else CHANGED
+                    if status == "unchanged" and path == self.output:
+                        status = previous["verification"]
                 except (ClientError, FileNotFoundError) as exc:
                     code = exc.response["Error"]["Code"] if isinstance(exc, ClientError) else "404"
                     status = "disappeared" if code in MISSING else FAILED
