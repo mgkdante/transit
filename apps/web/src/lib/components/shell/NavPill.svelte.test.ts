@@ -155,6 +155,22 @@ describe('NavPill — search', () => {
 		});
 	});
 
+	it.each([
+		['en', 'Vehicle 40061 Line 161'],
+		['fr', 'Véhicule 40061 Ligne 161'],
+	] as const)("names a live vehicle's line in %s", (locale, name) => {
+		const { getByRole } = render(NavPill, {
+			props: {
+				locale,
+				search: '40061',
+				searchResults: [
+					{ kind: 'vehicle', id: '40061', label: '40061', line: '161', priority: 20 },
+				],
+			},
+		});
+		expect(getByRole('button', { name })).toHaveTextContent(name.split(' ').slice(-2).join(' '));
+	});
+
 	it('turns browser autofill off on the in-pill search box', () => {
 		const { getByRole } = render(NavPill, { props: { locale: 'en' } });
 		const searchbox = getByRole('searchbox', { name: 'Search the network' });

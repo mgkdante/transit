@@ -237,7 +237,12 @@
 
 	function resultAria(result: ChromeSearchResult): string {
 		const kind = resultKindLabel(result);
-		return result.meta ? `${kind} ${result.label} ${result.meta}` : `${kind} ${result.label}`;
+		const meta = resultMeta(result);
+		return meta ? `${kind} ${result.label} ${meta}` : `${kind} ${result.label}`;
+	}
+
+	function resultMeta(result: ChromeSearchResult): string | undefined {
+		return result.line ? `${navCopy.searchKind.route} ${result.line}` : result.meta;
 	}
 
 	function resultKindLabel(result: ChromeSearchResult): string {
@@ -317,8 +322,8 @@
 								<span class="nav-search-kind">{resultKindLabel(result)}</span>
 								<span class="nav-search-label">{result.label}</span>
 							</span>
-							{#if result.meta}
-								<small>{result.meta}</small>
+							{#if resultMeta(result)}
+								<small>{resultMeta(result)}</small>
 							{/if}
 						</button>
 					{/each}

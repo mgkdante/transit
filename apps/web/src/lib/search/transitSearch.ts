@@ -31,6 +31,8 @@ export interface ChromeSearchResult {
 	readonly id: string;
 	readonly label: string;
 	readonly meta?: string;
+	/** A live vehicle’s line number; callers add the word for “line”. */
+	readonly line?: string;
 	readonly priority: number;
 	readonly lat?: number;
 	readonly lon?: number;
@@ -157,7 +159,9 @@ function headerVehicles(
 				kind: 'vehicle',
 				id: vehicle.id,
 				label: vehicle.id,
-				meta: vehicle.route ? `Line ${lineLabel(vehicle.route, routes ?? [])}` : 'Live bus',
+				...(vehicle.route
+					? { line: lineLabel(vehicle.route, routes ?? []) }
+					: { meta: 'Live bus' }),
 				priority: 20,
 			}),
 		);

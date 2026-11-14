@@ -117,8 +117,9 @@ describe('chromeSearchResults', () => {
 			kind: 'vehicle',
 			id: '40061',
 			label: '40061',
-			meta: 'Line 161',
+			line: '161',
 		});
+		expect(chromeSearchResults('40061', { routes, stops, vehicles })[0]?.meta).toBeUndefined();
 	});
 
 	it('includes address autocomplete suggestions after local route and stop matches', () => {

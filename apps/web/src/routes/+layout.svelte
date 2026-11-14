@@ -418,7 +418,8 @@
 		const resetFocus = resetFocusAfterNavigation();
 		await goto(
 			localizeHref(
-				searchHitHref(result, { path: seoPath, params: new URLSearchParams(page.url.search) }),
+				// Views mirror their tab and period shallowly; page.url can still hold the old query.
+				searchHitHref(result, { path: seoPath, params: currentMirrorUrl().searchParams }),
 				locale,
 				data.providerId,
 			),
