@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
+import { refreshCopy } from '../src/lib/components/shell/refresh.copy';
 import { SURFACE_NAV } from '../src/lib/content/nav';
 import { copy as mapCopy } from '../src/lib/features/map/map.copy';
 import { PUBLISHED_LOCALES } from '../src/lib/i18n/config';
@@ -87,6 +88,43 @@ test('manual refresh stays busy until live data is received and rendered', async
 	} finally {
 		release();
 	}
+});
+
+test('a manual refresh shows its result under the button, moves nothing, then leaves', async ({
+	page,
+}) => {
+	await page.clock.install({ time: generated + 15_000 });
+	await page.route('**/live/vehicles.json', (route) =>
+		route.fulfill({
+			json: {
+				generated_utc: new Date(generated).toISOString(),
+				vehicles: [],
+			},
+		}),
+	);
+	await page.goto('/map', { waitUntil: 'networkidle' });
+	const placement = page.viewportSize()!.width < 1024 ? 'head' : 'floating';
+	const stamp = page.locator(
+		`.map-freshness[data-placement="${placement}"] [data-slot="freshness-stamp"]`,
+	);
+	const banner = page.getByRole('banner');
+	const boxes = [await banner.boundingBox(), await stamp.boundingBox()];
+	const button = page.getByRole('button', { name: 'Refresh data', exact: true });
+	await button.click();
+	const result = page.locator('[data-slot="refresh-result"]');
+	await expect(result).toHaveText(
+		new RegExp(`^${literal(refreshCopy.en.updated('\0')).replace('\0', '.+')}$`),
+	);
+	await expect(result).toHaveAttribute('role', 'status');
+	const box = (await result.boundingBox())!;
+	expect(box.x).toBeGreaterThanOrEqual(16);
+	expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width - 16);
+	expect(box.y).toBeGreaterThanOrEqual(
+		(await button.boundingBox())!.y + (await button.boundingBox())!.height,
+	);
+	expect([await banner.boundingBox(), await stamp.boundingBox()]).toEqual(boxes);
+	await page.clock.runFor(8_000);
+	await expect(result).toBeEmpty();
 });
 
 for (const reducedMotion of ['reduce', 'no-preference'] as const) {

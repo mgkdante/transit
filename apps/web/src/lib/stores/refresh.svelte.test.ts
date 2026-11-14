@@ -15,6 +15,39 @@ async function loadRefreshStore() {
 }
 
 describe('dataRefresh', () => {
+	it('records a successful result with its completion time', async () => {
+		const { dataRefresh } = await loadRefreshStore();
+		const shownAtMs = dataRefresh.dataAtMs;
+		mocks.invalidateAll.mockResolvedValue();
+		vi.setSystemTime(2_000_000_000_000);
+		await dataRefresh.run();
+		expect(dataRefresh.lastResult).toEqual({ ok: true, atMs: Date.now(), shownAtMs });
+		expect(dataRefresh.dataAtMs).toBe(Date.now());
+	});
+	it('records a failure with the time of the data shown before the run', async () => {
+		const { dataRefresh } = await loadRefreshStore();
+		const shownAtMs = dataRefresh.dataAtMs;
+		mocks.invalidateAll.mockRejectedValue(new Error('offline'));
+		vi.setSystemTime(2_000_000_000_000);
+		await dataRefresh.run();
+		expect(dataRefresh.lastResult).toEqual({ ok: false, atMs: Date.now(), shownAtMs });
+		expect(dataRefresh.dataAtMs).toBe(shownAtMs);
+	});
+	it('moves the data time only when tracked work succeeds', async () => {
+		const { dataRefresh } = await loadRefreshStore();
+		const initial = dataRefresh.dataAtMs;
+		vi.setSystemTime(2_000_000_000_000);
+		dataRefresh.track(Promise.reject(new Error('offline')));
+		const owner = new AbortController();
+		const pending = Promise.resolve();
+		dataRefresh.track(pending, owner.signal);
+		owner.abort();
+		await Promise.resolve();
+		expect(dataRefresh.dataAtMs).toBe(initial);
+		dataRefresh.track(Promise.resolve());
+		await Promise.resolve();
+		expect(dataRefresh.dataAtMs).toBe(Date.now());
+	});
 	beforeEach(() => {
 		vi.useFakeTimers();
 		mocks.invalidateAll.mockReset();

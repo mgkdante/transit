@@ -429,7 +429,7 @@ it.each(['en', 'fr'] as const)(
 			const view = render(NavPill, {
 				props: { locale, search: '40061', searchPresentation: presentation },
 			});
-			expect(view.getByRole('status')).toHaveTextContent(presentation.notice.message);
+			expect(view.getByText(presentation.notice.message)).toHaveAttribute('role', 'status');
 			expect(
 				view.getByText(
 					locale === 'en'

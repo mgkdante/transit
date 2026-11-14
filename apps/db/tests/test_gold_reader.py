@@ -275,10 +275,10 @@ def test_current_date_trailing_clause_bytes() -> None:
 
 _REVIEWED_SQL_SHA256 = {
     "rollup.route_headway.upsert": (
-        "624b551f37e63268c7a443c4da56081de3d144a0655d2a8146d982e56dfefd5c"
+        "faac29bb6b34cd08f1c65193e40bcd6c43ef4ef919f41644a686fbabde1ccb46"
     ),
     "rollup.route_headway_direction.upsert": (
-        "6b0047ab0486b0a477e81f9524f16c8dfe119da06c5c22927bc5012f9df9550a"
+        "b021cb7c78795be7ff53416b272e003cabdede489d95bf2da240dd2f44c584cc"
     ),
     "rollup.route_headway_shift.upsert": (
         "68ae0f5b0e149eabe88eff831b0b20545784f2ece19320853812309ba021adcd"

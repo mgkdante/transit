@@ -3,6 +3,9 @@ A public dashboard that tells riders how reliable their transit service is, from
 
 ## Language
 
+**Edition index**:
+The record that groups a schedule edition's table copies and their proofs, identifies their GTFS file and field names, and states whether its source zip is archived.
+
 **Object digest**:
 The checksum of the stored bytes of one object.
 _Avoid_: content digest, ETag
@@ -33,6 +36,9 @@ _Avoid_: window (the span identified by the key)
 **Working copy**:
 The form the pipeline writes and reads every day: rows on the server, and for captures one object per capture.
 _Avoid_: archive copy (a version kept in history)
+
+**Whole-state copy**:
+A copy of every row a table holds at one moment, for tables that are rewritten rather than appended.
 
 **Hot window**:
 The age after which a verified window may have its working copy trimmed.
@@ -80,6 +86,13 @@ Published figures for completed days.
 A provider-local day whose figures are final in the published record.
 _Avoid_: finished UTC day, build day
 
+**Build family**:
+One of the twelve sets of revision 2 rollups and published files whose engine switches together.
+_Avoid_: feed family, history family
+
+**Engine**:
+The query engine a build family runs on, PostgreSQL or DuckDB; the same revision gives the same bytes on either.
+
 **Feed family**:
 One kind of live data from a provider, such as vehicle positions, trip updates or alerts.
 _Avoid_: feed, tier, source
@@ -91,6 +104,10 @@ _Avoid_: degraded, freshness
 **Publication age**:
 How old a published report is. A newly prepared report can still contain old agency data.
 _Avoid_: feed age, capture age
+
+**Build stamp**:
+The one instant a build or publish reads as now; every window and age in it is measured from that instant.
+_Avoid_: publication stamp (the day-truncated `generated_utc`).
 
 **Serving capture age**:
 How old the feed capture accepted into the report's serving data is. A newer download that could not be processed does not make that data current.

@@ -6,6 +6,8 @@ export const REFRESH_INVALIDATE_TIMEOUT_MS = 8_000;
 let epoch = $state(0);
 let refreshing = $state(false);
 let error = $state<Error | null>(null);
+let dataAtMs = $state(browser ? Date.now() : 0);
+let lastResult = $state<{ ok: boolean; atMs: number; shownAtMs: number } | null>(null);
 let runVersion = 0;
 let inFlight: Promise<void> | null = null;
 // A resource effect must not subscribe to the completion of unrelated requests.
@@ -28,6 +30,7 @@ function track(pending: Promise<unknown>, signal?: AbortSignal): void {
 		finished = true;
 		signal?.removeEventListener('abort', aborted);
 		activeWork.delete(pending);
+		if (!failed && !signal?.aborted) dataAtMs = Date.now();
 		if (failed && refreshing && !signal?.aborted) failures.push(reason);
 		settle();
 	};
@@ -48,6 +51,8 @@ async function settleWork(version: number): Promise<void> {
 }
 
 async function executeRefresh(): Promise<void> {
+	const shownAtMs = dataAtMs;
+	lastResult = null;
 	const version = ++runVersion;
 	refreshing = true;
 	error = null;
@@ -76,12 +81,21 @@ async function executeRefresh(): Promise<void> {
 		error = reason instanceof Error ? reason : new Error(String(reason));
 	} finally {
 		clearTimeout(timeoutId);
+		const atMs = Date.now();
+		if (!error) dataAtMs = atMs;
+		lastResult = { ok: !error, atMs, shownAtMs };
 		runVersion += 1;
 		refreshing = false;
 	}
 }
 
 export const dataRefresh = {
+	get dataAtMs() {
+		return dataAtMs;
+	},
+	get lastResult() {
+		return lastResult;
+	},
 	get epoch(): number {
 		return epoch;
 	},

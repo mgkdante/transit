@@ -1,8 +1,18 @@
+import hashlib
 import json
+from datetime import UTC, date, datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
-from transit_ops.live.compare import Difference, compare_publications
+from transit_ops.live.compare import (
+    Difference,
+    canonical_row,
+    canonical_value,
+    compare_publications,
+    compare_rows,
+    rows_digest,
+)
 from transit_ops.snapshots.contract import DataHealth, DataHealthFeed, LaneHealth, NetworkFile
 
 
@@ -189,3 +199,136 @@ def test_generation_wildcard_requires_object_and_preserves_filename_keys():
             project_clock=True,
         )
         assert (result == []) is equal
+
+
+def test_null_and_empty_string_differ():
+    assert canonical_row([None, "", "null"]) == '[null,"","null"]'
+    assert compare_rows("live", [0], [("a", None)], [("a", "")]) == [
+        Difference("table:live", 'row ["a"]', '["a",null]', '["a",""]')
+    ]
+
+
+def test_doubles_compare_exactly():
+    assert canonical_value(123.4000015258789) == "123.4000015258789"
+    assert canonical_value(0.1 + 0.2) == "0.30000000000000004"
+    assert compare_rows("live", [0], [(1, 0.1 + 0.2)], [(1, 0.3)]) == [
+        Difference("table:live", "row [1]", "[1,0.30000000000000004]", "[1,0.3]")
+    ]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_doubles_are_refused(value):
+    with pytest.raises(ValueError):
+        canonical_value(value)
+
+
+def test_timestamps_compare_as_instants_with_microseconds():
+    utc = datetime(2026, 1, 2, 12, 0, 0, 123456, UTC)
+    offset = utc.astimezone(timezone(timedelta(hours=-5)))
+    assert canonical_value(offset) == "2026-01-02T12:00:00.123456Z"
+    assert canonical_value(date(2026, 1, 2)) == "2026-01-02"
+    assert compare_rows("live", [0], [(1, utc)], [(1, offset)]) == []
+    assert compare_rows("live", [0], [(1, utc)], [(1, utc + timedelta(microseconds=1))]) == [
+        Difference(
+            "table:live",
+            "row [1]",
+            "[1,2026-01-02T12:00:00.123456Z]",
+            "[1,2026-01-02T12:00:00.123457Z]",
+        )
+    ]
+    with pytest.raises(ValueError):
+        canonical_value(datetime(2026, 1, 2))
+    with pytest.raises(TypeError):
+        canonical_value({1})
+
+
+def test_decimal_keeps_scale():
+    assert canonical_value(Decimal("120.00")) == "decimal:120.00"
+    assert compare_rows("live", [0], [(1, Decimal("120.00"))], [(1, Decimal("120.0"))]) == [
+        Difference("table:live", "row [1]", "[1,decimal:120.00]", "[1,decimal:120.0]")
+    ]
+
+
+def test_bool_is_not_int():
+    assert canonical_value(False) == "false"
+    assert compare_rows("live", [0], [(1, True)], [(1, 1)]) == [
+        Difference("table:live", "row [1]", "[1,true]", "[1,1]")
+    ]
+
+
+def test_duplicate_rows_are_counted():
+    assert compare_rows("live", [0], [(1, "a"), (1, "b")], [(1, "b"), (1, "a")]) == []
+    assert compare_rows("live", [0], [(1, "a"), (1, "a")], [(1, "a")]) == [
+        Difference("table:live", "row [1]", '[1,"a"]\n[1,"a"]', '[1,"a"]')
+    ]
+    assert compare_rows("live", [0], [(1, "a"), (1, "b")], [(1, "a"), (1, "c")]) == [
+        Difference("table:live", "row [1]", '[1,"a"]\n[1,"b"]', '[1,"a"]\n[1,"c"]')
+    ]
+
+
+def test_missing_row_keys_and_composite_keys():
+    assert compare_rows("live", [0, 1], [(1, "a", 2)], [(1, "b", 2)]) == [
+        Difference("table:live", 'row [1,"a"]', '[1,"a",2]', "<absent>"),
+        Difference("table:live", 'row [1,"b"]', "<absent>", '[1,"b",2]'),
+    ]
+
+
+def test_unicode_keys_sort_by_code_point():
+    assert compare_rows("live", [0], [("é",), ("É",), ("Z",)], []) == [
+        Difference("table:live", 'row ["Z"]', '["Z"]', "<absent>"),
+        Difference("table:live", 'row ["É"]', '["É"]', "<absent>"),
+        Difference("table:live", 'row ["é"]', '["é"]', "<absent>"),
+    ]
+    assert canonical_row(["é", "e\u0301", '"\n']) == '["é","é","\\"\\n"]'
+
+
+def test_row_limit_caps_the_report():
+    assert compare_rows("live", [0], [(2,), (1,)], [], limit=1) == [
+        Difference("table:live", "row [1]", "[1]", "<absent>")
+    ]
+    assert compare_rows("live", [0], [(1,)], [], limit=0) == []
+
+
+def test_digest_ignores_order_but_not_values():
+    expected = hashlib.sha256(b'[1,"a"]\n[2,"b"]').hexdigest()
+    assert rows_digest(iter([(2, "b"), (1, "a")])) == expected
+    assert rows_digest([(1, "a"), (2, "b")]) == expected
+    assert rows_digest([(1, "a"), (2, "c")]) != expected
+    assert rows_digest([(1, "a"), (1, "a")]) != rows_digest([(1, "a")])
+    assert rows_digest([]) == hashlib.sha256(b"").hexdigest()
+
+
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        (Decimal("0.1"), 0.1),
+        (Decimal("1"), 1),
+        (Decimal("1.0"), 1.0),
+        (Decimal("-0.0"), -0.0),
+        (Decimal("-7"), -7),
+        (Decimal("12345678901234567890"), 12345678901234567890),
+        (1, 1.0),
+    ],
+)
+def test_numeric_types_remain_distinct_in_values_rows_and_digests(left, right):
+    assert canonical_value(left) != canonical_value(right)
+    assert canonical_row([None, left]) != canonical_row([None, right])
+    assert compare_rows("live", [0], [(None, left)], [(None, right)])
+    assert rows_digest([(None, left)]) != rows_digest([(None, right)])
+
+
+def test_numeric_types_keep_composite_key_groups_separate():
+    expected = [(None, 1, "integer-key"), (None, Decimal("1"), "decimal-key")]
+    actual = [(None, Decimal("1"), "integer-key"), (None, 1, "decimal-key")]
+    assert compare_rows("live", [0, 1], expected, actual) == [
+        Difference(
+            "table:live", "row [null,1]", '[null,1,"integer-key"]', '[null,1,"decimal-key"]'
+        ),
+        Difference(
+            "table:live",
+            "row [null,decimal:1]",
+            '[null,decimal:1,"decimal-key"]',
+            '[null,decimal:1,"integer-key"]',
+        ),
+    ]
+    assert rows_digest(expected) != rows_digest(actual)
