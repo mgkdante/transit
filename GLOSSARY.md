@@ -19,6 +19,12 @@ _Avoid_: grain (the reporting span: day, week, month)
 The record of what is kept, in which form, and whether it was checked.
 _Avoid_: archive (the stored copies themselves)
 
+**Ledger event**:
+One numbered, write-once record of a change to a window; it carries the window's next state.
+
+**Window version**:
+The number of ledger events applied to a window; a change is accepted only against the version it was decided on.
+
 **Archive copy**:
 The compressed, write-once form of one window of one dataset, in object storage under `archive/`.
 _Avoid_: the alert archive (a published list of alerts)
