@@ -40,6 +40,7 @@
 		data-refresh-failed={dataRefresh.error != null}
 	>
 		<svg
+			data-motion={refreshing ? 'refresh-busy' : undefined}
 			class="refresh-icon"
 			class:spin={refreshing}
 			class:failed={dataRefresh.error != null}

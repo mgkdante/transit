@@ -33,16 +33,19 @@ describe('RefreshButton action and recovery', () => {
 			expect(button).toHaveClass('size-11');
 			expect(button).toHaveAttribute('title', label);
 			expect(container.querySelector('[data-slot="refresh-readout"]')).toBeNull();
+			expect(container.querySelector('[data-motion="refresh-busy"]')).toBeNull();
 			await fireEvent.click(button);
 			await waitFor(() => expect(mocks.invalidateAll).toHaveBeenCalledOnce());
 			expect(dataRefresh.epoch).toBe(initialEpoch + 1);
 			expect(screen.getByRole('button', { name: busyLabel })).toBeDisabled();
+			expect(button.querySelector('[data-motion="refresh-busy"]')).toBeInTheDocument();
 			const joined = dataRefresh.run();
 			expect(mocks.invalidateAll).toHaveBeenCalledOnce();
 			finish();
 			await joined;
 			await waitFor(() => expect(screen.getByRole('button', { name: label })).toBeEnabled());
 			expect(button).toHaveAttribute('title', label);
+			expect(container.querySelector('[data-motion="refresh-busy"]')).toBeNull();
 		},
 	);
 
@@ -53,6 +56,7 @@ describe('RefreshButton action and recovery', () => {
 		await fireEvent.click(button);
 		await waitFor(() => expect(button).toBeEnabled());
 		expect(button).toHaveAttribute('aria-label', 'Refresh failed; try again');
+		expect(button.querySelector('[data-motion="refresh-busy"]')).toBeNull();
 		expect(screen.getByRole('status')).toHaveTextContent('Refresh failed; try again');
 		await fireEvent.click(button);
 		await waitFor(() => expect(mocks.invalidateAll).toHaveBeenCalledTimes(2));
