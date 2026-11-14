@@ -1,4 +1,7 @@
-"""One provider-day emergency snapshot. Production invocations require owner approval."""
+"""One provider-day emergency snapshot. Production invocations require owner approval.
+
+Exit 75 means cancellation was unconfirmed and the process performed a fail-stop.
+"""
 
 from __future__ import annotations
 
@@ -63,6 +66,17 @@ def sync_file(stream: Any) -> None:
     os.fsync(stream.fileno())
 
 
+def sync_directory(path: Path) -> None:
+    if os.name == "nt":
+        # NTFS journals metadata; directory fsync is unsupported. Production runs on Linux.
+        return
+    descriptor = os.open(path, os.O_RDONLY | cast(Any, os).O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def quarantine(folder: Path, entries: list[Path]) -> Path:
     root = folder.resolve()
     if any(path.is_symlink() or path.resolve().parent != root for path in entries):
@@ -71,8 +85,12 @@ def quarantine(folder: Path, entries: list[Path]) -> Path:
         "quarantine-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid4().hex[:8]
     )
     archive.mkdir()
+    sync_directory(root)
+    sync_directory(archive)
     for path in entries:
         path.rename(archive / path.name)
+        sync_directory(root)
+        sync_directory(archive)
     return archive
 
 
@@ -84,6 +102,7 @@ def finish_file(partial: Path, target: Path) -> None:
         quarantine(target.parent, [partial])
     else:
         partial.rename(target)  # The invocation's kernel lock excludes competing writers.
+        sync_directory(target.parent)
 
 
 @contextmanager
@@ -513,12 +532,11 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
         terminator.close()
         raise ValueError("backend_identity_unavailable")
     phase_end = deadline if deadline is not None else time.monotonic() + args.db_phase_s
-    cancel_lock, exit_lock = threading.Lock(), threading.Lock()  # Worker-only locks.
+    cancel_lock = threading.Lock()  # Never acquired by the main thread.
 
     def fail_stop() -> None:
-        if not confirmed[0] and exit_lock.acquire(blocking=False):
-            os.write(2, b"rescue: cancellation unconfirmed, fail-stop\n")
-            os._exit(1)
+        if not confirmed[0]:
+            os._exit(75)  # No I/O or lock can delay the diagnostic exit.
 
     def cancel() -> None:
         with cancel_lock:
@@ -807,7 +825,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         with process_lock():
+            missing = [path for path in (folder, *folder.parents) if not path.exists()]
             folder.mkdir(parents=True, exist_ok=True)
+            for created in reversed(missing):
+                sync_directory(created.parent)
+            sync_directory(folder)
             phase, reused, archive = "spool", False, None
             if not args.inventory:
                 try:

@@ -581,10 +581,17 @@ def test_rescue_stream_checks_persistent_failure_before_reading_more_bytes():
 
 
 @pytest.mark.parametrize(
-    "cancel_fails,terminate_fails", [(False, False), (True, False), (True, True)]
+    "cancel_fails,terminate_fails,stderr_mode",
+    [
+        (False, False, "ok"),
+        (True, False, "ok"),
+        (True, True, "ok"),
+        (True, True, "error"),
+        (True, True, "blocked"),
+    ],
 )
 def test_missed_cancel_releases_without_export_driver_lock(
-    tmp_path, monkeypatch, capfd, cancel_fails, terminate_fails
+    tmp_path, monkeypatch, capfd, cancel_fails, terminate_fails, stderr_mode
 ):
     queued, released, done = (threading.Event() for _ in range(3))
     lock, methods, targets = threading.Lock(), [], []
@@ -641,6 +648,20 @@ def test_missed_cancel_releases_without_export_driver_lock(
         source.closed = True
         released.set()
 
+    stderr_calls, release_stderr = [], threading.Event()
+    write = os.write
+
+    def stderr(fd, data):
+        if fd != 2:
+            return write(fd, data)
+        stderr_calls.append(True)
+        if stderr_mode == "error":
+            raise OSError("closed stderr")
+        if stderr_mode == "blocked":
+            release_stderr.wait(20)
+        return len(data)
+
+    monkeypatch.setattr(os, "write", stderr)
     monkeypatch.setattr(os, "_exit", exit_process)
 
     def run():
@@ -667,14 +688,14 @@ def test_missed_cancel_releases_without_export_driver_lock(
             2 if terminate_fails else 1
         )
     finally:
+        release_stderr.set()
         released.set()
         worker.join(3)
     assert done.is_set() and errors == ["stopped"]
     assert rescue.time.monotonic() - started < 15
-    assert exits == ([1] if terminate_fails else [])
-    assert capfd.readouterr().err == (
-        "rescue: cancellation unconfirmed, fail-stop\n" if terminate_fails else ""
-    )
+    assert exits == ([75] if terminate_fails else [])
+    assert stderr_calls == []
+    assert capfd.readouterr().err == ""
     if terminate_fails:
         assert source.closed
 
@@ -1029,3 +1050,78 @@ sys.exit(r.main(sys.argv[3:]))"""
         if process.poll() is None:
             process.kill()
         process.wait(timeout=5)
+
+
+def test_directory_sync_publication_order_and_posix_failure(tmp_path, monkeypatch):
+    import stat
+
+    events, directory_fds = [], {}
+    rename, fsync = Path.rename, os.fsync
+    directory_flag = getattr(os, "O_DIRECTORY", 0x10000)
+
+    def open_directory(path, flags):
+        assert flags == os.O_RDONLY | directory_flag
+        descriptor = os.open(path, flags) if os.name != "nt" else -100
+        if descriptor >= 0:
+            assert stat.S_ISDIR(os.fstat(descriptor).st_mode)
+        directory_fds[descriptor] = Path(path)
+        return descriptor
+
+    def sync(descriptor):
+        if descriptor in directory_fds:
+            events.append(("sync", directory_fds[descriptor]))
+        else:
+            events.append(("file", None))
+        if descriptor >= 0:
+            fsync(descriptor)
+
+    def close(descriptor):
+        directory_fds.pop(descriptor)
+        if descriptor >= 0:
+            os.close(descriptor)
+
+    def move(path, target):
+        events.append(("rename", Path(target)))
+        return rename(path, target)
+
+    proxy = SimpleNamespace(**vars(os))
+    proxy.name, proxy.O_DIRECTORY = "posix", directory_flag
+    proxy.open, proxy.fsync, proxy.close = open_directory, sync, close
+    monkeypatch.setattr(rescue, "os", proxy)
+    monkeypatch.setattr(Path, "rename", move)
+    for name in ("raw.csv", "export.json", "checkpoint.json", "receipt.json"):
+        events.clear()
+        if name == "raw.csv":
+            partial = tmp_path / "raw.csv.partial"
+            with partial.open("xb") as output:
+                output.write(b"csv")
+                rescue.sync_file(output)
+            rescue.finish_file(partial, tmp_path / name)
+        else:
+            rescue.write_record(tmp_path, name, {"data": "verified"})
+        assert events == [("file", None), ("rename", tmp_path / name), ("sync", tmp_path)]
+    events.clear()
+    archive = rescue.quarantine(tmp_path, [tmp_path / "raw.csv", tmp_path / "export.json"])
+    assert events == [
+        ("sync", tmp_path),
+        ("sync", archive),
+        ("rename", archive / "raw.csv"),
+        ("sync", tmp_path),
+        ("sync", archive),
+        ("rename", archive / "export.json"),
+        ("sync", tmp_path),
+        ("sync", archive),
+    ]
+
+    def denied(descriptor):
+        raise OSError("directory fsync failed")
+
+    proxy.fsync = denied
+    partial = tmp_path / "failure.partial"
+    partial.write_bytes(b"retained")
+    with pytest.raises(OSError, match="directory fsync failed"):
+        rescue.finish_file(partial, tmp_path / "failure")
+    assert (tmp_path / "failure").read_bytes() == b"retained"
+    assert not directory_fds
+    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("fsync failure reached Postgres"))
+    assert rescue.main(command_for(args(tmp_path))) == 1
