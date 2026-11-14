@@ -34,6 +34,28 @@ _CLOCK_CALLS = re.compile(
     r'(?P<name>"?(?:' + "|".join(_CLOCK_FUNCTIONS) + r')"?)(?![\w$])\s*\(',
     re.IGNORECASE,
 )
+_SQL_TOKEN = re.compile(
+    r"\s+|--[^\n]*|(?P<tag>\$(?:[A-Za-z_]\w*)?\$)(?P<body>.*?)(?P=tag)"
+    r"|'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"|::|[\w$]+|[^\s]",
+    re.DOTALL,
+)
+_SPECIAL_VALUE = r"'\s*(?:now|today|tomorrow|yesterday)\s*'"
+_TIME_TYPE = (
+    r'(?<![\w$])(?:"?pg_catalog"?\s*\.\s*)?"?(?:date|timestamp|timestamptz|timetz|time)"?'
+    r"(?:\s*\(\s*\d+\s*\))?(?:\s+(?:with|without)\s+time\s+zone)?(?![\w$])"
+)
+_LITERAL_CAST = re.compile(
+    rf"{_SPECIAL_VALUE}\s*::\s*{_TIME_TYPE}|{_TIME_TYPE}\s*{_SPECIAL_VALUE}"
+    rf"|CAST\s*\(\s*{_SPECIAL_VALUE}\s+AS\s+{_TIME_TYPE}\s*\)",
+    re.IGNORECASE,
+)
+_SQL_IDENT = r'"(?:""|[^"])+"|[\w$]+'
+_DDL_TARGET = re.compile(
+    r"^(?:CREATE(?: OR REPLACE)?|ALTER) (?:UNLOGGED |TEMPORARY |TEMP )?"
+    r"(?P<kind>MATERIALIZED VIEW|TABLE|VIEW|FUNCTION|PROCEDURE|DOMAIN) (?:ONLY |IF NOT EXISTS )?"
+    rf"(?P<name>(?:{_SQL_IDENT})(?:\s*\.\s*(?:{_SQL_IDENT}))?)",
+    re.IGNORECASE,
+)
 _CLOCK_OBJECTS_SQL = """
 WITH objects AS (
     SELECT n.nspname AS schema, format('%I.%I', n.nspname, c.relname) AS name,
@@ -90,6 +112,70 @@ class UnpinnableClockError(RuntimeError):
         super().__init__("Unpinnable clock in:\n" + "\n".join(f"{n}: {e}" for n, e in details))
 
 
+def _sql_tokens(sql: str) -> Iterator[str]:
+    position = 0
+    while position < len(sql):
+        if sql.startswith("/*", position):
+            depth, position = 1, position + 2
+            while depth:
+                marker = re.search(r"/\*|\*/", sql[position:])
+                if marker is None:
+                    raise ValueError("Unterminated SQL comment")
+                depth += 1 if marker[0] == "/*" else -1
+                position += marker.end()
+            continue
+        match = _SQL_TOKEN.match(sql, position)
+        assert match is not None
+        position = match.end()
+        if not match[0].isspace() and not match[0].startswith("--"):
+            yield match[0]
+
+
+def _literal_source(sql: str, *, expand: bool = False) -> str:
+    parts = []
+    for token in _sql_tokens(sql):
+        match = _SQL_TOKEN.fullmatch(token)
+        assert match is not None
+        if match["body"] is not None:
+            parts.append(_literal_source(match["body"], expand=True) if expand else "''")
+        else:
+            special = re.fullmatch(_SPECIAL_VALUE, token, re.IGNORECASE)
+            parts.append("''" if token.startswith("'") and not special else token)
+    return " ".join(parts)
+
+
+def assert_ddl_clock_pinned(statement: str) -> None:
+    tokens: list[str] = []
+    expressions: list[tuple[str, str]] = []
+    for token in _sql_tokens(statement + ";"):
+        if token != ";":
+            tokens.append(token)
+            continue
+        source, tokens = " ".join(tokens), []
+        target = _DDL_TARGET.match(source)
+        expand = bool(target and target["kind"].upper() in {"FUNCTION", "PROCEDURE"})
+        casts = tuple(_LITERAL_CAST.finditer(_literal_source(source, expand=expand)))
+        if casts:
+            name = re.sub(r"\s*\.\s*", ".", target["name"]) if target else "migration.statement"
+            name = ".".join(str(_identifier(p[0])) for p in re.finditer(_SQL_IDENT, name))
+            expressions.extend((name, cast[0]) for cast in casts)
+    if expressions:
+        raise UnpinnableClockError(tuple(n for n, _ in expressions), expressions=tuple(expressions))
+
+
+@contextmanager
+def _guard_sql(engine: Engine) -> Iterator[None]:
+    def check(connection: Connection, _cursor: object, statement: str, *_unused: object) -> None:
+        if connection.engine.url == engine.url:
+            assert_ddl_clock_pinned(statement)
+
+    event.listen(Engine, "before_cursor_execute", check)
+    try:
+        yield
+    finally:
+        event.remove(Engine, "before_cursor_execute", check)
+
+
 def _identifier(value: str | None) -> str | None:
     if value is None:
         return None
@@ -130,6 +216,7 @@ def assert_clock_pinned(connection: Connection) -> None:
         or bound.search(expression or "")
         or _CLOCK_KEYWORDS.search(source)
         or _has_unpinned_call(source)
+        or _LITERAL_CAST.search(_literal_source(source, expand=True))
     )
     if expressions:
         raise UnpinnableClockError(tuple(n for n, _ in expressions), expressions=expressions)
@@ -234,9 +321,10 @@ def oracle_database(
         with admin.connect() as connection:
             connection.exec_driver_sql(f"CREATE DATABASE {database} TEMPLATE template0")
             created = True
-        _initialize(engine, database, admin, clock)
-        _pin_connections(engine, clock)
-        yield engine
+        with _guard_sql(engine):
+            _initialize(engine, database, admin, clock)
+            _pin_connections(engine, clock)
+            yield engine
     finally:
         try:
             engine.dispose()

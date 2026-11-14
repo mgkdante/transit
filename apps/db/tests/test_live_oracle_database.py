@@ -17,6 +17,7 @@ from transit_ops.live.oracle.database import (
     PinnedClock,
     UnpinnableClockError,
     assert_clock_pinned,
+    assert_ddl_clock_pinned,
     oracle_database,
 )
 
@@ -407,7 +408,37 @@ def test_a_pinned_view_passes(guard_oracle, clock):
         assert value(conn, "SELECT at FROM gold.oracle_pinned") == clock.instant
 
 
-def test_guard_failure_before_yield_drops_the_database(real_db_engine, clock, monkeypatch):
+@pytest.mark.parametrize("literal", ["now", "today", "tomorrow", "yesterday"])
+@pytest.mark.parametrize("form", ["'{0}'::date", "TIMESTAMP '{0}'", "CAST('{0}' AS timestamptz)"])
+def test_special_literals_are_refused_before_parsing(literal, form):
+    expression = form.format(literal).replace("::", "/*outer/*inner*/end*/::")
+    with pytest.raises(UnpinnableClockError) as caught:
+        assert_ddl_clock_pinned(f"SELECT 1; CREATE VIEW gold.oracle_probe AS SELECT {expression}")
+    assert caught.value.objects == ("gold.oracle_probe",)
+    assert literal in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "expression",
+    ["'now'::text", "DATE '2025-01-01'", "now()", "$$TIMESTAMP 'now'$$", "1 /* 'today'::date */"],
+)
+def test_fixed_literals_and_pinned_calls_pass_ddl_admission(expression):
+    assert_ddl_clock_pinned(f"CREATE VIEW gold.oracle_probe AS SELECT {expression}")
+
+
+def test_function_body_literal_is_checked_before_parsing():
+    sql = "CREATE FUNCTION gold.oracle_probe() RETURNS date LANGUAGE sql AS $$SELECT DATE 'today'$$"
+    with pytest.raises(UnpinnableClockError):
+        assert_ddl_clock_pinned(sql)
+
+
+@pytest.mark.parametrize(
+    "expression",
+    ["CURRENT_DATE", "'now'::date", "'today'::date", "'tomorrow'::date", "'yesterday'::date"],
+)
+def test_guard_failure_before_yield_drops_the_database(
+    real_db_engine, clock, monkeypatch, expression
+):
     upgrade, names = command.upgrade, []
 
     def introduce_unpinnable_view(config, revision):
@@ -416,7 +447,7 @@ def test_guard_failure_before_yield_drops_the_database(real_db_engine, clock, mo
         names.append(engine.url.database)
         try:
             with engine.begin() as conn:
-                conn.exec_driver_sql("CREATE VIEW gold.oracle_probe AS SELECT CURRENT_DATE")
+                conn.exec_driver_sql(f"CREATE VIEW gold.oracle_probe AS SELECT {expression}")
         finally:
             engine.dispose()
 
