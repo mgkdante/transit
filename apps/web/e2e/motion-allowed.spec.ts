@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { PUBLISHED_LOCALES } from '../src/lib/i18n/config';
 import { localizeHref } from '../src/lib/i18n/routing';
 import { navPillCopy } from '../src/lib/i18n/messages';
+import { revealHeaderControls } from './header-controls';
 import { errorPageCopy } from '../src/lib/site/errorPage';
 
 const read = (name: string) =>
@@ -127,6 +128,7 @@ for (const locale of PUBLISHED_LOCALES) {
 			await page.goto(localizeHref('/', locale, provider));
 			await page.waitForLoadState('networkidle');
 			await expectIdle(page);
+			await revealHeaderControls(page, locale);
 			let release!: () => void;
 			const held = new Promise<void>((resolve) => {
 				release = resolve;

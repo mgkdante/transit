@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 
 import { SECURITY_HEADERS } from '@yesid/seo-kit/headers';
 import { navPillCopy } from '../src/lib/i18n/messages';
+import { revealHeaderControls } from './header-controls';
 import { AUDIT_NAV, SURFACE_NAV } from '../src/lib/content/nav';
 import { DEFAULT_LOCALE, PUBLISHED_LOCALES, type Locale } from '../src/lib/i18n/config';
 
@@ -88,12 +89,10 @@ for (const colorScheme of ['dark', 'light'] as const) {
 		await page.goto(localized(destinations[0]!.href, DEFAULT_LOCALE));
 		const html = page.locator('html');
 		await expect(html).toHaveAttribute('data-theme', 'dark');
+		await revealHeaderControls(page, DEFAULT_LOCALE);
 		const toggle = page.getByRole('switch', { name: navPillCopy[DEFAULT_LOCALE].theme });
-		// Server markup shows the control before hydration wires it; retry until it responds.
-		await expect(async () => {
-			if ((await html.getAttribute('data-theme')) !== 'light') await toggle.click();
-			await expect(html).toHaveAttribute('data-theme', 'light', { timeout: 1000 });
-		}).toPass();
+		await toggle.click();
+		await expect(html).toHaveAttribute('data-theme', 'light');
 		await page.route('**/_app/**/*.js', (route) => route.abort());
 		await page.reload();
 		await expect(html).toHaveAttribute('data-theme', 'light');
