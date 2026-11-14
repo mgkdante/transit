@@ -4,15 +4,21 @@ import json
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, fields
-from datetime import date, datetime
-from typing import cast, get_args
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING, cast, get_args
 
 from sqlalchemy import Connection, event, text
 from sqlalchemy.engine import ExceptionContext
 
 from transit_ops.history import ledger
 from transit_ops.history.ledger import ArchiveCopy, EventKind, WindowState, WorkingState
-from transit_ops.history.ledger_store import NewCopy, RecordedEvent, WindowIdentity, WindowSession
+from transit_ops.history.ledger_store import (
+    LedgerStore,
+    NewCopy,
+    RecordedEvent,
+    WindowIdentity,
+    WindowSession,
+)
 
 _WINDOW = """dataset_id=:dataset_id AND provider_id=:provider_id
              AND revision=:revision AND window_key=:window_key"""
@@ -65,6 +71,21 @@ class PostgresLedger:
             revision=revision,
         )
 
+    def events(
+        self, identity: WindowIdentity, *, kinds: Collection[str] | None = None
+    ) -> list[RecordedEvent]:
+        rows = self.connection.execute(
+            text("""
+            SELECT event_id AS sequence, kind, content_version, reason, details, actor, at_utc
+            FROM core.history_event
+            WHERE dataset_id=:dataset_id AND provider_id=:provider_id
+              AND revision=:revision AND window_key=:window_key
+              AND (:all_kinds OR kind = ANY(:kinds)) ORDER BY event_id
+            """),
+            {**asdict(identity), "all_kinds": kinds is None, "kinds": list(kinds or ())},
+        ).mappings()
+        return [RecordedEvent(**{**row, "at_utc": row["at_utc"].astimezone(UTC)}) for row in rows]
+
 
 class _Session:
     def __init__(self, connection: Connection, identity: WindowIdentity) -> None:
@@ -83,7 +104,7 @@ class _Session:
     def now(self) -> datetime:
         return cast(
             datetime, self.connection.execute(text("SELECT clock_timestamp()")).scalar_one()
-        )
+        ).astimezone(UTC)
 
     def mark_changed(self, *, actor: str | None = None) -> None:
         ledger.lock_window(self.connection, **asdict(self.identity), actor=actor)
@@ -135,16 +156,7 @@ class _Session:
         )
 
     def events(self, *, kinds: Collection[str] | None = None) -> list[RecordedEvent]:
-        rows = self.connection.execute(
-            text("""
-            SELECT kind, content_version, reason, details, actor, at_utc FROM core.history_event
-            WHERE dataset_id=:dataset_id AND provider_id=:provider_id
-              AND revision=:revision AND window_key=:window_key
-              AND (:all_kinds OR kind = ANY(:kinds)) ORDER BY event_id
-            """),
-            {**asdict(self.identity), "all_kinds": kinds is None, "kinds": list(kinds or ())},
-        ).mappings()
-        return [RecordedEvent(**row) for row in rows]
+        return PostgresLedger(self.connection).events(self.identity, kinds=kinds)
 
     def processing_events(self) -> list[RecordedEvent]:
         return self.events(kinds={"processing_evidence"})
@@ -256,3 +268,7 @@ class _Session:
             identity = {**asdict(self.identity), "content_version": values["content_version"]}
             verb = "make copy current" if action == "make current" else f"{action} copy"
             raise RuntimeError(f"could not {verb} {identity}")
+
+
+if TYPE_CHECKING:
+    _ledger_store_contract: LedgerStore = cast(PostgresLedger, None)

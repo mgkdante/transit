@@ -7,7 +7,9 @@ exit. PostgreSQL holds the window lock and never raises WindowChanged; R2 may
 raise it at exit, requiring the caller to decide again. Values are validated
 before any write with today's ValueError and WindowNotFound errors.
 State changes persist even with no public audit records; events() stays empty.
-Read-only sessions write nothing.
+Read-only sessions write nothing. Events may exist without any window state.
+Store event reads take no window lock; session reads still see their own writes.
+Event sequences identify records and increase within each window.
 """
 
 from collections.abc import Collection, Mapping
@@ -49,6 +51,7 @@ class NewCopy:
 
 @dataclass(frozen=True)
 class RecordedEvent:
+    sequence: int
     kind: EventKind
     content_version: int | None
     reason: str | None
@@ -95,6 +98,9 @@ class WindowSession(Protocol):
 
 
 class LedgerStore(Protocol):
+    def events(
+        self, identity: WindowIdentity, *, kinds: Collection[str] | None = None
+    ) -> list[RecordedEvent]: ...
     def session(self, identity: WindowIdentity) -> AbstractContextManager[WindowSession]: ...
     def window_state(self, identity: WindowIdentity) -> WindowState | None: ...
     def find_copies(
