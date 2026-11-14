@@ -9,8 +9,8 @@ from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
-from psycopg import Connection
-from sqlalchemy import Engine, create_engine, event
+from psycopg import Connection as DriverConnection
+from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
@@ -19,6 +19,88 @@ from transit_ops.ingestion.common import project_root
 
 CLOCK_SCHEMA = "transit_oracle_clock"
 CLOCK_SETTING = "transit_oracle.now"
+_CLOCK_FUNCTIONS = (
+    "now",
+    "clock_timestamp",
+    "statement_timestamp",
+    "transaction_timestamp",
+    "timeofday",
+)
+_CLOCK_KEYWORDS = re.compile(
+    r"\b(current_date|current_time|current_timestamp|localtime|localtimestamp)\b", re.IGNORECASE
+)
+_CLOCK_OBJECTS_SQL = """
+WITH objects AS (
+    SELECT n.nspname AS schema, format('%I.%I', n.nspname, c.relname) AS name,
+           'pg_rewrite'::regclass AS classid, r.oid AS objid,
+           r.ev_action::text AS expression, pg_get_viewdef(c.oid) AS source, false AS own_path
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_rewrite r ON r.ev_class = c.oid AND r.rulename = '_RETURN'
+    WHERE c.relkind IN ('v', 'm')
+    UNION ALL
+    SELECT n.nspname, format('%I.%I.%I', n.nspname, c.relname, a.attname),
+           'pg_attrdef'::regclass, d.oid, d.adbin::text, pg_get_expr(d.adbin, d.adrelid), false
+    FROM pg_attrdef d JOIN pg_class c ON c.oid = d.adrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.adnum
+    UNION ALL
+    SELECT n.nspname, format('%I.%I', n.nspname, p.proname), 'pg_proc'::regclass, p.oid,
+           p.prosqlbody::text,
+           CASE WHEN l.lanname IN ('sql', 'plpgsql')
+                THEN COALESCE(NULLIF(p.prosrc, ''), pg_get_functiondef(p.oid)) ELSE '' END,
+           EXISTS (SELECT FROM unnest(p.proconfig) setting WHERE setting LIKE 'search_path=%')
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    JOIN pg_language l ON l.oid = p.prolang WHERE p.prokind = 'f'
+)
+SELECT o.name, o.expression, o.source, o.own_path, EXISTS (
+    SELECT FROM pg_depend d JOIN pg_proc p ON p.oid = d.refobjid
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE d.classid = o.classid AND d.objid = o.objid AND d.refclassid = 'pg_proc'::regclass
+      AND n.nspname = 'pg_catalog' AND p.proname = ANY(:functions)
+) AS catalog_dependency
+FROM objects o WHERE o.schema = ANY(:schemas)
+"""
+
+
+class UnpinnableClockError(RuntimeError):
+    objects: tuple[str, ...]
+
+    def __init__(self, objects: tuple[str, ...]) -> None:
+        self.objects = tuple(sorted(set(objects)))
+        super().__init__("Unpinnable clock in: " + ", ".join(self.objects))
+
+
+def assert_clock_pinned(connection: Connection) -> None:
+    params = {
+        "functions": list(_CLOCK_FUNCTIONS),
+        "schemas": ["core", "gold", "silver", "raw", "ops"],
+    }
+    ids = connection.execute(
+        text("""
+        SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'pg_catalog' AND p.proname = ANY(:functions)
+    """),
+        params,
+    ).scalars()
+    # Dependencies on pinned built-ins are omitted; stored trees retain bound function OIDs.
+    bound = re.compile(r":funcid (?:" + "|".join(str(oid) for oid in ids) + r")\b")
+    catalog_call = re.compile(
+        r'\b"?pg_catalog"?\s*\.\s*"?(?:' + "|".join(_CLOCK_FUNCTIONS) + r')"?\s*\(',
+        re.IGNORECASE,
+    )
+    objects = tuple(
+        str(name)
+        for name, expression, source, own_path, dependency in connection.execute(
+            text(_CLOCK_OBJECTS_SQL), params
+        )
+        if own_path
+        or dependency
+        or bound.search(expression or "")
+        or _CLOCK_KEYWORDS.search(source)
+        or catalog_call.search(source)
+    )
+    if objects:
+        raise UnpinnableClockError(objects)
 
 
 class OracleDatabaseRefused(RuntimeError):
@@ -68,7 +150,7 @@ def _initialize(engine: Engine, database: str, admin: Engine, clock: PinnedClock
 
 def _pin_connections(engine: Engine, clock: PinnedClock) -> None:
     @event.listens_for(engine, "connect")
-    def configure(connection: Connection[tuple[object, ...]], _record: object) -> None:
+    def configure(connection: DriverConnection[tuple[object, ...]], _record: object) -> None:
         with connection.cursor() as cursor:
             cursor.execute(f"SET search_path = {CLOCK_SCHEMA}, pg_catalog, public")
             cursor.execute(
@@ -80,6 +162,9 @@ def _pin_connections(engine: Engine, clock: PinnedClock) -> None:
             if zone is None or zone[0] != "UTC":
                 raise OracleDatabaseRefused("Oracle database TimeZone must be UTC")
         connection.commit()
+
+    with engine.connect() as connection:
+        assert_clock_pinned(connection)
 
 
 @contextmanager
