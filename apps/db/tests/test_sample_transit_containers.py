@@ -277,6 +277,37 @@ def popen(args, **kwargs):
     children.append(child)
     return child
 sampler.subprocess.Popen = popen
+if phase.startswith('summary'):
+    active, fired = [], [False]
+    enter, describe = sampler.Control.__enter__, sampler.describe
+    emit, fsync = sampler.Jsonl.__call__, os.fsync
+    writing = [False]
+    def entered(self):
+        active.append(self)
+        return enter(self)
+    sampler.Control.__enter__ = entered
+    def cancel():
+        if not fired[0]:
+            fired[0] = True
+            (folder/'ready').write_text('0')
+            while not active[0].signal: time.sleep(.01)
+    def prepare(values):
+        if phase == 'summary_prepare': cancel()
+        return describe(values)
+    def output(self, row):
+        writing[0] = row['kind'] == 'summary'
+        try: return emit(self, row)
+        finally: writing[0] = False
+    def sync(fd):
+        if writing[0] and phase in ('summary_write','summary_write_cap'): cancel()
+        return fsync(fd)
+    sampler.describe, sampler.Jsonl.__call__, sampler.os.fsync = prepare, output, sync
+    if phase == 'summary_exit':
+        exit = sampler.Control.__exit__
+        def exiting(self, *args):
+            cancel()
+            return exit(self, *args)
+        sampler.Control.__exit__ = exiting
 if phase == 'sleep':
     original = sampler.Control.sleep
     def sleep(self, seconds):
@@ -288,7 +319,9 @@ if os.name == 'nt':
         while not (folder/'trigger').exists(): time.sleep(.01)
         signal.raise_signal(signum)
     threading.Thread(target=deliver, daemon=True).start()
-sys.argv = ['sampler','--duration-seconds','30','--output',str(folder/'samples.jsonl')]
+duration = '.2' if phase.startswith('summary') else '30'
+sys.argv = ['sampler','--duration-seconds',duration,'--output',str(folder/'samples.jsonl')]
+if phase.endswith('_cap'): sys.argv += ['--max-output-bytes','128']
 status = sampler.main()
 reaped = all(p.returncode is not None for p in children)
 if os.name != 'nt':
@@ -300,8 +333,27 @@ sys.exit(status)
 """
 
 
+def assert_terminal(path, signum):
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert rows[-1]["kind"] == "summary" and rows[-1]["interrupted"]
+    assert rows[-1]["outcome"] == 128 + int(signum)
+    assert sum(row["kind"] == "summary" for row in rows) == 1
+
+
 @pytest.mark.parametrize("signum", (signal.SIGTERM, signal.SIGINT))
-@pytest.mark.parametrize("phase", ("ps", "inspect", "stats", "sleep"))
+@pytest.mark.parametrize(
+    "phase",
+    (
+        "ps",
+        "inspect",
+        "stats",
+        "sleep",
+        "summary_prepare",
+        "summary_write",
+        "summary_write_cap",
+        "summary_exit",
+    ),
+)
 def test_sample_cli_returns_interrupt_status(tmp_path, signum, phase):
     fake = "import os,signal,sys,time;from pathlib import Path\n"
     fake += "if os.name!='nt': signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
@@ -338,10 +390,11 @@ def test_sample_cli_returns_interrupt_status(tmp_path, signum, phase):
         assert proc.returncode == 128 + int(signum)
         proof = json.loads((tmp_path / "proof").read_text())
         assert proof["reaped"]
-        if os.name != "nt" and phase != "sleep":
+        if os.name != "nt" and phase in ("ps", "inspect", "stats"):
             assert -signal.SIGKILL in proof["codes"]
-        rows = [json.loads(line) for line in (tmp_path / "samples.jsonl").read_text().splitlines()]
-        assert rows[-1]["kind"] == "summary" and rows[-1]["interrupted"]
+        assert_terminal(tmp_path / "samples.jsonl", signum)
+        if phase.endswith("_cap"):
+            assert (tmp_path / "samples.jsonl").stat().st_size <= 128
     finally:
         if not (tmp_path / "proof").exists() and (tmp_path / "ready").exists():
             if pid := int((tmp_path / "ready").read_text()):

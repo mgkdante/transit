@@ -47,6 +47,8 @@ class Jsonl:
             raise ValueError("output limit must be between 128 and 67108864 bytes")
         self.out, self.limit, self.used, self.truncated = out, limit, 0, False
         self.finished = False
+        self.corrected = False
+        self.summary_start = 0
 
     def append(self, row: dict[str, Any]) -> None:
         data = (json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
@@ -57,7 +59,12 @@ class Jsonl:
 
     def __call__(self, row: dict[str, Any]) -> None:
         if self.finished:
-            raise OutputLimit
+            # Permit one in-place cancellation correction, never a second terminal record.
+            if self.corrected or row["kind"] != "summary" or row.get("interrupted") is not True:
+                raise OutputLimit
+            self.out.seek(self.summary_start)
+            self.out.truncate()
+            self.used, self.finished, self.corrected = self.summary_start, False, True
         size = len((json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8"))
         summary = row["kind"] == "summary"
         if self.used + size > self.limit - (0 if summary else 128):
@@ -66,7 +73,14 @@ class Jsonl:
                 self.truncated = True
             if not summary:
                 raise OutputLimit
-            row = dict(kind="summary", truncated=True)
+            row = dict(
+                kind="summary",
+                truncated=True,
+                interrupted=row.get("interrupted", False),
+                outcome=row["outcome"] if row.get("interrupted") else 2,
+            )
+        if summary:
+            self.summary_start = self.used
         self.append(row)
         self.finished = summary
 
@@ -81,7 +95,7 @@ class Control:
         self.previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
         for s in self.previous:
             # Never unwind Popen construction; polling owns cancellation and reaping.
-            signal.signal(s, lambda number, frame: setattr(self, "signal", number))
+            signal.signal(s, lambda number, frame: setattr(self, "signal", self.signal or number))
         return self
 
     def __exit__(self, *args: Any) -> None:
@@ -285,7 +299,21 @@ def sample(
         except OutputLimit:
             status = 2
         finally:
-            finish(history, duration, interval, emit, clock() - started, status)
+            terminal = finish(history, duration, interval, emit, clock() - started, status, control)
+            status = reconcile(control, emit, terminal, status)
+    if control.signal and terminal["outcome"] != 128 + control.signal:
+        with control:
+            status = reconcile(control, emit, terminal, status)
+    return 128 + control.signal if control.signal else status
+
+
+def reconcile(
+    control: Control, emit: Callable[[dict[str, Any]], None], terminal: dict[str, Any], status: int
+) -> int:
+    status = 128 + control.signal if control.signal else status
+    if terminal["outcome"] != status:
+        terminal.update(outcome=status, interrupted=True)
+        emit(terminal)
     return status
 
 
@@ -296,23 +324,25 @@ def finish(
     emit: Callable[[dict[str, Any]], None],
     elapsed: float,
     status: int,
-) -> None:
+    control: Control,
+) -> dict[str, Any]:
     for summary in history.values():
         summary["metrics"] = {k: describe(v) for k, v in summary.pop("values").items()}
         summary["sample_fraction"] = summary["samples"] / math.ceil(duration / interval)
-    emit(
-        {
-            "kind": "summary",
-            "elapsed_seconds": elapsed,
-            "interrupted": status >= 128,
-            "outcome": status,
-            "services": history,
-            "expected_samples": math.ceil(duration / interval),
-            "percentiles": "nearest rank",
-            "memory_source": "docker stats MemUsage; not RSS",
-            "units": "rounded Docker byte counters, CPU percent (may exceed 100), PID count",
-        }
-    )
+    status = 128 + control.signal if control.signal else status
+    terminal = {
+        "kind": "summary",
+        "elapsed_seconds": elapsed,
+        "interrupted": status >= 128,
+        "outcome": status,
+        "services": history,
+        "expected_samples": math.ceil(duration / interval),
+        "percentiles": "nearest rank",
+        "memory_source": "docker stats MemUsage; not RSS",
+        "units": "rounded Docker byte counters, CPU percent (may exceed 100), PID count",
+    }
+    emit(terminal)
+    return terminal
 
 
 def record(
