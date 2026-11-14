@@ -20,8 +20,9 @@ def sample_metrics(word):
             id=id,
             series="sample",
             name=word,
-            plain=word,
-            exact=word,
+            plain=Bilingual(en="Plain", fr="Simple"),
+            exact=Bilingual(en="Exact", fr="Exacte"),
+            limits=(Bilingual(en="Metric limit", fr="Limite de métrique"),),
             unit="percent",
             arithmetic=(arithmetic,),
             pair_with=pair,
@@ -65,8 +66,8 @@ def entries():
         revision=3,
         unit="readings",
         population_key="counted",
-        population=word,
-        limits=(word,),
+        population=Bilingual(en="Population", fr="Population"),
+        limits=(Bilingual(en="Series limit", fr="Limite de série"),),
         windows=("day",),
         sources=(stop, source),
     )
@@ -82,12 +83,16 @@ def test_a_series_is_keyed_by_id_and_revision():
         registry.series("sample", 4)
 
 
-def test_every_lookup_but_metric_takes_the_revision():
+@pytest.mark.parametrize("locale", ["en", "fr"])
+def test_every_lookup_but_metric_takes_the_revision(locale):
     registry = Registry(*entries())
     assert registry.arithmetic("rate", 3).numerator == "ok"
     assert tuple(s.dimension for s in registry.sources_for("quantile", 3)) == ("line",)
-    assert registry.describe("rate", 3) == "Units\nUnits\nUnits\nUnits"
-    assert registry.describe("rate", 3, "fr") == "Unités\nUnités\nUnités\nUnités"
+    descriptions = {
+        "en": "Plain\nExact\nPopulation\nSeries limit\nMetric limit",
+        "fr": "Simple\nExacte\nPopulation\nLimite de série\nLimite de métrique",
+    }
+    assert registry.describe("rate", 3, locale) == descriptions[locale]
     for lookup in (registry.arithmetic, registry.sources_for, registry.describe):
         for id, revision in (("rate", 4), ("unknown", 3)):
             with pytest.raises(KeyError):
@@ -159,10 +164,16 @@ def test_a_quantile_metric_carries_its_quantile_and_no_other_does(kind, quantile
         Arithmetic(revision=3, kind=kind, quantile=quantile, precision=0)
 
 
-def expected_spec(id, pair=None):
+def with_future_arithmetic(metric, keep_earlier=True):
+    future = metric.arithmetic[0].model_copy(update={"revision": 4, "numerator": "future_operand"})
+    arithmetic = (*metric.arithmetic, future) if keep_earlier else (future,)
+    return metric.model_copy(update={"arithmetic": arithmetic})
+
+
+def expected_spec(id, pair=None, numerator="ok"):
     return MeasureSpec(
         id,
-        "ok",
+        numerator,
         "n",
         "entity",
         (100, 1),
@@ -179,13 +190,23 @@ def expected_spec(id, pair=None):
 
 
 def test_a_nested_pair_is_the_specification_of_that_measure():
-    registry = Registry(*entries())
+    series, metrics = entries()
+    future = series[0].model_copy(update={"revision": 4, "sources": ()})
+    later = tuple(with_future_arithmetic(m) if m.id in ("rate", "average") else m for m in metrics)
+    registry = Registry((*series, future), later)
     assert registry.measure_spec("rate", 3) == expected_spec("rate", expected_spec("average"))
+    assert registry.measure_spec("rate", 4) == expected_spec(
+        "rate", expected_spec("average", numerator="future_operand"), numerator="future_operand"
+    )
+    assert registry.series("sample", 3) == series[0]
+    assert tuple(registry.arithmetic(m.id, 3) for m in metrics) == tuple(
+        m.arithmetic[0] for m in metrics
+    )
     assert registry.measure_spec("share", 3).denominator_from == "network"
     with pytest.raises(ValueError):
         registry.measure_spec("quantile", 3)
     with pytest.raises(KeyError):
-        registry.measure_spec("rate", 4)
+        registry.measure_spec("rate", 5)
 
 
 def test_a_pair_never_borrows_another_revision():
@@ -193,14 +214,7 @@ def test_a_pair_never_borrows_another_revision():
     s = series[0]
     sources = tuple(x.model_copy(update={"metrics": ("rate",)}) for x in s.sources)
     future = s.model_copy(update={"revision": 4, "sources": ()})
-    metrics = tuple(
-        m.model_copy(
-            update={"arithmetic": tuple(a.model_copy(update={"revision": 4}) for a in m.arithmetic)}
-        )
-        if m.id == "average"
-        else m
-        for m in metrics
-    )
+    metrics = tuple(with_future_arithmetic(m, False) if m.id == "average" else m for m in metrics)
     registry = Registry((s.model_copy(update={"sources": sources}), future), metrics)
     assert registry.measure_spec("rate", 3).pair is None
     bad = metrics[0].model_copy(
