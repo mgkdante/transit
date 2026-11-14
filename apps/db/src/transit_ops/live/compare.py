@@ -154,7 +154,7 @@ def compare_publications(
 
 
 def canonical_value(value: object) -> str:
-    """Render supported database values without rounding or filling missing data."""
+    """Render values exactly; decimal tags distinguish them from integers and floats."""
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -166,7 +166,7 @@ def canonical_value(value: object) -> str:
             raise ValueError("Nonfinite floats cannot be compared")
         return repr(value)
     if isinstance(value, Decimal):
-        return format(value, "f")
+        return "decimal:" + format(value, "f")
     if isinstance(value, datetime):
         if value.utcoffset() is None:
             raise ValueError("Timestamps must be timezone-aware")

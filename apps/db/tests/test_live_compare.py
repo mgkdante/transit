@@ -243,9 +243,9 @@ def test_timestamps_compare_as_instants_with_microseconds():
 
 
 def test_decimal_keeps_scale():
-    assert canonical_value(Decimal("120.00")) == "120.00"
+    assert canonical_value(Decimal("120.00")) == "decimal:120.00"
     assert compare_rows("live", [0], [(1, Decimal("120.00"))], [(1, Decimal("120.0"))]) == [
-        Difference("table:live", "row [1]", "[1,120.00]", "[1,120.0]")
+        Difference("table:live", "row [1]", "[1,decimal:120.00]", "[1,decimal:120.0]")
     ]
 
 
@@ -296,3 +296,39 @@ def test_digest_ignores_order_but_not_values():
     assert rows_digest([(1, "a"), (2, "c")]) != expected
     assert rows_digest([(1, "a"), (1, "a")]) != rows_digest([(1, "a")])
     assert rows_digest([]) == hashlib.sha256(b"").hexdigest()
+
+
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        (Decimal("0.1"), 0.1),
+        (Decimal("1"), 1),
+        (Decimal("1.0"), 1.0),
+        (Decimal("-0.0"), -0.0),
+        (Decimal("-7"), -7),
+        (Decimal("12345678901234567890"), 12345678901234567890),
+        (1, 1.0),
+    ],
+)
+def test_numeric_types_remain_distinct_in_values_rows_and_digests(left, right):
+    assert canonical_value(left) != canonical_value(right)
+    assert canonical_row([None, left]) != canonical_row([None, right])
+    assert compare_rows("live", [0], [(None, left)], [(None, right)])
+    assert rows_digest([(None, left)]) != rows_digest([(None, right)])
+
+
+def test_numeric_types_keep_composite_key_groups_separate():
+    expected = [(None, 1, "integer-key"), (None, Decimal("1"), "decimal-key")]
+    actual = [(None, Decimal("1"), "integer-key"), (None, 1, "decimal-key")]
+    assert compare_rows("live", [0, 1], expected, actual) == [
+        Difference(
+            "table:live", "row [null,1]", '[null,1,"integer-key"]', '[null,1,"decimal-key"]'
+        ),
+        Difference(
+            "table:live",
+            "row [null,decimal:1]",
+            '[null,decimal:1,"decimal-key"]',
+            '[null,decimal:1,"integer-key"]',
+        ),
+    ]
+    assert rows_digest(expected) != rows_digest(actual)
