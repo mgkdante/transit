@@ -207,6 +207,8 @@ def read_source(args: Any, folder: Path) -> dict[str, Any]:
             ).fetchone()
             if not provider:
                 raise ValueError("provider_not_declared")
+            context = dict(**identity, timezone=provider[0], snapshot_time=now.isoformat())
+            oracle = family_oracle(conn, context, folder)
             tables = {
                 table: rescue.copy_fact_table(
                     conn,
@@ -220,10 +222,14 @@ def read_source(args: Any, folder: Path) -> dict[str, Any]:
             }
     return dict(
         **identity,
+        family_oracle=oracle,
         timezone=provider[0],
         tables=tables,
         server_version=version,
-        database_read_seconds=time.monotonic() - started,
+        database_read_seconds=time.monotonic()
+        - started
+        - sum(r["seconds"] for r in oracle.values()),
+        oracle_query_seconds=sum(r["seconds"] for r in oracle.values()),
         snapshot_time=now.isoformat(),
     )
 
@@ -242,6 +248,9 @@ def measure(args: Any) -> dict[str, Any]:
                     load_csv(conn, folder, table)
                     report["tables"][table]["codecs"] = codecs(conn, folder, table)
                 report["queries"] = queries(conn)
+                report["family_comparison"] = family_compare(
+                    conn, report.pop("family_oracle"), folder
+                )
             rss, reason = peak_rss()
             report.update(
                 duckdb_version=duckdb.__version__,
@@ -250,7 +259,6 @@ def measure(args: Any) -> dict[str, Any]:
                 memory_basis="Python traced peak excludes native allocations; process lifetime RSS",
                 native_peak_rss_bytes=rss,
                 native_peak_rss_reason=reason,
-                family_comparison="pending_second_change",
             )
             return report
     finally:
@@ -379,11 +387,205 @@ def main(argv: list[str] | None = None, *, worker: bool = False) -> int:
         if not worker:
             return supervise(sys.argv[1:] if argv is None else argv)
         result = measure(args)
-    except Exception:
-        sys.stdout.write(json.dumps(dict(status="failed", reason="measurement_failed")) + "\n")
+    except Exception as error:
+        reason = (
+            "bundled_timezone_unavailable"
+            if str(error) == "bundled_timezone_unavailable"
+            else "measurement_failed"
+        )
+        sys.stdout.write(json.dumps(dict(status="failed", reason=reason)) + "\n")
         return 1
     sys.stdout.write(json.dumps(result, sort_keys=True, default=str) + "\n")
     return 0
+
+
+OCCUPANCY_FIELDS = (
+    "observation_count empty_count many_seats_count few_seats_count standing_count full_count"
+)
+
+
+def family_sql(kind: str) -> str:
+    # Reviewed SELECT copies of rollups._occupancy_upsert and crowding boundary.
+    sample = "provider_id=:p AND captured_at_utc>=:start AND captured_at_utc<:end"
+    prefix = f"WITH v AS (SELECT * FROM gold.{VEHICLE} WHERE {sample}), "
+    prefix += f"t AS (SELECT * FROM gold.{TRIP} WHERE {sample}) "
+    stamp = (
+        "CAST(EXTRACT(EPOCH FROM CAST(:built AS timestamptz))*1000000 AS bigint) AS built_at_utc"
+    )
+    if kind == "crowding":
+        return (
+            prefix
+            + f'''SELECT * FROM (SELECT provider_id AS provider_id,
+          CAST(:day AS date) AS provider_local_date, route_id AS route_id,
+          CASE occupancy_status WHEN 0 THEN 'empty' WHEN 1 THEN 'many_seats'
+          WHEN 2 THEN 'few_seats' WHEN 3 THEN 'standing' WHEN 4 THEN 'standing'
+          WHEN 5 THEN 'full' END AS band, COUNT(*)::integer AS delay_observation_count,
+          SUM(delay_seconds)::numeric(38,0) AS sum_delay_seconds,
+          ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY delay_seconds)::numeric,2)
+            ::numeric(38,2) AS p50_delay_seconds, {stamp}
+          FROM t WHERE route_id IS NOT NULL AND occupancy_status IN (0,1,2,3,4,5)
+          AND delay_seconds IS NOT NULL AND ABS(delay_seconds)<=3600
+          AND captured_at_utc>=timezone(:tz, CAST(:day AS date)::timestamp)
+          AND captured_at_utc<timezone(:tz, (CAST(:day AS date)+INTERVAL '1 day')::timestamp)
+          GROUP BY provider_id, route_id, band) AS result
+          ORDER BY provider_id COLLATE "C",2,route_id COLLATE "C",band COLLATE "C"'''
+        )
+    identity = "stop_id" if kind == "stop" else "COALESCE(route_id,'__unrouted__')"
+    hour = "EXTRACT(HOUR FROM timezone(:tz,captured_at_utc))::smallint"
+    entity = "stop_id" if kind == "stop" else "route_id"
+    keys = (
+        "provider_id AS provider_id, CAST(:day AS date) AS provider_local_date, "
+        f"{identity} AS {entity}"
+    )
+    if kind == "hourly":
+        keys += ", " + hour + " AS hour_of_day_local"
+    bands = ["IN (0,1,2,3,4,5)", "=0", "=1", "=2", "IN (3,4)", "=5"]
+    counts = ", ".join(
+        f"COUNT(*) FILTER (WHERE occupancy_status {b})::integer AS {n}"
+        for b, n in zip(bands, OCCUPANCY_FIELDS.split(), strict=True)
+    )
+    stop = "AND stop_id IS NOT NULL" if kind == "stop" else ""
+    groups = f"provider_id, {identity}" + (", " + hour if kind == "hourly" else "")
+    return (
+        prefix
+        + f'''SELECT * FROM (SELECT {keys}, {counts}, {stamp} FROM v
+        WHERE snapshot_date_key=:key {stop} GROUP BY {groups}) AS result
+        ORDER BY provider_id COLLATE "C",2,{entity} COLLATE "C"'''
+        + (",4" if kind == "hourly" else "")
+    )
+
+
+def family_query(kind: str, params: dict[str, Any], *, local: bool) -> str:
+    query = family_sql(kind)
+    for key in params:
+        query = query.replace(":" + key, "$" + key if local else "%(" + key + ")s")
+    return query.replace("gold.", "").replace('COLLATE "C"', 'COLLATE "binary"') if local else query
+
+
+def execute_family(conn: Any, kind: str, params: dict[str, Any], *, local: bool) -> Any:
+    used = {k: v for k, v in params.items() if ":" + k in family_sql(kind)}
+    return conn.execute(family_query(kind, used, local=local), used)
+
+
+def write_result(cursor: Any, destination: Path) -> dict[str, Any]:
+    from decimal import Decimal
+
+    rows, digest = 0, hashlib.sha256()
+    fields = [column[0] for column in cursor.description]
+    with destination.open("wb") as output:
+        while batch := cursor.fetchmany(1024):
+            for row in batch:
+                values = [format(v.normalize(), "f") if isinstance(v, Decimal) else v for v in row]
+                serialized = json.dumps(
+                    values, default=str, ensure_ascii=False, separators=(",", ":")
+                )
+                encoded = serialized.encode() + b"\n"
+                output.write(encoded)
+                digest.update(encoded)
+                rows += 1
+    return dict(rows=rows, sha256=digest.hexdigest(), fields=fields)
+
+
+def compare(left: Path, right: Path, fields: list[str], *, key_count: int) -> dict[str, Any]:
+    with left.open("rb") as a, right.open("rb") as b:
+        ordinal = 0
+        while True:
+            x, y = a.readline(), b.readline()
+            if x != y:
+                old, new = json.loads(x) if x else [], json.loads(y) if y else []
+                index = next(
+                    (i for i, pair in enumerate(zip(old, new, strict=False)) if pair[0] != pair[1]),
+                    None,
+                )
+                return dict(
+                    status="different",
+                    row=ordinal,
+                    first_field=fields[index] if index is not None else "row_count",
+                    safe_key_sha256=hashlib.sha256(
+                        rescue.encoded((old or new)[:key_count])
+                    ).hexdigest(),
+                )
+            if not x:
+                return dict(status="equal")
+            ordinal += 1
+
+
+def family_oracle(conn: Any, report: dict[str, Any], folder: Path) -> dict[str, Any]:
+    query = f"""SELECT DISTINCT snapshot_local_date FROM gold.{VEHICLE}
+      WHERE provider_id=%s AND captured_at_utc>=%s AND captured_at_utc<%s
+      UNION SELECT DISTINCT timezone(%s,captured_at_utc)::date FROM gold.{TRIP}
+      WHERE provider_id=%s AND captured_at_utc>=%s AND captured_at_utc<%s
+      UNION SELECT DISTINCT timezone(%s,captured_at_utc)::date FROM gold.{VEHICLE}
+      WHERE provider_id=%s AND captured_at_utc>=%s AND captured_at_utc<%s ORDER BY 1"""
+    p, start, end, tz = (report[k] for k in ("provider", "start", "end", "timezone"))
+    days = conn.execute(query, (p, start, end, tz, p, start, end, tz, p, start, end)).fetchall()
+    results = {}
+    for (day,) in days:
+        params = dict(
+            p=p,
+            start=start,
+            end=end,
+            tz=tz,
+            day=day,
+            key=int(day.strftime("%Y%m%d")),
+            built=report["snapshot_time"],
+        )
+        for kind in ("route", "hourly", "stop", "crowding"):
+            name = f"{day}-{kind}"
+            sql = family_query(kind, params, local=False)
+            before = time.monotonic()
+            result = write_result(
+                execute_family(conn, kind, params, local=False), folder / (name + ".oracle")
+            )
+            result.update(
+                seconds=time.monotonic() - before,
+                params=params,
+                source_query_sha256=hashlib.sha256(sql.encode()).hexdigest(),
+                kind=kind,
+            )
+            results[name] = result
+    return results
+
+
+def family_compare(conn: Any, oracle: dict[str, Any], folder: Path) -> dict[str, Any]:
+    results = {}
+    for name, expected in oracle.items():
+        path = folder / (name + ".local")
+        attempts = []
+        for _ in range(2):
+            started = time.monotonic()
+            actual = write_result(
+                execute_family(conn, expected["kind"], expected["params"], local=True), path
+            )
+            attempts.append(
+                dict(
+                    **actual,
+                    seconds=time.monotonic() - started,
+                    **compare(
+                        folder / (name + ".oracle"),
+                        path,
+                        expected["fields"],
+                        key_count=4 if expected["kind"] in ("hourly", "crowding") else 3,
+                    ),
+                )
+            )
+        results[name] = dict(
+            postgres=expected,
+            duckdb=attempts,
+            deterministic=attempts[0]["sha256"] == attempts[1]["sha256"],
+        )
+    return dict(
+        scope="family-shaped bounded UTC slice; not a complete local-day rebuild",
+        outputs=results,
+        status="not_applicable_empty_sample"
+        if not results
+        else "equal"
+        if all(
+            r["deterministic"] and all(a["status"] == "equal" for a in r["duckdb"])
+            for r in results.values()
+        )
+        else "different",
+    )
 
 
 if __name__ == "__main__":
