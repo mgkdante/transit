@@ -2,6 +2,9 @@ import gzip
 import importlib.util
 import io
 import json
+import signal
+import sqlite3
+import sys
 import threading
 from contextlib import contextmanager
 from copy import deepcopy
@@ -114,26 +117,23 @@ def test_rescue_create_only_collision_equal_succeeds_different_stops(tmp_path, s
 
 def test_rescue_incomplete_upload_has_no_completion_receipt(tmp_path):
     storage = LocalBronzeStorage("local", tmp_path / "remote")
-    adapter = rescue.RescueObjects(storage)
     with pytest.raises(ValueError):
-        adapter.ensure(tmp_path / "missing", "outside/prefix")
+        rescue.RescueObjects(storage).ensure(tmp_path / "missing", "outside/prefix")
     assert not (tmp_path / "remote").exists()
 
 
 def test_rescue_resumes_spool_after_source_rows_have_been_pruned(tmp_path):
     identity = rescue.bounds(args(tmp_path), NOW)
     checkpoint = empty_checkpoint(tmp_path, identity)
-    tables = checkpoint["tables"]
     assert rescue.resume(tmp_path, identity) == checkpoint
-    (tmp_path / (next(iter(tables)) + ".csv.gz")).write_bytes(b"corrupt")
+    (tmp_path / (next(iter(rescue.SCHEMAS)) + ".csv.gz")).write_bytes(b"corrupt")
     with pytest.raises(ValueError):
         rescue.resume(tmp_path, identity)
 
 
 def test_rescue_invalid_arguments_emit_safe_json(capsys):
     assert rescue.main(["--provider", "unsafe/value"]) == 2
-    report = json.loads(capsys.readouterr().out)
-    assert report["reason"] == "invalid_arguments"
+    assert json.loads(capsys.readouterr().out)["reason"] == "invalid_arguments"
 
 
 def test_rescue_copies_both_fact_tables_in_one_read_only_snapshot(real_db_engine, tmp_path):
@@ -159,17 +159,22 @@ def test_rescue_copy_requires_active_read_only_transaction(real_db_engine, tmp_p
 def test_rescue_checkpoint_rejects_changed_counts_and_schema(tmp_path):
     identity = rescue.bounds(args(tmp_path), NOW)
     checkpoint = empty_checkpoint(tmp_path, identity)
-    tables = checkpoint["tables"]
-    tables[next(iter(tables))]["rows"] = 7
+    checkpoint["tables"][next(iter(rescue.SCHEMAS))]["rows"] = 7
     (tmp_path / "checkpoint.json").write_bytes(rescue.encoded(checkpoint))
     with pytest.raises(ValueError):
         rescue.resume(tmp_path, identity)
 
 
 def test_rescue_refuses_queued_exclusive_lock_and_cancels_only_itself(tmp_path, monkeypatch):
-    monitor = SimpleNamespace(
-        execute=lambda *args: monitor, fetchone=lambda: (True,), close=lambda: None
-    )
+    monitor = SimpleNamespace(fetchone=lambda: monitor.row, close=lambda: None)
+
+    def execute(query, params=None):
+        monitor.row = (
+            (NOW, "transit-ls04-rescue-" + "a" * 32) if "SELECT backend_start" in query else (True,)
+        )
+        return monitor
+
+    monitor.execute = execute
     cancelled = []
     source = SimpleNamespace(
         info=SimpleNamespace(backend_pid=42),
@@ -266,6 +271,7 @@ def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
     connection = rescue.psycopg.connect(
         **real_db_engine.url.translate_connect_args(username="user", database="dbname"),
         autocommit=True,
+        application_name="transit-ls04-rescue-" + uuid4().hex,
     )
     with connection, connection.transaction():
         connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -331,6 +337,7 @@ def test_rescue_closes_source_transaction_before_object_io(
         conn = rescue.psycopg.connect(
             **real_db_engine.url.translate_connect_args(username="user", database="dbname"),
             autocommit=True,
+            application_name="transit-ls04-rescue-" + uuid4().hex,
         )
         connections.append(conn)
         return conn
@@ -421,6 +428,7 @@ def test_rescue_real_queued_lock_releases_only_source(
         return rescue.psycopg.connect(
             **rescue_login.translate_connect_args(username="user", database="dbname"),
             autocommit=True,
+            application_name="transit-ls04-rescue-" + uuid4().hex,
             options="-c statement_timeout=1000",
         )
 
@@ -434,6 +442,7 @@ def test_rescue_real_queued_lock_releases_only_source(
                 rescue.psycopg.connect(
                     **real_db_engine.url.translate_connect_args(username="user", database="dbname"),
                     autocommit=True,
+                    application_name="transit-ls04-rescue-" + uuid4().hex,
                 ) as locker,
                 locker.transaction(),
             ):
@@ -622,7 +631,11 @@ def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch
             if "pg_terminate_backend" in query:
                 targets.append(params)
                 released.set()
-            self.row = ("pg_has_role" in query or queued.is_set(),)
+            self.row = (
+                (NOW, "transit-ls04-rescue-" + "a" * 32)
+                if "SELECT backend_start" in query
+                else (queued.is_set(),)
+            )
             return self
 
         def fetchone(self):
@@ -654,7 +667,7 @@ def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch
         assert queued.wait(2)
         assert released.wait(3), "termination must not wait for the export driver lock"
         assert methods == []
-        assert targets == [(42,)]
+        assert targets == [(42, NOW, "transit-ls04-rescue-" + "a" * 32)]
     finally:
         released.set()
         worker.join(3)
@@ -720,20 +733,18 @@ def fake_copy_source(tmp_path, monkeypatch):
 
 
 def command_for(options):
-    return [
-        item
-        for key, value in vars(options).items()
-        if value not in (None, False)
-        for item in (
-            ["--" + key.replace("_", "-")]
-            if value is True
-            else ["--" + key.replace("_", "-"), str(value)]
-        )
-    ]
+    command = []
+    for key, value in vars(options).items():
+        if value not in (None, False):
+            command.append("--" + key.replace("_", "-"))
+            if value is not True:
+                command.append(str(value))
+    return command
 
 
+@pytest.mark.parametrize("pending_record", [False, True])
 def test_interrupt_first_compression_resumes_both_raw_tables(
-    tmp_path, monkeypatch, capsys, fake_copy_source
+    tmp_path, monkeypatch, capsys, fake_copy_source, pending_record
 ):
     source, copied, _, command = fake_copy_source
     original = rescue.compress
@@ -747,6 +758,8 @@ def test_interrupt_first_compression_resumes_both_raw_tables(
     assert (tmp_path / "export.json").exists()
     for table in rescue.SCHEMAS:
         assert (tmp_path / (table + ".csv")).exists()
+    if pending_record:
+        (tmp_path / "export.json").rename(tmp_path / "export.json.partial")
     monkeypatch.setattr(rescue, "compress", original)
     monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("protected raw resume queried DB"))
     assert rescue.main(command) == 0
@@ -792,3 +805,108 @@ def test_visibility_requires_observed_self_locks_before_copy(monkeypatch):
     with pytest.raises(ValueError, match="lock_visibility_required"):
         rescue.GuardedSource(raw, threading.Event()).prove_visibility()
     assert len(statements) == 2
+
+
+@pytest.mark.parametrize("changed", [None, "pid", "backend_start", "application_name"])
+def test_termination_matches_exact_backend_identity(changed):
+    expected = dict(pid=42, backend_start="original", application_name="rescue-token")
+    actual = {**expected, **({changed: 43 if changed == "pid" else "different"} if changed else {})}
+    with sqlite3.connect(":memory:") as db:
+        db.execute(
+            "CREATE TABLE pg_stat_activity(pid,backend_start,application_name,usename,xact_start)"
+        )
+        db.execute(
+            "INSERT INTO pg_stat_activity VALUES (?,?,?,'same-role','active')",
+            tuple(actual.values()),
+        )
+        victims = []
+        db.create_function("current_user", 0, lambda: "same-role")
+        db.create_function("pg_terminate_backend", 2, lambda pid, ms: victims.append(pid) or 1)
+        control = SimpleNamespace(
+            execute=lambda query, params: db.execute(
+                query.replace("%s", "?").replace("current_user", "current_user()"), params
+            )
+        )
+        rescue.terminate_self(control, **expected)
+        assert victims == ([] if changed else [42])
+
+
+def test_timer_join_cannot_cancel_after_clean_guard_exit(tmp_path, monkeypatch):
+    calls, joined = [], []
+
+    def timer(interval, callback):
+        return SimpleNamespace(
+            start=lambda: None, cancel=lambda: None, join=lambda: (joined.append(True), callback())
+        )
+
+    def controller():
+        return SimpleNamespace(
+            execute=lambda query, params=None: SimpleNamespace(
+                fetchone=lambda: (
+                    (NOW, "transit-ls04-rescue-" + "a" * 32)
+                    if "SELECT backend_start" in query
+                    else (False,)
+                )
+            ),
+            close=lambda: None,
+        )
+
+    monkeypatch.setattr(rescue.threading, "Timer", timer)
+    monkeypatch.setattr(rescue, "connect", controller)
+    source = SimpleNamespace(
+        info=SimpleNamespace(backend_pid=42),
+        cancel_safe=lambda **kwargs: calls.append("late cancel"),
+    )
+    with rescue.guarded(source, args(tmp_path)):
+        pass
+    assert joined == [True] and calls == []
+
+
+def test_finalization_cannot_replace_copy_digest(tmp_path, monkeypatch, fake_copy_source):
+    _, _, _, command = fake_copy_source
+    original = rescue.compress
+
+    def mutate(path):
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        return original(path)
+
+    monkeypatch.setattr(rescue, "compress", mutate)
+    assert rescue.main(command) == 1
+    assert not (tmp_path / "checkpoint.json").exists()
+
+
+@pytest.mark.parametrize("boundary", ["copy_complete", "export.json", "checkpoint.json"])
+def test_signal_at_commit_boundary_preserves_original_pair(
+    tmp_path, monkeypatch, capsys, fake_copy_source, boundary
+):
+    _, copied, _, command = fake_copy_source
+    lines = SCRIPT.read_text().splitlines()
+    needle = (
+        "args.completed_tables.add(table)"
+        if boundary == "copy_complete"
+        else "(folder / name).hardlink_to(partial)"
+    )
+    line = next(i for i, value in enumerate(lines, 1) if needle in value)
+    hit = []
+
+    def trace(frame, event, arg):
+        if event == "line" and frame.f_code.co_filename == str(SCRIPT) and frame.f_lineno == line:
+            match = (
+                len(copied) == 2
+                if boundary == "copy_complete"
+                else frame.f_locals.get("name") == boundary
+            )
+            if match and not hit:
+                hit.append(True)
+                signal.raise_signal(signal.SIGINT)
+        return trace
+
+    sys.settrace(trace)
+    try:
+        assert rescue.main(command) == 1
+    finally:
+        sys.settrace(None)
+    assert hit
+    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("boundary recovery queried DB"))
+    assert rescue.main(command) == 0
+    assert json.loads(capsys.readouterr().out.splitlines()[-1])["reused_spool"]

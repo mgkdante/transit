@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import shutil
+import signal
 import sys
 import tempfile
 import threading
@@ -18,6 +19,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
+from uuid import uuid4
 
 import psycopg
 from psycopg import sql
@@ -54,6 +56,30 @@ SCHEMAS = {
     for table, tail in TAILS.items()
 }
 PK = ["provider_id", "realtime_snapshot_id", "entity_index"]
+_interruption = threading.local()
+
+
+def request_interrupt(*unused: Any) -> None:
+    _interruption.pending = True
+
+
+def check_interrupt() -> None:
+    if getattr(_interruption, "pending", False):
+        raise KeyboardInterrupt
+
+
+@contextmanager
+def deferred_signals() -> Any:
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    _interruption.pending = False
+    try:
+        for sig in previous:
+            signal.signal(sig, request_interrupt)
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+        _interruption.pending = False
 
 
 def encoded(value: Any) -> bytes:
@@ -177,6 +203,7 @@ def copy_fact_table(
                 output.write(block)
                 hasher.update(block)
                 size += len(block)
+                check_interrupt()
         rows = cursor.rowcount
     return dict(
         schema=schema,
@@ -322,6 +349,7 @@ def connect() -> Any:
         urlunsplit(parts._replace(scheme="postgresql")),
         connect_timeout=5,
         autocommit=True,
+        application_name="transit-ls04-rescue-" + uuid4().hex,
         options="-c statement_timeout=1000 -c lock_timeout=1000",
     )
 
@@ -401,11 +429,12 @@ class GuardedCursor:
             self.source.check()
 
 
-def terminate_self(controller: Any, pid: int) -> None:
+def terminate_self(controller: Any, pid: int, backend_start: Any, application_name: str) -> None:
     row = controller.execute(
         "SELECT pg_terminate_backend(pid, 500) FROM pg_stat_activity "
-        "WHERE pid=%s AND usename=current_user AND xact_start IS NOT NULL",
-        (pid,),
+        "WHERE pid=%s AND backend_start=%s AND application_name=%s "
+        "AND usename=current_user AND xact_start IS NOT NULL",
+        (pid, backend_start, application_name),
     ).fetchone()
     if row is not None and not row[0]:
         raise ValueError("self_termination_failed")
@@ -420,32 +449,47 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
     terminator = connect()
     terminator.execute("SET statement_timeout = '1s'")
     pid = connection.info.backend_pid
+    identity = monitor.execute(
+        "SELECT backend_start, application_name FROM pg_stat_activity WHERE pid=%s "
+        "AND usename=current_user",
+        (pid,),
+    ).fetchone()
+    if (
+        not identity
+        or len(identity) != 2
+        or not identity[0]
+        or not re.fullmatch(r"transit-ls04-rescue-[0-9a-f]{32}", identity[1])
+    ):
+        monitor.close()
+        terminator.close()
+        raise ValueError("backend_identity_unavailable")
     phase_end = deadline if deadline is not None else time.monotonic() + args.db_phase_s
     terminating = threading.Lock()
     protected = GuardedSource(connection, failed)
 
     def cancel() -> None:
-        failed.set()
-        if not terminating.acquire(blocking=False):
-            return
-        try:
-            connection.cancel_safe(timeout=2)
-        except Exception:
-            pass
-        # Only our captured exporting pid is signalled, through an independent connection.
-        # No source driver lock: <=2 s cancel + .25 s grace + 1 s primary statement
-        # + 5 s fallback connect + 1 s fallback statement: under 10 seconds.
-        time.sleep(0.25)
-        try:
-            terminate_self(terminator, pid)
-        except Exception:
-            recovery = connect()
+        with terminating:
+            if stop.is_set() or failed.is_set():
+                return
+            failed.set()
             try:
-                terminate_self(recovery, pid)
+                connection.cancel_safe(timeout=2)
+            except Exception:
+                pass
+            # Only our captured exporting pid is signalled, through an independent connection.
+            # No source driver lock: <=2 s cancel + .25 s grace + 1 s primary statement
+            # + 5 s fallback connect + 1 s fallback statement: under 10 seconds.
+            time.sleep(0.25)
+            try:
+                terminate_self(terminator, pid, *identity)
+            except Exception:
+                recovery = connect()
+                try:
+                    terminate_self(recovery, pid, *identity)
+                finally:
+                    recovery.close()
             finally:
-                recovery.close()
-        finally:
-            ready.set()
+                ready.set()
 
     timer = threading.Timer(max(0, phase_end - time.monotonic()), cancel)
     timer.daemon = True
@@ -482,12 +526,12 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
         yield protected
         protected.check()
     finally:
-        stop.set()
-        timer.cancel()
-        thread.join(timeout=10)
+        with terminating:
+            stop.set()
+            timer.cancel()
+        timer.join()
+        thread.join()
         terminator.close()
-        if thread.is_alive():
-            raise ValueError("monitor_unavailable")
 
 
 def inventory(connection: Any) -> list[Any]:
@@ -550,6 +594,7 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
             if args.inventory:
                 return dict(snapshot_time=now.isoformat(), ranges=ranges)
             for table in SCHEMAS:
+                check_interrupt()
                 remaining = args.db_phase_s - (time.monotonic() - started)
                 connection.check()
                 if remaining <= 0:
@@ -603,21 +648,32 @@ def write_record(folder: Path, name: str, record: dict[str, Any]) -> None:
 
 def finalize(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
     checkpoint = read_record(folder, identity, "export.json")
+    check_interrupt()
     for table in SCHEMAS:
         partial, source = folder / (table + ".csv.partial"), folder / (table + ".csv")
         if not source.exists():
             partial.rename(source)
+    check_interrupt()
     for table, meta in checkpoint["tables"].items():
         source = folder / (table + ".csv")
         with source.open("rb") as stream:
             if digest(stream) != (meta["csv_sha256"], meta["csv_bytes"]):
                 raise ValueError("csv_changed")
         compressed = compress(source)
+        if any(meta[key] != compressed[key] for key in ("csv_sha256", "csv_bytes")):
+            raise ValueError("csv_changed")
         if meta["copy_rows"] >= 0 and meta["copy_rows"] != compressed["rows"]:
             raise ValueError("copy_count_mismatch")
-        meta.update(compressed)
+        meta.update(
+            {
+                key: value
+                for key, value in compressed.items()
+                if key not in ("csv_sha256", "csv_bytes")
+            }
+        )
         validate_csv(folder / (table + ".csv.gz"), meta)
     write_record(folder, "checkpoint.json", checkpoint)
+    check_interrupt()
     return checkpoint
 
 
@@ -663,14 +719,45 @@ def publish(checkpoint: dict[str, Any], folder: Path) -> dict[str, Any]:
         scope.close()
 
 
+def recover_pending(folder: Path, identity: dict[str, Any]) -> None:
+    for name in ("export.json", "checkpoint.json"):
+        pending = folder / (name + ".partial")
+        if not pending.exists() or (folder / name).exists():
+            continue
+        record = read_record(folder, identity, pending.name)
+        for table, meta in record["tables"].items():
+            path = folder / (table + (".csv.gz" if name == "checkpoint.json" else ".csv"))
+            if name == "export.json" and not path.exists():
+                path = folder / (table + ".csv.partial")
+            with path.open("rb") as stream:
+                kind = "object" if name == "checkpoint.json" else "csv"
+                if digest(stream) != (meta[kind + "_sha256"], meta[kind + "_bytes"]):
+                    raise ValueError("spool_corrupt")
+            if name == "checkpoint.json":
+                validate_csv(path, meta)
+        (folder / name).hardlink_to(pending)
+        pending.unlink()
+
+
 def main(argv: list[str] | None = None) -> int:
+    with deferred_signals():
+        return run(argv)
+
+
+def run(argv: list[str] | None = None) -> int:
     phase, args = "arguments", None
     started = time.monotonic()
     try:
         args = parser().parse_args(argv)
         folder = Path(args.spool_dir) if args.spool_dir else Path(tempfile.gettempdir())
         reused = not args.inventory and any(
-            (folder / name).exists() for name in ("checkpoint.json", "export.json")
+            (folder / name).exists()
+            for name in (
+                "checkpoint.json",
+                "export.json",
+                "checkpoint.json.partial",
+                "export.json.partial",
+            )
         )
         identity = bounds(args, datetime.now(UTC), new_export=not reused)
     except ValueError as error:
@@ -687,10 +774,11 @@ def main(argv: list[str] | None = None) -> int:
         phase = "process_lock"
         lock.mkdir()
         owned = True
-        folder = Path(args.spool_dir) if args.spool_dir else Path(tempfile.gettempdir())
         if not args.inventory:
             folder.mkdir(parents=True, exist_ok=True)
         phase = "resume" if reused else "export"
+        if reused:
+            recover_pending(folder, identity)
         if not reused and not args.inventory and any(folder.iterdir()):
             remaining = [p for p in folder.iterdir() if not p.name.startswith("abandoned-")]
             if any(p.name not in {t + ".csv.partial" for t in SCHEMAS} for p in remaining):
@@ -700,17 +788,15 @@ def main(argv: list[str] | None = None) -> int:
                 for path in remaining:
                     path.rename(archive / path.name)
         export_started = not reused and not args.inventory
-        checkpoint = (
-            (
-                resume(folder, identity)
-                if (folder / "checkpoint.json").exists()
-                else finalize(folder, identity)
-            )
-            if reused
-            else export(args, identity, folder)
-        )
+        if reused:
+            finish = resume if (folder / "checkpoint.json").exists() else finalize
+            checkpoint = finish(folder, identity)
+        else:
+            checkpoint = export(args, identity, folder)
         phase = "upload_readback"
+        check_interrupt()
         object_report = publish(checkpoint, folder) if args.upload else {}
+        check_interrupt()
         print(
             json.dumps(
                 dict(
@@ -735,20 +821,16 @@ def main(argv: list[str] | None = None) -> int:
     except (Exception, KeyboardInterrupt) as error:
         interrupted = isinstance(error, KeyboardInterrupt)
         if interrupted and (export_started or reused):
-            for name in [
-                "checkpoint.json.partial",
-                "export.json.partial",
-                *(
-                    table + suffix
-                    for table in SCHEMAS
-                    for suffix in (".csv.partial", ".csv.gz.partial")
-                    if suffix != ".csv.partial"
-                    or (
-                        not (folder / "export.json").exists()
-                        and table not in getattr(args, "completed_tables", set())
-                    )
-                ),
-            ]:
+            for name in (
+                table + suffix
+                for table in SCHEMAS
+                for suffix in (".csv.partial", ".csv.gz.partial")
+                if suffix != ".csv.partial"
+                or (
+                    not (folder / "export.json").exists()
+                    and table not in getattr(args, "completed_tables", set())
+                )
+            ):
                 (folder / name).unlink(missing_ok=True)
         print(
             json.dumps(
