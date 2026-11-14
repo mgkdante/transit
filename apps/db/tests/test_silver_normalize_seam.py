@@ -50,7 +50,7 @@ def test_seam_returns_the_rows_of_each_normalizer(tmp_path, endpoint):
     assert (
         silver.normalize_realtime_message(
             message,
-            snapshot=snapshot,
+            context=silver.RealtimeNormalizationContext.from_snapshot(snapshot),
             rt_feed_snapshot_id=42,
             provider_bounds=replay.PROVIDER_BOUNDS,
             max_vehicle_speed_kmh=10,
@@ -65,7 +65,9 @@ def test_seam_refuses_alert_endpoints(tmp_path):
     with pytest.raises(ValueError, match="^Unsupported realtime endpoint 'alerts'\\.$"):
         silver.normalize_realtime_message(
             gtfs_realtime_pb2.FeedMessage(),
-            snapshot=replace(_build_snapshot(path, "trip_updates"), endpoint_key="alerts"),
+            context=silver.RealtimeNormalizationContext.from_snapshot(
+                replace(_build_snapshot(path, "trip_updates"), endpoint_key="alerts")
+            ),
             rt_feed_snapshot_id=42,
         )
 

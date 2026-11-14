@@ -283,6 +283,23 @@ class BronzeRealtimeSnapshot:
 
 
 @dataclass(frozen=True)
+class RealtimeNormalizationContext:
+    provider_id: str
+    endpoint_key: str
+    feed_timestamp_utc: datetime
+    captured_at_utc: datetime
+
+    @classmethod
+    def from_snapshot(cls, snapshot: BronzeRealtimeSnapshot) -> RealtimeNormalizationContext:
+        return cls(
+            snapshot.provider_id,
+            snapshot.endpoint_key,
+            snapshot.feed_timestamp_utc,
+            snapshot.captured_at_utc,
+        )
+
+
+@dataclass(frozen=True)
 class RealtimeSilverLoadResult:
     provider_id: str
     endpoint_key: str
@@ -638,7 +655,7 @@ def _insert_rt_feed_snapshot(
 def _normalize_rt_entities(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    snapshot: BronzeRealtimeSnapshot | RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
 ) -> list[dict[str, object]]:
     return [
@@ -658,7 +675,7 @@ def _normalize_rt_entities(
 def _normalize_rt_trip_updates(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    snapshot: BronzeRealtimeSnapshot | RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     trip_update_rows: list[dict[str, object]] = []
@@ -723,7 +740,7 @@ def _normalize_rt_trip_updates(
 def _normalize_rt_vehicle_positions(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    snapshot: BronzeRealtimeSnapshot | RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
     provider_bounds: ProviderBounds | None = None,
     max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
@@ -792,28 +809,28 @@ def _normalize_rt_vehicle_positions(
 def normalize_realtime_message(
     message: gtfs_realtime_pb2.FeedMessage,
     *,
-    snapshot: BronzeRealtimeSnapshot,
+    context: RealtimeNormalizationContext,
     rt_feed_snapshot_id: int,
     provider_bounds: ProviderBounds | None = None,
     max_vehicle_speed_kmh: float = DEFAULT_MAX_VEHICLE_SPEED_KMH,
 ) -> dict[str, list[dict[str, object]]]:
     """Return the Silver child rows for one capture, keyed by table name."""
-    if snapshot.endpoint_key not in {"trip_updates", "vehicle_positions"}:
-        raise ValueError(f"Unsupported realtime endpoint '{snapshot.endpoint_key}'.")
+    if context.endpoint_key not in {"trip_updates", "vehicle_positions"}:
+        raise ValueError(f"Unsupported realtime endpoint '{context.endpoint_key}'.")
     rows = {
         "rt_entities": _normalize_rt_entities(
-            message, snapshot=snapshot, rt_feed_snapshot_id=rt_feed_snapshot_id
+            message, snapshot=context, rt_feed_snapshot_id=rt_feed_snapshot_id
         )
     }
-    if snapshot.endpoint_key == "trip_updates":
+    if context.endpoint_key == "trip_updates":
         trips, stops = _normalize_rt_trip_updates(
-            message, snapshot=snapshot, rt_feed_snapshot_id=rt_feed_snapshot_id
+            message, snapshot=context, rt_feed_snapshot_id=rt_feed_snapshot_id
         )
         rows.update(rt_trip_updates=trips, rt_trip_update_stop_times=stops)
     else:
         rows["rt_vehicle_positions"] = _normalize_rt_vehicle_positions(
             message,
-            snapshot=snapshot,
+            snapshot=context,
             rt_feed_snapshot_id=rt_feed_snapshot_id,
             provider_bounds=provider_bounds,
             max_vehicle_speed_kmh=max_vehicle_speed_kmh,
@@ -858,7 +875,9 @@ def _expected_realtime_row_counts(
     *,
     snapshot: BronzeRealtimeSnapshot,
 ) -> dict[str, int]:
-    rows = normalize_realtime_message(message, snapshot=snapshot, rt_feed_snapshot_id=0)
+    rows = normalize_realtime_message(
+        message, context=RealtimeNormalizationContext.from_snapshot(snapshot), rt_feed_snapshot_id=0
+    )
     return {"rt_feed_snapshots": 1, **{table: len(values) for table, values in rows.items()}}
 
 
@@ -990,7 +1009,7 @@ def _load_realtime_message_to_silver(
     )
     rows = normalize_realtime_message(
         message,
-        snapshot=snapshot,
+        context=RealtimeNormalizationContext.from_snapshot(snapshot),
         rt_feed_snapshot_id=rt_feed_snapshot_id,
         provider_bounds=provider_bounds,
         max_vehicle_speed_kmh=max_vehicle_speed_kmh,
