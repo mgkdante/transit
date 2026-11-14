@@ -2,7 +2,6 @@
 
 import json
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -104,8 +103,7 @@ def _draft(
     if transition is None or (transition.after is None and not transition.records):
         return None
     after = normalize_candidate(transition.after, cursor.doc, identity, cursor.next_seq)
-    unchanged = cursor.doc and after and replace(after, seq=cursor.doc.seq) == cursor.doc
-    if not transition.records and unchanged:
+    if not transition.records and cursor.unchanged(after):
         return None
     return prepare_transition(
         after,
@@ -115,6 +113,7 @@ def _draft(
         cursor.body,
         at,
         operation_id=operation_id,
+        first_record=cursor.next_record,
     )
 
 

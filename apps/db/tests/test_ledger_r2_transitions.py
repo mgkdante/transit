@@ -24,9 +24,8 @@ def advance(objects, change=None, attempts=10):
     def default(doc, now):
         return t.Transition(replace(doc or DOC, seq=doc.seq + 1 if doc else 1), (RECORD,))
 
-    return t.apply_transition(
-        objects, ID, change or default, clock=lambda: NOW, max_attempts=attempts
-    )
+    step = change or default
+    return t.apply_transition(objects, ID, step, clock=lambda: NOW, max_attempts=attempts)
 
 
 def test_first_transition_and_no_change(objects):
@@ -39,7 +38,8 @@ def test_first_transition_and_no_change(objects):
     assert t.rebuild_window(objects, ID) == DOC
 
 
-def test_two_writers_and_rolled_forward_success(objects, monkeypatch):
+def test_two_writers_and_rolled_forward_success(objects, monkeypatch, tmp_path):
+    other = SnapshotConditionalObjects(LocalStore(str(tmp_path), "ledger/v1"), min_interval_s=0)
     advance(objects)
 
     def competing(doc, now):
@@ -58,6 +58,7 @@ def test_two_writers_and_rolled_forward_success(objects, monkeypatch):
 
     def recovered(key, payload, *, expected, original=objects.replace):
         original(key, payload, expected=expected)
+        assert advance(other).seq == 5
         monkeypatch.setattr(objects, "read", raced)
         raise ObjectConflict("another reader applied our event")
 
@@ -123,6 +124,8 @@ def test_dirty_transition_without_public_records_and_noop(objects, changes):
     keys = list(objects.list_keys("transitions/"))
     assert advance(objects, lambda doc, now: t.Transition(replace(doc, seq=3), ())) == dirty
     assert list(objects.list_keys("transitions/")) == keys
+    advance(objects, lambda doc, now: t.Transition(replace(doc, seq=3), (RECORD,)))
+    assert t.events(objects, ID)[0].sequence == 1
 
 
 @pytest.mark.parametrize("error", [ObjectRateLimited("429"), OSError("transport failed")])
@@ -163,12 +166,12 @@ def test_event_only_records_leave_state_absent_and_continue_sequence(objects):
         assert t.rebuild_window(objects, ID) is None
         envelope = json.loads(objects.read(m.transition_key(ID, seq)).body)
         assert envelope["after"] is None
-        assert [m.decode_event(r).sequence for r in envelope["records"]] == [(seq, 0), (seq, 1)]
-        assert [r.sequence for r in t.events(objects, ID) if r.kind == "close_runs"] == [
-            (n, 1) for n in range(1, seq + 1)
+        assert [m.decode_event(r).sequence for r in envelope["records"]] == [[1, 2], [3, 4]][
+            seq - 1
         ]
+        assert [r.sequence for r in t.events(objects, ID) if r.kind == "close_runs"] == [2, 4][:seq]
     result = advance(objects)
     assert result.seq == 3 and t.rebuild_window(objects, ID) == result
     record = json.loads(objects.read(m.transition_key(ID, 3)).body)["records"][0]
-    assert m.decode_event(record).sequence == (3, 0)
-    assert [r.sequence for r in t.events(objects, ID, kinds={"close_runs"})] == [(1, 1), (2, 1)]
+    assert m.decode_event(record).sequence == 5
+    assert [r.sequence for r in t.events(objects, ID, kinds={"close_runs"})] == [2, 4]
