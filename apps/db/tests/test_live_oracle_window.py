@@ -1,6 +1,8 @@
 import json
+from collections import UserDict
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
+from types import MappingProxyType
 
 import pytest
 
@@ -95,6 +97,15 @@ def test_window_json_round_trips_byte_for_byte() -> None:
     assert b"2026-01-02T12:00:00.123456Z" in data
     assert restored.poll_records[0].polls[0].requested_at_utc is None
     assert restored.edition.source_url is None
+
+
+@pytest.mark.parametrize("mapping", [UserDict, MappingProxyType])
+def test_window_accepts_endpoint_mappings(mapping) -> None:
+    original = window()
+    endpoints = dict(original.feed_endpoints)
+    restored = replace(original, feed_endpoints=mapping(endpoints))
+    endpoints.clear()
+    assert restored.to_json() == original.to_json()
 
 
 def test_capture_lookup_finds_the_entry_and_its_record() -> None:
