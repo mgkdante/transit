@@ -2,6 +2,7 @@ import gzip
 import importlib.util
 import io
 import json
+import os
 import signal
 import sqlite3
 import sys
@@ -136,26 +137,6 @@ def test_rescue_invalid_arguments_emit_safe_json(capsys):
     assert json.loads(capsys.readouterr().out)["reason"] == "invalid_arguments"
 
 
-def test_rescue_copies_both_fact_tables_in_one_read_only_snapshot(real_db_engine, tmp_path):
-    with real_db_engine.connect() as sa:
-        connection = sa.connection.driver_connection
-        with connection.transaction():
-            connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            connection.execute("SET LOCAL TimeZone = 'UTC'")
-            for table in rescue.SCHEMAS:
-                result = copy_to(
-                    connection, tmp_path / (table + ".csv"), table, "absent-fixture-provider"
-                )
-                assert result["copy_rows"] == 0
-                assert result["schema"] == rescue.SCHEMAS[table]
-
-
-def test_rescue_copy_requires_active_read_only_transaction(real_db_engine, tmp_path):
-    with real_db_engine.connect() as sa:
-        with pytest.raises(ValueError):
-            copy_to(sa.connection.driver_connection, tmp_path / "refused.csv")
-
-
 def test_rescue_checkpoint_rejects_changed_counts_and_schema(tmp_path):
     identity = rescue.bounds(args(tmp_path), NOW)
     checkpoint = empty_checkpoint(tmp_path, identity)
@@ -273,6 +254,8 @@ def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
         autocommit=True,
         application_name="transit-ls04-rescue-" + uuid4().hex,
     )
+    with pytest.raises(ValueError):
+        copy_to(connection, tmp_path / "inactive.csv")
     with connection, connection.transaction():
         connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         connection.execute("SET LOCAL TimeZone = 'UTC'")
@@ -287,6 +270,10 @@ def test_rescue_uses_strict_utc_bounds_and_preserves_csv_values(
             compressed = rescue.compress(destination)
             assert meta["copy_rows"] == compressed["rows"] == 3
             assert meta["csv_sha256"] == compressed["csv_sha256"]
+            empty = copy_to(
+                connection, tmp_path / (table + "-empty.csv"), table, "absent-fixture-provider"
+            )
+            assert empty["copy_rows"] == 0 and empty["schema"] == rescue.SCHEMAS[table]
             assert connection.execute("SHOW transaction_read_only").fetchone() == ("on",)
             assert connection.execute("SHOW transaction_isolation").fetchone() == (
                 "repeatable read",
@@ -419,7 +406,7 @@ def rescue_login(real_db_engine):
             admin.exec_driver_sql(f'DROP ROLE "{role}"')
 
 
-@pytest.mark.parametrize("idle", [False, True, "SIGINT", "SIGINTx2", "SIGTERM"])
+@pytest.mark.parametrize("idle", [False, True])
 def test_rescue_real_queued_lock_releases_only_source(
     real_db_engine, fact_source, tmp_path, monkeypatch, idle, rescue_login
 ):
@@ -435,7 +422,6 @@ def test_rescue_real_queued_lock_releases_only_source(
     monkeypatch.setattr(rescue, "connect", connect)
     completed = threading.Event()
     failures = []
-    operator = isinstance(idle, str)
 
     def exclusive():
         try:
@@ -453,19 +439,8 @@ def test_rescue_real_queued_lock_releases_only_source(
         except Exception as error:
             failures.append(type(error).__name__)
 
-    def operator_stop():
-        completed.wait(0.2)
-        for sig in (
-            [signal.SIGTERM]
-            if idle == "SIGTERM"
-            else [signal.SIGINT] * (2 if idle == "SIGINTx2" else 1)
-        ):
-            signal.raise_signal(sig)
-            completed.wait(0.02)
-        completed.set()
-
-    worker = threading.Thread(target=operator_stop if operator else exclusive)
-    with rescue.deferred_signals(), connect() as source:
+    worker = threading.Thread(target=exclusive)
+    with connect() as source:
         pid = source.info.backend_pid
         assert source.execute(
             "SELECT pg_has_role(current_user,'pg_monitor','MEMBER'), "
@@ -518,6 +493,7 @@ def empty_checkpoint(folder, identity):
         }
     checkpoint = {**identity, "tables": tables}
     (folder / "checkpoint.json").write_bytes(rescue.encoded(checkpoint))
+    (folder / "export.json").write_bytes(rescue.encoded(checkpoint))
     return checkpoint
 
 
@@ -567,11 +543,13 @@ def test_rescue_interrupt_reports_json_and_preserves_completed_spool(
 
     monkeypatch.setattr(rescue, "export", interrupted)
     monkeypatch.setattr(rescue, "publish", interrupted)
-    command = command_for(options)
-    assert rescue.main([*command, "--upload"]) == 1
+    assert rescue.main([*command_for(options), "--upload"]) == 1
     report = json.loads(capsys.readouterr().out)
     assert report["reason"] == "interrupted"
-    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+    after = {path.name: path.read_bytes() for path in tmp_path.iterdir() if path.is_file()}
+    assert all(after[name] == value for name, value in before.items())
+    if not complete:
+        assert after["fact_vehicle_snapshot.csv.partial"] == b"incomplete"
     if complete:
         assert rescue.resume(tmp_path, identity) == saved
 
@@ -611,13 +589,18 @@ def test_rescue_stream_checks_persistent_failure_before_reading_more_bytes():
     assert reads == ["read"]
 
 
-@pytest.mark.parametrize("cancel_fails", [False, True])
-def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch, cancel_fails):
+@pytest.mark.parametrize(
+    "cancel_fails,terminate_fails", [(False, False), (True, False), (True, True)]
+)
+def test_missed_cancel_releases_without_export_driver_lock(
+    tmp_path, monkeypatch, capfd, cancel_fails, terminate_fails
+):
     queued, released, done = (threading.Event() for _ in range(3))
     lock, methods, targets = threading.Lock(), [], []
 
     class Source:
         info = SimpleNamespace(backend_pid=42)
+        closed = False
 
         def cancel_safe(self, **kwargs):
             if cancel_fails:
@@ -642,6 +625,8 @@ def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch
         def execute(self, query, params=None):
             if "pg_terminate_backend" in query:
                 targets.append(params)
+                if terminate_fails:
+                    raise TimeoutError("all channels unavailable")
                 released.set()
             self.row = (
                 (NOW, "transit-ls04-rescue-" + "a" * 32)
@@ -657,11 +642,19 @@ def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch
             pass
 
     monkeypatch.setattr(rescue, "connect", Monitor)
-    errors = []
+    errors, exits, source = [], [], Source()
+    started = rescue.time.monotonic()
+
+    def exit_process(code):
+        exits.append(code)
+        source.closed = True
+        released.set()
+
+    monkeypatch.setattr(os, "_exit", exit_process)
 
     def run():
         try:
-            with rescue.guarded(Source(), args(tmp_path)) as protected:
+            with rescue.guarded(source, args(tmp_path)) as protected:
                 protected.execute("synthetic blocked COPY")
         except ValueError:
             with pytest.raises(ValueError, match="interference_or_deadline"):
@@ -679,11 +672,20 @@ def test_missed_cancel_releases_without_export_driver_lock(tmp_path, monkeypatch
         assert queued.wait(2)
         assert released.wait(3), "termination must not wait for the export driver lock"
         assert methods == []
-        assert targets == [(42, NOW, "transit-ls04-rescue-" + "a" * 32)]
+        assert targets == [(42, NOW, "transit-ls04-rescue-" + "a" * 32)] * (
+            2 if terminate_fails else 1
+        )
     finally:
         released.set()
         worker.join(3)
     assert done.is_set() and errors == ["stopped"]
+    assert rescue.time.monotonic() - started < 15
+    assert exits == ([1] if terminate_fails else [])
+    assert capfd.readouterr().err == (
+        "rescue: cancellation unconfirmed, fail-stop\n" if terminate_fails else ""
+    )
+    if terminate_fails:
+        assert source.closed
 
 
 @pytest.fixture
@@ -754,9 +756,8 @@ def command_for(options):
     return command
 
 
-@pytest.mark.parametrize("pending_record", [False, True])
 def test_interrupt_first_compression_resumes_both_raw_tables(
-    tmp_path, monkeypatch, capsys, fake_copy_source, pending_record
+    tmp_path, monkeypatch, capsys, fake_copy_source
 ):
     source, copied, _, command = fake_copy_source
     original = rescue.compress
@@ -770,8 +771,6 @@ def test_interrupt_first_compression_resumes_both_raw_tables(
     assert (tmp_path / "export.json").exists()
     for table in rescue.SCHEMAS:
         assert (tmp_path / (table + ".csv")).exists()
-    if pending_record:
-        (tmp_path / "export.json").rename(tmp_path / "export.json.partial")
     monkeypatch.setattr(rescue, "compress", original)
     monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("protected raw resume queried DB"))
     assert rescue.main(command) == 0
@@ -782,27 +781,39 @@ def test_interrupt_first_compression_resumes_both_raw_tables(
         assert meta["csv_sha256"] == raw["tables"][table]["csv_sha256"]
 
 
-def test_interrupt_second_copy_retains_completed_stream_and_reexports_pair(
-    tmp_path, monkeypatch, fake_copy_source
+@pytest.mark.parametrize("registered_bytes", [False, True])
+def test_interrupt_second_copy_retains_and_quarantines_both_streams(
+    tmp_path, monkeypatch, capsys, fake_copy_source, registered_bytes
 ):
-    source, copied, original, command = fake_copy_source
+    _, copied, original, command = fake_copy_source
     first, second = rescue.SCHEMAS
 
     def interrupt(connection, **kwargs):
         if kwargs["table"] == second:
-            kwargs["destination"].write_bytes(b"unfinished")
+            if registered_bytes:
+                original(connection, **kwargs)
+            else:
+                kwargs["destination"].with_suffix(".csv.partial").write_bytes(b"unfinished")
             raise KeyboardInterrupt
         return original(connection, **kwargs)
 
     monkeypatch.setattr(rescue, "copy_fact_table", interrupt)
     assert rescue.main(command) == 1
-    assert (tmp_path / (first + ".csv.partial")).exists()
-    assert not (tmp_path / (second + ".csv.partial")).exists()
-    assert not (tmp_path / "export.json").exists()
-    source.closed = False
+    retained = {p.name: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()}
+    assert len(retained) == 2 and not (tmp_path / "export.json").exists()
+    if not registered_bytes:
+        assert retained[second + ".csv.partial"] == b"unfinished"
     monkeypatch.setattr(rescue, "copy_fact_table", original)
     assert rescue.main(command) == 0
-    assert copied == [first, first, second]
+    report = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert report["queried_postgres"] and not report["reused_spool"]
+    assert all(
+        (Path(report["quarantine"]) / name).read_bytes() == value
+        for name, value in retained.items()
+    )
+    assert copied == (
+        [first, second, first, second] if registered_bytes else [first, first, second]
+    )
 
 
 def test_visibility_requires_observed_self_locks_before_copy(monkeypatch):
@@ -887,109 +898,134 @@ def test_finalization_cannot_replace_copy_digest(tmp_path, monkeypatch, fake_cop
     assert not (tmp_path / "checkpoint.json").exists()
 
 
-@pytest.mark.parametrize(
-    "boundary",
-    ["copy_complete", "export.json", "checkpoint.json", "success_report", "source_closed"],
-)
-def test_signal_at_commit_boundary_preserves_original_pair(
-    tmp_path, monkeypatch, capsys, fake_copy_source, boundary
-):
-    _, copied, _, command = fake_copy_source
-    lines = SCRIPT.read_text().splitlines()
-    needle = dict(
-        copy_complete="observed = next(",
-        success_report='outcome="readback_complete"',
-        source_closed='write_record(folder, "export.json", record)',
-    ).get(boundary, "(folder / name).hardlink_to(partial)")
-    line = next(i for i, value in enumerate(lines, 1) if needle in value)
-    hit = []
+def nested_sigint_scenario(folder):
+    from unittest.mock import patch
 
-    def trace(frame, event, arg):
-        if event == "line" and frame.f_code.co_filename == str(SCRIPT) and frame.f_lineno == line:
-            match = (
-                len(copied) == 2
-                if boundary in ("copy_complete", "success_report", "source_closed")
-                else frame.f_locals.get("name") == boundary
-            )
-            if match and not hit:
-                hit.append(True)
-                signal.raise_signal(signal.SIGINT)
-        return trace
-
-    sys.settrace(trace)
-    try:
-        assert rescue.main(command) == 1
-    finally:
-        sys.settrace(None)
-    assert hit
-    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("boundary recovery queried DB"))
-    assert rescue.main(command) == 0
-    reports = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert reports[0]["reason"] == "interrupted" and reports[-1]["reused_spool"]
-
-
-@pytest.mark.parametrize(
-    "signals", [(signal.SIGINT,), (signal.SIGINT, signal.SIGINT), (signal.SIGTERM,)]
-)
-def test_operator_signal_cancels_actual_driver_wait(tmp_path, monkeypatch, signals):
     import psycopg.connection as driver
-
-    released, cancellations = threading.Event(), []
 
     class Source:
         info = SimpleNamespace(backend_pid=42)
         pgconn = SimpleNamespace(socket=123, transaction_status=driver.ACTIVE)
-        closed = False
-
-        def cancel_safe(self, **kwargs):
-            cancellations.append("cancel")
 
         def _try_cancel(self, **kwargs):
-            cancellations.append("driver_cancel")
+            (folder / "nested").write_text("nested")
+            signal.raise_signal(signal.SIGINT)
 
     source = Source()
 
-    class Control:
-        def execute(self, query, params=None):
-            if "pg_terminate_backend" in query:
-                cancellations.append("terminate")
-                source.closed = True
-                released.set()
-            return SimpleNamespace(
-                fetchone=lambda: (
-                    (NOW, "transit-ls04-rescue-" + "a" * 32)
-                    if "SELECT backend_start" in query
-                    else ("pg_terminate_backend" in query,)
-                )
-            )
+    def wait(*unused, **kwargs):
+        signal.raise_signal(signal.SIGINT)
+        raise AssertionError("SIGINT was deferred")
 
-        def close(self):
-            pass
-
-    monkeypatch.setattr(rescue, "connect", Control)
-
-    def wait(*args, **kwargs):
-        for sig in signals:
-            signal.raise_signal(sig)
-        assert released.wait(3), "operator stop did not reach the independent terminator"
-        return None
-
-    monkeypatch.setattr(driver.waiting, "wait", wait)
-    with pytest.raises((KeyboardInterrupt, ValueError)):
-        with rescue.deferred_signals(), rescue.guarded(source, args(tmp_path)):
-            driver.Connection.wait(source, iter(()))
-    assert source.closed and "terminate" in cancellations
-
-
-def test_empty_pending_checkpoint_recovers_from_valid_export(
-    tmp_path, monkeypatch, fake_copy_source
-):
-    _, _, _, command = fake_copy_source
-    assert rescue.main(command) == 0
-    (tmp_path / "checkpoint.json").rename(tmp_path / "checkpoint.json.partial")
-    (tmp_path / "checkpoint.json.partial").write_bytes(b"")
-    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("checkpoint recovery queried DB"))
-    assert rescue.main(command) == 0
-    assert any(
-        path.read_bytes() == b"" for path in tmp_path.glob("checkpoint.json.partial.quarantine-*")
+    options = args(
+        folder / "spool",
+        "--not-after",
+        (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT05:45:00Z"),
     )
+
+    def export(*unused):
+        try:
+            assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
+            driver.Connection.wait(source, iter(()))
+        finally:
+            (folder / "closed").write_text("closed")
+
+    with (
+        patch.object(rescue, "export", export),
+        patch.object(driver.waiting, "wait", wait),
+    ):
+        return rescue.main(command_for(options))
+
+
+def test_nested_sigint_in_real_driver_wait_exits_and_closes_source(tmp_path):
+    import subprocess
+
+    code = "import runpy,sys; from pathlib import Path; ns=runpy.run_path(sys.argv[1]); "
+    code += "print('READY',flush=True);sys.exit(ns['nested_sigint_scenario'](Path(sys.argv[2])))"
+    with subprocess.Popen(
+        [sys.executable, "-I", "-c", code, __file__, str(tmp_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as process:
+        assert process.stdout.readline() == "READY\n"  # Imports are outside the cancellation bound.
+        try:
+            output, error = process.communicate(timeout=8)
+        finally:
+            if process.poll() is None:
+                process.kill()
+        assert process.returncode == 1 and (tmp_path / "nested").exists()
+    assert (tmp_path / "closed").exists()
+    assert json.loads(output)["reason"] == "interrupted"
+
+
+@pytest.mark.parametrize("mode", ["SIGINTx2", "SIGTERM"])
+def test_default_process_signals_release_real_copy_backend(
+    real_db_engine, rescue_login, tmp_path, mode
+):
+    import os
+    import subprocess
+
+    if sys.platform == "win32":
+        pytest.skip("POSIX process signalling is exercised by Linux CI")
+    code = """import importlib.util,os,sys,tempfile
+from pathlib import Path
+s=importlib.util.spec_from_file_location('rescue',sys.argv[1]);r=importlib.util.module_from_spec(s)
+s.loader.exec_module(r)
+os.environ['DATABASE_URL']=os.environ['RESCUE_TEST_URL']
+tempfile.gettempdir=lambda:sys.argv[2]
+r.inventory=lambda c:[dict(table=t,provider='sample',minimum=None) for t in r.SCHEMAS]
+def slow(c,**kw):
+ with c.cursor() as cur,cur.copy('COPY (SELECT pg_sleep(60)) TO STDOUT') as blocks:
+  print(c.info.backend_pid,flush=True)
+  list(blocks)
+r.copy_fact_table=slow
+sys.exit(r.main(sys.argv[3:]))"""
+    options = args(
+        tmp_path / "spool",
+        "--not-after",
+        (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT05:45:00Z"),
+    )
+    environment = {
+        **os.environ,
+        "RESCUE_TEST_URL": rescue_login.render_as_string(hide_password=False),
+    }
+    process = subprocess.Popen(
+        [sys.executable, "-I", "-c", code, str(SCRIPT), str(tmp_path), *command_for(options)],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        pid = int(process.stdout.readline())
+        with real_db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as observer:
+            started = rescue.time.monotonic()
+            if mode == "SIGTERM":
+                process.terminate()
+            else:
+                os.kill(process.pid, signal.SIGINT)
+                if process.poll() is None:
+                    try:
+                        os.kill(process.pid, signal.SIGINT)
+                    except ProcessLookupError:
+                        pass
+            process.wait(timeout=5)
+            while rescue.time.monotonic() - started < 5:
+                remaining = observer.execute(
+                    text("SELECT count(*) FROM pg_locks WHERE pid=:p"), {"p": pid}
+                ).scalar_one()
+                if not remaining:
+                    break
+                rescue.time.sleep(0.02)
+            assert remaining == 0 and process.returncode != 0
+            assert (
+                observer.execute(
+                    text("SELECT count(*) FROM pg_stat_activity WHERE pid=:p"), {"p": pid}
+                ).scalar_one()
+                == 0
+            )
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)

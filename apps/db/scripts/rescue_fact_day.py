@@ -7,9 +7,9 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 import re
 import shutil
-import signal
 import sys
 import tempfile
 import threading
@@ -56,52 +56,58 @@ SCHEMAS = {
     for table, tail in TAILS.items()
 }
 PK = ["provider_id", "realtime_snapshot_id", "entity_index"]
-_interruption = threading.local()
 
 
-def request_interrupt(*unused: Any) -> None:
-    repeated = getattr(_interruption, "pending", False)
-    _interruption.pending = True
-    if getattr(_interruption, "depth", 0):
-        return
-    active = getattr(_interruption, "active", None)
-    if active is None:
-        raw = getattr(_interruption, "raw", None)
-        if raw is not None and set(raw["tables"]) == set(SCHEMAS):
-            return  # Source has finished: complete the short raw-record handoff first.
-        raise KeyboardInterrupt
-    active[0].set()
-    if repeated:
-        active[1].set()
+def sync_file(stream: Any) -> None:
+    stream.flush()
+    os.fsync(stream.fileno())
 
 
-def check_interrupt() -> None:
-    if getattr(_interruption, "pending", False) and not getattr(_interruption, "depth", 0):
-        raise KeyboardInterrupt
+def quarantine(folder: Path, entries: list[Path]) -> Path:
+    root = folder.resolve()
+    if any(path.is_symlink() or path.resolve().parent != root for path in entries):
+        raise ValueError("unsafe_spool_entry")
+    archive = root / (
+        "quarantine-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid4().hex[:8]
+    )
+    archive.mkdir()
+    for path in entries:
+        path.rename(archive / path.name)
+    return archive
 
 
-@contextmanager
-def local_transition() -> Any:
-    _interruption.depth = getattr(_interruption, "depth", 0) + 1
-    try:
-        yield
-    finally:
-        _interruption.depth -= 1
+def finish_file(partial: Path, target: Path) -> None:
+    if target.exists():
+        with target.open("rb") as old, partial.open("rb") as new:
+            if digest(old) != digest(new):
+                raise ValueError("spool_conflict")
+        quarantine(target.parent, [partial])
+    else:
+        partial.rename(target)  # The invocation's kernel lock excludes competing writers.
 
 
 @contextmanager
-def deferred_signals() -> Any:
-    """Install operator handlers; only local_transition actually defers delivery."""
-    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
-    _interruption.pending = False
-    try:
-        for sig in previous:
-            signal.signal(sig, request_interrupt)
-        yield
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
-        _interruption.pending = False
+def process_lock() -> Any:
+    with (Path(tempfile.gettempdir()) / "transit-ls04-rescue.lock").open("a+b") as handle:
+        handle.write(b"0")
+        handle.flush()
+        handle.seek(0)
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if sys.platform == "win32":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def encoded(value: Any) -> bytes:
@@ -219,14 +225,16 @@ def copy_fact_table(
         "TO STDOUT WITH (FORMAT csv, HEADER true, ENCODING 'UTF8')"
     ).format(sql.SQL(", ").join(sql.Identifier(row[0]) for row in schema), sql.Identifier(table))
     started, hasher, size = time.monotonic(), hashlib.sha256(), 0
-    with destination.open("xb") as output, connection.cursor() as cursor:
+    partial = destination.with_name(destination.name + ".partial")
+    with partial.open("xb") as output, connection.cursor() as cursor:
         with cursor.copy(query, (provider_id, start_utc, end_utc)) as copy:
             for block in copy:
                 output.write(block)
                 hasher.update(block)
                 size += len(block)
-                check_interrupt()
         rows = cursor.rowcount
+        sync_file(output)
+    finish_file(partial, destination)
     return dict(
         schema=schema,
         schema_sha256=hashlib.sha256(encoded(schema)).hexdigest(),
@@ -254,13 +262,8 @@ def compress(source: Path) -> dict[str, Any]:
     with source.open("rb") as stream, partial.open("xb") as output:
         with gzip.GzipFile(filename="", mode="wb", fileobj=output, compresslevel=9, mtime=0) as gz:
             shutil.copyfileobj(stream, gz)
-    try:
-        target.hardlink_to(partial)
-    except FileExistsError:
-        with target.open("rb") as old, partial.open("rb") as new:
-            if digest(old) != digest(new):
-                raise ValueError("spool_corrupt") from None
-    partial.unlink()
+        sync_file(output)
+    finish_file(partial, target)
     with target.open("rb") as stream:
         object_hash, object_bytes = digest(stream)
     return dict(
@@ -317,6 +320,19 @@ def validate_csv(path: Path, meta: dict[str, Any]) -> None:
             raise ValueError("csv_count")
 
 
+class RetainedUpload:
+    """Bronze consumes successful inputs; this adapter retains the forensic copy."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def open(self, mode: str) -> Any:
+        return self.path.open(mode)
+
+    def unlink(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+
 class RescueObjects:
     """Only create and read are reachable through this adapter."""
 
@@ -327,39 +343,44 @@ class RescueObjects:
     def ensure(self, path: Path, key: str, meta: dict[str, Any] | None = None) -> int:
         if not key.startswith("rescue/v1/facts/") or ".." in key or "\\" in key:
             raise ValueError("unsafe_key")
-        with tempfile.TemporaryDirectory(dir=path.parent) as temporary:
-            disposable = Path(temporary) / "upload"
-            shutil.copyfile(path, disposable)
-            try:
-                self.__storage.put_if_absent(disposable, key)
-                self.created = True
-            except ObjectAlreadyExists:
-                self.created = False
-            downloaded = Path(temporary) / "readback"
-            with (
-                path.open("rb") as expected,
-                self.__storage.open_stream(key) as actual,
-                downloaded.open("wb") as output,
-            ):
-                size = 0
-                hasher = hashlib.sha256()
-                while block := expected.read(1024 * 1024):
-                    remaining = block
-                    while remaining:
-                        received = actual.read(len(remaining))
-                        if not received or not remaining.startswith(received):
-                            raise ValueError("object_conflict")
-                        size += len(received)
-                        output.write(received)
-                        hasher.update(received)
-                        remaining = remaining[len(received) :]
-                if actual.read(1):
-                    raise ValueError("object_conflict")
-            if meta is not None:
-                if (hasher.hexdigest(), size) != (meta["object_sha256"], meta["object_bytes"]):
-                    raise ValueError("object_corrupt")
-                validate_csv(downloaded, meta)
-            return size
+        temporary = quarantine(path.parent, [])
+        disposable = Path(temporary) / "upload"
+        with path.open("rb") as source, disposable.with_suffix(".partial").open("xb") as output:
+            shutil.copyfileobj(source, output)
+            sync_file(output)
+        finish_file(disposable.with_suffix(".partial"), disposable)
+        try:
+            self.__storage.put_if_absent(RetainedUpload(disposable), key)
+            self.created = True
+        except ObjectAlreadyExists:
+            self.created = False
+        downloaded = Path(temporary) / "readback"
+        with (
+            path.open("rb") as expected,
+            self.__storage.open_stream(key) as actual,
+            downloaded.with_suffix(".partial").open("xb") as output,
+        ):
+            size = 0
+            hasher = hashlib.sha256()
+            while block := expected.read(1024 * 1024):
+                remaining = block
+                while remaining:
+                    received = actual.read(len(remaining))
+                    if not received or not remaining.startswith(received):
+                        raise ValueError("object_conflict")
+                    size += len(received)
+                    output.write(received)
+                    hasher.update(received)
+                    remaining = remaining[len(received) :]
+            if actual.read(1):
+                raise ValueError("object_conflict")
+            sync_file(output)
+        finish_file(downloaded.with_suffix(".partial"), downloaded)
+        if meta is not None:
+            if (hasher.hexdigest(), size) != (meta["object_sha256"], meta["object_bytes"]):
+                raise ValueError("object_corrupt")
+            validate_csv(downloaded, meta)
+        return size
 
 
 def connect() -> Any:
@@ -372,18 +393,18 @@ def connect() -> Any:
         connect_timeout=5,
         autocommit=True,
         application_name="transit-ls04-rescue-" + uuid4().hex,
-        options="-c statement_timeout=1000 -c lock_timeout=1000",
+        options="-c statement_timeout=1000 -c lock_timeout=1000 "
+        "-c client_connection_check_interval=1000",
     )
 
 
 class GuardedSource:
     """Reject every later statement and stream read once interference is observed."""
 
-    def __init__(self, source: Any, failed: threading.Event) -> None:
+    def __init__(self, source: Any, failed: Any) -> None:
         self.source, self.failed, self.info = source, failed, source.info
 
     def check(self) -> None:
-        check_interrupt()
         if self.failed.is_set():
             raise ValueError("interference_or_deadline")
 
@@ -456,77 +477,82 @@ def terminate_self(controller: Any, pid: int, backend_start: Any, application_na
     row = controller.execute(
         "SELECT pg_terminate_backend(pid, 500) FROM pg_stat_activity "
         "WHERE pid=%s AND backend_start=%s AND application_name=%s "
-        "AND usename=current_user AND xact_start IS NOT NULL",
+        "AND usename=current_user",
         (pid, backend_start, application_name),
     ).fetchone()
     if row is not None and not row[0]:
         raise ValueError("self_termination_failed")
 
 
+class Failure:
+    value = False
+
+    def is_set(self) -> bool:
+        return self.value
+
+
 @contextmanager
 def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any:
-    """Independent visibility monitor cancels only the exporting connection."""
-    stop, failed, ready = threading.Event(), threading.Event(), threading.Event()
-    operator_stop, escalate = threading.Event(), threading.Event()
-    monitor = connect()
+    """Only worker threads cancel; no signal handler or shared main-thread lock."""
+    failed, ready, stopped, confirmed = Failure(), [False], [False], [False]
+    monitor, terminator = connect(), connect()
     monitor.execute("SET statement_timeout = '1s'")
-    terminator = connect()
     terminator.execute("SET statement_timeout = '1s'")
     pid = connection.info.backend_pid
     identity = monitor.execute(
-        "SELECT backend_start, application_name FROM pg_stat_activity WHERE pid=%s "
-        "AND usename=current_user",
+        "SELECT backend_start, application_name FROM pg_stat_activity "
+        "WHERE pid=%s AND usename=current_user",
         (pid,),
     ).fetchone()
     if (
         not identity
         or len(identity) != 2
-        or not identity[0]
         or not re.fullmatch(r"transit-ls04-rescue-[0-9a-f]{32}", identity[1])
     ):
         monitor.close()
         terminator.close()
         raise ValueError("backend_identity_unavailable")
     phase_end = deadline if deadline is not None else time.monotonic() + args.db_phase_s
-    terminating = threading.Lock()
-    protected = GuardedSource(connection, failed)
+    cancel_lock, exit_lock = threading.Lock(), threading.Lock()  # Worker-only locks.
+
+    def fail_stop() -> None:
+        if not confirmed[0] and exit_lock.acquire(blocking=False):
+            os.write(2, b"rescue: cancellation unconfirmed, fail-stop\n")
+            os._exit(1)
 
     def cancel() -> None:
-        with terminating:
-            if stop.is_set() or failed.is_set():
+        with cancel_lock:
+            if stopped[0] or failed.value:
                 return
-            failed.set()
+            failed.value = True
+            limit = threading.Timer(12, fail_stop)  # Includes stalled driver/control channels.
+            limit.daemon = True
+            limit.start()
             try:
-                connection.cancel_safe(timeout=2)
-            except Exception:
-                pass
-            # Only our captured exporting pid is signalled, through an independent connection.
-            # No source driver lock: <=2 s cancel + .25 s grace + 1 s primary statement
-            # + 5 s fallback connect + 1 s fallback statement: under 10 seconds.
-            escalate.wait(0.25)
-            try:
-                terminate_self(terminator, pid, *identity)
-            except Exception:
-                recovery = None
                 try:
-                    recovery = connect()
-                    terminate_self(recovery, pid, *identity)
+                    connection.cancel_safe(timeout=2)
                 except Exception:
-                    failed.set()
-                finally:
-                    if recovery is not None:
+                    pass
+                time.sleep(0.25)
+                try:
+                    terminate_self(terminator, pid, *identity)
+                except Exception:
+                    recovery = connect()
+                    try:
+                        terminate_self(recovery, pid, *identity)
+                    finally:
                         recovery.close()
+                confirmed[0] = True
+            except Exception:
+                fail_stop()
             finally:
-                ready.set()
-
-    timer = threading.Timer(max(0, phase_end - time.monotonic()), cancel)
-    timer.daemon = True
+                ready[0] = True
+                limit.cancel()
+                limit.join()
 
     def watch() -> None:
         try:
-            while not stop.is_set():
-                if operator_stop.is_set():
-                    raise ValueError("operator_interrupted")
+            while not stopped[0]:
                 blocked = monitor.execute(
                     "SELECT EXISTS (SELECT FROM pg_stat_activity WHERE pid <> %s "
                     "AND %s = ANY(pg_blocking_pids(pid))) OR EXISTS (SELECT FROM pg_locks "
@@ -537,33 +563,32 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
                 ).fetchone()[0]
                 if blocked or time.monotonic() >= phase_end:
                     raise ValueError("interference_or_deadline")
-                ready.set()
-                stop.wait(0.2)
+                ready[0] = True
+                time.sleep(0.2)
         except Exception:
             cancel()
         finally:
-            ready.set()
+            ready[0] = True
             monitor.close()
 
-    # Check visibility and queued locks before the first source query.
+    timer = threading.Timer(max(0, phase_end - time.monotonic()), cancel)
+    timer.daemon = True
     thread = threading.Thread(target=watch, daemon=True)
-    previous_active = getattr(_interruption, "active", None)
-    _interruption.active = (operator_stop, escalate)
     timer.start()
     thread.start()
     try:
-        ready.wait()
-        if failed.is_set():
+        while not ready[0]:
+            time.sleep(0.01)
+        if failed.value:
             raise ValueError("interference_or_deadline")
+        protected = GuardedSource(connection, failed)
         yield protected
         protected.check()
     finally:
-        with terminating:
-            stop.set()
-            timer.cancel()
+        stopped[0] = True
+        timer.cancel()
         timer.join()
         thread.join()
-        _interruption.active = previous_active
         terminator.close()
 
 
@@ -590,23 +615,8 @@ def inventory(connection: Any) -> list[Any]:
     return result
 
 
-@contextmanager
-def protect_raw(folder: Path, record: dict[str, Any]) -> Any:
-    previous = getattr(_interruption, "raw", None)
-    _interruption.raw = record
-    try:
-        yield
-    finally:
-        try:
-            if set(record["tables"]) == set(SCHEMAS):
-                write_record(folder, "export.json", record)
-        finally:
-            _interruption.raw = previous
-
-
 def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
-    args.completed_tables = metadata
     observations: dict[str, Any] = {}
     record = dict(
         **identity,
@@ -616,7 +626,6 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
     )
     started = time.monotonic()
     with (
-        protect_raw(folder, record),
         connect() as source,
         guarded(source, args, deadline=started + args.db_phase_s) as connection,
     ):
@@ -650,7 +659,6 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
             if args.inventory:
                 return dict(snapshot_time=now.isoformat(), ranges=ranges)
             for table in SCHEMAS:
-                check_interrupt()
                 remaining = args.db_phase_s - (time.monotonic() - started)
                 connection.check()
                 if remaining <= 0:
@@ -665,7 +673,7 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                     provider_id=identity["provider"],
                     start_utc=stamp(identity["start"]),
                     end_utc=stamp(identity["end"]),
-                    destination=folder / (table + ".csv.partial"),
+                    destination=folder / (table + ".csv"),
                 )
                 observed = next(
                     row
@@ -680,27 +688,20 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                 )
                 metadata[table]["coverage"] = "emergency_snapshot_completeness_unknown"
     # No compression or object I/O holds a source transaction or connection open.
+    write_record(folder, "export.json", record)
     return finalize(folder, identity)
 
 
 def write_record(folder: Path, name: str, record: dict[str, Any]) -> None:
     partial = folder / (name + ".partial")
-    with local_transition():
-        with partial.open("xb") as output:
-            output.write(encoded(record))
-        (folder / name).hardlink_to(partial)
-        partial.unlink()
+    with partial.open("xb") as output:
+        output.write(encoded(record))
+        sync_file(output)
+    finish_file(partial, folder / name)
 
 
 def finalize(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
     checkpoint = read_record(folder, identity, "export.json")
-    check_interrupt()
-    with local_transition():
-        for table in SCHEMAS:
-            partial, source = folder / (table + ".csv.partial"), folder / (table + ".csv")
-            if not source.exists():
-                partial.rename(source)
-    check_interrupt()
     for table, meta in checkpoint["tables"].items():
         source = folder / (table + ".csv")
         with source.open("rb") as stream:
@@ -720,7 +721,6 @@ def finalize(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
         )
         validate_csv(folder / (table + ".csv.gz"), meta)
     write_record(folder, "checkpoint.json", checkpoint)
-    check_interrupt()
     return checkpoint
 
 
@@ -752,11 +752,11 @@ def publish(checkpoint: dict[str, Any], folder: Path) -> dict[str, Any]:
                 )
             }
             receipt["tables"][table]["key"] = key
-        with tempfile.TemporaryDirectory(dir=folder) as temporary:
-            path = Path(temporary) / "receipt.json"
-            with local_transition():
-                path.write_bytes(encoded(receipt))
-            size += objects.ensure(path, checkpoint["prefix"] + "receipt.json")
+        receipt_folder = quarantine(folder, [])
+        write_record(receipt_folder, "receipt.json", receipt)
+        size += objects.ensure(
+            receipt_folder / "receipt.json", checkpoint["prefix"] + "receipt.json"
+        )
         return dict(
             object_get_bytes=size,
             compressed_upload_bytes=uploaded,
@@ -767,147 +767,111 @@ def publish(checkpoint: dict[str, Any], folder: Path) -> dict[str, Any]:
         scope.close()
 
 
-def recover_pending(folder: Path, identity: dict[str, Any]) -> None:
-    for name in ("export.json", "checkpoint.json"):
-        pending = folder / (name + ".partial")
-        if not pending.exists() or (folder / name).exists():
-            continue
-        try:
-            record = read_record(folder, identity, pending.name)
-        except (json.JSONDecodeError, KeyError, TypeError):
-            if name != "checkpoint.json":
-                raise
-            raw = read_record(folder, identity, "export.json")
-            validate_record_files(folder, "export.json", raw)
-            pending.rename(pending.with_name(pending.name + ".quarantine-" + uuid4().hex))
-            continue
-        validate_record_files(folder, name, record)
-        (folder / name).hardlink_to(pending)
-        pending.unlink()
-
-
-def validate_record_files(folder: Path, name: str, record: dict[str, Any]) -> None:
-    for table, meta in record["tables"].items():
-        path = folder / (table + (".csv.gz" if name == "checkpoint.json" else ".csv"))
-        if name == "export.json" and not path.exists():
-            path = folder / (table + ".csv.partial")
-        with path.open("rb") as stream:
-            kind = "object" if name == "checkpoint.json" else "csv"
-            if digest(stream) != (meta[kind + "_sha256"], meta[kind + "_bytes"]):
+def spool_ready(folder: Path, identity: dict[str, Any]) -> bool:
+    entries = [p for p in folder.iterdir() if not p.name.startswith("quarantine-")]
+    if not entries:
+        return False
+    allowed = {"export.json", "checkpoint.json"} | {
+        table + suffix for table in SCHEMAS for suffix in (".csv", ".csv.gz")
+    }
+    if any(p.name not in allowed for p in entries):
+        raise ValueError("unregistered_spool")
+    raw = read_record(folder, identity, "export.json")
+    for table, meta in raw["tables"].items():
+        with (folder / (table + ".csv")).open("rb") as stream:
+            if digest(stream) != (meta["csv_sha256"], meta["csv_bytes"]):
                 raise ValueError("spool_corrupt")
-        if name == "checkpoint.json":
-            validate_csv(path, meta)
+    if (folder / "checkpoint.json").exists():
+        complete = resume(folder, identity)
+        for table in SCHEMAS:
+            if any(
+                raw["tables"][table][key] != complete["tables"][table][key]
+                for key in ("csv_sha256", "csv_bytes", "schema")
+            ):
+                raise ValueError("mixed_snapshot")
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:
-    with deferred_signals():
-        return run(argv)
-
-
-def run(argv: list[str] | None = None) -> int:
     phase, args = "arguments", None
     started = time.monotonic()
     try:
         args = parser().parse_args(argv)
         folder = Path(args.spool_dir) if args.spool_dir else Path(tempfile.gettempdir())
-        reused = not args.inventory and any(
-            (folder / name).exists()
-            for name in (
-                "checkpoint.json",
-                "export.json",
-                "checkpoint.json.partial",
-                "export.json.partial",
-            )
-        )
-        identity = bounds(args, datetime.now(UTC), new_export=not reused)
-    except ValueError as error:
-        refused = str(error) in {"insufficient_budget", "day_not_closed"}
-        print(json.dumps(dict(phase=phase, reason=str(error) if refused else "invalid_arguments")))
-        return 1 if refused else 2
+        identity = bounds(args, datetime.now(UTC), new_export=False)
+    except ValueError:
+        print(json.dumps(dict(phase=phase, reason="invalid_arguments")))
+        return 2
     except KeyboardInterrupt:
         print(json.dumps(dict(phase=phase, reason="interrupted")))
         return 1
-    lock = Path(tempfile.gettempdir()) / "transit-ls04-rescue.lock"
-    owned = False
-    export_started = False
     try:
-        phase = "process_lock"
-        lock.mkdir()
-        owned = True
-        if not args.inventory:
+        with process_lock():
             folder.mkdir(parents=True, exist_ok=True)
-        phase = "resume" if reused else "export"
-        if reused:
-            recover_pending(folder, identity)
-        if not reused and not args.inventory and any(folder.iterdir()):
-            remaining = [p for p in folder.iterdir() if not p.name.startswith("abandoned-")]
-            if any(p.name not in {t + ".csv.partial" for t in SCHEMAS} for p in remaining):
-                raise ValueError("incomplete_spool")
-            if remaining:
-                archive = Path(tempfile.mkdtemp(prefix="abandoned-", dir=folder))
-                for path in remaining:
-                    path.rename(archive / path.name)
-        export_started = not reused and not args.inventory
-        if reused:
-            finish = resume if (folder / "checkpoint.json").exists() else finalize
-            checkpoint = finish(folder, identity)
-        else:
-            checkpoint = export(args, identity, folder)
-        phase = "upload_readback"
-        check_interrupt()
-        object_report = publish(checkpoint, folder) if args.upload else {}
-        check_interrupt()
-        print(
-            json.dumps(
-                dict(
-                    outcome="readback_complete" if args.upload else "local_complete",
-                    reused_spool=reused,
-                    queried_postgres=not reused,
-                    checkpoint=checkpoint,
-                    object_io=object_report,
-                    script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-                    command=[sys.executable, "scripts/rescue_fact_day.py", *(argv or sys.argv[1:])],
-                    started_at=datetime.fromtimestamp(
-                        time.time() - (time.monotonic() - started), UTC
-                    ).isoformat(),
-                    ended_at=datetime.now(UTC).isoformat(),
-                    statement_timeout_s=args.statement_timeout_s,
-                    db_phase_s=args.db_phase_s,
-                    total_seconds=time.monotonic() - started,
+            phase, reused, archive = "spool", False, None
+            if not args.inventory:
+                try:
+                    reused = spool_ready(folder, identity)
+                except (ValueError, KeyError, OSError, TypeError):
+                    reused = False
+            if reused:
+                phase = "resume"
+                checkpoint = (
+                    resume(folder, identity)
+                    if (folder / "checkpoint.json").exists()
+                    else finalize(folder, identity)
+                )
+            else:
+                bounds(args, datetime.now(UTC))
+                entries = [p for p in folder.iterdir() if not p.name.startswith("quarantine-")]
+                if entries and not args.inventory:
+                    archive = str(quarantine(folder, entries))
+                phase = "export"
+                checkpoint = export(args, identity, folder)
+            phase = "upload_readback"
+            object_report = publish(checkpoint, folder) if args.upload else {}
+            print(
+                json.dumps(
+                    dict(
+                        outcome="readback_complete" if args.upload else "local_complete",
+                        reused_spool=reused,
+                        queried_postgres=not reused,
+                        quarantine=archive,
+                        path="offline"
+                        if reused
+                        else "quarantined_export"
+                        if archive
+                        else "fresh_export",
+                        checkpoint=checkpoint,
+                        object_io=object_report,
+                        script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                        command=[
+                            sys.executable,
+                            "scripts/rescue_fact_day.py",
+                            *(argv or sys.argv[1:]),
+                        ],
+                        ended_at=datetime.now(UTC).isoformat(),
+                        statement_timeout_s=args.statement_timeout_s,
+                        db_phase_s=args.db_phase_s,
+                        total_seconds=time.monotonic() - started,
+                    )
                 )
             )
-        )
-        return 0
+            return 0
     except (Exception, KeyboardInterrupt) as error:
-        interrupted = isinstance(error, KeyboardInterrupt) or getattr(
-            _interruption, "pending", False
-        )
-        if interrupted and (export_started or reused):
-            for name in (
-                table + suffix
-                for table in SCHEMAS
-                for suffix in (".csv.partial", ".csv.gz.partial")
-                if suffix != ".csv.partial"
-                or (
-                    not (folder / "export.json").exists()
-                    and table not in getattr(args, "completed_tables", set())
-                )
-            ):
-                (folder / name).unlink(missing_ok=True)
         print(
             json.dumps(
                 dict(
                     phase=phase,
                     provider=args.provider,
                     date=args.date,
-                    reason="interrupted" if interrupted else "refused_or_failed",
+                    reason="interrupted"
+                    if isinstance(error, KeyboardInterrupt)
+                    else "refused_or_failed",
                 )
             )
         )
         return 1
-    finally:
-        if owned:
-            lock.rmdir()
 
 
 if __name__ == "__main__":
