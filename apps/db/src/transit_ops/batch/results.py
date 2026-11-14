@@ -1,6 +1,8 @@
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+
+from sqlalchemy.exc import MultipleResultsFound, NoResultFound
 
 
 @dataclass(frozen=True)
@@ -34,3 +36,43 @@ class BatchResult:
 
     def __iter__(self) -> Iterator[BatchRow]:
         return iter(self.fetchall())
+
+    def fetchone(self) -> BatchRow | None:
+        return self._rows.pop(0) if self._rows else None
+
+    def first(self) -> BatchRow | None:
+        rows = self.fetchall()
+        return rows[0] if rows else None
+
+    def one_or_none(self) -> BatchRow | None:
+        rows = self.fetchall()
+        if len(rows) > 1:
+            raise MultipleResultsFound("expected at most one row")
+        return rows[0] if rows else None
+
+    def one(self) -> BatchRow:
+        row = self.one_or_none()
+        if row is None:
+            raise NoResultFound("expected one row")
+        return row
+
+    def scalar_one(self) -> object:
+        return self.one()[0]
+
+    def scalar_one_or_none(self) -> object:
+        row = self.one_or_none()
+        return row[0] if row is not None else None
+
+    def scalars(self) -> "_Values[object]":
+        return _Values(self, lambda row: row[0])
+
+    def mappings(self) -> "_Values[Mapping[str, object]]":
+        return _Values(self, lambda row: row._mapping)
+
+
+class _Values[T]:
+    def __init__(self, result: BatchResult, convert: Callable[[BatchRow], T]) -> None:
+        self._result, self._convert = result, convert
+
+    def all(self) -> list[T]:
+        return [self._convert(row) for row in self._result.fetchall()]
