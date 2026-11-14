@@ -419,7 +419,7 @@ def rescue_login(real_db_engine):
             admin.exec_driver_sql(f'DROP ROLE "{role}"')
 
 
-@pytest.mark.parametrize("idle", [False, True])
+@pytest.mark.parametrize("idle", [False, True, "SIGINT", "SIGINTx2", "SIGTERM"])
 def test_rescue_real_queued_lock_releases_only_source(
     real_db_engine, fact_source, tmp_path, monkeypatch, idle, rescue_login
 ):
@@ -435,6 +435,7 @@ def test_rescue_real_queued_lock_releases_only_source(
     monkeypatch.setattr(rescue, "connect", connect)
     completed = threading.Event()
     failures = []
+    operator = isinstance(idle, str)
 
     def exclusive():
         try:
@@ -452,8 +453,19 @@ def test_rescue_real_queued_lock_releases_only_source(
         except Exception as error:
             failures.append(type(error).__name__)
 
-    worker = threading.Thread(target=exclusive)
-    with connect() as source:
+    def operator_stop():
+        completed.wait(0.2)
+        for sig in (
+            [signal.SIGTERM]
+            if idle == "SIGTERM"
+            else [signal.SIGINT] * (2 if idle == "SIGINTx2" else 1)
+        ):
+            signal.raise_signal(sig)
+            completed.wait(0.02)
+        completed.set()
+
+    worker = threading.Thread(target=operator_stop if operator else exclusive)
+    with rescue.deferred_signals(), connect() as source:
         pid = source.info.backend_pid
         assert source.execute(
             "SELECT pg_has_role(current_user,'pg_monitor','MEMBER'), "
@@ -461,13 +473,13 @@ def test_rescue_real_queued_lock_releases_only_source(
         ).fetchone() == (False, False)
         monkeypatch.setattr(source, "cancel_safe", lambda **kw: None)  # deliberately miss
         started = rescue.time.monotonic()
-        with pytest.raises((rescue.psycopg.OperationalError, ValueError)):
+        with pytest.raises((rescue.psycopg.OperationalError, ValueError, KeyboardInterrupt)):
             with rescue.guarded(source, args(tmp_path)) as protected, protected.transaction():
                 protected.execute("SET TRANSACTION READ ONLY")
                 protected.prove_visibility()
                 protected.execute("SET LOCAL statement_timeout = '30s'")
                 worker.start()
-                if idle:
+                if idle is True:
                     assert completed.wait(10), "idle backend must release locks within the bound"
                     protected.execute("SELECT 1")
                 else:
@@ -875,17 +887,20 @@ def test_finalization_cannot_replace_copy_digest(tmp_path, monkeypatch, fake_cop
     assert not (tmp_path / "checkpoint.json").exists()
 
 
-@pytest.mark.parametrize("boundary", ["copy_complete", "export.json", "checkpoint.json"])
+@pytest.mark.parametrize(
+    "boundary",
+    ["copy_complete", "export.json", "checkpoint.json", "success_report", "source_closed"],
+)
 def test_signal_at_commit_boundary_preserves_original_pair(
     tmp_path, monkeypatch, capsys, fake_copy_source, boundary
 ):
     _, copied, _, command = fake_copy_source
     lines = SCRIPT.read_text().splitlines()
-    needle = (
-        "args.completed_tables.add(table)"
-        if boundary == "copy_complete"
-        else "(folder / name).hardlink_to(partial)"
-    )
+    needle = dict(
+        copy_complete="observed = next(",
+        success_report='outcome="readback_complete"',
+        source_closed='write_record(folder, "export.json", record)',
+    ).get(boundary, "(folder / name).hardlink_to(partial)")
     line = next(i for i, value in enumerate(lines, 1) if needle in value)
     hit = []
 
@@ -893,7 +908,7 @@ def test_signal_at_commit_boundary_preserves_original_pair(
         if event == "line" and frame.f_code.co_filename == str(SCRIPT) and frame.f_lineno == line:
             match = (
                 len(copied) == 2
-                if boundary == "copy_complete"
+                if boundary in ("copy_complete", "success_report", "source_closed")
                 else frame.f_locals.get("name") == boundary
             )
             if match and not hit:
@@ -909,4 +924,72 @@ def test_signal_at_commit_boundary_preserves_original_pair(
     assert hit
     monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("boundary recovery queried DB"))
     assert rescue.main(command) == 0
-    assert json.loads(capsys.readouterr().out.splitlines()[-1])["reused_spool"]
+    reports = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert reports[0]["reason"] == "interrupted" and reports[-1]["reused_spool"]
+
+
+@pytest.mark.parametrize(
+    "signals", [(signal.SIGINT,), (signal.SIGINT, signal.SIGINT), (signal.SIGTERM,)]
+)
+def test_operator_signal_cancels_actual_driver_wait(tmp_path, monkeypatch, signals):
+    import psycopg.connection as driver
+
+    released, cancellations = threading.Event(), []
+
+    class Source:
+        info = SimpleNamespace(backend_pid=42)
+        pgconn = SimpleNamespace(socket=123, transaction_status=driver.ACTIVE)
+        closed = False
+
+        def cancel_safe(self, **kwargs):
+            cancellations.append("cancel")
+
+        def _try_cancel(self, **kwargs):
+            cancellations.append("driver_cancel")
+
+    source = Source()
+
+    class Control:
+        def execute(self, query, params=None):
+            if "pg_terminate_backend" in query:
+                cancellations.append("terminate")
+                source.closed = True
+                released.set()
+            return SimpleNamespace(
+                fetchone=lambda: (
+                    (NOW, "transit-ls04-rescue-" + "a" * 32)
+                    if "SELECT backend_start" in query
+                    else ("pg_terminate_backend" in query,)
+                )
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(rescue, "connect", Control)
+
+    def wait(*args, **kwargs):
+        for sig in signals:
+            signal.raise_signal(sig)
+        assert released.wait(3), "operator stop did not reach the independent terminator"
+        return None
+
+    monkeypatch.setattr(driver.waiting, "wait", wait)
+    with pytest.raises((KeyboardInterrupt, ValueError)):
+        with rescue.deferred_signals(), rescue.guarded(source, args(tmp_path)):
+            driver.Connection.wait(source, iter(()))
+    assert source.closed and "terminate" in cancellations
+
+
+def test_empty_pending_checkpoint_recovers_from_valid_export(
+    tmp_path, monkeypatch, fake_copy_source
+):
+    _, _, _, command = fake_copy_source
+    assert rescue.main(command) == 0
+    (tmp_path / "checkpoint.json").rename(tmp_path / "checkpoint.json.partial")
+    (tmp_path / "checkpoint.json.partial").write_bytes(b"")
+    monkeypatch.setattr(rescue, "connect", lambda: pytest.fail("checkpoint recovery queried DB"))
+    assert rescue.main(command) == 0
+    assert any(
+        path.read_bytes() == b"" for path in tmp_path.glob("checkpoint.json.partial.quarantine-*")
+    )

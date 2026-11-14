@@ -60,16 +60,38 @@ _interruption = threading.local()
 
 
 def request_interrupt(*unused: Any) -> None:
+    repeated = getattr(_interruption, "pending", False)
     _interruption.pending = True
+    if getattr(_interruption, "depth", 0):
+        return
+    active = getattr(_interruption, "active", None)
+    if active is None:
+        raw = getattr(_interruption, "raw", None)
+        if raw is not None and set(raw["tables"]) == set(SCHEMAS):
+            return  # Source has finished: complete the short raw-record handoff first.
+        raise KeyboardInterrupt
+    active[0].set()
+    if repeated:
+        active[1].set()
 
 
 def check_interrupt() -> None:
-    if getattr(_interruption, "pending", False):
+    if getattr(_interruption, "pending", False) and not getattr(_interruption, "depth", 0):
         raise KeyboardInterrupt
 
 
 @contextmanager
+def local_transition() -> Any:
+    _interruption.depth = getattr(_interruption, "depth", 0) + 1
+    try:
+        yield
+    finally:
+        _interruption.depth -= 1
+
+
+@contextmanager
 def deferred_signals() -> Any:
+    """Install operator handlers; only local_transition actually defers delivery."""
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
     _interruption.pending = False
     try:
@@ -361,6 +383,7 @@ class GuardedSource:
         self.source, self.failed, self.info = source, failed, source.info
 
     def check(self) -> None:
+        check_interrupt()
         if self.failed.is_set():
             raise ValueError("interference_or_deadline")
 
@@ -444,6 +467,7 @@ def terminate_self(controller: Any, pid: int, backend_start: Any, application_na
 def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any:
     """Independent visibility monitor cancels only the exporting connection."""
     stop, failed, ready = threading.Event(), threading.Event(), threading.Event()
+    operator_stop, escalate = threading.Event(), threading.Event()
     monitor = connect()
     monitor.execute("SET statement_timeout = '1s'")
     terminator = connect()
@@ -479,15 +503,19 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
             # Only our captured exporting pid is signalled, through an independent connection.
             # No source driver lock: <=2 s cancel + .25 s grace + 1 s primary statement
             # + 5 s fallback connect + 1 s fallback statement: under 10 seconds.
-            time.sleep(0.25)
+            escalate.wait(0.25)
             try:
                 terminate_self(terminator, pid, *identity)
             except Exception:
-                recovery = connect()
+                recovery = None
                 try:
+                    recovery = connect()
                     terminate_self(recovery, pid, *identity)
+                except Exception:
+                    failed.set()
                 finally:
-                    recovery.close()
+                    if recovery is not None:
+                        recovery.close()
             finally:
                 ready.set()
 
@@ -497,6 +525,8 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
     def watch() -> None:
         try:
             while not stop.is_set():
+                if operator_stop.is_set():
+                    raise ValueError("operator_interrupted")
                 blocked = monitor.execute(
                     "SELECT EXISTS (SELECT FROM pg_stat_activity WHERE pid <> %s "
                     "AND %s = ANY(pg_blocking_pids(pid))) OR EXISTS (SELECT FROM pg_locks "
@@ -517,6 +547,8 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
 
     # Check visibility and queued locks before the first source query.
     thread = threading.Thread(target=watch, daemon=True)
+    previous_active = getattr(_interruption, "active", None)
+    _interruption.active = (operator_stop, escalate)
     timer.start()
     thread.start()
     try:
@@ -531,6 +563,7 @@ def guarded(connection: Any, args: Any, *, deadline: float | None = None) -> Any
             timer.cancel()
         timer.join()
         thread.join()
+        _interruption.active = previous_active
         terminator.close()
 
 
@@ -557,12 +590,33 @@ def inventory(connection: Any) -> list[Any]:
     return result
 
 
+@contextmanager
+def protect_raw(folder: Path, record: dict[str, Any]) -> Any:
+    previous = getattr(_interruption, "raw", None)
+    _interruption.raw = record
+    try:
+        yield
+    finally:
+        try:
+            if set(record["tables"]) == set(SCHEMAS):
+                write_record(folder, "export.json", record)
+        finally:
+            _interruption.raw = previous
+
+
 def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
-    args.completed_tables = set()
+    args.completed_tables = metadata
     observations: dict[str, Any] = {}
+    record = dict(
+        **identity,
+        tables=metadata,
+        run_observations=dict(leading_interval_unobserved=observations),
+        retention_days=get_settings().GOLD_FACT_RETENTION_DAYS,
+    )
     started = time.monotonic()
     with (
+        protect_raw(folder, record),
         connect() as source,
         guarded(source, args, deadline=started + args.db_phase_s) as connection,
     ):
@@ -588,9 +642,11 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
             now, version = connection.execute(
                 "SELECT clock_timestamp(), current_setting('server_version')"
             ).fetchone()
+            record.update(snapshot_time=now.isoformat(), server_version=version)
             bounds(args, now)
             connection.prove_visibility()
             ranges = inventory(connection)
+            record["ranges"] = ranges
             if args.inventory:
                 return dict(snapshot_time=now.isoformat(), ranges=ranges)
             for table in SCHEMAS:
@@ -611,7 +667,6 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                     end_utc=stamp(identity["end"]),
                     destination=folder / (table + ".csv.partial"),
                 )
-                args.completed_tables.add(table)
                 observed = next(
                     row
                     for row in ranges
@@ -625,34 +680,26 @@ def export(args: Any, identity: dict[str, Any], folder: Path) -> dict[str, Any]:
                 )
                 metadata[table]["coverage"] = "emergency_snapshot_completeness_unknown"
     # No compression or object I/O holds a source transaction or connection open.
-    checkpoint = dict(
-        **identity,
-        tables=metadata,
-        snapshot_time=now.isoformat(),
-        server_version=version,
-        ranges=ranges,
-        run_observations=dict(leading_interval_unobserved=observations),
-        retention_days=get_settings().GOLD_FACT_RETENTION_DAYS,
-    )
-    write_record(folder, "export.json", checkpoint)
     return finalize(folder, identity)
 
 
 def write_record(folder: Path, name: str, record: dict[str, Any]) -> None:
     partial = folder / (name + ".partial")
-    with partial.open("xb") as output:
-        output.write(encoded(record))
-    (folder / name).hardlink_to(partial)
-    partial.unlink()
+    with local_transition():
+        with partial.open("xb") as output:
+            output.write(encoded(record))
+        (folder / name).hardlink_to(partial)
+        partial.unlink()
 
 
 def finalize(folder: Path, identity: dict[str, Any]) -> dict[str, Any]:
     checkpoint = read_record(folder, identity, "export.json")
     check_interrupt()
-    for table in SCHEMAS:
-        partial, source = folder / (table + ".csv.partial"), folder / (table + ".csv")
-        if not source.exists():
-            partial.rename(source)
+    with local_transition():
+        for table in SCHEMAS:
+            partial, source = folder / (table + ".csv.partial"), folder / (table + ".csv")
+            if not source.exists():
+                partial.rename(source)
     check_interrupt()
     for table, meta in checkpoint["tables"].items():
         source = folder / (table + ".csv")
@@ -707,7 +754,8 @@ def publish(checkpoint: dict[str, Any], folder: Path) -> dict[str, Any]:
             receipt["tables"][table]["key"] = key
         with tempfile.TemporaryDirectory(dir=folder) as temporary:
             path = Path(temporary) / "receipt.json"
-            path.write_bytes(encoded(receipt))
+            with local_transition():
+                path.write_bytes(encoded(receipt))
             size += objects.ensure(path, checkpoint["prefix"] + "receipt.json")
         return dict(
             object_get_bytes=size,
@@ -724,19 +772,31 @@ def recover_pending(folder: Path, identity: dict[str, Any]) -> None:
         pending = folder / (name + ".partial")
         if not pending.exists() or (folder / name).exists():
             continue
-        record = read_record(folder, identity, pending.name)
-        for table, meta in record["tables"].items():
-            path = folder / (table + (".csv.gz" if name == "checkpoint.json" else ".csv"))
-            if name == "export.json" and not path.exists():
-                path = folder / (table + ".csv.partial")
-            with path.open("rb") as stream:
-                kind = "object" if name == "checkpoint.json" else "csv"
-                if digest(stream) != (meta[kind + "_sha256"], meta[kind + "_bytes"]):
-                    raise ValueError("spool_corrupt")
-            if name == "checkpoint.json":
-                validate_csv(path, meta)
+        try:
+            record = read_record(folder, identity, pending.name)
+        except (json.JSONDecodeError, KeyError, TypeError):
+            if name != "checkpoint.json":
+                raise
+            raw = read_record(folder, identity, "export.json")
+            validate_record_files(folder, "export.json", raw)
+            pending.rename(pending.with_name(pending.name + ".quarantine-" + uuid4().hex))
+            continue
+        validate_record_files(folder, name, record)
         (folder / name).hardlink_to(pending)
         pending.unlink()
+
+
+def validate_record_files(folder: Path, name: str, record: dict[str, Any]) -> None:
+    for table, meta in record["tables"].items():
+        path = folder / (table + (".csv.gz" if name == "checkpoint.json" else ".csv"))
+        if name == "export.json" and not path.exists():
+            path = folder / (table + ".csv.partial")
+        with path.open("rb") as stream:
+            kind = "object" if name == "checkpoint.json" else "csv"
+            if digest(stream) != (meta[kind + "_sha256"], meta[kind + "_bytes"]):
+                raise ValueError("spool_corrupt")
+        if name == "checkpoint.json":
+            validate_csv(path, meta)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -819,7 +879,9 @@ def run(argv: list[str] | None = None) -> int:
         )
         return 0
     except (Exception, KeyboardInterrupt) as error:
-        interrupted = isinstance(error, KeyboardInterrupt)
+        interrupted = isinstance(error, KeyboardInterrupt) or getattr(
+            _interruption, "pending", False
+        )
         if interrupted and (export_started or reused):
             for name in (
                 table + suffix
