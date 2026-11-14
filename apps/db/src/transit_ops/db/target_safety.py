@@ -13,7 +13,7 @@ _POSTGRESQL_DEFAULT_PORT = 5432
 _DIAGNOSTIC_FIELD_LIMIT = 120
 _CONNECTION_IDENTITY_QUERY_KEYS = frozenset({"user", "dbname", "host", "hostaddr", "port"})
 _CREDENTIAL_QUERY_KEYS = frozenset({"password", "sslpassword"})
-_UNRESOLVABLE_TARGET_QUERY_KEYS = frozenset({"service", "servicefile"})
+_UNRESOLVABLE_TARGET_QUERY_KEYS = frozenset({"service", "servicefile", "conninfo", "dsn"})
 _INLINE_HOST_PORT = re.compile(r"^([a-zA-Z0-9\-.]*)(?::(\d*))?$")
 _DISPOSABLE_CONFIRMATION = "I_UNDERSTAND_THIS_DATABASE_IS_DISPOSABLE"
 _DISPOSABLE_TARGETS = frozenset(
@@ -310,7 +310,7 @@ def assert_disposable_test_url(url: str, environment: Mapping[str, str]) -> None
     target = _parse_database_target(url, environment)
     confirmed = environment.get("TRANSIT_TEST_DATABASE_DISPOSABLE") == _DISPOSABLE_CONFIRMATION
     database = target.database or ""
-    worker = re.fullmatch(r"(.+)_xdist_[0-9a-f]{16}_gw[0-9]+", database)
+    worker = re.fullmatch(r"(.+)(?:_xdist_[0-9a-f]{16}_gw[0-9]+|_oracle_[0-9a-f]{16})", database)
     base_database = worker.group(1) if worker else database
     approved_pair = (target.username, base_database) in _DISPOSABLE_TARGETS
     if _is_local_target(target) and approved_pair and confirmed:
