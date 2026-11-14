@@ -86,9 +86,8 @@ def prepare_replay_database(url: str, environment: Mapping[str, str]) -> ReplayD
         with engine.connect() as conn:
             _approve_identity(*conn.exec_driver_sql(_IDENTITY_SQL).one())
             _canonical_clock(conn)
-            if set(MigrationContext.configure(conn).get_current_heads()) != set(
-                scripts.get_heads()
-            ):
+            heads = set(scripts.get_heads())
+            if set(MigrationContext.configure(conn).get_current_heads()) != heads:
                 raise ReplayDatabaseRefused("Replay database must be at Alembic head")
         database = object.__new__(ReplayDatabase)
         object.__setattr__(database, "engine", engine)
@@ -173,6 +172,7 @@ def pinned_replay_engine(database: ReplayDatabase, as_of_utc: datetime) -> Itera
                         with admin.begin():
                             for definition in definitions:
                                 admin.exec_driver_sql(definition)
+                        with admin.begin():
                             for name in ("now", "clock_timestamp"):
                                 admin.exec_driver_sql(f"DROP FUNCTION replay_clock.{name}()")
                                 admin.exec_driver_sql(f"DROP FUNCTION replay_clock.real_{name}()")

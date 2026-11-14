@@ -161,7 +161,7 @@ def test_leftover_clock_is_refused(replay, engine, schema, name):
         original = definitions(conn)
         conn.exec_driver_sql(f"""
             CREATE OR REPLACE FUNCTION pg_catalog.{name}() RETURNS timestamptz
-            LANGUAGE sql AS $ SELECT '2025-09-02T07:00:00Z'::timestamptz $
+            LANGUAGE sql AS $$ SELECT '2025-09-02T07:00:00Z'::timestamptz $$
         """)
         planted = definitions(conn)
         if schema:
