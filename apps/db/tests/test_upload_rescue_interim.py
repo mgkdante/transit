@@ -1,9 +1,9 @@
 import csv
 import gzip
 import hashlib
+import importlib.util
 import io
 import json
-import sys
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -11,8 +11,26 @@ import psycopg
 import pytest
 from sqlalchemy.engine import Engine
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
-import upload_rescue_interim as upload  # noqa: E402
+from transit_ops.history.storage import history_storage
+from transit_ops.ingestion.storage import ObjectAlreadyExists
+from transit_ops.settings import Settings
+
+
+@pytest.fixture
+def upload(monkeypatch):
+    forbidden = Mock(side_effect=AssertionError("database opened"))
+    monkeypatch.setattr(psycopg, "connect", forbidden)
+    monkeypatch.setattr(Engine, "connect", forbidden)
+    scripts = Path(__file__).parents[1] / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    # Execute afresh so another test's cached import cannot hide import-time I/O.
+    spec = importlib.util.spec_from_file_location(
+        "upload_rescue_interim", scripts / "upload_rescue_interim.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    yield module
+    forbidden.assert_not_called()
 
 
 class Storage:
@@ -23,7 +41,7 @@ class Storage:
     def put_if_absent(self, path, key):
         self.puts.append(key)
         if key in self.objects:
-            raise upload.ObjectAlreadyExists("secret", self.status)
+            raise ObjectAlreadyExists("secret", self.status)
         self.objects[key] = path.open("rb").read()
         path.unlink()  # Bronze consumes successful uploads.
 
@@ -33,7 +51,7 @@ class Storage:
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(upload, tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()
     command = [
@@ -68,7 +86,7 @@ def setup(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("bad", ["digest", "header", "missing", "label", "expect"])
-def test_invalid_input_never_puts(setup, bad, capsys):
+def test_invalid_input_never_puts(upload, setup, bad, capsys):
     command, source, originals, storage = setup
     table = list(originals)[-1]
     path = source / (table + ".csv")
@@ -89,17 +107,11 @@ def test_invalid_input_never_puts(setup, bad, capsys):
     assert "secret" not in capsys.readouterr().out
 
 
-def test_verified_deterministic_rerun_preserves_sources_without_database(
-    setup, monkeypatch, capsys
-):
+def test_verified_deterministic_rerun_preserves_sources_without_database(upload, setup, capsys):
     command, source, originals, storage = setup
-    forbidden = Mock(side_effect=AssertionError("database opened"))
-    monkeypatch.setattr(psycopg, "connect", forbidden)
-    monkeypatch.setattr(Engine, "connect", forbidden)
     assert upload.main(command) == 0
     first = dict(storage.objects)
     assert upload.main(command) == 0
-    forbidden.assert_not_called()
     assert storage.objects == first
     manifest = json.loads(first["rescue/v1/interim/copy-a/manifest.json"])
     assert manifest["kind"] == "interim_unordered_csv"
@@ -118,7 +130,7 @@ def test_verified_deterministic_rerun_preserves_sources_without_database(
 
 @pytest.mark.parametrize("status", [409, 412])
 @pytest.mark.parametrize("equal", [True, False])
-def test_collision_requires_equal_bytes(setup, status, equal):
+def test_collision_requires_equal_bytes(upload, setup, status, equal):
     command, _, _, storage = setup
     assert upload.main(command) == 0
     storage.status = status
@@ -129,8 +141,96 @@ def test_collision_requires_equal_bytes(setup, status, equal):
     assert equal or not any(key.endswith("manifest.json") for key in storage.objects)
 
 
-def test_bad_readback_stops_before_manifest(setup):
+def test_bad_readback_stops_before_manifest(upload, setup):
     command, _, _, storage = setup
     storage.corrupt = True
     assert upload.main(command) == 1
     assert not any(key.endswith("manifest.json") for key in storage.objects)
+
+
+def test_real_storage_factory_without_database(upload, setup, monkeypatch, capsys):
+    command, _, originals, _ = setup
+    settings = Settings(
+        _env_file=None,
+        BRONZE_S3_ENDPOINT="https://storage.example.test",
+        BRONZE_S3_BUCKET="test-bucket",
+        BRONZE_S3_ACCESS_KEY="test-access",
+        BRONZE_S3_SECRET_KEY="test-secret",
+    )
+    objects = {}
+
+    def put_object(*, Bucket, Key, Body, IfNoneMatch):
+        assert Bucket == "test-bucket"
+        assert IfNoneMatch == "*"
+        assert Key not in objects
+        objects[Key] = Body.read()
+
+    def get_object(*, Bucket, Key):
+        assert Bucket == "test-bucket"
+        return {"Body": io.BytesIO(objects[Key])}
+
+    client = Mock(spec=["put_object", "get_object", "close"])
+    client.put_object.side_effect = put_object
+    client.get_object.side_effect = get_object
+    monkeypatch.setattr("transit_ops.ingestion.storage.build_s3_client", lambda _: client)
+    monkeypatch.setattr(upload, "history_storage", lambda: history_storage(settings))
+    assert upload.main(command) == 0
+    client.close.assert_called_once_with()
+    manifest = json.loads(objects["rescue/v1/interim/copy-a/manifest.json"])
+    assert set(manifest["tables"]) == set(originals)
+    for table, payload in originals.items():
+        assert gzip.decompress(objects[f"rescue/v1/interim/copy-a/{table}.csv.gz"]) == payload
+    assert json.loads(capsys.readouterr().out)["outcome"] == "verified"
+
+
+@pytest.mark.parametrize("retained_bytes", [0, 1, -1])
+def test_truncated_readback_fails_without_verification(
+    upload, setup, monkeypatch, capsys, retained_bytes
+):
+    command, _, _, storage = setup
+
+    def truncated_stream(key):
+        payload = storage.objects[key]
+        return io.BytesIO(payload[:retained_bytes])
+
+    monkeypatch.setattr(storage, "open_stream", truncated_stream)
+    assert upload.main(command) == 1
+    assert storage.puts
+    assert not any(key.endswith("manifest.json") for key in storage.objects)
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        dict(outcome="failed", phase="upload_readback", reason="refused_or_failed")
+    ]
+
+
+@pytest.mark.parametrize("after_verification", [False, True])
+def test_changed_source_fails_without_verification(
+    upload, setup, monkeypatch, capsys, after_verification
+):
+    command, source, originals, storage = setup
+    table = next(iter(originals))
+
+    def mutate():
+        path = source / (table + ".csv")
+        path.write_bytes(originals[table].replace(b"1", b"2"))
+
+    if after_verification:
+        inputs = upload.inputs
+
+        def verified_inputs(argv):
+            result = inputs(argv)
+            mutate()
+            return result
+
+        monkeypatch.setattr(upload, "inputs", verified_inputs)
+    else:
+        mutate()
+    assert upload.main(command) == (1 if after_verification else 2)
+    assert storage.puts == []
+    assert storage.objects == {}
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        dict(
+            outcome="failed",
+            phase="spool" if after_verification else "input",
+            reason="refused_or_failed",
+        )
+    ]
