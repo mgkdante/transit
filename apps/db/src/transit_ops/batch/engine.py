@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 
 import duckdb
 from sqlalchemy.dialects.postgresql import JSONB, psycopg
@@ -27,6 +28,10 @@ class InputRefused(BatchEngineError):
     pass
 
 
+class VariantRefused(BatchEngineError):
+    pass
+
+
 @dataclass(frozen=True)
 class BatchInput:
     relation: str
@@ -34,21 +39,40 @@ class BatchInput:
 
 
 class BatchSession:
-    def __init__(self, connection: duckdb.DuckDBPyConnection) -> None:
+    def __init__(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        variants: Mapping[str, TextClause] = MappingProxyType({}),
+    ) -> None:
         self._connection = connection
+        self._variants = dict(variants)
+
+    def _select(
+        self, statement: TextClause, params: Mapping[str, object] | None
+    ) -> tuple[TextClause, dict[str, object]]:
+        name = query_name(statement)
+        if not name:
+            raise UnnamedQueryRefused("batch SQL requires a query name")
+        original = statement.compile()
+        selected = self._variants.get(name, statement)
+        if set(original.params) != set(selected.compile().params):
+            raise VariantRefused(f"variant bind names differ: {name}")
+        return selected, dict(original.construct_params(dict(params or {})))
 
     def execute(
         self, statement: TextClause, params: Mapping[str, object] | None = None
     ) -> BatchResult:
-        if not query_name(statement):
-            raise UnnamedQueryRefused("batch SQL requires a query name")
+        from transit_ops.batch.clock_guard import refuse_clock_reads
+
+        statement, values = self._select(statement, params)
         compiled = statement.compile(
             dialect=psycopg.dialect(paramstyle="numeric_dollar")  # type: ignore[no-untyped-call]
         )
         for bind in compiled.binds.values():
             if isinstance(bind.type, JSONB):
                 raise BatchEngineError(f"JSONB bind refused: {bind.key}")
-        expanded = compiled.construct_expanded_state(dict(params or {}))
+        expanded = compiled.construct_expanded_state(values)
+        refuse_clock_reads(expanded.statement)
         relation = self._connection.sql(
             expanded.statement,
             params=[expanded.parameters[name] for name in expanded.positiontup or ()],
@@ -98,8 +122,26 @@ def _validate(inputs: Sequence[BatchInput]) -> None:
             raise InputRefused("inputs must be existing absolute files")
 
 
+def _check_schema(conn: duckdb.DuckDBPyConnection, files: tuple[Path, ...]) -> None:
+    expected = None
+    for path in files:
+        scan = conn.read_parquet(str(path.resolve()), hive_partitioning=False)
+        actual = list(zip(scan.columns, map(str, scan.types), strict=True))
+        if expected is not None and actual != expected:
+            raise InputRefused(f"{path}: schema {actual!r} differs from {expected!r}")
+        expected = actual
+
+
 @contextmanager
-def open_batch_session(inputs: Sequence[BatchInput], *, workdir: Path) -> Iterator[BatchSession]:
+def open_batch_session(
+    inputs: Sequence[BatchInput],
+    *,
+    workdir: Path,
+    variants: Mapping[str, TextClause] = MappingProxyType({}),
+) -> Iterator[BatchSession]:
+    variants = dict(variants)
+    if any(not key or query_name(value) != key for key, value in variants.items()):
+        raise VariantRefused("variant query names must match their keys")
     _validate(inputs)
     workdir = workdir.resolve()
     workdir.mkdir(parents=True, exist_ok=True)
@@ -121,13 +163,7 @@ def open_batch_session(inputs: Sequence[BatchInput], *, workdir: Path) -> Iterat
         for item in inputs:
             schema, name = item.relation.split(".")
             connection.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-            expected = None
-            for path in item.files:
-                scan = connection.read_parquet(str(path.resolve()), hive_partitioning=False)
-                actual = list(zip(scan.columns, map(str, scan.types), strict=True))
-                if expected is not None and actual != expected:
-                    raise InputRefused(f"{path}: schema {actual!r} differs from {expected!r}")
-                expected = actual
+            _check_schema(connection, item.files)
             files = ", ".join(
                 "'" + str(path.resolve()).replace("'", "''") + "'" for path in item.files
             )
@@ -141,6 +177,6 @@ def open_batch_session(inputs: Sequence[BatchInput], *, workdir: Path) -> Iterat
         connection.execute("SET allowed_directories = ?", [[str(workdir)]])
         connection.execute("SET enable_external_access=false")
         connection.execute("SET lock_configuration=true")
-        yield BatchSession(connection)
+        yield BatchSession(connection, variants)
     finally:
         connection.close()
