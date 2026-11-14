@@ -113,6 +113,32 @@ def test_nested_connection_strings_never_reach_the_driver(prefix, nested, clock,
             pytest.fail("nested connection string accepted")
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+psycopg://transit_ci@localhost/transit_ci",
+        "postgresql+psycopg://?passfile=x%00&host=localhost&hostaddr=127.0.0.1&user=transit_ci&dbname=transit_ci",
+        "postgresql+psycopg://transit_ci:pw%00@localhost/transit_ci?hostaddr=127.0.0.1",
+    ],
+)
+def test_libpq_effective_identity_is_refused_before_engines(url, clock, monkeypatch):
+    fields = ("host", "hostaddr", "port", "user", "dbname")
+    expected = ("localhost", "300.1.1.1", "1", "transit_ci", "transit_ci")
+    defaults = dict(zip(fields, expected, strict=True))
+    defaults.update(service="", servicefile="")
+    for key, value in defaults.items():
+        monkeypatch.setenv("PGDATABASE" if key == "dbname" else "PG" + key.upper(), value)
+    parsed = make_url(url)
+    args, kwargs = parsed.get_dialect()().create_connect_args(parsed)
+    actual = psycopg.conninfo.conninfo_to_dict(psycopg.conninfo.make_conninfo(*args, **kwargs))
+    resolved = tuple(actual.get(key) or defaults[key] for key in fields)
+    assert resolved == expected
+    monkeypatch.setattr(database, "create_engine", lambda *a, **k: pytest.fail("unsafe engine"))
+    with pytest.raises(OracleDatabaseRefused):
+        with oracle_database(url, clock=clock, environment=ENVIRONMENT):
+            pytest.fail("unsafe identity accepted")
+
+
 @pytest.mark.parametrize("fault", ["release", "dispose"])
 def test_cleanup_survives_release_and_disposal_faults(fault, clock, monkeypatch):
     admin, engine = MagicMock(), MagicMock()

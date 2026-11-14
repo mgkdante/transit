@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -85,6 +86,8 @@ def _pin_connections(engine: Engine, clock: PinnedClock) -> None:
 def oracle_database(
     admin_url: str, *, clock: PinnedClock, environment: Mapping[str, str], keep: bool = False
 ) -> Iterator[Engine]:
+    confirmation = environment.get("TRANSIT_TEST_DATABASE_DISPOSABLE", "")
+    environment = dict(os.environ, TRANSIT_TEST_DATABASE_DISPOSABLE=confirmation)
     try:
         assert_disposable_test_url(admin_url, environment)
         url = make_url(admin_url)
