@@ -217,3 +217,13 @@ def test_reverted_content_and_type_only_schema_change_advance_version(tmp_path):
         resolve_copy_version(
             storage, "core.providers", "Network", 0, "month", "2026-11", "b" * 64, schema_version=1
         )
+
+
+def test_validate_provider_id_preserves_valid_identity_and_refuses_invalid_ids():
+    from transit_ops.lake.archive_keys import validate_provider_id
+
+    assert validate_provider_id("network-1_shared") == "network-1_shared"
+    for provider in ("Network", "schemas", "", "two words", "réseau"):
+        with pytest.raises(ValueError) as error:
+            validate_provider_id(provider)
+        assert str(error.value) == f"Invalid provider_id: {provider}"

@@ -259,7 +259,12 @@ def build_delay_periods(
     until_utc: datetime | None = None,
     repair_premature: bool = False,
     dry_run: bool = False,
+    wall_clock_utc: datetime | None = None,
 ) -> int:
+    if wall_clock_utc is not None:
+        if wall_clock_utc.utcoffset() is None:
+            raise ValueError("wall_clock_utc must be timezone-aware")
+        wall_clock_utc = wall_clock_utc.astimezone(UTC)
     if retention_days < 2:
         raise ValueError("Delay period builds require at least two days of retained facts")
     closed_before = period_start(now)
@@ -293,7 +298,9 @@ def build_delay_periods(
             set_daily_warm_transaction_timeouts(conn)
             lock_delay_hours(conn, provider_id)
             lock_delay_period(conn, provider_id, period)
-            if period < max(now, utc_now()) - timedelta(days=retention_days):
+            # Recheck real retention after locking unless the caller pins a replay clock.
+            wall_now = utc_now() if wall_clock_utc is None else wall_clock_utc
+            if period < max(now, wall_now) - timedelta(days=retention_days):
                 continue
             already_built = conn.execute(
                 SELECT_TRIP_DELAY_ROLLUP_PERIOD_BUILT,
