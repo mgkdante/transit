@@ -90,6 +90,9 @@ def assert_pinned_connection(conn):
     assert tuple(conn.exec_driver_sql("SELECT * FROM replay_probe.clock").one()) == (STAMP, STAMP)
     insert = "INSERT INTO replay_probe.times DEFAULT VALUES RETURNING stamp, tick"
     assert tuple(conn.execute(text(insert)).one()) == (STAMP, STAMP)
+    assert (
+        conn.exec_driver_sql("SHOW search_path").scalar_one() == "replay_clock, pg_catalog, public"
+    )
     conn.rollback()
 
 
@@ -196,3 +199,110 @@ def test_server_identity_is_rechecked(replay, engine, operation):
     finally:
         with engine.begin() as conn:
             conn.exec_driver_sql("RESET ROLE")
+
+
+def test_replay_handle_cannot_be_constructed_directly():
+    from transit_ops.batch.pg_load import ReplayDatabase
+
+    with pytest.raises(ReplayDatabaseRefused, match="prepare_replay_database"):
+        ReplayDatabase()
+
+
+@pytest.mark.parametrize("name", ["bare", "a.b.c", "a.", ".b", "a.b\x00"])
+def test_relation_names_are_refused_before_connecting(replay, engine, name, monkeypatch):
+    monkeypatch.setattr(
+        engine, "connect", lambda: pytest.fail("malformed relation opened connection")
+    )
+    with pytest.raises(ReplayDatabaseRefused, match="schema-qualified"):
+        reset_replay_tables(replay, [name])
+
+
+def test_advisory_lock_refuses_another_replay(replay, engine):
+    with engine.connect() as locker:
+        original = definitions(locker)
+        locker.exec_driver_sql("SELECT pg_advisory_lock(724113, 1)")
+        locker.commit()
+        try:
+            with pytest.raises(ReplayDatabaseRefused, match="Another replay"):
+                with pinned_replay_engine(replay, STAMP):
+                    pytest.fail("contended clock accepted")
+            assert definitions(locker) == original
+            assert locker.exec_driver_sql("SELECT to_regnamespace('replay_clock')").scalar() is None
+        finally:
+            locker.exec_driver_sql("SELECT pg_advisory_unlock(724113, 1)")
+            locker.commit()
+
+
+def test_non_utc_timezone_is_refused_and_catalog_restored(engine):
+    with engine.connect() as conn:
+        original = definitions(conn)
+    url = engine.url.update_query_dict({"options": "-c TimeZone=America/Toronto"})
+    database = prepare_replay_database(url.render_as_string(hide_password=False), os.environ)
+    try:
+        with pytest.raises(ReplayDatabaseRefused, match="TimeZone"):
+            with pinned_replay_engine(database, STAMP):
+                pytest.fail("non-UTC connection accepted")
+        with engine.connect() as conn:
+            assert definitions(conn) == original
+            assert conn.exec_driver_sql("SELECT to_regnamespace('replay_clock')").scalar() is None
+    finally:
+        database.engine.dispose()
+
+
+def test_cleanup_preserves_dependent_objects(replay, engine):
+    with engine.connect() as conn:
+        original = definitions(conn)
+    try:
+        with pytest.raises(DBAPIError):
+            with pinned_replay_engine(replay, STAMP) as pinned, pinned.begin() as conn:
+                conn.exec_driver_sql("CREATE VIEW public.replay_dependency AS SELECT now()")
+        with engine.connect() as conn:
+            assert conn.exec_driver_sql("SELECT to_regclass('public.replay_dependency')").scalar()
+            assert definitions(conn) == original
+    finally:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("DROP VIEW IF EXISTS public.replay_dependency")
+            for definition in original:
+                conn.exec_driver_sql(definition)
+            for name in ("now", "clock_timestamp"):
+                conn.exec_driver_sql(f"DROP FUNCTION IF EXISTS replay_clock.{name}()")
+                conn.exec_driver_sql(f"DROP FUNCTION IF EXISTS replay_clock.real_{name}()")
+            conn.exec_driver_sql("DROP SCHEMA IF EXISTS replay_clock")
+
+
+@pytest.mark.parametrize("state", ["schema", "wrong_internal_source"])
+def test_other_noncanonical_states_are_refused(replay, engine, state):
+    with engine.begin() as conn:
+        original = definitions(conn)
+        if state == "schema":
+            conn.exec_driver_sql("CREATE SCHEMA replay_clock")
+        else:
+            conn.exec_driver_sql("""
+                CREATE OR REPLACE FUNCTION pg_catalog.now() RETURNS timestamptz
+                LANGUAGE internal AS 'clock_timestamp'
+            """)
+    try:
+        name = "replay_clock" if state == "schema" else "pg_catalog.now"
+        with pytest.raises(ReplayDatabaseRefused, match=name):
+            prepare_replay_database(engine.url.render_as_string(hide_password=False), os.environ)
+        with pytest.raises(ReplayDatabaseRefused, match=name):
+            with pinned_replay_engine(replay, STAMP):
+                pytest.fail("noncanonical state accepted")
+    finally:
+        with engine.begin() as conn:
+            for definition in original:
+                conn.exec_driver_sql(definition)
+            if state == "schema":
+                conn.exec_driver_sql("DROP SCHEMA replay_clock")
+
+
+def test_new_pinned_connection_rechecks_server_identity(replay, engine, monkeypatch):
+    with engine.connect() as conn:
+        original = definitions(conn)
+    monkeypatch.setenv("PGOPTIONS", "-c role=pg_read_all_data")
+    with pytest.raises(ReplayDatabaseRefused, match="Server database/role"):
+        with pinned_replay_engine(replay, STAMP):
+            pytest.fail("new pinned connection accepted an unapproved role")
+    with engine.connect() as conn:
+        assert definitions(conn) == original
+        assert conn.exec_driver_sql("SELECT to_regnamespace('replay_clock')").scalar() is None
