@@ -148,11 +148,29 @@ def test_dirty_transition_without_public_records_and_noop(objects, changes):
 
 @pytest.mark.parametrize("error", [ObjectRateLimited("429"), OSError("transport failed")])
 def test_committed_replace_failure_does_not_report_uncommitted(objects, monkeypatch, error):
+    advance(objects)
+    write, decisions, failures = objects.replace, [], [error]
+
     def fail(*args, **kwargs):
-        raise error
+        if failures:
+            raise failures.pop()
+        return write(*args, **kwargs)
+
+    def allocate(doc, now):
+        decisions.append(doc.next_version)
+        return t.Transition(replace(doc, seq=doc.seq + 1, next_version=doc.next_version + 1), ())
 
     monkeypatch.setattr(objects, "replace", fail)
-    with pytest.raises(t.LedgerTransitionCommitted) as caught:
-        advance(objects)
-    assert caught.value.after == DOC
-    assert t.rebuild_window(objects, ID) == DOC
+    for _ in range(2):
+        try:
+            result = advance(objects, allocate)
+        except t.LedgerTransitionCommitted as committed:
+            result = committed.after
+            break
+        except (ObjectRateLimited, OSError):
+            continue
+        break
+    assert result.next_version == 2
+    assert decisions == [1]
+    assert advance(objects, lambda doc, now: None) == result
+    assert result.seq == 2 and t.rebuild_window(objects, ID) == result
